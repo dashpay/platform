@@ -13,7 +13,6 @@ impl ShieldTransitionActionV0 {
         shield_amount: Credits,
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
-        current_checkpoint_id: u64,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(ShieldTransitionActionV0 {
@@ -23,7 +22,6 @@ impl ShieldTransitionActionV0 {
             encrypted_notes,
             fee_strategy: value.fee_strategy.clone(),
             user_fee_increase: value.user_fee_increase,
-            current_checkpoint_id,
             current_total_balance,
         })
     }

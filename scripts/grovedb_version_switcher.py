@@ -30,13 +30,15 @@ GIT_URL = "https://github.com/dashpay/grovedb"
 
 GROVEDB_DEPS = {
     "grovedb": "../../../grovedb/grovedb",
-    "grovedb-costs": "../../../grovedb/grovedb-costs",
-    "grovedb-merk": "../../../grovedb/grovedb-merk",
-    "grovedb-path": "../../../grovedb/grovedb-path",
-    "grovedb-storage": "../../../grovedb/grovedb-storage",
+    "grovedb-costs": "../../../grovedb/costs",
+    "grovedb-merk": "../../../grovedb/merk",
+    "grovedb-path": "../../../grovedb/path",
+    "grovedb-storage": "../../../grovedb/storage",
     "grovedb-version": "../../../grovedb/grovedb-version",
-    "grovedb-visualize": "../../../grovedb/grovedb-visualize",
+    "grovedb-visualize": "../../../grovedb/visualize",
     "grovedb-epoch-based-storage-flags": "../../../grovedb/grovedb-epoch-based-storage-flags",
+    "grovedb-commitment-tree": "../../../grovedb/grovedb-commitment-tree",
+    "grovedb-element": "../../../grovedb/grovedb-element",
 }
 
 

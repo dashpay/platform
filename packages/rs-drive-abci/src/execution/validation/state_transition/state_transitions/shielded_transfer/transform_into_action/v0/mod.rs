@@ -5,12 +5,11 @@ use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlr
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::shielded::ShieldedPoolParams;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::{
     shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_PARAMS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -63,24 +62,6 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         // Read current shielded pool state from GroveDB
         let mut drive_operations = vec![];
         let pool_path = shielded_credit_pool_path();
-
-        let params_bytes = drive.grove_get_raw_item(
-            (&pool_path).into(),
-            &[SHIELDED_PARAMS_KEY],
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
-        let (params, _): (ShieldedPoolParams, _) =
-            bincode::decode_from_slice(&params_bytes, bincode::config::standard()).map_err(
-                |e| {
-                    Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                        "could not decode shielded pool params: {e}"
-                    )))
-                },
-            )?;
-        let current_checkpoint_id = params.checkpoint_id_counter;
 
         let current_total_balance = drive
             .grove_get_raw_value_u64_from_encoded_var_vec(
@@ -163,7 +144,6 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
             encrypted_notes,
             anchor,
             fee_amount,
-            current_checkpoint_id,
             current_total_balance,
         );
 

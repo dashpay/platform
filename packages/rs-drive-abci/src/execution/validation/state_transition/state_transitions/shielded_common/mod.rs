@@ -1,8 +1,8 @@
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::shielded::SerializedAction;
 use grovedb_commitment_tree::{
-    Action, Anchor, Authorized, Bundle, ExtractedNoteCommitment, Flags, Nullifier, Proof,
-    VerifyingKey,
+    Action, Anchor, Authorized, BatchValidator, Bundle, ExtractedNoteCommitment, Flags, Nullifier,
+    Proof, VerifyingKey,
 };
 use orchard::note::TransmittedNoteCiphertext;
 use orchard::primitives::redpallas;
@@ -25,10 +25,20 @@ const OUT_CIPHERTEXT_SIZE: usize = 80;
 const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 692
 
 /// Reconstructs an orchard `Bundle<Authorized, i64>` from the serialized fields
-/// of a shielded state transition and verifies the Halo 2 ZK proof.
+/// of a shielded state transition and verifies the Halo 2 ZK proof along with
+/// all RedPallas signatures (spend auth + binding).
 ///
-/// Returns `Ok(())` if the proof is valid, or an `InvalidShieldedProofError`
-/// wrapped in `Error` if reconstruction or verification fails.
+/// Uses `BatchValidator` which verifies:
+/// 1. The Halo 2 circuit proof (zero-knowledge proof of spend validity)
+/// 2. Spend authorization signatures (proves the spender controls the spending key)
+/// 3. The binding signature (binds value_balance to value commitments, preventing manipulation)
+///
+/// The sighash used for signature verification is derived from `bundle.commitment()`,
+/// which is the Orchard bundle commitment (BLAKE2b-256 hash of the bundle's non-authorization
+/// data per ZIP-244). This same value must be used when signing the bundle on the client side.
+///
+/// Returns `Ok(())` if all verification passes, or an `InvalidShieldedProofError`
+/// if reconstruction or any verification step fails.
 pub fn reconstruct_and_verify_bundle(
     actions: &[SerializedAction],
     flags: u8,
@@ -131,10 +141,27 @@ pub fn reconstruct_and_verify_bundle(
         authorized,
     );
 
-    // Verify the Halo 2 proof
-    bundle
-        .verify_proof(vk)
-        .map_err(|e| InvalidShieldedProofError::new(format!("proof verification failed: {e}")))?;
+    // Compute the sighash from the bundle's non-authorization data.
+    // This uses the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
+    // covering: flags, value_balance, anchor, and all action fields
+    // (nullifier, rk, cmx, cv_net, encrypted_note) — but NOT the signatures or proof.
+    let sighash: [u8; 32] = bundle.commitment().into();
+
+    // Verify the Halo 2 proof AND all RedPallas signatures (spend auth + binding)
+    // using BatchValidator. This is the correct Orchard verification flow, ensuring:
+    // - The ZK circuit proof is valid
+    // - Each spend auth signature is valid for (rk, sighash)
+    // - The binding signature is valid for (binding_validating_key, sighash)
+    let mut batch = BatchValidator::new();
+    batch.add_bundle(&bundle, sighash);
+
+    let mut rng = rand::rngs::OsRng;
+    if !batch.validate(vk, &mut rng) {
+        return Err(InvalidShieldedProofError::new(
+            "bundle verification failed: proof, spend auth signatures, or binding signature invalid"
+                .to_string(),
+        ));
+    }
 
     Ok(())
 }

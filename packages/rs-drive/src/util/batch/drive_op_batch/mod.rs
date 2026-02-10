@@ -90,6 +90,8 @@ pub enum DriveOperation<'a> {
     GroupOperation(GroupOperationType),
     /// An address funds operation
     AddressFundsOperation(AddressFundsOperationType),
+    /// A shielded pool operation (groveDB op with estimation cost registration)
+    ShieldedPoolOperation(QualifiedGroveDbOp),
     /// A single low level groveDB operation
     GroveDBOperation(QualifiedGroveDbOp),
     /// Multiple low level groveDB operations
@@ -161,6 +163,12 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                     transaction,
                     platform_version,
                 ),
+            DriveOperation::ShieldedPoolOperation(op) => {
+                if let Some(ref mut estimated_costs) = estimated_costs_only_with_layer_info {
+                    Drive::add_estimation_costs_for_shielded_pool_operations(estimated_costs);
+                }
+                Ok(vec![GroveOperation(op)])
+            }
             DriveOperation::GroveDBOperation(op) => Ok(vec![GroveOperation(op)]),
             DriveOperation::GroveDBOpBatch(operations) => Ok(operations
                 .operations

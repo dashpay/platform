@@ -13,7 +13,6 @@ impl ShieldedTransferTransitionAction {
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
         fee_amount: Credits,
-        current_checkpoint_id: u64,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
@@ -25,7 +24,6 @@ impl ShieldedTransferTransitionAction {
                     encrypted_notes,
                     anchor,
                     fee_amount,
-                    current_checkpoint_id,
                     current_total_balance,
                 );
                 result.map(|action| action.into())

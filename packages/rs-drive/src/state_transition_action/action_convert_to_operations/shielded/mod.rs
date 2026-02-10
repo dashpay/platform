@@ -1,6 +1,6 @@
 use crate::drive::shielded::paths::{
-    shielded_credit_pool_commitments_path_vec, shielded_credit_pool_encrypted_notes_path_vec,
-    shielded_credit_pool_nullifiers_path_vec, shielded_credit_pool_path_vec, SHIELDED_PARAMS_KEY,
+    shielded_credit_pool_encrypted_notes_path_vec, shielded_credit_pool_nullifiers_path_vec,
+    shielded_credit_pool_path_vec, SHIELDED_COMMITMENTS_KEY,
     SHIELDED_TOTAL_BALANCE_KEY,
 };
 use crate::error::Error;
@@ -12,7 +12,6 @@ use crate::util::batch::drive_op_batch::finalize_task::DriveOperationFinalizeTas
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::DriveOperation;
 use dpp::block::epoch::Epoch;
-use dpp::shielded::ShieldedPoolParams;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::Element;
@@ -38,22 +37,16 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                     ));
                 }
 
-                let commitments_path = shielded_credit_pool_commitments_path_vec();
                 let encrypted_notes_path = shielded_credit_pool_encrypted_notes_path_vec();
                 let pool_path = shielded_credit_pool_path_vec();
 
-                // We start with the current checkpoint_id and increment for each commitment
-                let mut next_checkpoint_id = v0.current_checkpoint_id;
-
                 // 2. Append each note commitment to the commitment tree
                 for cmx in v0.note_commitments.iter() {
-                    next_checkpoint_id += 1;
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::commitment_tree_append_op(
-                            commitments_path.clone(),
-                            vec![], // key is empty for commitment tree append
+                            pool_path.clone(),
+                            vec![SHIELDED_COMMITMENTS_KEY],
                             *cmx,
-                            next_checkpoint_id,
                         ),
                     ));
                 }
@@ -62,7 +55,7 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                 for (cmx, encrypted_note) in
                     v0.note_commitments.iter().zip(v0.encrypted_notes.iter())
                 {
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::insert_only_op(
                             encrypted_notes_path.clone(),
                             cmx.to_vec(),
@@ -72,31 +65,21 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                 }
 
                 // 4. Update total balance SumItem: current_total_balance + shield_amount
-                let new_total_balance = v0.current_total_balance + v0.shield_amount;
-                ops.push(DriveOperation::GroveDBOperation(
+                let new_total_balance = v0.current_total_balance.checked_add(v0.shield_amount)
+                    .ok_or_else(|| Error::Drive(
+                        crate::error::drive::DriveError::CorruptedDriveState(
+                            "shielded pool total balance overflow when adding shield amount".to_string(),
+                        ),
+                    ))?;
+                ops.push(DriveOperation::ShieldedPoolOperation(
                     QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path.clone(),
+                        pool_path,
                         vec![SHIELDED_TOTAL_BALANCE_KEY],
                         Element::new_sum_item(new_total_balance as i64),
                     ),
                 ));
 
-                // 5. Update params with incremented checkpoint_id_counter
-                let new_params = ShieldedPoolParams {
-                    checkpoint_id_counter: next_checkpoint_id,
-                };
-                let encoded_params =
-                    bincode::encode_to_vec(&new_params, bincode::config::standard())
-                        .expect("expected to encode shielded pool params");
-                ops.push(DriveOperation::GroveDBOperation(
-                    QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path,
-                        vec![SHIELDED_PARAMS_KEY],
-                        Element::new_item(encoded_params),
-                    ),
-                ));
-
-                // Record anchor after batch is applied (finalization task)
+                // Checkpoint the commitment tree and record anchor after batch is applied
                 ops.push(DriveOperation::FinalizeOperation(
                     DriveOperationFinalizeTask::RecordShieldedAnchor,
                 ));
@@ -118,13 +101,12 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                 let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                 let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
-                let commitments_path = shielded_credit_pool_commitments_path_vec();
                 let encrypted_notes_path = shielded_credit_pool_encrypted_notes_path_vec();
                 let pool_path = shielded_credit_pool_path_vec();
 
                 // 1. Insert each nullifier (empty Item, InsertOnly to prevent double-spend)
                 for nullifier in v0.nullifiers.iter() {
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::insert_only_op(
                             nullifiers_path.clone(),
                             nullifier.to_vec(),
@@ -133,18 +115,13 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                     ));
                 }
 
-                // We start with the current checkpoint_id and increment for each commitment
-                let mut next_checkpoint_id = v0.current_checkpoint_id;
-
                 // 2. Append each note commitment to the commitment tree
                 for cmx in v0.note_commitments.iter() {
-                    next_checkpoint_id += 1;
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::commitment_tree_append_op(
-                            commitments_path.clone(),
-                            vec![],
+                            pool_path.clone(),
+                            vec![SHIELDED_COMMITMENTS_KEY],
                             *cmx,
-                            next_checkpoint_id,
                         ),
                     ));
                 }
@@ -153,7 +130,7 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                 for (cmx, encrypted_note) in
                     v0.note_commitments.iter().zip(v0.encrypted_notes.iter())
                 {
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::insert_only_op(
                             encrypted_notes_path.clone(),
                             cmx.to_vec(),
@@ -166,31 +143,20 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                 let new_total_balance = v0
                     .current_total_balance
                     .checked_sub(v0.fee_amount)
-                    .expect("total balance must be >= fee_amount");
-                ops.push(DriveOperation::GroveDBOperation(
+                    .ok_or_else(|| Error::Drive(
+                        crate::error::drive::DriveError::CorruptedDriveState(
+                            "shielded pool total balance underflow when subtracting fee_amount".to_string(),
+                        ),
+                    ))?;
+                ops.push(DriveOperation::ShieldedPoolOperation(
                     QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path.clone(),
+                        pool_path,
                         vec![SHIELDED_TOTAL_BALANCE_KEY],
                         Element::new_sum_item(new_total_balance as i64),
                     ),
                 ));
 
-                // 5. Update params with incremented checkpoint_id_counter
-                let new_params = ShieldedPoolParams {
-                    checkpoint_id_counter: next_checkpoint_id,
-                };
-                let encoded_params =
-                    bincode::encode_to_vec(&new_params, bincode::config::standard())
-                        .expect("expected to encode shielded pool params");
-                ops.push(DriveOperation::GroveDBOperation(
-                    QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path,
-                        vec![SHIELDED_PARAMS_KEY],
-                        Element::new_item(encoded_params),
-                    ),
-                ));
-
-                // Record anchor after batch is applied (finalization task)
+                // Checkpoint the commitment tree and record anchor after batch is applied
                 ops.push(DriveOperation::FinalizeOperation(
                     DriveOperationFinalizeTask::RecordShieldedAnchor,
                 ));
@@ -212,13 +178,12 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                 let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                 let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
-                let commitments_path = shielded_credit_pool_commitments_path_vec();
                 let encrypted_notes_path = shielded_credit_pool_encrypted_notes_path_vec();
                 let pool_path = shielded_credit_pool_path_vec();
 
                 // 1. Insert each nullifier (empty Item, InsertOnly to prevent double-spend)
                 for nullifier in v0.nullifiers.iter() {
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::insert_only_op(
                             nullifiers_path.clone(),
                             nullifier.to_vec(),
@@ -235,18 +200,13 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     },
                 ));
 
-                // We start with the current checkpoint_id and increment for each commitment
-                let mut next_checkpoint_id = v0.current_checkpoint_id;
-
                 // 3. Append each note commitment (change outputs) to the commitment tree
                 for cmx in v0.note_commitments.iter() {
-                    next_checkpoint_id += 1;
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::commitment_tree_append_op(
-                            commitments_path.clone(),
-                            vec![],
+                            pool_path.clone(),
+                            vec![SHIELDED_COMMITMENTS_KEY],
                             *cmx,
-                            next_checkpoint_id,
                         ),
                     ));
                 }
@@ -255,7 +215,7 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                 for (cmx, encrypted_note) in
                     v0.note_commitments.iter().zip(v0.encrypted_notes.iter())
                 {
-                    ops.push(DriveOperation::GroveDBOperation(
+                    ops.push(DriveOperation::ShieldedPoolOperation(
                         QualifiedGroveDbOp::insert_only_op(
                             encrypted_notes_path.clone(),
                             cmx.to_vec(),
@@ -269,31 +229,20 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                 let new_total_balance = v0
                     .current_total_balance
                     .checked_sub(v0.amount)
-                    .expect("total balance must be >= unshield amount");
-                ops.push(DriveOperation::GroveDBOperation(
+                    .ok_or_else(|| Error::Drive(
+                        crate::error::drive::DriveError::CorruptedDriveState(
+                            "shielded pool total balance underflow when subtracting unshield amount".to_string(),
+                        ),
+                    ))?;
+                ops.push(DriveOperation::ShieldedPoolOperation(
                     QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path.clone(),
+                        pool_path,
                         vec![SHIELDED_TOTAL_BALANCE_KEY],
                         Element::new_sum_item(new_total_balance as i64),
                     ),
                 ));
 
-                // 6. Update params with incremented checkpoint_id_counter
-                let new_params = ShieldedPoolParams {
-                    checkpoint_id_counter: next_checkpoint_id,
-                };
-                let encoded_params =
-                    bincode::encode_to_vec(&new_params, bincode::config::standard())
-                        .expect("expected to encode shielded pool params");
-                ops.push(DriveOperation::GroveDBOperation(
-                    QualifiedGroveDbOp::insert_or_replace_op(
-                        pool_path,
-                        vec![SHIELDED_PARAMS_KEY],
-                        Element::new_item(encoded_params),
-                    ),
-                ));
-
-                // Record anchor after batch is applied (finalization task)
+                // Checkpoint the commitment tree and record anchor after batch is applied
                 ops.push(DriveOperation::FinalizeOperation(
                     DriveOperationFinalizeTask::RecordShieldedAnchor,
                 ));

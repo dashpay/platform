@@ -12,7 +12,6 @@ impl UnshieldTransitionAction {
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
-        current_checkpoint_id: u64,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
@@ -23,7 +22,6 @@ impl UnshieldTransitionAction {
                     note_commitments,
                     encrypted_notes,
                     anchor,
-                    current_checkpoint_id,
                     current_total_balance,
                 );
                 result.map(|action| action.into())

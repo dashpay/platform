@@ -20,8 +20,6 @@ pub struct ShieldTransitionActionV0 {
     pub fee_strategy: AddressFundsFeeStrategy,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
-    /// Current checkpoint ID counter read from shielded pool params
-    pub current_checkpoint_id: u64,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,
 }

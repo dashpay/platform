@@ -11,7 +11,6 @@ impl UnshieldTransitionActionV0 {
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
-        current_checkpoint_id: u64,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(UnshieldTransitionActionV0 {
@@ -22,7 +21,6 @@ impl UnshieldTransitionActionV0 {
             encrypted_notes,
             anchor,
             user_fee_increase: value.user_fee_increase,
-            current_checkpoint_id,
             current_total_balance,
         })
     }

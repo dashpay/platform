@@ -19,6 +19,9 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
+use drive::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
+use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 use drive::util::batch::DriveOperation;
@@ -441,6 +444,41 @@ impl ExecutionEvent<'_> {
                         "partial identity should be present for identity credit transfer to addresses action",
                     )))
                 }
+            }
+            StateTransitionAction::ShieldAction(shield_action) => {
+                let user_fee_increase = shield_action.user_fee_increase();
+                let input_current_balances =
+                    shield_action.inputs_with_remaining_balance().clone();
+                let added_to_balance_outputs = BTreeMap::new();
+                let fee_strategy = shield_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
+                let fee_amount = shielded_transfer_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::UnshieldAction(_unshield_action) => {
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: 0,
+                })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

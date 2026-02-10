@@ -16,6 +16,7 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use drive::drive::shielded::paths::{
         shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
+        shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
     };
     use drive::grovedb::Element;
     use platform_version::version::PlatformVersion;
@@ -142,6 +143,38 @@ mod tests {
             )
             .unwrap()
             .expect("should insert nullifier");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+    }
+
+    /// Set the shielded pool total balance in GroveDB.
+    fn set_pool_total_balance(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        balance: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+        let transaction = platform.drive.grove.start_transaction();
+        let pool_path = shielded_credit_pool_path();
+
+        platform
+            .drive
+            .grove
+            .insert(
+                &pool_path,
+                &[SHIELDED_TOTAL_BALANCE_KEY],
+                Element::new_sum_item(balance as i64),
+                None,
+                Some(&transaction),
+                grove_version,
+            )
+            .unwrap()
+            .expect("should set total balance");
 
         platform
             .drive
@@ -516,6 +549,51 @@ mod tests {
 
     mod proof_verification {
         use super::*;
+        use grovedb_commitment_tree::{
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
+            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
+            SpendingKey, new_memory_store,
+        };
+        use orchard::note::RandomSeed;
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(692);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                    }
+                })
+                .collect();
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig =
+                <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -539,6 +617,91 @@ mod tests {
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
+            );
+        }
+
+        #[test]
+        fn test_valid_unshield_proof_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note with value 10,000 ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note = Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed)
+                .unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = CommitmentTree::new(new_memory_store(), 100);
+            tree.append(cmx, Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree
+                .orchard_witness(Position::from(0u64))
+                .unwrap()
+                .unwrap();
+
+            // --- Build bundle: spend 10,000 → output 5,000 (value_balance = 5,000) ---
+            let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+            builder
+                .add_spend(fvk.clone(), note, merkle_path)
+                .unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash = unauthorized.commitment().into();
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            // --- Extract serialized fields ---
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            // value_balance should be 5000 (10,000 spent - 5,000 output)
+            assert_eq!(value_balance, 5_000);
+
+            // --- Set up platform state ---
+            // Insert anchor so anchor validation passes
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            // Set pool total balance so the unshield has sufficient funds
+            set_pool_total_balance(&platform, 10_000);
+
+            // --- Create and process transition ---
+            // amount = value_balance (no fee difference)
+            let transition = create_unshield_transition(
+                create_output_address(),
+                value_balance as u64, // amount = 5000
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                0,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -570,6 +733,253 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+        use grovedb_commitment_tree::{
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
+            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
+            SpendingKey, new_memory_store,
+        };
+        use orchard::note::RandomSeed;
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(692);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                    }
+                })
+                .collect();
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig =
+                <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        /// Build a valid Orchard bundle for unshield tests (spend > output).
+        /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
+        fn build_valid_unshield_bundle() -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note = Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed)
+                .unwrap();
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = CommitmentTree::new(new_memory_store(), 100);
+            tree.append(cmx, Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree
+                .orchard_witness(Position::from(0u64))
+                .unwrap()
+                .unwrap();
+
+            // Spend 10,000 → output 5,000 → value_balance = 5,000
+            let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+            builder
+                .add_spend(fvk.clone(), note, merkle_path)
+                .unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash = unauthorized.commitment().into();
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            serialize_authorized_bundle(&bundle)
+        }
+
+        /// AUDIT REGRESSION: Mutating value_balance is now caught by BatchValidator.
+        ///
+        /// Previously, the code only called `bundle.verify_proof(vk)` which did not
+        /// check the binding signature. Now `BatchValidator` verifies the Halo 2 proof
+        /// AND the binding signature, which cryptographically binds value_balance to
+        /// the value commitments (cv_net). Mutating value_balance changes the bundle
+        /// commitment (sighash), causing signature verification to fail.
+        ///
+        /// Original severity: CRITICAL — now FIXED.
+        #[test]
+        fn test_valid_proof_with_mutated_value_balance_is_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_unshield_bundle();
+            assert_eq!(value_balance, 5_000);
+
+            // ATTACK: Inflate value_balance from 5000 to 9000
+            let mutated_value_balance = 9_000i64;
+
+            // Set pool balance high enough for the inflated amount
+            set_pool_total_balance(&platform, 20_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            let transition = create_unshield_transition(
+                create_output_address(),
+                mutated_value_balance as u64, // amount = 9000 (inflated)
+                actions,
+                flags,
+                mutated_value_balance, // MUTATED: was 5000, now 9000
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                0,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // FIXED: BatchValidator detects the binding signature mismatch.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// AUDIT FINDING (STILL OPEN): Transparent fields (output_address, amount)
+        /// are not bound to the Orchard bundle via sighash.
+        ///
+        /// An attacker who observes a valid unshield bundle can create a new
+        /// unshield transition with a different output_address, redirecting
+        /// funds to their own address. The nullifiers prevent double-spending,
+        /// but this enables front-running: the attacker's transaction (with
+        /// their address) could be included before the victim's.
+        ///
+        /// Note: The binding and spend auth signature fixes (BatchValidator) do
+        /// NOT fix this — the output_address is outside the Orchard bundle, so
+        /// changing it does not affect the sighash or any signatures. The bundle
+        /// remains cryptographically valid with a different output_address.
+        ///
+        /// Mitigation requires binding transparent fields to the sighash
+        /// (e.g., including them in the bundle commitment computation).
+        ///
+        /// Severity: HIGH (requires separate fix)
+        #[test]
+        fn test_different_output_address_with_same_valid_bundle_is_accepted() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_unshield_bundle();
+            assert_eq!(value_balance, 5_000);
+
+            set_pool_total_balance(&platform, 20_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            // ATTACK: Use a completely different output address
+            let attacker_address = PlatformAddress::P2pkh([0xAA; 20]);
+
+            let transition = create_unshield_transition(
+                attacker_address, // ATTACKER's address, not the original recipient
+                value_balance as u64,
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                0,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // VULNERABILITY: Succeeds because the output_address is not bound
+            // to the Orchard bundle via sighash or any other mechanism.
+            // The attacker redirects the unshielded funds to their own address.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// AUDIT FINDING: No intra-bundle duplicate nullifier check.
+        ///
+        /// Same as the shielded_transfer finding. The nullifier check only
+        /// queries state, not checking for duplicates within the bundle itself.
+        ///
+        /// Severity: LOW (defense-in-depth gap, caught by ZK proof verification)
+        #[test]
+        fn test_duplicate_nullifiers_in_same_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let anchor = [42u8; 32];
+            insert_anchor_into_state(&platform, &anchor);
+            set_pool_total_balance(&platform, 10_000);
+
+            let action1 = create_dummy_serialized_action();
+            let mut action2 = create_dummy_serialized_action();
+            action2.cmx = [99u8; 32];
+
+            let transition = create_unshield_transition(
+                create_output_address(),
+                1000,
+                vec![action1, action2], // Both have nullifier [1u8; 32]
+                0x03,
+                1000,
+                anchor,
+                vec![0u8; 100],
+                vec![0u8; 64],
+                0,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // Caught by proof verification, not by application-level dedup
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(

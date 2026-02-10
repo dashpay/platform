@@ -25,8 +25,14 @@ mod tests {
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
+    use grovedb_commitment_tree::{
+        Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+        Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+    };
     use platform_version::version::PlatformVersion;
+    use rand::rngs::OsRng;
     use std::collections::BTreeMap;
+    use std::sync::OnceLock;
 
     // ==========================================
     // Helper Functions
@@ -186,6 +192,51 @@ mod tests {
                 None,
             )
             .expect("expected to process state transition")
+    }
+
+    // ==========================================
+    // Orchard Proving Key (cached, ~30s to build)
+    // ==========================================
+
+    static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+    fn get_proving_key() -> &'static ProvingKey {
+        TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+    }
+
+    /// Extract serialized fields from an authorized Orchard bundle into the
+    /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
+    fn serialize_authorized_bundle(
+        bundle: &Bundle<OrchardAuthorized, i64>,
+    ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+        let actions: Vec<SerializedAction> = bundle
+            .actions()
+            .iter()
+            .map(|action| {
+                let enc = action.encrypted_note();
+                let mut encrypted_note = Vec::with_capacity(692);
+                encrypted_note.extend_from_slice(&enc.epk_bytes);
+                encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                encrypted_note.extend_from_slice(&enc.out_ciphertext);
+
+                SerializedAction {
+                    nullifier: action.nullifier().to_bytes(),
+                    rk: <[u8; 32]>::from(action.rk()),
+                    cmx: action.cmx().to_bytes(),
+                    encrypted_note,
+                    cv_net: action.cv_net().to_bytes(),
+                    spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                }
+            })
+            .collect();
+
+        let flags = bundle.flags().to_byte();
+        let value_balance = *bundle.value_balance();
+        let anchor = bundle.anchor().to_bytes();
+        let proof = bundle.authorization().proof().as_ref().to_vec();
+        let binding_sig =
+            <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+
+        (actions, flags, value_balance, anchor, proof, binding_sig)
     }
 
     // ==========================================
@@ -856,6 +907,110 @@ mod tests {
         }
 
         #[test]
+        fn test_valid_shield_proof_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            // --- Set up input address with enough balance ---
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(
+                &mut platform,
+                input_address,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            // --- Build valid Orchard bundle (shield = outputs only) ---
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 512],
+                )
+                .unwrap();
+
+            let (unauthorized, _) =
+                builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash = unauthorized.commitment().into();
+            let proven = unauthorized
+                .create_proof(pk, &mut rng)
+                .unwrap();
+            let bundle = proven
+                .apply_signatures(rng, sighash, &[])
+                .unwrap();
+
+            // --- Extract serialized fields from the authorized bundle ---
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            // value_balance should be negative for shield (money going into pool)
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // --- Build and sign the shield transition ---
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                input_address,
+                (1 as AddressNonce, shield_amount + dash_to_credits!(0.01)),
+            );
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                flags,
+                value_balance,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let witnesses: Vec<AddressWitness> = inputs
+                .keys()
+                .map(|address| {
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .expect("should sign")
+                })
+                .collect();
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let processing_result = process_transition(&platform, st, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[test]
         fn test_wrong_encrypted_note_size_returns_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
@@ -888,6 +1043,159 @@ mod tests {
 
             // The encrypted_note size check happens in reconstruct_and_verify_bundle,
             // which runs during transform_into_action after all prior validations pass.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
+            );
+        }
+    }
+
+    // ==========================================
+    // SECURITY AUDIT TESTS
+    // ==========================================
+
+    mod security_audit {
+        use super::*;
+
+        /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
+        ///
+        /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
+        /// overflow panic. Now uses `checked_neg()` which returns a consensus
+        /// error instead.
+        #[test]
+        fn test_value_balance_i64_min_returns_consensus_error() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_shield_transition(
+                &signer,
+                inputs,
+                vec![create_dummy_serialized_action()],
+                0x03,
+                i64::MIN, // -9223372036854775808 — would overflow on negation
+                vec![0u8; 100],
+                vec![0u8; 64],
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+            );
+
+            // Should return a consensus error, not panic
+            let processing_result = process_transition(&platform, transition, platform_version);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// AUDIT FIX VERIFICATION: Mutated value_balance is now rejected.
+        ///
+        /// Previously, the binding signature was not verified so mutating
+        /// value_balance from -5000 to -100000 was accepted. Now with
+        /// BatchValidator, the changed value_balance produces a different
+        /// bundle commitment (sighash), causing signature verification to fail.
+        #[test]
+        fn test_valid_proof_with_mutated_value_balance_is_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(
+                &mut platform,
+                input_address,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash = unauthorized.commitment().into();
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            assert!(value_balance < 0);
+            let honest_shield_amount = (-value_balance) as u64;
+            assert_eq!(honest_shield_amount, 5_000);
+
+            // ATTACK: Mutate value_balance to claim shielding 100,000 instead of 5,000
+            let mutated_value_balance = -100_000i64;
+
+            // Input only provides enough for a small amount, but shield_amount
+            // comes from value_balance, not from inputs
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                input_address,
+                (1 as AddressNonce, honest_shield_amount + dash_to_credits!(0.01)),
+            );
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                flags,
+                value_balance: mutated_value_balance, // MUTATED
+                anchor: anchor_bytes, // Must match the proof's anchor (circuit instance)
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let witnesses: Vec<AddressWitness> = inputs
+                .keys()
+                .map(|address| {
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .expect("should sign")
+                })
+                .collect();
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let processing_result = process_transition(&platform, st, platform_version);
+
+            // FIXED: BatchValidator now verifies binding signature and spend auth sigs.
+            // Mutated value_balance changes the sighash, causing signature verification to fail.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::PaidConsensusError {
