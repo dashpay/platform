@@ -1,5 +1,6 @@
 use crate::state_transition_action::shielded::unshield::v0::UnshieldTransitionActionV0;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
+use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 
@@ -11,6 +12,8 @@ impl UnshieldTransitionAction {
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
+        current_checkpoint_id: u64,
+        current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
             UnshieldTransition::V0(v0) => {
@@ -20,6 +23,8 @@ impl UnshieldTransitionAction {
                     note_commitments,
                     encrypted_notes,
                     anchor,
+                    current_checkpoint_id,
+                    current_total_balance,
                 );
                 result.map(|action| action.into())
             }

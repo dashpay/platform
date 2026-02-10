@@ -14,6 +14,8 @@ impl ShieldTransitionAction {
         shield_amount: Credits,
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
+        current_checkpoint_id: u64,
+        current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
             ShieldTransition::V0(v0) => {
@@ -23,6 +25,8 @@ impl ShieldTransitionAction {
                     shield_amount,
                     note_commitments,
                     encrypted_notes,
+                    current_checkpoint_id,
+                    current_total_balance,
                 );
                 result.map(|action| action.into())
             }

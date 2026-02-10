@@ -4,6 +4,7 @@ mod types;
 mod version;
 
 use crate::prelude::UserFeeIncrease;
+use crate::shielded::SerializedAction;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -28,6 +29,18 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(unversioned)]
 #[derive(Default)]
 pub struct ShieldedTransferTransitionV0 {
-    pub orchard_bundle: Vec<u8>,
+    /// Orchard actions (spend-output pairs)
+    pub actions: Vec<SerializedAction>,
+    /// Bundle flags (spends_enabled | outputs_enabled)
+    pub flags: u8,
+    /// Net value balance (fee amount extracted from shielded pool)
+    pub value_balance: i64,
+    /// Merkle root of the commitment tree used for spends
+    pub anchor: [u8; 32],
+    /// Halo2 proof bytes
+    pub proof: Vec<u8>,
+    /// RedPallas binding signature (64 bytes)
+    pub binding_signature: Vec<u8>,
+    /// Fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

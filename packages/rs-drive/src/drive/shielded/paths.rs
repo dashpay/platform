@@ -86,6 +86,42 @@ pub fn shielded_anchors_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
+/// Path to the commitments tree as a vec: [AddressBalances, "s", [1]]
+pub fn shielded_credit_pool_commitments_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::AddressBalances as u8],
+        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![SHIELDED_COMMITMENTS_KEY],
+    ]
+}
+
+/// Path to the nullifiers tree as a vec: [AddressBalances, "s", [2]]
+pub fn shielded_credit_pool_nullifiers_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::AddressBalances as u8],
+        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![SHIELDED_NULLIFIERS_KEY],
+    ]
+}
+
+/// Path to the encrypted notes tree as a vec: [AddressBalances, "s", [3]]
+pub fn shielded_credit_pool_encrypted_notes_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::AddressBalances as u8],
+        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![SHIELDED_ENCRYPTED_NOTES_KEY],
+    ]
+}
+
+/// Path to the anchors credit pool as a vec: [AddressBalances, "a", "s"]
+pub fn shielded_anchors_credit_pool_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::AddressBalances as u8],
+        SHIELDED_ANCHORS_KEY.to_vec(),
+        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+    ]
+}
+
 /// Path to the credit pool anchors: [AddressBalances, "a", "s"]
 pub fn shielded_anchors_credit_pool_path() -> [&'static [u8]; 3] {
     [

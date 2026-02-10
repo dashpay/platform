@@ -32,11 +32,13 @@ impl StateTransitionLike for UnshieldTransitionV0 {
         vec![]
     }
 
-    /// For ZK-only transitions, uniqueness comes from nullifiers in the bundle,
-    /// but at the DPP level we use the hash of the orchard bundle as a unique identifier.
+    /// For ZK-only transitions, uniqueness comes from nullifiers in the actions.
+    /// Each nullifier can only be used once, making them natural unique identifiers.
     fn unique_identifiers(&self) -> Vec<String> {
-        use crate::util::hash::hash_single;
-        vec![hex::encode(hash_single(&self.orchard_bundle))]
+        self.actions
+            .iter()
+            .map(|action| hex::encode(action.nullifier))
+            .collect()
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {

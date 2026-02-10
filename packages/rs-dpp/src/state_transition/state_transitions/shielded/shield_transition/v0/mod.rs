@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
+use crate::shielded::SerializedAction;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -32,10 +33,25 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(unversioned)]
 #[derive(Default)]
 pub struct ShieldTransitionV0 {
+    /// Address inputs funding the shield (address -> nonce + amount)
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    pub orchard_bundle: Vec<u8>,
+    /// Orchard actions (spend-output pairs)
+    pub actions: Vec<SerializedAction>,
+    /// Bundle flags (spends_enabled | outputs_enabled)
+    pub flags: u8,
+    /// Net value flowing into/out of the shielded pool
+    pub value_balance: i64,
+    /// Merkle root of the commitment tree at time of bundle creation
+    pub anchor: [u8; 32],
+    /// Halo2 proof bytes
+    pub proof: Vec<u8>,
+    /// RedPallas binding signature (64 bytes)
+    pub binding_signature: Vec<u8>,
+    /// Fee payment strategy
     pub fee_strategy: AddressFundsFeeStrategy,
+    /// Fee multiplier
     pub user_fee_increase: UserFeeIncrease,
+    /// Address witness signatures (excluded from sig hash)
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
 }

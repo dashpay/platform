@@ -12,6 +12,8 @@ impl ShieldedTransferTransitionActionV0 {
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
         fee_amount: Credits,
+        current_checkpoint_id: u64,
+        current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(ShieldedTransferTransitionActionV0 {
             nullifiers,
@@ -20,6 +22,8 @@ impl ShieldedTransferTransitionActionV0 {
             anchor,
             fee_amount,
             user_fee_increase: value.user_fee_increase,
+            current_checkpoint_id,
+            current_total_balance,
         })
     }
 }

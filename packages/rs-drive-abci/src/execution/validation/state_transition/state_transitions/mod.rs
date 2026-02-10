@@ -41,6 +41,13 @@ pub mod address_credit_withdrawal;
 pub mod address_funds_transfer;
 mod identity_top_up_from_addresses;
 
+/// Module for shield transition validation
+pub mod shield;
+/// Module for shielded transfer transition validation
+pub mod shielded_transfer;
+/// Module for unshield transition validation
+pub mod unshield;
+
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationMode {

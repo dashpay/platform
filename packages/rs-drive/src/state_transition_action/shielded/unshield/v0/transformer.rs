@@ -1,4 +1,5 @@
 use crate::state_transition_action::shielded::unshield::v0::UnshieldTransitionActionV0;
+use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::state_transitions::shielded::unshield_transition::v0::UnshieldTransitionV0;
 
@@ -10,6 +11,8 @@ impl UnshieldTransitionActionV0 {
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
         anchor: [u8; 32],
+        current_checkpoint_id: u64,
+        current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(UnshieldTransitionActionV0 {
             output_address: value.output_address.clone(),
@@ -19,6 +22,8 @@ impl UnshieldTransitionActionV0 {
             encrypted_notes,
             anchor,
             user_fee_increase: value.user_fee_increase,
+            current_checkpoint_id,
+            current_total_balance,
         })
     }
 }
