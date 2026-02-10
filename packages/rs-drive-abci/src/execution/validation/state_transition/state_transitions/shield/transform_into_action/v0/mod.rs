@@ -13,6 +13,7 @@ use drive::drive::shielded::paths::{
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive::util::grove_operations::DirectQueryType;
 use std::collections::BTreeMap;
@@ -105,8 +106,28 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             proof,
             binding_signature,
         ) {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(e).into(),
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+
+            let (fee_strategy, user_fee_increase) = match self {
+                ShieldTransition::V0(v0) => (&v0.fee_strategy, v0.user_fee_increase),
+            };
+
+            let bump_action = StateTransitionAction::BumpAddressInputNoncesAction(
+                BumpAddressInputNoncesAction::from_inputs_with_remaining_balance(
+                    &inputs_with_remaining_balance,
+                    fee_strategy,
+                    penalty,
+                    user_fee_increase,
+                ),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                vec![StateError::InvalidShieldedProofError(e).into()],
             ));
         }
 

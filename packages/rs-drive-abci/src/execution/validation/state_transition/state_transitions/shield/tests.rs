@@ -924,9 +924,10 @@ mod tests {
             // at the actual proof verification step.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
             );
         }
 
@@ -970,9 +971,10 @@ mod tests {
             // which runs during transform_into_action after all prior validations pass.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
             );
         }
     }

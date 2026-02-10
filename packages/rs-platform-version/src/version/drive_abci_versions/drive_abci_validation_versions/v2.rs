@@ -236,6 +236,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V2: DriveAbciValidationVersions =
             validation_of_added_keys_structure_failure: 10000000,
             validation_of_added_keys_proof_of_possession_failure: 50000000,
             address_funds_insufficient_balance: 10000000,
+            shielded_proof_verification_failure: 50000000,
         },
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,

@@ -1,5 +1,8 @@
 mod transform_into_action;
 
+#[cfg(test)]
+mod tests;
+
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::grovedb::TransactionArg;

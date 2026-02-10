@@ -87,6 +87,8 @@ pub struct PenaltyAmounts {
     pub validation_of_added_keys_proof_of_possession_failure: u64,
     /// Penalty for address funding with insufficient funds for outputs
     pub address_funds_insufficient_balance: u64,
+    /// Penalty for submitting a shield transition with an invalid ZK proof
+    pub shielded_proof_verification_failure: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

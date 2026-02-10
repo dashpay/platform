@@ -4,12 +4,35 @@ use crate::state_transition_action::identity::identity_topup_from_addresses::Ide
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNoncesAction, BumpAddressInputNoncesActionV0,
 };
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+use std::collections::BTreeMap;
 
 impl BumpAddressInputNoncesAction {
+    // Generic constructor from pre-computed inputs
+
+    /// from inputs with remaining balance (used by shield transitions where
+    /// the remaining balances are computed by the processing pipeline)
+    pub fn from_inputs_with_remaining_balance(
+        inputs_with_remaining_balance: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        fee_strategy: &AddressFundsFeeStrategy,
+        penalty_credits: Credits,
+        user_fee_increase: UserFeeIncrease,
+    ) -> Self {
+        BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
+            inputs_with_remaining_balance,
+            fee_strategy,
+            penalty_credits,
+            user_fee_increase,
+        )
+        .into()
+    }
+
     // IdentityCreateFromAddresses transformers
 
     /// from IdentityCreateFromAddresses transition
