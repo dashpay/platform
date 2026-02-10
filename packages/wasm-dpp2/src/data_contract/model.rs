@@ -129,7 +129,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "DataContract")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct DataContractWasm(DataContract);
 
 impl From<DataContract> for DataContractWasm {

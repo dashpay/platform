@@ -50,7 +50,8 @@ extern "C" {
     pub type IdentityJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "Identity")]
 pub struct IdentityWasm(Identity);
 

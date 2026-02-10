@@ -41,11 +41,6 @@ export class SystemFacade {
     return w.getPrefundedSpecializedBalanceWithProofInfo(identityId);
   }
 
-  async waitForStateTransitionResult(stateTransitionHash: string): Promise<wasm.StateTransitionResult> {
-    const w = await this.sdk.getWasmSdkConnected();
-    return w.waitForStateTransitionResult(stateTransitionHash);
-  }
-
   async pathElements(path: string[], keys: string[]): Promise<wasm.PathElement[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElements(path, keys);
