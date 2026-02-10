@@ -410,28 +410,23 @@ struct SyncProgressRow: View {
 struct WalletRowView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletService: WalletService
 
     private func getNetworksList() -> String {
         // Wallets are now single-network, just return the wallet's network
-        return wallet.dashNetwork.rawValue.capitalized
+        return wallet.network.rawValue.capitalized
     }
 
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
 
-        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
-        // don't show any platform balance
-        guard let walletId = wallet.walletId else {
-            return 0
-        }
-
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
                 // Only count identities that have been explicitly associated with this wallet
-                identity.walletId == walletId &&
-                identity.network == wallet.dashNetwork.rawValue
+                identity.walletId == wallet.walletId &&
+                identity.network == wallet.network.rawValue
             }
             .reduce(0) { sum, identity in
                 sum + identity.balance
@@ -443,13 +438,6 @@ struct WalletRowView: View {
             HStack {
                 Text(wallet.label)
                     .font(.headline)
-
-                Spacer()
-
-                if wallet.syncProgress < 1.0 {
-                    ProgressView(value: min(max(wallet.syncProgress, 0.0), 1.0))
-                        .frame(width: 50)
-                }
             }
 
             HStack {
@@ -469,12 +457,13 @@ struct WalletRowView: View {
 
                 VStack(alignment: .trailing, spacing: 2) {
                     // Show wallet balance or "Empty"
-                    if wallet.totalBalance == 0 {
+                    let balance = walletService.walletManager.getBalance(for: wallet)
+                    if balance.total == 0 {
                         Text("Empty")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
-                        Text(formatBalance(wallet.totalBalance))
+                        Text(balance.formattedTotal)
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
@@ -484,7 +473,7 @@ struct WalletRowView: View {
                         HStack(spacing: 3) {
                             Image(systemName: "p.circle.fill")
                                 .font(.system(size: 9))
-                            Text(formatBalance(platformBalance))
+                            Text(platformBalance.formatted())
                         }
                         .font(.caption2)
                         .foregroundColor(.blue)
@@ -493,33 +482,6 @@ struct WalletRowView: View {
             }
         }
         .padding(.vertical, 4)
-    }
-
-    private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
-
-        // Special case for zero
-        if dash == 0 {
-            return "0 DASH"
-        }
-
-        // Format with up to 8 decimal places, removing trailing zeros
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 8
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-
-        if let formatted = formatter.string(from: NSNumber(value: dash)) {
-            return "\(formatted) DASH"
-        }
-
-        // Fallback formatting
-        let formatted = String(format: "%.8f", dash)
-        let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
-        return "\(trimmed) DASH"
     }
 }
 

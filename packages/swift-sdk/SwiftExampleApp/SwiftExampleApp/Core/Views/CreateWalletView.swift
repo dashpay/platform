@@ -293,9 +293,6 @@ struct CreateWalletView: View {
                     isImport: showImportOption
                 )
 
-                // Update wallet.networks bitfield to reflect all user selections
-                try? modelContext.save()
-
                 print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
                 
                 await MainActor.run {

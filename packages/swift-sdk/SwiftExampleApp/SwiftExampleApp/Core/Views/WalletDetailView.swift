@@ -75,8 +75,10 @@ struct WalletDetailView: View {
 
                         Spacer()
 
-                        if wallet.transactionCount > 0 {
-                            Text("\(wallet.transactionCount)")
+                        let transactions = walletService.walletManager.getTransactions(for: wallet)
+                        let transactionCount = transactions.count
+                        if transactionCount > 0 {
+                            Text("\(transactionCount)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 8)
@@ -277,16 +279,14 @@ struct WalletInfoView: View {
                             .foregroundColor(.secondary)
                     }
                     
-                    if let walletId = wallet.walletId {
-                        HStack {
-                            Text("Wallet ID")
-                            Spacer()
-                            Text(walletId.toHexString())
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                                .multilineTextAlignment(.trailing)
-                        }
+                    HStack {
+                        Text("Wallet ID")
+                        Spacer()
+                        Text(wallet.walletId.toHexString())
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.trailing)
                     }
                     
                     if mainnetEnabled {
@@ -370,7 +370,7 @@ struct WalletInfoView: View {
     
     private func loadNetworkStates() {
         // TODO: Probably not needed this way anymore?
-        switch wallet.dashNetwork {
+        switch wallet.network {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
@@ -449,57 +449,32 @@ struct WalletInfoView: View {
     }
     
     private func deleteWallet() async {
-        isDeleting = true
-        defer {
-            Task { @MainActor in
-                isDeleting = false
-            }
+        // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+        // This prevents "Never access a full future backing data" crash
+        await MainActor.run {
+            dismiss()
+            onWalletDeleted()
         }
 
-        do {
-            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
-            // This prevents "Never access a full future backing data" crash
-            await MainActor.run {
-                dismiss()
-                onWalletDeleted()
-            }
-
-            // Notify the wallet service (removes wallet from observable arrays)
-            walletService.walletManager.removeWalletFromObservableState(wallet)
-
-            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
-            modelContext.delete(wallet)
-            try modelContext.save()
-
-        } catch {
-            await MainActor.run {
-                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
-                showError = true
-            }
-        }
+        try! await walletService.walletManager.deleteWallet(wallet)
     }
 }
 
 struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletService: WalletService
     
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
         
-        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
-        // don't show any platform balance
-        guard let walletId = wallet.walletId else {
-            return 0
-        }
-        
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
                 // Only count identities that have been explicitly associated with this wallet
-                identity.walletId == walletId &&
-                identity.network == wallet.dashNetwork.rawValue
+                identity.walletId == wallet.walletId &&
+                identity.network == wallet.network.rawValue
             }
             .reduce(0) { sum, identity in
                 sum + identity.balance
@@ -509,7 +484,8 @@ struct BalanceCardView: View {
     var body: some View {
         VStack(spacing: 12) {
             // Show main balance or "Empty Wallet"
-            if wallet.totalBalance == 0 {
+            let balance = walletService.walletManager.getBalance(for: wallet)
+            if balance.total == 0 {
                 Text("Empty Wallet")
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
@@ -518,7 +494,7 @@ struct BalanceCardView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
-                Text(formatBalance(wallet.totalBalance))
+                Text(balance.formattedTotal)
                     .font(.system(size: 36, weight: .bold, design: .rounded))
             }
             
@@ -528,8 +504,8 @@ struct BalanceCardView: View {
                     Text("Incoming")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    if wallet.unconfirmedBalance > 0 {
-                        Text(formatBalance(wallet.unconfirmedBalance))
+                    if balance.unconfirmed > 0 {
+                        Text(balance.formattedUnconfirmed)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.orange)

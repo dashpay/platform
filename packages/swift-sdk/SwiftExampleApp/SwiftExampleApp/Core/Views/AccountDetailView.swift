@@ -126,7 +126,7 @@ struct AccountDetailView: View {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.dashNetwork.rawValue.capitalized)
+                    Text(wallet.network.rawValue.capitalized)
                         .fontWeight(.medium)
                 }
             }
