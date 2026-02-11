@@ -12,7 +12,7 @@ struct ReceiveAddressView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
-                let currentAddress = "" // TODO: Need to return a valid address here
+                let currentAddress = walletService.walletManager.getReceiveAddress(for: wallet)
                 
                 // QR Code
                 if let qrImage = generateQRCode(from: currentAddress) {
