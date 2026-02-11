@@ -120,7 +120,7 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
                 v0.flags,
                 v0.value_balance,
                 v0.proof.as_slice(),
-                v0.binding_signature.as_slice(),
+                &v0.binding_signature,
             ),
         };
 

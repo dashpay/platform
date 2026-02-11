@@ -196,6 +196,16 @@ impl StateTransitionStateValidation for StateTransition {
             StateTransition::Unshield(_) => Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("unshield should not have state validation"),
             )),
+            StateTransition::ShieldFromAssetLock(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield from asset lock should not have state validation",
+                )))
+            }
+            StateTransition::ShieldedWithdrawal(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shielded withdrawal should not have state validation",
+                )))
+            }
         }
     }
 
@@ -218,7 +228,9 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => false,
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 }

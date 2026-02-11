@@ -100,7 +100,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
                 v0.value_balance,
                 &v0.anchor,
                 v0.proof.as_slice(),
-                v0.binding_signature.as_slice(),
+                &v0.binding_signature,
             ),
         };
 

@@ -38,6 +38,8 @@ pub enum StateTransitionType {
     Shield = 15,
     ShieldedTransfer = 16,
     Unshield = 17,
+    ShieldFromAssetLock = 18,
+    ShieldedWithdrawal = 19,
 }
 
 impl std::fmt::Display for StateTransitionType {

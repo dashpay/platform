@@ -303,7 +303,9 @@ impl Drive {
             }
             StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => {
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
                 return Err(Error::Proof(ProofError::InvalidTransition(
                     "shielded state transitions do not support proof generation yet".to_string(),
                 )));

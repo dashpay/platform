@@ -75,7 +75,7 @@ pub fn reconstruct_and_verify_bundle(
     value_balance: i64,
     anchor: &[u8; 32],
     proof: &[u8],
-    binding_signature: &[u8],
+    binding_signature: &[u8; 64],
     extra_sighash_data: &[u8],
 ) -> Result<(), InvalidShieldedProofError> {
     let vk = get_verifying_key();
@@ -117,14 +117,6 @@ pub fn reconstruct_and_verify_bundle(
                 InvalidShieldedProofError::new("invalid value commitment bytes".to_string())
             })?;
 
-        let spend_auth_sig_bytes: [u8; 64] =
-            a.spend_auth_sig.as_slice().try_into().map_err(|_| {
-                InvalidShieldedProofError::new(format!(
-                    "spend auth signature size mismatch: expected 64, got {}",
-                    a.spend_auth_sig.len()
-                ))
-            })?;
-
         let action = Action::from_parts(
             nullifier,
             rk,
@@ -135,22 +127,15 @@ pub fn reconstruct_and_verify_bundle(
                 out_ciphertext,
             },
             cv_net,
-            redpallas::Signature::from(spend_auth_sig_bytes),
+            redpallas::Signature::from(a.spend_auth_sig),
         );
         orchard_actions.push(action);
     }
 
     // Reconstruct Authorized (proof + binding signature)
-    let binding_sig_bytes: [u8; 64] = binding_signature.try_into().map_err(|_| {
-        InvalidShieldedProofError::new(format!(
-            "binding signature size mismatch: expected 64, got {}",
-            binding_signature.len()
-        ))
-    })?;
-
     let authorized = Authorized::from_parts(
         Proof::new(proof.to_vec()),
-        redpallas::Signature::from(binding_sig_bytes),
+        redpallas::Signature::from(*binding_signature),
     );
 
     // Reconstruct Bundle

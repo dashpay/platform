@@ -114,7 +114,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
                 v0.flags,
                 v0.value_balance,
                 v0.proof.as_slice(),
-                v0.binding_signature.as_slice(),
+                &v0.binding_signature,
                 v0.output_address,
                 v0.amount,
             ),

@@ -37,8 +37,9 @@ use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PlatformAddressTrunkState,
     PrefundedSpecializedBalance, ProposerBlockCounts, RecentAddressBalanceChanges,
-    RecentCompactedAddressBalanceChanges, RetrievedValues, TotalCreditsInPlatform,
-    VotePollsGroupedByTimestamp, Voters,
+    RecentCompactedAddressBalanceChanges, RetrievedValues, ShieldedAnchors, ShieldedEncryptedNote,
+    ShieldedEncryptedNotes, ShieldedNullifierStatus, ShieldedNullifierStatuses, ShieldedPoolState,
+    TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -507,6 +508,12 @@ impl_mock_response!(PlatformAddress);
 impl_mock_response!(AddressInfo);
 impl_mock_response!(RecentAddressBalanceChanges);
 impl_mock_response!(RecentCompactedAddressBalanceChanges);
+impl_mock_response!(ShieldedPoolState);
+impl_mock_response!(ShieldedAnchors);
+impl_mock_response!(ShieldedEncryptedNotes);
+impl_mock_response!(ShieldedEncryptedNote);
+impl_mock_response!(ShieldedNullifierStatuses);
+impl_mock_response!(ShieldedNullifierStatus);
 
 /// MockResponse for GroveTrunkQueryResult - panics when called because the Tree type
 /// doesn't support serialization. Address sync operations should not be mocked.

@@ -179,7 +179,9 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => false,
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 
@@ -245,7 +247,9 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => {
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
                 Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()))
             }
         }

@@ -1117,9 +1117,13 @@ impl Drive {
             }
             StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => Err(Error::Proof(ProofError::InvalidTransition(
-                "shielded state transitions do not support proof verification yet".to_string(),
-            ))),
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                Err(Error::Proof(ProofError::InvalidTransition(
+                    "shielded state transitions do not support proof verification yet".to_string(),
+                )))
+            }
         }
     }
 }

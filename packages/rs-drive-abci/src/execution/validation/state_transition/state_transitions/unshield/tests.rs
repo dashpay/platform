@@ -35,7 +35,7 @@ mod tests {
             cmx: [3u8; 32],
             encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
             cv_net: [5u8; 32],
-            spend_auth_sig: vec![6u8; 64],
+            spend_auth_sig: [6u8; 64],
         }
     }
 
@@ -57,7 +57,7 @@ mod tests {
         value_balance: i64,
         anchor: [u8; 32],
         proof: Vec<u8>,
-        binding_signature: Vec<u8>,
+        binding_signature: [u8; 64],
         user_fee_increase: u16,
     ) -> StateTransition {
         StateTransition::Unshield(UnshieldTransition::V0(UnshieldTransitionV0 {
@@ -84,7 +84,7 @@ mod tests {
             1000,           // value_balance = amount (no fee for simplicity)
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            vec![0u8; 64],  // dummy binding signature
+            [0u8; 64],      // dummy binding signature
             0,
         )
     }
@@ -250,7 +250,7 @@ mod tests {
                 1000,
                 [42u8; 32],
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -259,7 +259,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedNoActionsError(_))
                 )]
             );
         }
@@ -277,7 +277,7 @@ mod tests {
                 1000,
                 [42u8; 32],
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -286,7 +286,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::UnshieldAmountZeroError(_))
                 )]
             );
         }
@@ -304,7 +304,7 @@ mod tests {
                 0, // Zero value_balance — invalid (must be positive)
                 [42u8; 32],
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -313,7 +313,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
@@ -331,7 +331,7 @@ mod tests {
                 -1000, // Negative value_balance — invalid
                 [42u8; 32],
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -340,7 +340,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
@@ -358,7 +358,7 @@ mod tests {
                 1000, // value_balance = 1000 < amount — invalid
                 [42u8; 32],
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -367,7 +367,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::UnshieldValueBalanceBelowAmountError(_))
                 )]
             );
         }
@@ -385,7 +385,7 @@ mod tests {
                 1000,
                 [42u8; 32],
                 vec![], // Empty proof — invalid
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -394,64 +394,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
-                )]
-            );
-        }
-
-        #[test]
-        fn test_wrong_binding_sig_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let transition = create_unshield_transition(
-                create_output_address(),
-                1000,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                1000,
-                [42u8; 32],
-                vec![0u8; 100],
-                vec![0u8; 32], // 32 bytes instead of 64 — invalid
-                0,
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
-                )]
-            );
-        }
-
-        #[test]
-        fn test_wrong_spend_auth_sig_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let mut bad_action = create_dummy_serialized_action();
-            bad_action.spend_auth_sig = vec![0u8; 32]; // 32 bytes instead of 64
-
-            let transition = create_unshield_transition(
-                create_output_address(),
-                1000,
-                vec![bad_action],
-                0x03,
-                1000,
-                [42u8; 32],
-                vec![0u8; 100],
-                vec![0u8; 64],
-                0,
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEmptyProofError(_))
                 )]
             );
         }
@@ -469,7 +412,7 @@ mod tests {
                 1000,
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -478,7 +421,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedZeroAnchorError(_))
                 )]
             );
         }
@@ -567,7 +510,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -583,7 +526,7 @@ mod tests {
                         cmx: action.cmx().to_bytes(),
                         encrypted_note,
                         cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
                     }
                 })
                 .collect();
@@ -592,7 +535,7 @@ mod tests {
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig =
-                <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+                <[u8; 64]>::from(bundle.authorization().binding_signature());
             (actions, flags, value_balance, anchor, proof, binding_sig)
         }
 
@@ -736,7 +679,7 @@ mod tests {
                 1000,
                 anchor,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 
@@ -774,7 +717,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -790,7 +733,7 @@ mod tests {
                         cmx: action.cmx().to_bytes(),
                         encrypted_note,
                         cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
                     }
                 })
                 .collect();
@@ -799,7 +742,7 @@ mod tests {
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig =
-                <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+                <[u8; 64]>::from(bundle.authorization().binding_signature());
             (actions, flags, value_balance, anchor, proof, binding_sig)
         }
 
@@ -807,7 +750,7 @@ mod tests {
         /// The `output_address` and `amount` are bound to the sighash so that
         /// the resulting bundle can only be used with those specific transparent fields.
         /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
-        fn build_valid_unshield_bundle(output_address: &PlatformAddress, amount: u64) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+        fn build_valid_unshield_bundle(output_address: &PlatformAddress, amount: u64) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -989,7 +932,7 @@ mod tests {
                 1000,
                 anchor,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 0,
             );
 

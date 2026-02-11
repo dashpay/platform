@@ -43,8 +43,9 @@ pub struct UnshieldTransitionV0 {
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
-    /// RedPallas binding signature (64 bytes)
-    pub binding_signature: Vec<u8>,
+    /// RedPallas binding signature
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(with = "crate::shielded::serde_bytes_64"))]
+    pub binding_signature: [u8; 64],
     /// Fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

@@ -48,7 +48,7 @@ mod tests {
             cmx: [3u8; 32],
             encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
             cv_net: [5u8; 32],
-            spend_auth_sig: vec![6u8; 64],
+            spend_auth_sig: [6u8; 64],
         }
     }
 
@@ -61,7 +61,7 @@ mod tests {
         flags: u8,
         value_balance: i64,
         proof: Vec<u8>,
-        binding_signature: Vec<u8>,
+        binding_signature: [u8; 64],
         fee_strategy: AddressFundsFeeStrategy,
         witness_count: usize,
     ) -> StateTransition {
@@ -90,7 +90,7 @@ mod tests {
         flags: u8,
         value_balance: i64,
         proof: Vec<u8>,
-        binding_signature: Vec<u8>,
+        binding_signature: [u8; 64],
         fee_strategy: AddressFundsFeeStrategy,
     ) -> StateTransition {
         // First create with empty witnesses to compute signable bytes
@@ -145,7 +145,7 @@ mod tests {
             0x03, // spends_enabled | outputs_enabled
             -1000,
             vec![0u8; 100], // dummy proof bytes
-            vec![0u8; 64],  // dummy binding signature
+            [0u8; 64],  // dummy binding signature
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
     }
@@ -208,7 +208,7 @@ mod tests {
     /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
     fn serialize_authorized_bundle(
         bundle: &Bundle<OrchardAuthorized, i64>,
-    ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, Vec<u8>) {
+    ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
         let actions: Vec<SerializedAction> = bundle
             .actions()
             .iter()
@@ -225,7 +225,7 @@ mod tests {
                     cmx: action.cmx().to_bytes(),
                     encrypted_note,
                     cv_net: action.cv_net().to_bytes(),
-                    spend_auth_sig: <[u8; 64]>::from(action.authorization()).to_vec(),
+                    spend_auth_sig: <[u8; 64]>::from(action.authorization()),
                 }
             })
             .collect();
@@ -235,7 +235,7 @@ mod tests {
         let anchor = bundle.anchor().to_bytes();
         let proof = bundle.authorization().proof().as_ref().to_vec();
         let binding_sig =
-            <[u8; 64]>::from(bundle.authorization().binding_signature()).to_vec();
+            <[u8; 64]>::from(bundle.authorization().binding_signature());
 
         (actions, flags, value_balance, anchor, proof, binding_sig)
     }
@@ -268,7 +268,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -279,7 +279,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedNoActionsError(_))
                 )]
             );
         }
@@ -296,7 +296,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -368,7 +368,7 @@ mod tests {
                 0x03,
                 -1,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -403,7 +403,7 @@ mod tests {
                 0x03,
                 1000, // Positive — invalid for shield (must be negative)
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -414,7 +414,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
@@ -438,7 +438,7 @@ mod tests {
                 0x03,
                 0, // Zero — invalid for shield (must be negative)
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -449,7 +449,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
@@ -473,7 +473,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![], // Empty proof — invalid
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -484,80 +484,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
-                )]
-            );
-        }
-
-        #[test]
-        fn test_wrong_binding_sig_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = setup_platform();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            let mut inputs = BTreeMap::new();
-            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-
-            let transition = create_signed_shield_transition(
-                &signer,
-                inputs,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
-                vec![0u8; 100],
-                vec![0u8; 32], // 32 bytes instead of 64 — invalid
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-                    0,
-                )]),
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
-                )]
-            );
-        }
-
-        #[test]
-        fn test_wrong_spend_auth_sig_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = setup_platform();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            let mut inputs = BTreeMap::new();
-            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-
-            let mut bad_action = create_dummy_serialized_action();
-            bad_action.spend_auth_sig = vec![0u8; 32]; // 32 bytes instead of 64
-
-            let transition = create_signed_shield_transition(
-                &signer,
-                inputs,
-                vec![bad_action],
-                0x03,
-                -1000,
-                vec![0u8; 100],
-                vec![0u8; 64],
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-                    0,
-                )]),
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::OverflowError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEmptyProofError(_))
                 )]
             );
         }
@@ -581,7 +508,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![]), // Empty fee strategy
             );
 
@@ -615,7 +542,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(1),
@@ -654,7 +581,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0), // Duplicate
@@ -745,7 +672,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -1035,7 +962,7 @@ mod tests {
                 0x03,
                 -1000,
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),
@@ -1086,7 +1013,7 @@ mod tests {
                 0x03,
                 i64::MIN, // -9223372036854775808 — would overflow on negation
                 vec![0u8; 100],
-                vec![0u8; 64],
+                [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
                     0,
                 )]),

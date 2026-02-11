@@ -369,6 +369,22 @@ impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
     type Request = platform_proto::GetAddressesTrunkStateRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::ShieldedPoolState {
+    type Request = platform_proto::GetShieldedPoolStateRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedAnchors {
+    type Request = platform_proto::GetShieldedAnchorsRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
+    type Request = platform_proto::GetShieldedEncryptedNotesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
+    type Request = platform_proto::GetShieldedNullifiersRequest;
+}
+
 /// Refetch the data contract from the network, update the context provider
 /// cache, and return a new [DocumentQuery] with the fresh contract.
 ///

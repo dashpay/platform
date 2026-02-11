@@ -759,3 +759,90 @@ impl std::ops::DerefMut for PlatformAddressTrunkState {
         &mut self.0
     }
 }
+
+/// Shielded pool total balance
+#[derive(Debug, derive_more::From, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedPoolState(pub u64);
+
+/// A single encrypted note (cmx + encrypted data)
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedEncryptedNote {
+    /// The note commitment (cmx), 32 bytes
+    pub cmx: Vec<u8>,
+    /// The encrypted note data
+    pub encrypted_note: Vec<u8>,
+}
+
+/// Collection of encrypted notes returned by query
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedEncryptedNotes(pub Vec<ShieldedEncryptedNote>);
+
+/// Valid anchors for building spend proofs
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedAnchors(pub Vec<Vec<u8>>);
+
+/// Status of a single nullifier (spent or unspent)
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedNullifierStatus {
+    /// The nullifier bytes (32 bytes)
+    pub nullifier: Vec<u8>,
+    /// Whether this nullifier has been spent
+    pub is_spent: bool,
+}
+
+/// Collection of nullifier statuses returned by query
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedNullifierStatuses(pub Vec<ShieldedNullifierStatus>);
+
+/// Query parameters for encrypted notes (pagination)
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedEncryptedNotesQuery {
+    /// Optional pagination cursor (32 bytes, exclusive start)
+    pub start_cmx: Option<Vec<u8>>,
+    /// Max number of notes to return
+    pub count: u32,
+}
+
+/// Query parameters for nullifier status check
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedNullifiersQuery(pub Vec<Vec<u8>>);

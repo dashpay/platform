@@ -147,4 +147,14 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        shield_from_asset_lock_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        shielded_withdrawal_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     };

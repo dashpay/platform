@@ -116,6 +116,14 @@ service Platform {
           returns (GetRecentAddressBalanceChangesResponse);
   rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest)
           returns (GetRecentCompactedAddressBalanceChangesResponse);
+  rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest)
+      returns (GetShieldedEncryptedNotesResponse);
+  rpc getShieldedAnchors(GetShieldedAnchorsRequest)
+      returns (GetShieldedAnchorsResponse);
+  rpc getShieldedPoolState(GetShieldedPoolStateRequest)
+      returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
+      returns (GetShieldedNullifiersResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -2124,4 +2132,98 @@ message GetRecentCompactedAddressBalanceChangesResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetRecentCompactedAddressBalanceChangesResponseV0 v0 = 1; }
+}
+
+// --- Shielded Pool Queries ---
+
+message GetShieldedEncryptedNotesRequest {
+  message GetShieldedEncryptedNotesRequestV0 {
+    bytes start_cmx = 1;
+    uint32 count = 2;
+    bool prove = 3;
+  }
+  oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
+}
+
+message GetShieldedEncryptedNotesResponse {
+  message GetShieldedEncryptedNotesResponseV0 {
+    message EncryptedNote {
+      bytes cmx = 1;
+      bytes encrypted_note = 2;
+    }
+    message EncryptedNotes {
+      repeated EncryptedNote entries = 1;
+    }
+    oneof result {
+      EncryptedNotes encrypted_notes = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedEncryptedNotesResponseV0 v0 = 1; }
+}
+
+message GetShieldedAnchorsRequest {
+  message GetShieldedAnchorsRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
+}
+
+message GetShieldedAnchorsResponse {
+  message GetShieldedAnchorsResponseV0 {
+    message Anchors {
+      repeated bytes anchors = 1;
+    }
+    oneof result {
+      Anchors anchors = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedAnchorsResponseV0 v0 = 1; }
+}
+
+message GetShieldedPoolStateRequest {
+  message GetShieldedPoolStateRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
+}
+
+message GetShieldedPoolStateResponse {
+  message GetShieldedPoolStateResponseV0 {
+    oneof result {
+      uint64 total_balance = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
+}
+
+message GetShieldedNullifiersRequest {
+  message GetShieldedNullifiersRequestV0 {
+    repeated bytes nullifiers = 1;
+    bool prove = 2;
+  }
+  oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
+}
+
+message GetShieldedNullifiersResponse {
+  message GetShieldedNullifiersResponseV0 {
+    message NullifierStatus {
+      bytes nullifier = 1;
+      bool is_spent = 2;
+    }
+    message NullifierStatuses {
+      repeated NullifierStatus entries = 1;
+    }
+    oneof result {
+      NullifierStatuses nullifier_statuses = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
 }

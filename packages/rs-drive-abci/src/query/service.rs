@@ -51,6 +51,9 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetShieldedAnchorsRequest, GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
+    GetShieldedEncryptedNotesResponse, GetShieldedNullifiersRequest, GetShieldedNullifiersResponse,
+    GetShieldedPoolStateRequest, GetShieldedPoolStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
@@ -875,6 +878,54 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_recent_compacted_address_balance_changes,
             "get_recent_compacted_address_balance_changes",
+        )
+        .await
+    }
+
+    async fn get_shielded_encrypted_notes(
+        &self,
+        request: Request<GetShieldedEncryptedNotesRequest>,
+    ) -> Result<Response<GetShieldedEncryptedNotesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_encrypted_notes,
+            "get_shielded_encrypted_notes",
+        )
+        .await
+    }
+
+    async fn get_shielded_anchors(
+        &self,
+        request: Request<GetShieldedAnchorsRequest>,
+    ) -> Result<Response<GetShieldedAnchorsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_anchors,
+            "get_shielded_anchors",
+        )
+        .await
+    }
+
+    async fn get_shielded_pool_state(
+        &self,
+        request: Request<GetShieldedPoolStateRequest>,
+    ) -> Result<Response<GetShieldedPoolStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_pool_state,
+            "get_shielded_pool_state",
+        )
+        .await
+    }
+
+    async fn get_shielded_nullifiers(
+        &self,
+        request: Request<GetShieldedNullifiersRequest>,
+    ) -> Result<Response<GetShieldedNullifiersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_nullifiers,
+            "get_shielded_nullifiers",
         )
         .await
     }

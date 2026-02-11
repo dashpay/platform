@@ -73,7 +73,9 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => {
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
                 return Ok(SimpleConsensusValidationResult::new());
             }
         }?;
@@ -103,7 +105,9 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => false,
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 }

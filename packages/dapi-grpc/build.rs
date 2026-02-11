@@ -84,7 +84,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 48] = [
+    const VERSIONED_REQUESTS: [&str; 52] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -133,6 +133,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosRequest",
         "GetRecentAddressBalanceChangesRequest",
         "GetRecentCompactedAddressBalanceChangesRequest",
+        "GetShieldedEncryptedNotesRequest",
+        "GetShieldedAnchorsRequest",
+        "GetShieldedPoolStateRequest",
+        "GetShieldedNullifiersRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -147,7 +151,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 46] = [
+    const VERSIONED_RESPONSES: [&str; 50] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -194,6 +198,10 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosResponse",
         "GetRecentAddressBalanceChangesResponse",
         "GetRecentCompactedAddressBalanceChangesResponse",
+        "GetShieldedEncryptedNotesResponse",
+        "GetShieldedAnchorsResponse",
+        "GetShieldedPoolStateResponse",
+        "GetShieldedNullifiersResponse",
     ];
 
     const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];

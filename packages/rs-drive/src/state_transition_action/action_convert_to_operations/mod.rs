@@ -116,6 +116,14 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
             StateTransitionAction::UnshieldAction(unshield_action) => {
                 unshield_action.into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::ShieldFromAssetLockAction(shield_from_asset_lock_action) => {
+                shield_from_asset_lock_action
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
+            StateTransitionAction::ShieldedWithdrawalAction(shielded_withdrawal_action) => {
+                shielded_withdrawal_action
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
         }
     }
 }

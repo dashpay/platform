@@ -30,7 +30,9 @@ use crate::state_transition_action::identity::identity_topup_from_addresses::Ide
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
+use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
 use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
+use crate::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
 use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
@@ -101,6 +103,10 @@ pub enum StateTransitionAction {
     ShieldedTransferAction(ShieldedTransferTransitionAction),
     /// unshield (shielded pool -> address)
     UnshieldAction(UnshieldTransitionAction),
+    /// shield from asset lock (L1 asset lock -> shielded pool)
+    ShieldFromAssetLockAction(ShieldFromAssetLockTransitionAction),
+    /// shielded withdrawal (shielded pool -> L1 core address)
+    ShieldedWithdrawalAction(ShieldedWithdrawalTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -149,6 +155,12 @@ impl StateTransitionAction {
             StateTransitionAction::ShieldAction(action) => action.user_fee_increase(),
             StateTransitionAction::ShieldedTransferAction(action) => action.user_fee_increase(),
             StateTransitionAction::UnshieldAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldFromAssetLockAction(action) => {
+                action.user_fee_increase()
+            }
+            StateTransitionAction::ShieldedWithdrawalAction(action) => {
+                action.user_fee_increase()
+            }
         }
     }
 }

@@ -2,8 +2,9 @@ use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyGroupMethodVersions,
     DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
-    DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
+    DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
+    DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
 };
 
 pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVerifyMethodVersions {
@@ -89,5 +90,11 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 0,
+    },
+    shielded: DriveVerifyShieldedMethodVersions {
+        verify_shielded_pool_state: 0,
+        verify_shielded_anchors: 0,
+        verify_shielded_encrypted_notes: 0,
+        verify_shielded_nullifiers: 0,
     },
 };

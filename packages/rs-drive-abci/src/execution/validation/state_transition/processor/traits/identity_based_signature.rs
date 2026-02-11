@@ -133,7 +133,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => Ok(ConsensusValidationResult::new()),
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -171,7 +173,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => false,
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)
@@ -197,7 +201,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_) => false,
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => false,
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::Batch(_)

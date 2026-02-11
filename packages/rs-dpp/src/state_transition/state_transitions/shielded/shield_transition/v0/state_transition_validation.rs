@@ -1,7 +1,7 @@
-use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyTooManyStepsError,
-    InputBelowMinimumError, InputWitnessCountMismatchError, TransitionNoInputsError,
+    InputBelowMinimumError, InputWitnessCountMismatchError, ShieldedEmptyProofError,
+    ShieldedInvalidValueBalanceError, ShieldedNoActionsError, TransitionNoInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
@@ -18,10 +18,7 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
         // Actions must not be empty
         if self.actions.is_empty() {
             return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OverflowError(OverflowError::new(
-                    "Shield transition must have at least one action".to_string(),
-                ))
-                .into(),
+                BasicError::ShieldedNoActionsError(ShieldedNoActionsError::new()).into(),
             );
         }
 
@@ -64,10 +61,11 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
         // value_balance must be negative (credits flowing into pool)
         if self.value_balance >= 0 {
             return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OverflowError(OverflowError::new(
-                    "Shield transition value_balance must be negative (credits flow into pool)"
-                        .to_string(),
-                ))
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "shield value_balance must be negative (credits flow into pool)".to_string(),
+                    ),
+                )
                 .into(),
             );
         }
@@ -75,33 +73,8 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
         // Proof must not be empty
         if self.proof.is_empty() {
             return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OverflowError(OverflowError::new(
-                    "Shield transition proof must not be empty".to_string(),
-                ))
-                .into(),
+                BasicError::ShieldedEmptyProofError(ShieldedEmptyProofError::new()).into(),
             );
-        }
-
-        // Binding signature must be exactly 64 bytes
-        if self.binding_signature.len() != 64 {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OverflowError(OverflowError::new(
-                    "Shield transition binding_signature must be exactly 64 bytes".to_string(),
-                ))
-                .into(),
-            );
-        }
-
-        // Each action's spend_auth_sig must be exactly 64 bytes
-        for action in &self.actions {
-            if action.spend_auth_sig.len() != 64 {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::OverflowError(OverflowError::new(
-                        "Each action spend_auth_sig must be exactly 64 bytes".to_string(),
-                    ))
-                    .into(),
-                );
-            }
         }
 
         // Fee strategy validation (reuse address funds patterns)

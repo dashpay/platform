@@ -9,6 +9,8 @@ use crate::execution::validation::state_transition::identity_create_from_address
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
+use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
+use crate::execution::validation::state_transition::shielded_withdrawal::StateTransitionShieldedWithdrawalTransitionActionTransformer;
 use crate::execution::validation::state_transition::unshield::StateTransitionUnshieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -250,6 +252,23 @@ impl StateTransitionActionTransformer for StateTransition {
             }
             StateTransition::Unshield(st) => {
                 st.transform_into_action_for_unshield_transition(platform, tx)
+            }
+            StateTransition::ShieldFromAssetLock(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.transform_into_action_for_shield_from_asset_lock_transition(
+                    platform,
+                    signable_bytes,
+                    validation_mode,
+                    execution_context,
+                    tx,
+                )
+            }
+            StateTransition::ShieldedWithdrawal(st) => {
+                st.transform_into_action_for_shielded_withdrawal_transition(
+                    platform,
+                    block_info,
+                    tx,
+                )
             }
         }
     }

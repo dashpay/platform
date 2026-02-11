@@ -452,6 +452,42 @@ impl_transport_request_grpc!(
     get_current_quorums_info
 );
 
+// rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedEncryptedNotesRequest,
+    platform_proto::GetShieldedEncryptedNotesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_encrypted_notes
+);
+
+// rpc getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedAnchorsRequest,
+    platform_proto::GetShieldedAnchorsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_anchors
+);
+
+// rpc getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedPoolStateRequest,
+    platform_proto::GetShieldedPoolStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_pool_state
+);
+
+// rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNullifiersRequest,
+    platform_proto::GetShieldedNullifiersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_nullifiers
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(

@@ -31,6 +31,8 @@ pub struct DPPStateTransitionSerializationVersions {
     pub shield_state_transition: FeatureVersionBounds,
     pub shielded_transfer_state_transition: FeatureVersionBounds,
     pub unshield_state_transition: FeatureVersionBounds,
+    pub shield_from_asset_lock_state_transition: FeatureVersionBounds,
+    pub shielded_withdrawal_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -22,6 +22,8 @@ pub mod state_transition;
 pub mod tokens;
 /// Voting proof verification module
 pub mod voting;
+/// Shielded pool proof verification module
+pub mod shielded;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];

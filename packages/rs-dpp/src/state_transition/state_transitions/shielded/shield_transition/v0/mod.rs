@@ -31,9 +31,10 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
-#[derive(Default)]
 pub struct ShieldTransitionV0 {
-    /// Address inputs funding the shield (address -> nonce + amount)
+    /// Address inputs funding the shield (address -> nonce + max contribution).
+    /// The total across all inputs must cover |value_balance| + fees.
+    /// Excess credits remain in the source addresses.
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
@@ -45,8 +46,9 @@ pub struct ShieldTransitionV0 {
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
-    /// RedPallas binding signature (64 bytes)
-    pub binding_signature: Vec<u8>,
+    /// RedPallas binding signature
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(with = "crate::shielded::serde_bytes_64"))]
+    pub binding_signature: [u8; 64],
     /// Fee payment strategy
     pub fee_strategy: AddressFundsFeeStrategy,
     /// Fee multiplier

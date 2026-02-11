@@ -28,8 +28,11 @@ use dapi_grpc::platform::v0::{
     GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    get_status_request, GetContestedResourceIdentityVotesRequest,
-    GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
+    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
+    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
+    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
+    GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
+    GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
 use dpp::address_funds::PlatformAddress;
@@ -43,7 +46,9 @@ use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuer
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
-use drive_proof_verifier::types::{KeysInPath, NoParamQuery};
+use drive_proof_verifier::types::{
+    KeysInPath, NoParamQuery, ShieldedEncryptedNotesQuery, ShieldedNullifiersQuery,
+};
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -979,6 +984,71 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
                     },
                 ),
             ),
+        })
+    }
+}
+
+// --- Shielded Pool Queries ---
+
+impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
+    fn query(self, prove: bool) -> Result<GetShieldedPoolStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedPoolStateRequest {
+            version: Some(get_shielded_pool_state_request::Version::V0(
+                get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
+    fn query(self, prove: bool) -> Result<GetShieldedAnchorsRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                get_shielded_anchors_request::GetShieldedAnchorsRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
+    fn query(self, prove: bool) -> Result<GetShieldedEncryptedNotesRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedEncryptedNotesRequest {
+            version: Some(get_shielded_encrypted_notes_request::Version::V0(
+                get_shielded_encrypted_notes_request::GetShieldedEncryptedNotesRequestV0 {
+                    start_cmx: self.start_cmx.unwrap_or_default(),
+                    count: self.count,
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
+    fn query(self, prove: bool) -> Result<GetShieldedNullifiersRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedNullifiersRequest {
+            version: Some(get_shielded_nullifiers_request::Version::V0(
+                get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
+                    nullifiers: self.0,
+                    prove,
+                },
+            )),
         })
     }
 }

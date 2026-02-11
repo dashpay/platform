@@ -19,9 +19,9 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_A
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
     DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
     DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
-    DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions,
-    DriveAbciQueryVotingVersions,
+    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
+    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
+    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -386,6 +386,28 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 group_action_signers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            shielded_queries: DriveAbciQueryShieldedVersions {
+                encrypted_notes: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                anchors: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                pool_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                nullifiers: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

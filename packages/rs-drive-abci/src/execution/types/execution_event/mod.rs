@@ -480,6 +480,27 @@ impl ExecutionEvent<'_> {
                     fees_to_add_to_pool: 0,
                 })
             }
+            StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
+                // Fee = asset_lock_value - shield_amount (excess from asset lock)
+                let fee_amount = shield_from_asset_lock_action
+                    .asset_lock_value_to_be_consumed()
+                    .saturating_sub(shield_from_asset_lock_action.shield_amount());
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::ShieldedWithdrawalAction(_shielded_withdrawal_action) => {
+                // Fee = value_balance - amount (stays in pool, same pattern as Unshield)
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: 0,
+                })
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =
