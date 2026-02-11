@@ -3,6 +3,7 @@ mod state_transition_like;
 mod state_transition_validation;
 mod types;
 mod version;
+mod v0_methods;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::UserFeeIncrease;

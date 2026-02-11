@@ -1,4 +1,5 @@
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
+pub use dpp::shielded::compute_platform_sighash;
 use dpp::shielded::SerializedAction;
 use grovedb_commitment_tree::{
     Action, Anchor, Authorized, BatchValidator, Bundle, ExtractedNoteCommitment, Flags, Nullifier,
@@ -7,7 +8,6 @@ use grovedb_commitment_tree::{
 use orchard::note::TransmittedNoteCiphertext;
 use orchard::primitives::redpallas;
 use orchard::value::ValueCommitment;
-use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 
 /// Cached verifying key for shielded proof verification.
@@ -24,30 +24,6 @@ const EPK_SIZE: usize = 32;
 const ENC_CIPHERTEXT_SIZE: usize = 580;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
 const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 692
-
-/// Domain separator for Platform sighash computation.
-const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
-
-/// Computes the platform sighash from an Orchard bundle commitment and optional
-/// transparent field data.
-///
-/// The sighash is computed as:
-///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
-///
-/// This binds transparent state transition fields (like `output_address` and `amount`
-/// in unshield transitions) to the Orchard signatures, preventing replay attacks
-/// where an attacker substitutes transparent fields while reusing a valid Orchard bundle.
-///
-/// The same computation must be used on both the signing (client) and verification
-/// (platform) sides. For transitions without transparent fields (shield and
-/// shielded_transfer), `extra_data` is empty.
-pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(SIGHASH_DOMAIN);
-    hasher.update(bundle_commitment);
-    hasher.update(extra_data);
-    hasher.finalize().into()
-}
 
 /// Reconstructs an orchard `Bundle<Authorized, i64>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with

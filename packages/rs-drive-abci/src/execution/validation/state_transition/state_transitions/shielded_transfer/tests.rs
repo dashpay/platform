@@ -794,17 +794,8 @@ mod tests {
             );
         }
 
-        /// AUDIT FINDING: No intra-bundle duplicate nullifier check.
-        ///
-        /// The nullifier validation loop only checks the state database for
-        /// each nullifier. It does not check for duplicates within the same
-        /// bundle's action list. This is mitigated by the ZK proof (which
-        /// can't produce duplicate nullifiers from a valid circuit), and by
-        /// GroveDB's insert_only_op (which would fail on the second insert).
-        ///
-        /// Severity: LOW (defense-in-depth gap)
-        /// For a fabricated bundle with duplicate nullifiers, the proof
-        /// verification catches the invalid data.
+        /// Duplicate nullifiers within the same bundle are caught by the
+        /// intra-bundle dedup check before reaching proof verification.
         #[test]
         fn test_duplicate_nullifiers_in_same_bundle() {
             let platform_version = PlatformVersion::latest();
@@ -830,14 +821,11 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // The duplicate nullifiers are NOT caught by the application-level
-            // nullifier check (which only checks state). They are caught by
-            // proof verification (the fabricated data produces an invalid proof).
-            // Ideally, intra-bundle nullifier dedup should be added as defense-in-depth.
+            // Intra-bundle duplicate nullifier check catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
                 )]
             );
         }

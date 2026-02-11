@@ -279,6 +279,26 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
                 )
+        self.getShieldedEncryptedNotes = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedEncryptedNotes',
+                request_serializer=platform__pb2.GetShieldedEncryptedNotesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedEncryptedNotesResponse.FromString,
+                )
+        self.getShieldedAnchors = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedAnchors',
+                request_serializer=platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedAnchorsResponse.FromString,
+                )
+        self.getShieldedPoolState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
+                request_serializer=platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedPoolStateResponse.FromString,
+                )
+        self.getShieldedNullifiers = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
+                request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -607,6 +627,30 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getShieldedEncryptedNotes(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedAnchors(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedPoolState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedNullifiers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -874,6 +918,26 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getRecentCompactedAddressBalanceChanges,
                     request_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.FromString,
                     response_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.SerializeToString,
+            ),
+            'getShieldedEncryptedNotes': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedEncryptedNotes,
+                    request_deserializer=platform__pb2.GetShieldedEncryptedNotesRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedEncryptedNotesResponse.SerializeToString,
+            ),
+            'getShieldedAnchors': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedAnchors,
+                    request_deserializer=platform__pb2.GetShieldedAnchorsRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedAnchorsResponse.SerializeToString,
+            ),
+            'getShieldedPoolState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedPoolState,
+                    request_deserializer=platform__pb2.GetShieldedPoolStateRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedPoolStateResponse.SerializeToString,
+            ),
+            'getShieldedNullifiers': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedNullifiers,
+                    request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1783,5 +1847,73 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentCompactedAddressBalanceChanges',
             platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
             platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedEncryptedNotes(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedEncryptedNotes',
+            platform__pb2.GetShieldedEncryptedNotesRequest.SerializeToString,
+            platform__pb2.GetShieldedEncryptedNotesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedAnchors(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedAnchors',
+            platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
+            platform__pb2.GetShieldedAnchorsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedPoolState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
+            platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
+            platform__pb2.GetShieldedPoolStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedNullifiers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
+            platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
+            platform__pb2.GetShieldedNullifiersResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

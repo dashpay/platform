@@ -156,6 +156,7 @@ fn get_path_elements(
                                 Element::ProvableCountSumTree(_, count, sum, _) => {
                                     format!("provable_count_sum_tree:{}:{}", count, sum)
                                 }
+                                Element::CommitmentTree(_, _) => "commitment_tree".to_string(),
                             };
 
                             format!(
@@ -176,6 +177,7 @@ fn get_path_elements(
                                     Element::ProvableCountSumTree(_, _, _, _) => {
                                         "provable_count_sum_tree"
                                     }
+                                    Element::CommitmentTree(_, _) => "commitment_tree",
                                 }
                             )
                         })

@@ -852,6 +852,15 @@ pub enum OperationType {
         KeyCount,
         ExtraKeys,
     ),
+
+    /// Shield funds into the shielded pool (requires Orchard bundle).
+    Shield(AmountRange),
+
+    /// Transfer within the shielded pool (requires Orchard bundle).
+    ShieldedTransfer(AmountRange),
+
+    /// Unshield from the shielded pool to a platform address (requires Orchard bundle).
+    Unshield(AmountRange),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -892,6 +901,9 @@ enum OperationTypeInSerializationFormat {
         KeyCount,
         ExtraKeys,
     ),
+    Shield(AmountRange),
+    ShieldedTransfer(AmountRange),
+    Unshield(AmountRange),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -997,6 +1009,15 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 key_count,
                 extra_keys,
             ),
+            OperationType::Shield(range) => {
+                OperationTypeInSerializationFormat::Shield(range)
+            }
+            OperationType::ShieldedTransfer(range) => {
+                OperationTypeInSerializationFormat::ShieldedTransfer(range)
+            }
+            OperationType::Unshield(range) => {
+                OperationTypeInSerializationFormat::Unshield(range)
+            }
         };
         let config = bincode::config::standard()
             .with_big_endian()
@@ -1115,6 +1136,15 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 key_count,
                 extra_keys,
             ),
+            OperationTypeInSerializationFormat::Shield(range) => {
+                OperationType::Shield(range)
+            }
+            OperationTypeInSerializationFormat::ShieldedTransfer(range) => {
+                OperationType::ShieldedTransfer(range)
+            }
+            OperationTypeInSerializationFormat::Unshield(range) => {
+                OperationType::Unshield(range)
+            }
         })
     }
 }

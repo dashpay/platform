@@ -1,3 +1,4 @@
+mod tests;
 mod transform_into_action;
 
 use dpp::block::block_info::BlockInfo;

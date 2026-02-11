@@ -114,7 +114,20 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             ));
         }
 
-        // Check that no nullifier has already been spent
+        // Defense-in-depth: reject duplicate nullifiers within the same bundle
+        let mut seen_nullifiers = std::collections::HashSet::new();
+        for nullifier in &nullifiers {
+            if !seen_nullifiers.insert(nullifier) {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
+                        *nullifier,
+                    ))
+                    .into(),
+                ));
+            }
+        }
+
+        // Check that no nullifier has already been spent in the state
         let nullifiers_path = shielded_credit_pool_nullifiers_path();
         for nullifier in &nullifiers {
             let exists = drive.grove_has_raw(

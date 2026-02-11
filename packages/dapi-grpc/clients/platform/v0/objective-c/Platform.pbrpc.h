@@ -99,6 +99,14 @@
 @class GetRecentAddressBalanceChangesResponse;
 @class GetRecentCompactedAddressBalanceChangesRequest;
 @class GetRecentCompactedAddressBalanceChangesResponse;
+@class GetShieldedAnchorsRequest;
+@class GetShieldedAnchorsResponse;
+@class GetShieldedEncryptedNotesRequest;
+@class GetShieldedEncryptedNotesResponse;
+@class GetShieldedNullifiersRequest;
+@class GetShieldedNullifiersResponse;
+@class GetShieldedPoolStateRequest;
+@class GetShieldedPoolStateResponse;
 @class GetStatusRequest;
 @class GetStatusResponse;
 @class GetTokenContractInfoRequest;
@@ -375,6 +383,22 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest) returns (GetRecentCompactedAddressBalanceChangesResponse)
 
 - (GRPCUnaryProtoCall *)getRecentCompactedAddressBalanceChangesWithMessage:(GetRecentCompactedAddressBalanceChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse)
+
+- (GRPCUnaryProtoCall *)getShieldedEncryptedNotesWithMessage:(GetShieldedEncryptedNotesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse)
+
+- (GRPCUnaryProtoCall *)getShieldedAnchorsWithMessage:(GetShieldedAnchorsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
+
+- (GRPCUnaryProtoCall *)getShieldedPoolStateWithMessage:(GetShieldedPoolStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
+
+- (GRPCUnaryProtoCall *)getShieldedNullifiersWithMessage:(GetShieldedNullifiersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -803,6 +827,34 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetRecentCompactedAddressBalanceChangesWithRequest:(GetRecentCompactedAddressBalanceChangesRequest *)request handler:(void(^)(GetRecentCompactedAddressBalanceChangesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse)
+
+- (void)getShieldedEncryptedNotesWithRequest:(GetShieldedEncryptedNotesRequest *)request handler:(void(^)(GetShieldedEncryptedNotesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetShieldedEncryptedNotesWithRequest:(GetShieldedEncryptedNotesRequest *)request handler:(void(^)(GetShieldedEncryptedNotesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse)
+
+- (void)getShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
+
+- (void)getShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
+
+- (void)getShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end

@@ -2615,6 +2615,20 @@ impl Strategy {
                         }
                     }
 
+                    OperationType::Shield(_amount_range) => {
+                        // TODO: Shielded transitions require client-side Orchard bundle building
+                        // (ProvingKey ~30s, commitment tree tracking). Not yet implemented in
+                        // strategy tests. Individual validation tests in drive-abci provide coverage.
+                    }
+                    OperationType::ShieldedTransfer(_amount_range) => {
+                        // TODO: Requires Orchard bundle building — not yet implemented in
+                        // strategy tests.
+                    }
+                    OperationType::Unshield(_amount_range) => {
+                        // TODO: Requires Orchard bundle building — not yet implemented in
+                        // strategy tests.
+                    }
+
                     _ => {}
                 }
             }

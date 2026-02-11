@@ -1,0 +1,55 @@
+mod v0;
+
+pub use v0::*;
+
+use crate::address_funds::PlatformAddress;
+use crate::shielded::SerializedAction;
+use crate::state_transition::unshield_transition::UnshieldTransition;
+use crate::{
+    prelude::UserFeeIncrease,
+    state_transition::{
+        unshield_transition::v0::UnshieldTransitionV0, StateTransition,
+    },
+    ProtocolError,
+};
+use platform_version::version::PlatformVersion;
+
+impl UnshieldTransitionMethodsV0 for UnshieldTransition {
+    fn try_from_bundle(
+        output_address: PlatformAddress,
+        amount: u64,
+        actions: Vec<SerializedAction>,
+        flags: u8,
+        value_balance: i64,
+        anchor: [u8; 32],
+        proof: Vec<u8>,
+        binding_signature: [u8; 64],
+        user_fee_increase: UserFeeIncrease,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .unshield_state_transition
+            .default_current_version
+        {
+            0 => UnshieldTransitionV0::try_from_bundle(
+                output_address,
+                amount,
+                actions,
+                flags,
+                value_balance,
+                anchor,
+                proof,
+                binding_signature,
+                user_fee_increase,
+                platform_version,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "UnshieldTransition::try_from_bundle".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+}

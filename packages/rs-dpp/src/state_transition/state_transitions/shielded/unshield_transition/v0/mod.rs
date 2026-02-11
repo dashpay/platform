@@ -1,6 +1,7 @@
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
+mod v0_methods;
 mod version;
 
 use crate::address_funds::PlatformAddress;

@@ -79,6 +79,21 @@ impl StateTransitionFactoryWasm {
                 StateTransition::AddressCreditWithdrawal(st) => {
                     serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
                 }
+                StateTransition::Shield(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::ShieldedTransfer(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::Unshield(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::ShieldFromAssetLock(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
+                StateTransition::ShieldedWithdrawal(st) => {
+                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

@@ -308,6 +308,11 @@ impl StateTransitionWasm {
             AddressFundsTransfer(_) => 12,
             AddressFundingFromAssetLock(_) => 13,
             AddressCreditWithdrawal(_) => 14,
+            Shield(_) => 15,
+            ShieldedTransfer(_) => 16,
+            Unshield(_) => 17,
+            ShieldFromAssetLock(_) => 18,
+            ShieldedWithdrawal(_) => 19,
         }
     }
 
@@ -391,7 +396,12 @@ impl StateTransitionWasm {
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
-            | AddressCreditWithdrawal(_) => None,
+            | AddressCreditWithdrawal(_)
+            | Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => None,
         }
     }
 
@@ -413,7 +423,12 @@ impl StateTransitionWasm {
             IdentityTopUpFromAddresses(_) => None,
             AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
-            | AddressCreditWithdrawal(_) => None,
+            | AddressCreditWithdrawal(_)
+            | Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => None,
         }
     }
 
@@ -551,6 +566,15 @@ impl StateTransitionWasm {
                     "Cannot set owner for address funds transfer transition",
                 ));
             }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for shielded transition",
+                ));
+            }
         };
 
         Ok(())
@@ -614,9 +638,14 @@ impl StateTransitionWasm {
             | IdentityTopUpFromAddresses(_)
             | AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
-            | AddressCreditWithdrawal(_) => {
+            | AddressCreditWithdrawal(_)
+            | Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
                 return Err(WasmDppError::invalid_argument(
-                    "Cannot set identity contract nonce for address-related transition types",
+                    "Cannot set identity contract nonce for this transition type",
                 ));
             }
         };
@@ -702,9 +731,14 @@ impl StateTransitionWasm {
             }
             AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
-            | AddressCreditWithdrawal(_) => {
+            | AddressCreditWithdrawal(_)
+            | Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
                 return Err(WasmDppError::invalid_argument(
-                    "Cannot set identity nonce for address-related transition types",
+                    "Cannot set identity nonce for this transition type",
                 ));
             }
         };

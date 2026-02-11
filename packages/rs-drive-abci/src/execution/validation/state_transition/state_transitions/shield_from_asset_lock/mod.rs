@@ -1,5 +1,8 @@
 mod transform_into_action;
 
+#[cfg(test)]
+mod tests;
+
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
 use crate::error::execution::ExecutionError;

@@ -46,7 +46,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedShieldedPoolState, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1115,14 +1115,43 @@ impl Drive {
 
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
+            StateTransition::Shield(st) => {
+                use dpp::state_transition::StateTransitionWitnessSigned;
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+                Ok((root_hash, VerifiedAddressInfos(balances)))
+            }
+            StateTransition::Unshield(st) => {
+                use dpp::state_transition::unshield_transition::UnshieldTransition;
+                let output_address = match st {
+                    UnshieldTransition::V0(v0) => &v0.output_address,
+                };
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    std::iter::once(output_address),
+                    false,
+                    platform_version,
+                )?;
+                Ok((root_hash, VerifiedAddressInfos(balances)))
+            }
+            StateTransition::ShieldedTransfer(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => {
-                Err(Error::Proof(ProofError::InvalidTransition(
-                    "shielded state transitions do not support proof verification yet".to_string(),
-                )))
+                let (root_hash, pool_balance) = Drive::verify_shielded_pool_state(
+                    proof,
+                    platform_version,
+                )?;
+                Ok((root_hash, VerifiedShieldedPoolState(pool_balance)))
             }
         }
     }

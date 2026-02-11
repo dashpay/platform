@@ -1,6 +1,31 @@
 use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+/// Domain separator for Platform sighash computation.
+const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
+
+/// Computes the platform sighash from an Orchard bundle commitment and optional
+/// transparent field data.
+///
+/// The sighash is computed as:
+///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
+///
+/// This binds transparent state transition fields (like `output_address` and `amount`
+/// in unshield transitions) to the Orchard signatures, preventing replay attacks
+/// where an attacker substitutes transparent fields while reusing a valid Orchard bundle.
+///
+/// The same computation must be used on both the signing (client) and verification
+/// (platform) sides. For transitions without transparent fields (shield and
+/// shielded_transfer), `extra_data` is empty.
+pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(SIGHASH_DOMAIN);
+    hasher.update(bundle_commitment);
+    hasher.update(extra_data);
+    hasher.finalize().into()
+}
 
 /// Serde helper for `[u8; 64]` fields (serde only supports arrays up to 32).
 #[cfg(feature = "state-transition-serde-conversion")]

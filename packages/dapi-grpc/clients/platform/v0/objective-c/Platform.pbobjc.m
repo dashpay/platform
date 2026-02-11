@@ -287,6 +287,27 @@ GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse);
 GPBObjCClassDeclaration(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0);
+GPBObjCClassDeclaration(GetShieldedAnchorsRequest);
+GPBObjCClassDeclaration(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0);
+GPBObjCClassDeclaration(GetShieldedAnchorsResponse);
+GPBObjCClassDeclaration(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0);
+GPBObjCClassDeclaration(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesRequest);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesResponse);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote);
+GPBObjCClassDeclaration(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes);
+GPBObjCClassDeclaration(GetShieldedNullifiersRequest);
+GPBObjCClassDeclaration(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0);
+GPBObjCClassDeclaration(GetShieldedNullifiersResponse);
+GPBObjCClassDeclaration(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0);
+GPBObjCClassDeclaration(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus);
+GPBObjCClassDeclaration(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses);
+GPBObjCClassDeclaration(GetShieldedPoolStateRequest);
+GPBObjCClassDeclaration(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0);
+GPBObjCClassDeclaration(GetShieldedPoolStateResponse);
+GPBObjCClassDeclaration(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0);
 GPBObjCClassDeclaration(GetStatusRequest);
 GPBObjCClassDeclaration(GetStatusRequest_GetStatusRequestV0);
 GPBObjCClassDeclaration(GetStatusResponse);
@@ -22264,6 +22285,1246 @@ void GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBa
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - GetShieldedEncryptedNotesRequest
+
+@implementation GetShieldedEncryptedNotesRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedEncryptedNotesRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0 *v0;
+} GetShieldedEncryptedNotesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0),
+        .number = GetShieldedEncryptedNotesRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedEncryptedNotesRequest_ClearVersionOneOfCase(GetShieldedEncryptedNotesRequest *message) {
+  GPBDescriptor *descriptor = [GetShieldedEncryptedNotesRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0
+
+@implementation GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0
+
+@dynamic startIndex;
+@dynamic count;
+@dynamic prove;
+
+typedef struct GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  uint64_t startIndex;
+} GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startIndex",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_StartIndex,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_, startIndex),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Count,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_, count),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Prove,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedEncryptedNotesRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedEncryptedNotesResponse
+
+@implementation GetShieldedEncryptedNotesResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedEncryptedNotesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 *v0;
+} GetShieldedEncryptedNotesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0),
+        .number = GetShieldedEncryptedNotesResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedEncryptedNotesResponse_ClearVersionOneOfCase(GetShieldedEncryptedNotesResponse *message) {
+  GPBDescriptor *descriptor = [GetShieldedEncryptedNotesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0
+
+@implementation GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic encryptedNotes;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes *encryptedNotes;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "encryptedNotes",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes),
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_EncryptedNotes,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_, encryptedNotes),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedEncryptedNotesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_ClearResultOneOfCase(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote
+
+@implementation GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote
+
+@dynamic cmx;
+@dynamic encryptedNote;
+
+typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *cmx;
+  NSData *encryptedNote;
+} GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "cmx",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_, cmx),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "encryptedNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_, encryptedNote),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes
+
+@implementation GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote),
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedAnchorsRequest
+
+@implementation GetShieldedAnchorsRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedAnchorsRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0 *v0;
+} GetShieldedAnchorsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0),
+        .number = GetShieldedAnchorsRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedAnchorsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedAnchorsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedAnchorsRequest_ClearVersionOneOfCase(GetShieldedAnchorsRequest *message) {
+  GPBDescriptor *descriptor = [GetShieldedAnchorsRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0
+
+@implementation GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0
+
+@dynamic prove;
+
+typedef struct GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedAnchorsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedAnchorsResponse
+
+@implementation GetShieldedAnchorsResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedAnchorsResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 *v0;
+} GetShieldedAnchorsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0),
+        .number = GetShieldedAnchorsResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedAnchorsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedAnchorsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedAnchorsResponse_ClearVersionOneOfCase(GetShieldedAnchorsResponse *message) {
+  GPBDescriptor *descriptor = [GetShieldedAnchorsResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0
+
+@implementation GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic anchors;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors *anchors;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "anchors",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors),
+        .number = GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Anchors,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_, anchors),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedAnchorsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_ClearResultOneOfCase(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors
+
+@implementation GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors
+
+@dynamic anchorsArray, anchorsArray_Count;
+
+typedef struct GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *anchorsArray;
+} GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "anchorsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors_FieldNumber_AnchorsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors__storage_, anchorsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedPoolStateRequest
+
+@implementation GetShieldedPoolStateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedPoolStateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0 *v0;
+} GetShieldedPoolStateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0),
+        .number = GetShieldedPoolStateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedPoolStateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedPoolStateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedPoolStateRequest_ClearVersionOneOfCase(GetShieldedPoolStateRequest *message) {
+  GPBDescriptor *descriptor = [GetShieldedPoolStateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0
+
+@implementation GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0
+
+@dynamic prove;
+
+typedef struct GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedPoolStateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedPoolStateResponse
+
+@implementation GetShieldedPoolStateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedPoolStateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *v0;
+} GetShieldedPoolStateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0),
+        .number = GetShieldedPoolStateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedPoolStateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedPoolStateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedPoolStateResponse_ClearVersionOneOfCase(GetShieldedPoolStateResponse *message) {
+  GPBDescriptor *descriptor = [GetShieldedPoolStateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
+
+@implementation GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic totalBalance;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  Proof *proof;
+  ResponseMetadata *metadata;
+  uint64_t totalBalance;
+} GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "totalBalance",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_TotalBalance,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_, totalBalance),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedPoolStateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_ClearResultOneOfCase(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedNullifiersRequest
+
+@implementation GetShieldedNullifiersRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedNullifiersRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0 *v0;
+} GetShieldedNullifiersRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0),
+        .number = GetShieldedNullifiersRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedNullifiersRequest_ClearVersionOneOfCase(GetShieldedNullifiersRequest *message) {
+  GPBDescriptor *descriptor = [GetShieldedNullifiersRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0
+
+@implementation GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0
+
+@dynamic nullifiersArray, nullifiersArray_Count;
+@dynamic prove;
+
+typedef struct GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *nullifiersArray;
+} GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "nullifiersArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_NullifiersArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_, nullifiersArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedNullifiersRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedNullifiersResponse
+
+@implementation GetShieldedNullifiersResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetShieldedNullifiersResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 *v0;
+} GetShieldedNullifiersResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0),
+        .number = GetShieldedNullifiersResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedNullifiersResponse_ClearVersionOneOfCase(GetShieldedNullifiersResponse *message) {
+  GPBDescriptor *descriptor = [GetShieldedNullifiersResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0
+
+@implementation GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic nullifierStatuses;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses *nullifierStatuses;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "nullifierStatuses",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses),
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_NullifierStatuses,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_, nullifierStatuses),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedNullifiersResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_ClearResultOneOfCase(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus
+
+@implementation GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus
+
+@dynamic nullifier;
+@dynamic isSpent;
+
+typedef struct GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *nullifier;
+} GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "nullifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus_FieldNumber_Nullifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus__storage_, nullifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "isSpent",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus_FieldNumber_IsSpent,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses
+
+@implementation GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses
+
+@dynamic entriesArray, entriesArray_Count;
+
+typedef struct GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *entriesArray;
+} GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "entriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus),
+        .number = GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses_FieldNumber_EntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses__storage_, entriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 
 #pragma clang diagnostic pop
 

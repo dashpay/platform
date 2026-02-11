@@ -1,3 +1,4 @@
+pub mod methods;
 mod proved;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;

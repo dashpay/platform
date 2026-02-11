@@ -55,4 +55,5 @@ pub enum StateTransitionProofResult {
         PartialIdentity,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
+    VerifiedShieldedPoolState(Option<u64>),
 }

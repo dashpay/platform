@@ -894,12 +894,8 @@ mod tests {
             );
         }
 
-        /// AUDIT FINDING: No intra-bundle duplicate nullifier check.
-        ///
-        /// Same as the shielded_transfer finding. The nullifier check only
-        /// queries state, not checking for duplicates within the bundle itself.
-        ///
-        /// Severity: LOW (defense-in-depth gap, caught by ZK proof verification)
+        /// Duplicate nullifiers within the same bundle are caught by the
+        /// intra-bundle dedup check before reaching proof verification.
         #[test]
         fn test_duplicate_nullifiers_in_same_bundle() {
             let platform_version = PlatformVersion::latest();
@@ -927,11 +923,11 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // Caught by proof verification, not by application-level dedup
+            // Intra-bundle duplicate nullifier check catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
                 )]
             );
         }

@@ -88,7 +88,8 @@ use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
-use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError};
+use dpp::consensus::state::shielded::{InvalidAnchorError, InvalidShieldedProofError, NullifierAlreadySpentError};
+use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -442,6 +443,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::AddressInvalidNonceError(e) => {
             generic_consensus_error!(AddressInvalidNonceError, e).into()
+        }
+        StateError::InvalidAnchorError(e) => {
+            generic_consensus_error!(InvalidAnchorError, e).into()
+        }
+        StateError::NullifierAlreadySpentError(e) => {
+            generic_consensus_error!(NullifierAlreadySpentError, e).into()
+        }
+        StateError::InvalidShieldedProofError(e) => {
+            generic_consensus_error!(InvalidShieldedProofError, e).into()
         }
     }
 }
@@ -922,6 +932,24 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::WithdrawalBelowMinAmountError(e) => {
             generic_consensus_error!(WithdrawalBelowMinAmountError, e).into()
+        }
+        BasicError::ShieldedNoActionsError(e) => {
+            generic_consensus_error!(ShieldedNoActionsError, e).into()
+        }
+        BasicError::ShieldedEmptyProofError(e) => {
+            generic_consensus_error!(ShieldedEmptyProofError, e).into()
+        }
+        BasicError::ShieldedZeroAnchorError(e) => {
+            generic_consensus_error!(ShieldedZeroAnchorError, e).into()
+        }
+        BasicError::ShieldedInvalidValueBalanceError(e) => {
+            generic_consensus_error!(ShieldedInvalidValueBalanceError, e).into()
+        }
+        BasicError::UnshieldAmountZeroError(e) => {
+            generic_consensus_error!(UnshieldAmountZeroError, e).into()
+        }
+        BasicError::UnshieldValueBalanceBelowAmountError(e) => {
+            generic_consensus_error!(UnshieldValueBalanceBelowAmountError, e).into()
         }
     }
 }

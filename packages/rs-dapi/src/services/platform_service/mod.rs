@@ -555,4 +555,29 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesRequest,
         dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesResponse
     );
+
+    // Shielded pool methods
+    drive_method!(
+        get_shielded_encrypted_notes,
+        dapi_grpc::platform::v0::GetShieldedEncryptedNotesRequest,
+        dapi_grpc::platform::v0::GetShieldedEncryptedNotesResponse
+    );
+
+    drive_method!(
+        get_shielded_anchors,
+        dapi_grpc::platform::v0::GetShieldedAnchorsRequest,
+        dapi_grpc::platform::v0::GetShieldedAnchorsResponse
+    );
+
+    drive_method!(
+        get_shielded_pool_state,
+        dapi_grpc::platform::v0::GetShieldedPoolStateRequest,
+        dapi_grpc::platform::v0::GetShieldedPoolStateResponse
+    );
+
+    drive_method!(
+        get_shielded_nullifiers,
+        dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
+        dapi_grpc::platform::v0::GetShieldedNullifiersResponse
+    );
 }

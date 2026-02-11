@@ -204,6 +204,19 @@ CF_EXTERN_C_BEGIN
 @class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
 @class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
 @class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
+@class GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0;
+@class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0;
+@class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors;
+@class GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0;
+@class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0;
+@class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote;
+@class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes;
+@class GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0;
+@class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0;
+@class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus;
+@class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses;
+@class GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0;
+@class GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0;
 @class GetStatusRequest_GetStatusRequestV0;
 @class GetStatusResponse_GetStatusResponseV0;
 @class GetStatusResponse_GetStatusResponseV0_Chain;
@@ -8547,6 +8560,461 @@ GPB_FINAL @interface GetRecentCompactedAddressBalanceChangesResponse_GetRecentCo
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0_ClearResultOneOfCase(GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0 *message);
+
+#pragma mark - GetShieldedEncryptedNotesRequest
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_FieldNumber) {
+  GetShieldedEncryptedNotesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_Version_OneOfCase) {
+  GetShieldedEncryptedNotesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedEncryptedNotesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedEncryptedNotesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedEncryptedNotesRequest_ClearVersionOneOfCase(GetShieldedEncryptedNotesRequest *message);
+
+#pragma mark - GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber) {
+  GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_StartIndex = 1,
+  GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Count = 2,
+  GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startIndex;
+
+@property(nonatomic, readwrite) uint32_t count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedEncryptedNotesResponse
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_FieldNumber) {
+  GetShieldedEncryptedNotesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_Version_OneOfCase) {
+  GetShieldedEncryptedNotesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedEncryptedNotesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedEncryptedNotesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedEncryptedNotesResponse_ClearVersionOneOfCase(GetShieldedEncryptedNotesResponse *message);
+
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber) {
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_EncryptedNotes = 1,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_Proof = 2,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Result_OneOfCase) {
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Result_OneOfCase_EncryptedNotes = 1,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes *encryptedNotes;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_ClearResultOneOfCase(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0 *message);
+
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber) {
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx = 1,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote = 2,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *cmx;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *encryptedNote;
+
+@end
+
+#pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes
+
+typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes_FieldNumber) {
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetShieldedAnchorsRequest
+
+typedef GPB_ENUM(GetShieldedAnchorsRequest_FieldNumber) {
+  GetShieldedAnchorsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedAnchorsRequest_Version_OneOfCase) {
+  GetShieldedAnchorsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedAnchorsRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedAnchorsRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedAnchorsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedAnchorsRequest_ClearVersionOneOfCase(GetShieldedAnchorsRequest *message);
+
+#pragma mark - GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0
+
+typedef GPB_ENUM(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber) {
+  GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedAnchorsResponse
+
+typedef GPB_ENUM(GetShieldedAnchorsResponse_FieldNumber) {
+  GetShieldedAnchorsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedAnchorsResponse_Version_OneOfCase) {
+  GetShieldedAnchorsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedAnchorsResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedAnchorsResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedAnchorsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedAnchorsResponse_ClearVersionOneOfCase(GetShieldedAnchorsResponse *message);
+
+#pragma mark - GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0
+
+typedef GPB_ENUM(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber) {
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Anchors = 1,
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Proof = 2,
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Result_OneOfCase) {
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Result_OneOfCase_Anchors = 1,
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors *anchors;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_ClearResultOneOfCase(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0 *message);
+
+#pragma mark - GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors
+
+typedef GPB_ENUM(GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors_FieldNumber) {
+  GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors_FieldNumber_AnchorsArray = 1,
+};
+
+GPB_FINAL @interface GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *anchorsArray;
+/** The number of items in @c anchorsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger anchorsArray_Count;
+
+@end
+
+#pragma mark - GetShieldedPoolStateRequest
+
+typedef GPB_ENUM(GetShieldedPoolStateRequest_FieldNumber) {
+  GetShieldedPoolStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedPoolStateRequest_Version_OneOfCase) {
+  GetShieldedPoolStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedPoolStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedPoolStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedPoolStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedPoolStateRequest_ClearVersionOneOfCase(GetShieldedPoolStateRequest *message);
+
+#pragma mark - GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0
+
+typedef GPB_ENUM(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber) {
+  GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedPoolStateResponse
+
+typedef GPB_ENUM(GetShieldedPoolStateResponse_FieldNumber) {
+  GetShieldedPoolStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedPoolStateResponse_Version_OneOfCase) {
+  GetShieldedPoolStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedPoolStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedPoolStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedPoolStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedPoolStateResponse_ClearVersionOneOfCase(GetShieldedPoolStateResponse *message);
+
+#pragma mark - GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
+
+typedef GPB_ENUM(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber) {
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_TotalBalance = 1,
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_Proof = 2,
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_Result_OneOfCase) {
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_Result_OneOfCase_TotalBalance = 1,
+  GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t totalBalance;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_ClearResultOneOfCase(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *message);
+
+#pragma mark - GetShieldedNullifiersRequest
+
+typedef GPB_ENUM(GetShieldedNullifiersRequest_FieldNumber) {
+  GetShieldedNullifiersRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNullifiersRequest_Version_OneOfCase) {
+  GetShieldedNullifiersRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNullifiersRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNullifiersRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNullifiersRequest_ClearVersionOneOfCase(GetShieldedNullifiersRequest *message);
+
+#pragma mark - GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0
+
+typedef GPB_ENUM(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber) {
+  GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_NullifiersArray = 1,
+  GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *nullifiersArray;
+/** The number of items in @c nullifiersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedNullifiersResponse
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_FieldNumber) {
+  GetShieldedNullifiersResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_Version_OneOfCase) {
+  GetShieldedNullifiersResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNullifiersResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNullifiersResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNullifiersResponse_ClearVersionOneOfCase(GetShieldedNullifiersResponse *message);
+
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber) {
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_NullifierStatuses = 1,
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_Proof = 2,
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Result_OneOfCase) {
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Result_OneOfCase_NullifierStatuses = 1,
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses *nullifierStatuses;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_ClearResultOneOfCase(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0 *message);
+
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus_FieldNumber) {
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus_FieldNumber_Nullifier = 1,
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus_FieldNumber_IsSpent = 2,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nullifier;
+
+@property(nonatomic, readwrite) BOOL isSpent;
+
+@end
+
+#pragma mark - GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses
+
+typedef GPB_ENUM(GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses_FieldNumber) {
+  GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatuses : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
 
 NS_ASSUME_NONNULL_END
 
