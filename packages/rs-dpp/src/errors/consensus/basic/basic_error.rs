@@ -77,12 +77,12 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
-    ShieldedInvalidValueBalanceError, ShieldedNoActionsError, ShieldedZeroAnchorError,
-    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
-    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
-    UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError,
-    WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
+    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError, ShieldedInvalidValueBalanceError,
+    ShieldedNoActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, UnshieldAmountZeroError,
+    UnshieldValueBalanceBelowAmountError, WithdrawalBalanceMismatchError,
+    WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,

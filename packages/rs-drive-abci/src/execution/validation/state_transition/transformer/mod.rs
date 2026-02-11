@@ -8,8 +8,8 @@ use crate::execution::validation::state_transition::identity_create::StateTransi
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
-use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
+use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
 use crate::execution::validation::state_transition::shielded_withdrawal::StateTransitionShieldedWithdrawalTransitionActionTransformer;
 use crate::execution::validation::state_transition::unshield::StateTransitionUnshieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -263,13 +263,8 @@ impl StateTransitionActionTransformer for StateTransition {
                     tx,
                 )
             }
-            StateTransition::ShieldedWithdrawal(st) => {
-                st.transform_into_action_for_shielded_withdrawal_transition(
-                    platform,
-                    block_info,
-                    tx,
-                )
-            }
+            StateTransition::ShieldedWithdrawal(st) => st
+                .transform_into_action_for_shielded_withdrawal_transition(platform, block_info, tx),
         }
     }
 }

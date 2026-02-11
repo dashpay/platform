@@ -15,9 +15,7 @@ impl FetchCurrent for ShieldedPoolState {
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error> {
         let (state, metadata) = Self::fetch_with_metadata(sdk, NoParamQuery {}, None).await?;
         Ok((
-            state.ok_or(Error::Generic(
-                "shielded pool state not found".to_string(),
-            ))?,
+            state.ok_or(Error::Generic("shielded pool state not found".to_string()))?,
             metadata,
         ))
     }
@@ -28,9 +26,7 @@ impl FetchCurrent for ShieldedPoolState {
         let (state, metadata, proof) =
             Self::fetch_with_metadata_and_proof(sdk, NoParamQuery {}, None).await?;
         Ok((
-            state.ok_or(Error::Generic(
-                "shielded pool state not found".to_string(),
-            ))?,
+            state.ok_or(Error::Generic("shielded pool state not found".to_string()))?,
             metadata,
             proof,
         ))
@@ -47,9 +43,7 @@ impl FetchCurrent for ShieldedAnchors {
     async fn fetch_current_with_metadata(sdk: &Sdk) -> Result<(Self, ResponseMetadata), Error> {
         let (anchors, metadata) = Self::fetch_with_metadata(sdk, NoParamQuery {}, None).await?;
         Ok((
-            anchors.ok_or(Error::Generic(
-                "shielded anchors not found".to_string(),
-            ))?,
+            anchors.ok_or(Error::Generic("shielded anchors not found".to_string()))?,
             metadata,
         ))
     }
@@ -60,9 +54,7 @@ impl FetchCurrent for ShieldedAnchors {
         let (anchors, metadata, proof) =
             Self::fetch_with_metadata_and_proof(sdk, NoParamQuery {}, None).await?;
         Ok((
-            anchors.ok_or(Error::Generic(
-                "shielded anchors not found".to_string(),
-            ))?,
+            anchors.ok_or(Error::Generic("shielded anchors not found".to_string()))?,
             metadata,
             proof,
         ))

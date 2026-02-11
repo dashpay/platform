@@ -447,8 +447,7 @@ impl ExecutionEvent<'_> {
             }
             StateTransitionAction::ShieldAction(shield_action) => {
                 let user_fee_increase = shield_action.user_fee_increase();
-                let input_current_balances =
-                    shield_action.inputs_with_remaining_balance().clone();
+                let input_current_balances = shield_action.inputs_with_remaining_balance().clone();
                 let added_to_balance_outputs = BTreeMap::new();
                 let fee_strategy = shield_action.fee_strategy().clone();
                 let operations =

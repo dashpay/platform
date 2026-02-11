@@ -66,9 +66,7 @@ impl<C> Platform<C> {
                 result: Some(get_shielded_anchors_response_v0::Result::Anchors(Anchors {
                     anchors,
                 })),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

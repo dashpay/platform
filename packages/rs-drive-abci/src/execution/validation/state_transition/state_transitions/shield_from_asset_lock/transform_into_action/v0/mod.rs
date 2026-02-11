@@ -300,15 +300,16 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 asset_lock_value_to_be_consumed.used_tags_ref().clone();
             previous_transaction_hashes.push(signable_bytes_hash);
 
-            let remaining_after_penalty = remaining_credit_value.saturating_sub(desired_used_credits);
+            let remaining_after_penalty =
+                remaining_credit_value.saturating_sub(desired_used_credits);
             let used_credits = std::cmp::min(remaining_credit_value, desired_used_credits);
 
             let user_fee_increase = match self {
                 ShieldFromAssetLockTransition::V0(v0) => v0.user_fee_increase,
             };
 
-            let partially_use_action = PartiallyUseAssetLockAction::from(
-                PartiallyUseAssetLockActionV0 {
+            let partially_use_action =
+                PartiallyUseAssetLockAction::from(PartiallyUseAssetLockActionV0 {
                     asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
                     initial_credit_value: asset_lock_value_to_be_consumed.initial_credit_value(),
                     previous_transaction_hashes,
@@ -318,8 +319,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                     user_fee_increase,
                     inputs_with_remaining_balance: None,
                     fee_strategy: None,
-                },
-            );
+                });
 
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 StateTransitionAction::PartiallyUseAssetLockAction(partially_use_action),

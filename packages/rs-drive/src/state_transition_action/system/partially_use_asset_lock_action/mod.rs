@@ -8,9 +8,7 @@ use std::collections::BTreeMap;
 mod transformer;
 mod v0;
 
-pub use v0::{
-    PartiallyUseAssetLockActionAccessorsV0, PartiallyUseAssetLockActionV0,
-};
+pub use v0::{PartiallyUseAssetLockActionAccessorsV0, PartiallyUseAssetLockActionV0};
 
 #[derive(Debug, Clone, From)]
 /// An action expressing that an asset lock should be partially used

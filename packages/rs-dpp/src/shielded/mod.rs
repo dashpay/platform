@@ -13,8 +13,9 @@ pub(crate) mod serde_bytes_64 {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 64], D::Error> {
         let vec = <Vec<u8>>::deserialize(deserializer)?;
-        vec.try_into()
-            .map_err(|v: Vec<u8>| serde::de::Error::custom(format!("expected 64 bytes, got {}", v.len())))
+        vec.try_into().map_err(|v: Vec<u8>| {
+            serde::de::Error::custom(format!("expected 64 bytes, got {}", v.len()))
+        })
     }
 }
 
@@ -88,6 +89,9 @@ pub struct SerializedAction {
     /// value_balance, anchor, and any bound transparent fields). Verified against
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(with = "serde_bytes_64"))]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "serde_bytes_64")
+    )]
     pub spend_auth_sig: [u8; 64],
 }

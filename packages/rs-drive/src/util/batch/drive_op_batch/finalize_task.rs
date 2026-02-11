@@ -67,12 +67,13 @@ impl DriveOperationFinalizeTask {
                 };
 
                 let (params, _): (ShieldedPoolParams, _) =
-                    bincode::decode_from_slice(params_bytes, bincode::config::standard())
-                        .map_err(|e| {
+                    bincode::decode_from_slice(params_bytes, bincode::config::standard()).map_err(
+                        |e| {
                             Error::Drive(crate::error::drive::DriveError::CorruptedSerialization(
                                 format!("could not decode shielded pool params: {e}"),
                             ))
-                        })?;
+                        },
+                    )?;
 
                 let new_checkpoint_id = params.checkpoint_id_counter + 1;
 
@@ -122,11 +123,9 @@ impl DriveOperationFinalizeTask {
                 let encoded_params =
                     bincode::encode_to_vec(&new_params, bincode::config::standard()).map_err(
                         |e| {
-                            Error::Drive(
-                                crate::error::drive::DriveError::CorruptedSerialization(format!(
-                                    "could not encode shielded pool params: {e}"
-                                )),
-                            )
+                            Error::Drive(crate::error::drive::DriveError::CorruptedSerialization(
+                                format!("could not encode shielded pool params: {e}"),
+                            ))
                         },
                     )?;
 

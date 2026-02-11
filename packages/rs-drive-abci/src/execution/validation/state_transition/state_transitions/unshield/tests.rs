@@ -494,10 +494,9 @@ mod tests {
     mod proof_verification {
         use super::*;
         use grovedb_commitment_tree::{
-            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
-            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
-            SpendingKey, new_memory_store,
+            new_memory_store, Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue,
+            Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -534,8 +533,7 @@ mod tests {
             let value_balance = *bundle.value_balance();
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig =
-                <[u8; 64]>::from(bundle.authorization().binding_signature());
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
             (actions, flags, value_balance, anchor, proof, binding_sig)
         }
 
@@ -585,8 +583,8 @@ mod tests {
             };
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
-            let note = Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed)
-                .unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
@@ -594,16 +592,11 @@ mod tests {
             tree.append(cmx, Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree
-                .orchard_witness(Position::from(0u64))
-                .unwrap()
-                .unwrap();
+            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
 
             // --- Build bundle: spend 10,000 → output 5,000 (value_balance = 5,000) ---
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
-            builder
-                .add_spend(fvk.clone(), note, merkle_path)
-                .unwrap();
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
                 .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
                 .unwrap();
@@ -701,10 +694,9 @@ mod tests {
     mod security_audit {
         use super::*;
         use grovedb_commitment_tree::{
-            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
-            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
-            SpendingKey, new_memory_store,
+            new_memory_store, Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue,
+            Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -741,8 +733,7 @@ mod tests {
             let value_balance = *bundle.value_balance();
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig =
-                <[u8; 64]>::from(bundle.authorization().binding_signature());
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
             (actions, flags, value_balance, anchor, proof, binding_sig)
         }
 
@@ -750,7 +741,10 @@ mod tests {
         /// The `output_address` and `amount` are bound to the sighash so that
         /// the resulting bundle can only be used with those specific transparent fields.
         /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
-        fn build_valid_unshield_bundle(output_address: &PlatformAddress, amount: u64) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+        fn build_valid_unshield_bundle(
+            output_address: &PlatformAddress,
+            amount: u64,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -766,24 +760,19 @@ mod tests {
             };
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
-            let note = Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed)
-                .unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let mut tree = CommitmentTree::new(new_memory_store(), 100);
             tree.append(cmx, Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree
-                .orchard_witness(Position::from(0u64))
-                .unwrap()
-                .unwrap();
+            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
 
             // Spend 10,000 → output 5,000 → value_balance = 5,000
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
-            builder
-                .add_spend(fvk.clone(), note, merkle_path)
-                .unwrap();
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
                 .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
                 .unwrap();

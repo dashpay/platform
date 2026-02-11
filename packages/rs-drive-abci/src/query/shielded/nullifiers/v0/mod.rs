@@ -24,10 +24,7 @@ use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
 impl<C> Platform<C> {
     pub(super) fn query_shielded_nullifiers_v0(
         &self,
-        GetShieldedNullifiersRequestV0 {
-            nullifiers,
-            prove,
-        }: GetShieldedNullifiersRequestV0,
+        GetShieldedNullifiersRequestV0 { nullifiers, prove }: GetShieldedNullifiersRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedNullifiersResponseV0>, Error> {
@@ -104,9 +101,7 @@ impl<C> Platform<C> {
                         NullifierStatuses { entries },
                     ),
                 ),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

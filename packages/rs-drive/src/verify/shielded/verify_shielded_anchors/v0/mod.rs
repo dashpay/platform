@@ -19,11 +19,8 @@ impl Drive {
             },
         };
 
-        let (root_hash, proved_key_values) = GroveDb::verify_query(
-            proof,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, proved_key_values) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let anchors = proved_key_values
             .into_iter()

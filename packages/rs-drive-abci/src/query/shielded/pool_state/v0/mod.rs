@@ -66,9 +66,7 @@ impl<C> Platform<C> {
                 result: Some(get_shielded_pool_state_response_v0::Result::TotalBalance(
                     total_balance,
                 )),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

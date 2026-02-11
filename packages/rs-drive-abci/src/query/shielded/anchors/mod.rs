@@ -20,17 +20,11 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetShieldedAnchorsResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError(
-                    "could not decode shielded anchors query".to_string(),
-                ),
+                QueryError::DecodingError("could not decode shielded anchors query".to_string()),
             ));
         };
 
-        let feature_version_bounds = &platform_version
-            .drive_abci
-            .query
-            .shielded_queries
-            .anchors;
+        let feature_version_bounds = &platform_version.drive_abci.query.shielded_queries.anchors;
 
         let feature_version = match &version {
             RequestVersion::V0(_) => 0,
@@ -48,11 +42,8 @@ impl<C> Platform<C> {
         }
         match version {
             RequestVersion::V0(request_v0) => {
-                let result = self.query_shielded_anchors_v0(
-                    request_v0,
-                    platform_state,
-                    platform_version,
-                )?;
+                let result =
+                    self.query_shielded_anchors_v0(request_v0, platform_state, platform_version)?;
 
                 Ok(result.map(|response_v0| GetShieldedAnchorsResponse {
                     version: Some(ResponseVersion::V0(response_v0)),

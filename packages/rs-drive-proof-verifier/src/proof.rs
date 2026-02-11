@@ -2368,15 +2368,15 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (start_cmx, count) = match request.version.ok_or(Error::EmptyVersion)? {
-            get_shielded_encrypted_notes_request::Version::V0(v0) => (v0.start_cmx, v0.count),
+        let (start_index, count) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_encrypted_notes_request::Version::V0(v0) => (v0.start_index, v0.count),
         };
 
         let max_elements = platform_version.drive_abci.query.max_returned_elements as u32;
 
         let (root_hash, notes) = Drive::verify_shielded_encrypted_notes(
             &proof.grovedb_proof,
-            &start_cmx,
+            start_index,
             count,
             max_elements,
             platform_version,

@@ -24,7 +24,7 @@ impl<C> Platform<C> {
     pub(super) fn query_shielded_encrypted_notes_v0(
         &self,
         GetShieldedEncryptedNotesRequestV0 {
-            start_cmx,
+            start_index,
             count,
             prove,
         }: GetShieldedEncryptedNotesRequestV0,
@@ -47,11 +47,11 @@ impl<C> Platform<C> {
             )));
         }
 
-        let query = if start_cmx.is_empty() {
+        let query = if start_index == 0 {
             Query::new_range_full()
         } else {
             let mut q = Query::new();
-            q.insert_range_after(start_cmx..);
+            q.insert_range_from(start_index.to_be_bytes().to_vec()..);
             q
         };
 
@@ -93,14 +93,18 @@ impl<C> Platform<C> {
             let entries: Vec<EncryptedNote> = results
                 .to_key_elements()
                 .into_iter()
-                .filter_map(|(key, element)| {
-                    element
-                        .into_item_bytes()
-                        .ok()
-                        .map(|encrypted_note| EncryptedNote {
-                            cmx: key,
-                            encrypted_note,
-                        })
+                .filter_map(|(_key, element)| {
+                    element.into_item_bytes().ok().and_then(|value| {
+                        // Value format: cmx (32 bytes) || encrypted_note (remaining bytes)
+                        if value.len() > 32 {
+                            Some(EncryptedNote {
+                                cmx: value[..32].to_vec(),
+                                encrypted_note: value[32..].to_vec(),
+                            })
+                        } else {
+                            None
+                        }
+                    })
                 })
                 .collect();
 
@@ -110,9 +114,7 @@ impl<C> Platform<C> {
                         EncryptedNotes { entries },
                     ),
                 ),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

@@ -155,12 +155,8 @@ impl StateTransitionAction {
             StateTransitionAction::ShieldAction(action) => action.user_fee_increase(),
             StateTransitionAction::ShieldedTransferAction(action) => action.user_fee_increase(),
             StateTransitionAction::UnshieldAction(action) => action.user_fee_increase(),
-            StateTransitionAction::ShieldFromAssetLockAction(action) => {
-                action.user_fee_increase()
-            }
-            StateTransitionAction::ShieldedWithdrawalAction(action) => {
-                action.user_fee_increase()
-            }
+            StateTransitionAction::ShieldFromAssetLockAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldedWithdrawalAction(action) => action.user_fee_increase(),
         }
     }
 }

@@ -93,11 +93,11 @@ impl Drive {
             Element::empty_tree(),
         );
 
-        // 4. Encrypted notes tree (NormalTree)
+        // 4. Encrypted notes tree (CountTree — count tracks the next sequential index)
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_ENCRYPTED_NOTES_KEY],
-            Element::empty_tree(),
+            Element::empty_count_tree(),
         );
 
         // 5. Params item

@@ -61,9 +61,7 @@ impl StateTransitionSingleSigned for ShieldFromAssetLockTransition {
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
-            ShieldFromAssetLockTransition::V0(transition) => {
-                transition.set_signature(signature)
-            }
+            ShieldFromAssetLockTransition::V0(transition) => transition.set_signature(signature),
         }
     }
 

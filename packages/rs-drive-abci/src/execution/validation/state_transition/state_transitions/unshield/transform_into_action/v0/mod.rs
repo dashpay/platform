@@ -108,7 +108,15 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         }
 
         // Verify the ZK proof, binding transparent fields to the sighash
-        let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig, output_address, amount) = match self {
+        let (
+            st_actions,
+            st_flags,
+            st_value_balance,
+            st_proof,
+            st_binding_sig,
+            output_address,
+            amount,
+        ) = match self {
             UnshieldTransition::V0(v0) => (
                 &v0.actions,
                 v0.flags,

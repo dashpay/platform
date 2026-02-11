@@ -121,8 +121,7 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                     .into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::ShieldedWithdrawalAction(shielded_withdrawal_action) => {
-                shielded_withdrawal_action
-                    .into_high_level_drive_operations(epoch, platform_version)
+                shielded_withdrawal_action.into_high_level_drive_operations(epoch, platform_version)
             }
         }
     }

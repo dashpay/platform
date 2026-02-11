@@ -145,7 +145,7 @@ mod tests {
             0x03, // spends_enabled | outputs_enabled
             -1000,
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],  // dummy binding signature
+            [0u8; 64],      // dummy binding signature
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
     }
@@ -234,8 +234,7 @@ mod tests {
         let value_balance = *bundle.value_balance();
         let anchor = bundle.anchor().to_bytes();
         let proof = bundle.authorization().proof().as_ref().to_vec();
-        let binding_sig =
-            <[u8; 64]>::from(bundle.authorization().binding_signature());
+        let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
 
         (actions, flags, value_balance, anchor, proof, binding_sig)
     }
@@ -842,12 +841,7 @@ mod tests {
             // --- Set up input address with enough balance ---
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             // --- Build valid Orchard bundle (shield = outputs only) ---
             let mut rng = OsRng;
@@ -876,16 +870,11 @@ mod tests {
                 )
                 .unwrap();
 
-            let (unauthorized, _) =
-                builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &[]);
-            let proven = unauthorized
-                .create_proof(pk, &mut rng)
-                .unwrap();
-            let bundle = proven
-                .apply_signatures(rng, sighash, &[])
-                .unwrap();
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
             // --- Extract serialized fields from the authorized bundle ---
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
@@ -1042,12 +1031,7 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(
-                &mut platform,
-                input_address,
-                0,
-                dash_to_credits!(1.0),
-            );
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
             let mut rng = OsRng;
             let pk = get_proving_key();
@@ -1090,7 +1074,10 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(
                 input_address,
-                (1 as AddressNonce, honest_shield_amount + dash_to_credits!(0.01)),
+                (
+                    1 as AddressNonce,
+                    honest_shield_amount + dash_to_credits!(0.01),
+                ),
             );
 
             let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {

@@ -16,14 +16,14 @@ pub mod system;
 pub mod address_funds;
 /// Group proof verification module
 pub mod group;
+/// Shielded pool proof verification module
+pub mod shielded;
 /// Verifies that a state transition contents exist in the proof
 pub mod state_transition;
 /// Token proof verification module
 pub mod tokens;
 /// Voting proof verification module
 pub mod voting;
-/// Shielded pool proof verification module
-pub mod shielded;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];

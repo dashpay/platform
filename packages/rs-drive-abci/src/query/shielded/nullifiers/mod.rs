@@ -20,9 +20,7 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetShieldedNullifiersResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError(
-                    "could not decode shielded nullifiers query".to_string(),
-                ),
+                QueryError::DecodingError("could not decode shielded nullifiers query".to_string()),
             ));
         };
 

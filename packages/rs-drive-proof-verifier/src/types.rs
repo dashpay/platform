@@ -832,8 +832,8 @@ pub struct ShieldedNullifierStatuses(pub Vec<ShieldedNullifierStatus>);
     platform_serialize(unversioned)
 )]
 pub struct ShieldedEncryptedNotesQuery {
-    /// Optional pagination cursor (32 bytes, exclusive start)
-    pub start_cmx: Option<Vec<u8>>,
+    /// Starting index in the encrypted notes count tree (inclusive, 0 = from beginning)
+    pub start_index: u64,
     /// Max number of notes to return
     pub count: u32,
 }

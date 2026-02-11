@@ -1027,7 +1027,7 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
         Ok(GetShieldedEncryptedNotesRequest {
             version: Some(get_shielded_encrypted_notes_request::Version::V0(
                 get_shielded_encrypted_notes_request::GetShieldedEncryptedNotesRequestV0 {
-                    start_cmx: self.start_cmx.unwrap_or_default(),
+                    start_index: self.start_index,
                     count: self.count,
                     prove,
                 },

@@ -141,18 +141,25 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         // destination (output_script) and amount, preventing an attacker from
         // substituting a different output_script or amount while reusing a valid
         // Orchard bundle.
-        let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig, output_script, amount) =
-            match self {
-                ShieldedWithdrawalTransition::V0(v0) => (
-                    &v0.actions,
-                    v0.flags,
-                    v0.value_balance,
-                    v0.proof.as_slice(),
-                    &v0.binding_signature,
-                    &v0.output_script,
-                    v0.amount,
-                ),
-            };
+        let (
+            st_actions,
+            st_flags,
+            st_value_balance,
+            st_proof,
+            st_binding_sig,
+            output_script,
+            amount,
+        ) = match self {
+            ShieldedWithdrawalTransition::V0(v0) => (
+                &v0.actions,
+                v0.flags,
+                v0.value_balance,
+                v0.proof.as_slice(),
+                &v0.binding_signature,
+                &v0.output_script,
+                v0.amount,
+            ),
+        };
 
         // Serialize transparent fields to bind them to the Orchard sighash.
         // output_script.as_bytes() || amount.to_le_bytes()

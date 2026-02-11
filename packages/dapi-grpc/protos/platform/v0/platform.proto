@@ -2138,7 +2138,7 @@ message GetRecentCompactedAddressBalanceChangesResponse {
 
 message GetShieldedEncryptedNotesRequest {
   message GetShieldedEncryptedNotesRequestV0 {
-    bytes start_cmx = 1;
+    uint64 start_index = 1;
     uint32 count = 2;
     bool prove = 3;
   }

@@ -10,7 +10,7 @@ impl Drive {
     /// Verifies a proof for shielded encrypted notes.
     pub fn verify_shielded_encrypted_notes(
         proof: &[u8],
-        start_cmx: &[u8],
+        start_index: u64,
         count: u32,
         max_elements: u32,
         platform_version: &PlatformVersion,
@@ -24,7 +24,7 @@ impl Drive {
         {
             0 => Self::verify_shielded_encrypted_notes_v0(
                 proof,
-                start_cmx,
+                start_index,
                 count,
                 max_elements,
                 platform_version,

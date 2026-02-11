@@ -19,9 +19,7 @@ impl ShieldFromAssetLockTransitionAction {
     /// Get asset lock outpoint
     pub fn asset_lock_outpoint(&self) -> &[u8; 36] {
         match self {
-            ShieldFromAssetLockTransitionAction::V0(transition) => {
-                &transition.asset_lock_outpoint
-            }
+            ShieldFromAssetLockTransitionAction::V0(transition) => &transition.asset_lock_outpoint,
         }
     }
     /// Get remaining asset lock value to be consumed

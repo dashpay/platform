@@ -240,12 +240,8 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             StateTransition::Shield(st) => Ok(st.validate_structure(platform_version)),
             StateTransition::ShieldedTransfer(st) => Ok(st.validate_structure(platform_version)),
             StateTransition::Unshield(st) => Ok(st.validate_structure(platform_version)),
-            StateTransition::ShieldFromAssetLock(st) => {
-                Ok(st.validate_structure(platform_version))
-            }
-            StateTransition::ShieldedWithdrawal(st) => {
-                Ok(st.validate_structure(platform_version))
-            }
+            StateTransition::ShieldFromAssetLock(st) => Ok(st.validate_structure(platform_version)),
+            StateTransition::ShieldedWithdrawal(st) => Ok(st.validate_structure(platform_version)),
         }
     }
     fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {

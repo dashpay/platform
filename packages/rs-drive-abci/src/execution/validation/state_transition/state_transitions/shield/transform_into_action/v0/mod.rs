@@ -7,9 +7,7 @@ use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
-};
+use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
@@ -65,11 +63,9 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
                     Some(positive) => positive as u64,
                     None => {
                         return Ok(ConsensusValidationResult::new_with_error(
-                            StateError::InvalidShieldedProofError(
-                                InvalidShieldedProofError::new(
-                                    "shield value_balance overflow (i64::MIN)".to_string(),
-                                ),
-                            )
+                            StateError::InvalidShieldedProofError(InvalidShieldedProofError::new(
+                                "shield value_balance overflow (i64::MIN)".to_string(),
+                            ))
                             .into(),
                         ));
                     }

@@ -63,7 +63,8 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
-                        "shield value_balance must be negative (credits flow into pool)".to_string(),
+                        "shield value_balance must be negative (credits flow into pool)"
+                            .to_string(),
                     ),
                 )
                 .into(),
