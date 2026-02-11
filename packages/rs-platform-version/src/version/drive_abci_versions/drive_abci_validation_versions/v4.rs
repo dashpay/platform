@@ -260,5 +260,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,
             maximum_contenders_to_consider: 100,
+            minimum_pool_notes_for_outgoing: 250,
         },
     };

@@ -17,7 +17,7 @@ mod tests {
     use dpp::state_transition::StateTransition;
     use drive::drive::shielded::paths::{
         shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-        shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
+        shielded_credit_pool_path, shielded_credit_pool_encrypted_notes_path, SHIELDED_TOTAL_BALANCE_KEY,
     };
     use drive::grovedb::Element;
     use platform_version::version::PlatformVersion;
@@ -176,6 +176,41 @@ mod tests {
             )
             .unwrap()
             .expect("should set total balance");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+    }
+
+    /// Insert dummy encrypted notes into the shielded pool to meet the minimum
+    /// notes threshold for outgoing transitions.
+    fn insert_dummy_encrypted_notes(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        count: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+        let transaction = platform.drive.grove.start_transaction();
+        let notes_path = shielded_credit_pool_encrypted_notes_path();
+
+        for i in 0..count {
+            platform
+                .drive
+                .grove
+                .insert(
+                    &notes_path,
+                    &i.to_be_bytes(),
+                    Element::Item(vec![0], None),
+                    None,
+                    Some(&transaction),
+                    grove_version,
+                )
+                .unwrap()
+                .expect("should insert dummy note");
+        }
 
         platform
             .drive
@@ -435,9 +470,31 @@ mod tests {
         use super::*;
 
         #[test]
+        fn test_insufficient_pool_notes_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // Non-zero anchor that exists in state, but no encrypted notes in pool
+            let anchor = [42u8; 32];
+            insert_anchor_into_state(&platform, &anchor);
+
+            let transition = create_default_unshield_transition();
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientPoolNotesError(_))
+                )]
+            );
+        }
+
+        #[test]
         fn test_invalid_anchor_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // Non-zero anchor that doesn't exist in state
             let transition = create_default_unshield_transition();
@@ -464,6 +521,7 @@ mod tests {
         fn test_nullifier_already_spent_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let anchor = [42u8; 32];
             let nullifier = [1u8; 32]; // Same as create_dummy_serialized_action().nullifier
@@ -541,6 +599,7 @@ mod tests {
         fn test_invalid_proof_returns_shielded_proof_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let anchor = [42u8; 32];
 
@@ -566,6 +625,7 @@ mod tests {
         fn test_valid_unshield_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -654,6 +714,7 @@ mod tests {
         fn test_wrong_encrypted_note_size_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let anchor = [42u8; 32];
 
@@ -804,6 +865,7 @@ mod tests {
         fn test_valid_proof_with_mutated_value_balance_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // Bundle is signed for create_output_address() with amount = 5000
             let output_address = create_output_address();
@@ -855,6 +917,7 @@ mod tests {
         fn test_different_output_address_with_same_valid_bundle_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // Bundle is signed for the ORIGINAL address with amount = 5000
             let original_address = create_output_address();
@@ -900,6 +963,7 @@ mod tests {
         fn test_duplicate_nullifiers_in_same_bundle() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let anchor = [42u8; 32];
             insert_anchor_into_state(&platform, &anchor);

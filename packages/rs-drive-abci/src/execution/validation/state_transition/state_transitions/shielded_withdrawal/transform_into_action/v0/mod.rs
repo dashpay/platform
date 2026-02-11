@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
 use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::state::state_error::StateError;
@@ -9,7 +10,7 @@ use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTra
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::{
     shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_path, SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -74,6 +75,36 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
                 &platform_version.drive,
             )?
             .unwrap_or(0);
+
+        // Check minimum notes threshold for outgoing transitions (anonymity set)
+        let min_notes = platform_version
+            .drive_abci
+            .validation_and_processing
+            .event_constants
+            .minimum_pool_notes_for_outgoing;
+        if min_notes > 0 {
+            let encrypted_notes_count = drive
+                .grove_get_raw_optional(
+                    (&pool_path).into(),
+                    &[SHIELDED_ENCRYPTED_NOTES_KEY],
+                    DirectQueryType::StatefulDirectQuery,
+                    transaction,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )?
+                .map(|element| element.count_value_or_default())
+                .unwrap_or(0);
+
+            if encrypted_notes_count < min_notes {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    StateError::InsufficientPoolNotesError(InsufficientPoolNotesError::new(
+                        encrypted_notes_count,
+                        min_notes,
+                    ))
+                    .into(),
+                ));
+            }
+        }
 
         // Verify the pool has sufficient balance for the withdrawal.
         // value_balance is the total amount leaving the pool (amount + fee).

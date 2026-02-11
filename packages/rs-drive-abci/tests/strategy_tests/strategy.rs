@@ -3,8 +3,15 @@ use crate::query::QueryStrategy;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::dashcore::{ProTxHash, QuorumHash};
+use dpp::shielded::{compute_platform_sighash, SerializedAction};
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::state_transition::shield_transition::methods::ShieldTransitionMethodsV0;
+use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::ProtocolError;
+use grovedb_commitment_tree::{
+    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, Flags as OrchardFlags,
+    FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+};
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -109,6 +116,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use strategy_tests::transitions::{
     create_identity_credit_transfer_to_addresses_transition,
     create_identity_credit_transfer_to_addresses_transition_with_outputs,
@@ -118,6 +126,44 @@ use strategy_tests::transitions::{
 };
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
+
+/// Cached Orchard proving key for strategy tests (~30s to build, reused across tests).
+static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+
+fn get_proving_key() -> &'static ProvingKey {
+    TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+}
+
+/// Decompose an authorized Orchard bundle into platform serialization fields.
+fn serialize_authorized_bundle(
+    bundle: &Bundle<OrchardAuthorized, i64>,
+) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+    let actions: Vec<SerializedAction> = bundle
+        .actions()
+        .iter()
+        .map(|action| {
+            let enc = action.encrypted_note();
+            let mut encrypted_note = Vec::with_capacity(692);
+            encrypted_note.extend_from_slice(&enc.epk_bytes);
+            encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+            encrypted_note.extend_from_slice(&enc.out_ciphertext);
+            SerializedAction {
+                nullifier: action.nullifier().to_bytes(),
+                rk: <[u8; 32]>::from(action.rk()),
+                cmx: action.cmx().to_bytes(),
+                encrypted_note,
+                cv_net: action.cv_net().to_bytes(),
+                spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+            }
+        })
+        .collect();
+    let flags = bundle.flags().to_byte();
+    let value_balance = *bundle.value_balance();
+    let anchor = bundle.anchor().to_bytes();
+    let proof = bundle.authorization().proof().as_ref().to_vec();
+    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    (actions, flags, value_balance, anchor, proof, binding_sig)
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -1833,6 +1879,20 @@ impl NetworkStrategy {
 
                         operations.push(batch_transition);
                     }
+                    OperationType::Shield(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_shield_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                signer,
+                                rng,
+                                platform_version,
+                            ) else {
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2451,6 +2511,98 @@ impl NetworkStrategy {
             .ok()?;
 
         Some(funding_transition)
+    }
+
+    /// Build a Shield state transition (transparent addresses → shielded pool).
+    ///
+    /// Creates an output-only Orchard bundle (no spends) with a real Halo 2 proof,
+    /// signs the address input witnesses, and returns the transition.
+    fn create_shield_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        // 1. Pick input addresses with sufficient balances
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+
+        let total_input: Credits = inputs.values().map(|(_, credits)| credits).sum();
+
+        tracing::debug!(?inputs, total_input, "Preparing shield transition");
+
+        // 2. Create deterministic Orchard recipient (same key each time is fine for testing)
+        let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // 3. Build output-only Orchard bundle (shield = outputs only, no spends)
+        let anchor = Anchor::empty_tree();
+        let mut builder = Builder::new(
+            BundleType::Transactional {
+                flags: OrchardFlags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            anchor,
+        );
+
+        // Use total_input as the shielded value (fee will be deducted from inputs)
+        // value_balance will be negative (money flowing into the pool)
+        let shield_value = total_input;
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(shield_value),
+                [0u8; 512],
+            )
+            .expect("expected to add output");
+
+        // 4. Build → prove → sign
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[])
+            .expect("expected to apply signatures");
+
+        // 5. Decompose bundle into platform serialization fields
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        // 6. Build ShieldTransition with signed address witnesses
+        let fee_strategy: AddressFundsFeeStrategy =
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)].into();
+
+        let shield_transition = ShieldTransition::try_from_bundle_with_signer(
+            inputs,
+            actions,
+            flags,
+            value_balance,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            fee_strategy,
+            signer,
+            0,
+            platform_version,
+        )
+        .expect("expected to create shield transition");
+
+        tracing::debug!("Shield transition successfully built and signed");
+
+        Some(shield_transition)
     }
 }
 

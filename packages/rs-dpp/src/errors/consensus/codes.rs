@@ -381,6 +381,7 @@ impl ErrorWithCode for StateError {
             Self::InvalidAnchorError(_) => 40900,
             Self::NullifierAlreadySpentError(_) => 40901,
             Self::InvalidShieldedProofError(_) => 40902,
+            Self::InsufficientPoolNotesError(_) => 40903,
         }
     }
 }

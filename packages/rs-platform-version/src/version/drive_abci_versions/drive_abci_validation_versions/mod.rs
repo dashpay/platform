@@ -24,6 +24,10 @@ pub struct DriveAbciValidationVersions {
 pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
+    /// Minimum number of encrypted notes in the shielded pool before outgoing
+    /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
+    /// sufficient anonymity set before funds can leave the pool.
+    pub minimum_pool_notes_for_outgoing: u64,
 }
 
 #[derive(Clone, Debug, Default)]
