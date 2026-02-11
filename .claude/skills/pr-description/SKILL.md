@@ -75,7 +75,7 @@ Generate a pull request title and description for the current branch using the p
 
 ## Output Format
 
-Output the entire PR description (title + body) as a single raw markdown code block so the user can easily copy and paste it. Wrap the output in triple backticks with the `markdown` language tag.
+Output the entire PR description (title + body) as a single raw Markdown code block so the user can easily copy and paste it. Wrap the output in triple backticks with the `Markdown` language tag.
 
 ## Guidelines
 
