@@ -3,11 +3,7 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::shielded_withdrawal_transition::methods::ShieldedWithdrawalTransitionMethodsV0;
 use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use crate::withdrawal::Pooling;
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {

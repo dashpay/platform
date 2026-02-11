@@ -1147,10 +1147,8 @@ impl Drive {
             StateTransition::ShieldedTransfer(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => {
-                let (root_hash, pool_balance) = Drive::verify_shielded_pool_state(
-                    proof,
-                    platform_version,
-                )?;
+                let (root_hash, pool_balance) =
+                    Drive::verify_shielded_pool_state(proof, platform_version)?;
                 Ok((root_hash, VerifiedShieldedPoolState(pool_balance)))
             }
         }

@@ -1,11 +1,7 @@
 use crate::shielded::SerializedAction;
 use crate::state_transition::shielded_transfer_transition::methods::ShieldedTransferTransitionMethodsV0;
 use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransitionV0 {

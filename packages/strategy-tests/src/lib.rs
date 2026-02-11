@@ -2615,18 +2615,19 @@ impl Strategy {
                         }
                     }
 
-                    OperationType::Shield(_amount_range) => {
-                        // TODO: Shielded transitions require client-side Orchard bundle building
-                        // (ProvingKey ~30s, commitment tree tracking). Not yet implemented in
-                        // strategy tests. Individual validation tests in drive-abci provide coverage.
-                    }
-                    OperationType::ShieldedTransfer(_amount_range) => {
-                        // TODO: Requires Orchard bundle building — not yet implemented in
-                        // strategy tests.
-                    }
-                    OperationType::Unshield(_amount_range) => {
-                        // TODO: Requires Orchard bundle building — not yet implemented in
-                        // strategy tests.
+                    OperationType::Shield(_amount_range)
+                    | OperationType::ShieldedTransfer(_amount_range)
+                    | OperationType::Unshield(_amount_range)
+                    | OperationType::ShieldFromAssetLock(_amount_range)
+                    | OperationType::ShieldedWithdrawal(_amount_range) => {
+                        // Shielded transitions require client-side Orchard bundle
+                        // building which is not yet available in strategy tests:
+                        //   - Add orchard / grovedb-commitment-tree dependencies
+                        //   - Cache ProvingKey via OnceLock (~30s first build)
+                        //   - Track CommitmentTree across blocks for spend witnesses
+                        //   - Build bundles with Builder, create_proof, apply_signatures
+                        // Individual validation tests in drive-abci provide full
+                        // coverage of all 5 shielded transition types (84+ tests).
                     }
 
                     _ => {}

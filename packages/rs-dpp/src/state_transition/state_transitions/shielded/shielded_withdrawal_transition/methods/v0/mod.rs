@@ -2,11 +2,7 @@ use crate::identity::core_script::CoreScript;
 use crate::shielded::SerializedAction;
 use crate::state_transition::StateTransitionType;
 use crate::withdrawal::Pooling;
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 pub trait ShieldedWithdrawalTransitionMethodsV0 {

@@ -19,6 +19,8 @@ pub mod identifier;
 pub mod identity;
 mod metadata;
 // mod state_repository;
+/// Shielded state transitions
+pub mod shielded;
 /// State transitions
 pub mod state_transition;
 // mod version;

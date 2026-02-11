@@ -1,10 +1,6 @@
 use crate::shielded::SerializedAction;
 use crate::state_transition::StateTransitionType;
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 pub trait ShieldedTransferTransitionMethodsV0 {

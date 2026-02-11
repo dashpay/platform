@@ -63,7 +63,9 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::Shield => StateTransitionTypeWasm::Shield,
             StateTransitionType::ShieldedTransfer => StateTransitionTypeWasm::ShieldedTransfer,
             StateTransitionType::Unshield => StateTransitionTypeWasm::Unshield,
-            StateTransitionType::ShieldFromAssetLock => StateTransitionTypeWasm::ShieldFromAssetLock,
+            StateTransitionType::ShieldFromAssetLock => {
+                StateTransitionTypeWasm::ShieldFromAssetLock
+            }
             StateTransitionType::ShieldedWithdrawal => StateTransitionTypeWasm::ShieldedWithdrawal,
         }
     }

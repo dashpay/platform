@@ -2,11 +2,7 @@ use crate::address_funds::PlatformAddress;
 use crate::shielded::SerializedAction;
 use crate::state_transition::unshield_transition::methods::UnshieldTransitionMethodsV0;
 use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use platform_version::version::PlatformVersion;
 
 impl UnshieldTransitionMethodsV0 for UnshieldTransitionV0 {

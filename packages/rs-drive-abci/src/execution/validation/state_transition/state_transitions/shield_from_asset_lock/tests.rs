@@ -381,9 +381,9 @@ mod tests {
                 vec![create_dummy_serialized_action()],
                 0x03, // spends_enabled | outputs_enabled
                 value_balance,
-                [0u8; 32],        // dummy anchor
-                vec![0u8; 100],   // dummy proof bytes
-                [0u8; 64],        // dummy binding signature
+                [0u8; 32],      // dummy anchor
+                vec![0u8; 100], // dummy proof bytes
+                [0u8; 64],      // dummy binding signature
                 0,
             );
 

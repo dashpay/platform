@@ -83,17 +83,17 @@ mod tests {
     /// value_balance.
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
         create_shielded_withdrawal_transition(
-            1000,                              // amount in credits
+            1000, // amount in credits
             vec![create_dummy_serialized_action()],
-            0x03,                              // spends_enabled | outputs_enabled
-            1000,                              // value_balance = amount (no fee for simplicity)
-            [42u8; 32],                        // non-zero anchor
-            vec![0u8; 100],                    // dummy proof bytes
-            [0u8; 64],                         // dummy binding signature
-            1,                                 // core_fee_per_byte
-            Pooling::Never,                    // pooling strategy
-            create_output_script(),            // P2PKH output script
-            0,                                 // user_fee_increase
+            0x03,                   // spends_enabled | outputs_enabled
+            1000,                   // value_balance = amount (no fee for simplicity)
+            [42u8; 32],             // non-zero anchor
+            vec![0u8; 100],         // dummy proof bytes
+            [0u8; 64],              // dummy binding signature
+            1,                      // core_fee_per_byte
+            Pooling::Never,         // pooling strategy
+            create_output_script(), // P2PKH output script
+            0,                      // user_fee_increase
         )
     }
 
@@ -668,7 +668,7 @@ mod tests {
                 1,              // core_fee_per_byte
                 Pooling::Never, // pooling strategy
                 output_script,
-                0,              // user_fee_increase
+                0, // user_fee_increase
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);

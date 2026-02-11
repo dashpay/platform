@@ -51,7 +51,8 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle".to_string(),
+                method: "ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

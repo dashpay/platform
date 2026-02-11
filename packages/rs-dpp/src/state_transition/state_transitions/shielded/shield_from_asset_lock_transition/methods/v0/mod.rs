@@ -4,11 +4,7 @@ use crate::prelude::AssetLockProof;
 use crate::shielded::SerializedAction;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
-use crate::{
-    prelude::UserFeeIncrease,
-    state_transition::StateTransition,
-    ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 

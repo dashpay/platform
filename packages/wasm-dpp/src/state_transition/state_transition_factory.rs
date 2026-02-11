@@ -6,6 +6,10 @@ use crate::identity::state_transition::{
     IdentityCreditWithdrawalTransitionWasm, IdentityTopUpTransitionWasm,
     IdentityUpdateTransitionWasm,
 };
+use crate::shielded::{
+    ShieldFromAssetLockTransitionWasm, ShieldTransitionWasm, ShieldedTransferTransitionWasm,
+    ShieldedWithdrawalTransitionWasm, UnshieldTransitionWasm,
+};
 use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
 use crate::state_transition::errors::state_transition_is_not_active_error::StateTransitionIsNotActiveErrorWasm;
 use crate::voting::state_transition::masternode_vote_transition::MasternodeVoteTransitionWasm;
@@ -79,20 +83,16 @@ impl StateTransitionFactoryWasm {
                 StateTransition::AddressCreditWithdrawal(st) => {
                     serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
                 }
-                StateTransition::Shield(st) => {
-                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
-                }
+                StateTransition::Shield(st) => Ok(ShieldTransitionWasm::from(st).into()),
                 StateTransition::ShieldedTransfer(st) => {
-                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                    Ok(ShieldedTransferTransitionWasm::from(st).into())
                 }
-                StateTransition::Unshield(st) => {
-                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
-                }
+                StateTransition::Unshield(st) => Ok(UnshieldTransitionWasm::from(st).into()),
                 StateTransition::ShieldFromAssetLock(st) => {
-                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                    Ok(ShieldFromAssetLockTransitionWasm::from(st).into())
                 }
                 StateTransition::ShieldedWithdrawal(st) => {
-                    serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
+                    Ok(ShieldedWithdrawalTransitionWasm::from(st).into())
                 }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {

@@ -47,19 +47,18 @@ impl ShieldFromAssetLock for Sdk {
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
 
-        let state_transition =
-            ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
-                asset_lock_proof,
-                asset_lock_proof_private_key,
-                actions,
-                flags,
-                value_balance,
-                anchor,
-                proof,
-                binding_signature,
-                user_fee_increase,
-                self.version(),
-            )?;
+        let state_transition = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
+            asset_lock_proof,
+            asset_lock_proof_private_key,
+            actions,
+            flags,
+            value_balance,
+            anchor,
+            proof,
+            binding_signature,
+            user_fee_increase,
+            self.version(),
+        )?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         state_transition.broadcast(self, settings).await?;

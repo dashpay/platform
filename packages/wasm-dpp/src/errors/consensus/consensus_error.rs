@@ -444,9 +444,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::AddressInvalidNonceError(e) => {
             generic_consensus_error!(AddressInvalidNonceError, e).into()
         }
-        StateError::InvalidAnchorError(e) => {
-            generic_consensus_error!(InvalidAnchorError, e).into()
-        }
+        StateError::InvalidAnchorError(e) => generic_consensus_error!(InvalidAnchorError, e).into(),
         StateError::NullifierAlreadySpentError(e) => {
             generic_consensus_error!(NullifierAlreadySpentError, e).into()
         }

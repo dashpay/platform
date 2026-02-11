@@ -861,6 +861,12 @@ pub enum OperationType {
 
     /// Unshield from the shielded pool to a platform address (requires Orchard bundle).
     Unshield(AmountRange),
+
+    /// Shield funds from a core asset lock into the shielded pool (requires Orchard bundle).
+    ShieldFromAssetLock(AmountRange),
+
+    /// Withdraw from the shielded pool to a core (L1) address (requires Orchard bundle).
+    ShieldedWithdrawal(AmountRange),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -904,6 +910,8 @@ enum OperationTypeInSerializationFormat {
     Shield(AmountRange),
     ShieldedTransfer(AmountRange),
     Unshield(AmountRange),
+    ShieldFromAssetLock(AmountRange),
+    ShieldedWithdrawal(AmountRange),
 }
 
 impl PlatformSerializableWithPlatformVersion for OperationType {
@@ -1009,14 +1017,16 @@ impl PlatformSerializableWithPlatformVersion for OperationType {
                 key_count,
                 extra_keys,
             ),
-            OperationType::Shield(range) => {
-                OperationTypeInSerializationFormat::Shield(range)
-            }
+            OperationType::Shield(range) => OperationTypeInSerializationFormat::Shield(range),
             OperationType::ShieldedTransfer(range) => {
                 OperationTypeInSerializationFormat::ShieldedTransfer(range)
             }
-            OperationType::Unshield(range) => {
-                OperationTypeInSerializationFormat::Unshield(range)
+            OperationType::Unshield(range) => OperationTypeInSerializationFormat::Unshield(range),
+            OperationType::ShieldFromAssetLock(range) => {
+                OperationTypeInSerializationFormat::ShieldFromAssetLock(range)
+            }
+            OperationType::ShieldedWithdrawal(range) => {
+                OperationTypeInSerializationFormat::ShieldedWithdrawal(range)
             }
         };
         let config = bincode::config::standard()
@@ -1136,14 +1146,16 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
                 key_count,
                 extra_keys,
             ),
-            OperationTypeInSerializationFormat::Shield(range) => {
-                OperationType::Shield(range)
-            }
+            OperationTypeInSerializationFormat::Shield(range) => OperationType::Shield(range),
             OperationTypeInSerializationFormat::ShieldedTransfer(range) => {
                 OperationType::ShieldedTransfer(range)
             }
-            OperationTypeInSerializationFormat::Unshield(range) => {
-                OperationType::Unshield(range)
+            OperationTypeInSerializationFormat::Unshield(range) => OperationType::Unshield(range),
+            OperationTypeInSerializationFormat::ShieldFromAssetLock(range) => {
+                OperationType::ShieldFromAssetLock(range)
+            }
+            OperationTypeInSerializationFormat::ShieldedWithdrawal(range) => {
+                OperationType::ShieldedWithdrawal(range)
             }
         })
     }

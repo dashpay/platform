@@ -7,9 +7,7 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::unshield_transition::UnshieldTransition;
 use crate::{
     prelude::UserFeeIncrease,
-    state_transition::{
-        unshield_transition::v0::UnshieldTransitionV0, StateTransition,
-    },
+    state_transition::{unshield_transition::v0::UnshieldTransitionV0, StateTransition},
     ProtocolError,
 };
 use platform_version::version::PlatformVersion;
