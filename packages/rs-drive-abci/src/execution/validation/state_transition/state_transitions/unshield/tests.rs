@@ -16,8 +16,9 @@ mod tests {
     use dpp::state_transition::unshield_transition::UnshieldTransition;
     use dpp::state_transition::StateTransition;
     use drive::drive::shielded::paths::{
-        shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-        shielded_credit_pool_path, shielded_credit_pool_encrypted_notes_path, SHIELDED_TOTAL_BALANCE_KEY,
+        shielded_anchors_credit_pool_path, shielded_credit_pool_encrypted_notes_path,
+        shielded_credit_pool_nullifiers_path, shielded_credit_pool_path,
+        SHIELDED_TOTAL_BALANCE_KEY,
     };
     use drive::grovedb::Element;
     use platform_version::version::PlatformVersion;

@@ -46,9 +46,7 @@ mod tests {
                     },
                     // Shield funds from funded addresses (1 per block, 1-5 DASH)
                     Operation {
-                        op_type: OperationType::Shield(
-                            dash_to_credits!(1)..=dash_to_credits!(5),
-                        ),
+                        op_type: OperationType::Shield(dash_to_credits!(1)..=dash_to_credits!(5)),
                         frequency: Frequency {
                             times_per_block_range: 1..2,
                             chance_per_block: None,
@@ -94,15 +92,8 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        let outcome = run_chain_for_strategy(
-            &mut platform,
-            5,
-            strategy,
-            config,
-            15,
-            &mut None,
-            &mut None,
-        );
+        let outcome =
+            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None);
 
         // Count successful shield transitions across all blocks
         let shield_count = outcome
@@ -117,9 +108,6 @@ mod tests {
             "expected at least one successful shield transition across 5 blocks"
         );
 
-        tracing::info!(
-            shield_count,
-            "Shield strategy test completed successfully"
-        );
+        tracing::info!(shield_count, "Shield strategy test completed successfully");
     }
 }
