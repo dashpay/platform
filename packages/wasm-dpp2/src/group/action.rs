@@ -38,7 +38,8 @@ extern "C" {
     pub type GroupActionJSONJs;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "GroupAction")]
 pub struct GroupActionWasm(GroupAction);
 

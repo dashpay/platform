@@ -74,7 +74,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "IdentityCreateTransition")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityCreateTransitionWasm(IdentityCreateTransition);
 
 impl From<IdentityCreateTransition> for IdentityCreateTransitionWasm {

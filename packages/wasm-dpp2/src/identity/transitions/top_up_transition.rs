@@ -69,7 +69,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "IdentityTopUpTransition")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]

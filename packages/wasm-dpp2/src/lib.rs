@@ -62,6 +62,7 @@ pub use platform_address::{
     fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
+pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};
 pub use tokens::*;
 pub use version::{PlatformVersionLikeJs, PlatformVersionWasm};
 pub use voting::{

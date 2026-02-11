@@ -6,13 +6,13 @@
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
-use crate::state_transitions::proof_result::{
-    convert_proof_result, StateTransitionProofResultTypeJs,
-};
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::state_transitions::proof_result::{
+    convert_proof_result, StateTransitionProofResultTypeJs,
+};
 use wasm_dpp2::StateTransitionWasm;
 
 #[wasm_bindgen]
@@ -69,7 +69,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
 
-        convert_proof_result(result)
+        convert_proof_result(result).map_err(WasmSdkError::from)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -96,6 +96,6 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        convert_proof_result(result)
+        convert_proof_result(result).map_err(WasmSdkError::from)
     }
 }

@@ -38,7 +38,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "ContractBounds")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct ContractBoundsWasm(ContractBounds);
 
 impl From<ContractBounds> for ContractBoundsWasm {

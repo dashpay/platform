@@ -48,7 +48,8 @@ pub enum TokenEventVariant {
     DirectPurchase = 10,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "TokenEvent")]
 pub struct TokenEventWasm(pub(crate) TokenEvent);
 

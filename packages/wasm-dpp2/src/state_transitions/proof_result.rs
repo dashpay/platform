@@ -5,27 +5,30 @@
 //! are combined into a discriminated union `StateTransitionProofResultType`
 //! (discriminated by the `__type` getter added via `impl_wasm_type_info!`).
 
-use crate::error::WasmSdkError;
-use crate::impl_wasm_serde_conversions;
-use dash_sdk::dpp::document::Document;
-use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use crate::DataContractWasm;
+use crate::DocumentWasm;
+use crate::IdentifierWasm;
+use crate::IdentityTokenInfoWasm;
+use crate::IdentityWasm;
+use crate::PartialIdentityWasm;
+use crate::PlatformAddressWasm;
+use crate::PlatformVersionLikeJs;
+use crate::TokenStatusWasm;
+use crate::VoteWasm;
+use crate::data_contract::{DataContractJSONJs, DataContractObjectJs};
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
+use crate::utils::JsMapExt;
+use dpp::document::Document;
+use dpp::platform_value::Identifier;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::impl_wasm_type_info;
-use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use wasm_dpp2::utils::JsMapExt;
-use wasm_dpp2::DataContractWasm;
-use wasm_dpp2::DocumentWasm;
-use wasm_dpp2::IdentifierWasm;
-use wasm_dpp2::IdentityTokenInfoWasm;
-use wasm_dpp2::IdentityWasm;
-use wasm_dpp2::PartialIdentityWasm;
-use wasm_dpp2::PlatformAddressWasm;
-use wasm_dpp2::TokenStatusWasm;
-use wasm_dpp2::VoteWasm;
+use wasm_bindgen::prelude::*;
 
 // ============================================================================
 // TypeScript union type
@@ -64,21 +67,82 @@ extern "C" {
 }
 
 // ============================================================================
+// Helper: build a plain JS object from key-value pairs
+// ============================================================================
+
+fn js_obj(entries: &[(&str, JsValue)]) -> JsValue {
+    let obj = js_sys::Object::new();
+    for (key, val) in entries {
+        js_sys::Reflect::set(&obj, &(*key).into(), val).unwrap();
+    }
+    obj.into()
+}
+
+// ============================================================================
 // Variant structs
 // ============================================================================
 
 // --- VerifiedDataContract ---
 
 #[wasm_bindgen(js_name = "VerifiedDataContract")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedDataContractWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "dataContract")]
     pub data_contract: DataContractWasm,
 }
 
+#[wasm_bindgen(js_class = VerifiedDataContract)]
+impl VerifiedDataContractWasm {
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(
+        &self,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<JsValue> {
+        let dc = self.data_contract.to_object(platform_version)?;
+        Ok(js_obj(&[("dataContract", dc.into())]))
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(
+        &self,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<JsValue> {
+        let dc = self.data_contract.to_json(platform_version)?;
+        Ok(js_obj(&[("dataContract", dc.into())]))
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<VerifiedDataContractWasm> {
+        let dc_val = js_sys::Reflect::get(&value, &"dataContract".into())
+            .map_err(|_| WasmDppError::generic("Missing property: dataContract"))?;
+        let data_contract = DataContractWasm::from_object(
+            dc_val.unchecked_into::<DataContractObjectJs>(),
+            false,
+            platform_version,
+        )?;
+        Ok(VerifiedDataContractWasm { data_contract })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        value: JsValue,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<VerifiedDataContractWasm> {
+        let dc_val = js_sys::Reflect::get(&value, &"dataContract".into())
+            .map_err(|_| WasmDppError::generic("Missing property: dataContract"))?;
+        let data_contract = DataContractWasm::from_json(
+            dc_val.unchecked_into::<DataContractJSONJs>(),
+            false,
+            platform_version,
+        )?;
+        Ok(VerifiedDataContractWasm { data_contract })
+    }
+}
+
 impl_wasm_type_info!(VerifiedDataContractWasm, VerifiedDataContract);
-impl_wasm_serde_conversions!(VerifiedDataContractWasm, VerifiedDataContract);
 
 // --- VerifiedIdentity ---
 
@@ -91,7 +155,7 @@ pub struct VerifiedIdentityWasm {
 }
 
 impl_wasm_type_info!(VerifiedIdentityWasm, VerifiedIdentity);
-impl_wasm_serde_conversions!(VerifiedIdentityWasm, VerifiedIdentity);
+impl_wasm_conversions!(VerifiedIdentityWasm, VerifiedIdentity);
 
 // --- VerifiedTokenBalanceAbsence ---
 
@@ -104,7 +168,7 @@ pub struct VerifiedTokenBalanceAbsenceWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
-impl_wasm_serde_conversions!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
+impl_wasm_conversions!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
 
 // --- VerifiedTokenBalance ---
 
@@ -126,7 +190,7 @@ impl VerifiedTokenBalanceWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
-impl_wasm_serde_conversions!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
+impl_wasm_conversions!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 
 // --- VerifiedTokenIdentityInfo ---
 
@@ -141,7 +205,7 @@ pub struct VerifiedTokenIdentityInfoWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
-impl_wasm_serde_conversions!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
+impl_wasm_conversions!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
 
 // --- VerifiedTokenPricingSchedule ---
 
@@ -159,7 +223,7 @@ impl_wasm_type_info!(
     VerifiedTokenPricingScheduleWasm,
     VerifiedTokenPricingSchedule
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenPricingScheduleWasm,
     VerifiedTokenPricingSchedule
 );
@@ -175,37 +239,45 @@ pub struct VerifiedTokenStatusWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
-impl_wasm_serde_conversions!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
+impl_wasm_conversions!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
 
 // --- VerifiedTokenIdentitiesBalances ---
 
 #[wasm_bindgen(js_name = "VerifiedTokenIdentitiesBalances")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedTokenIdentitiesBalancesWasm {
-    #[serde(skip)]
-    balances: Option<Map>, // Map<IdentifierWasm, BigInt>
+    balances: Map, // Map<IdentifierWasm, BigInt>
 }
 
 #[wasm_bindgen(js_class = VerifiedTokenIdentitiesBalances)]
 impl VerifiedTokenIdentitiesBalancesWasm {
     #[wasm_bindgen(getter)]
-    pub fn balances(&self) -> Option<Map> {
+    pub fn balances(&self) -> Map {
         self.balances.clone()
     }
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> JsValue {
-        let obj = js_sys::Object::new();
-        if let Some(ref map) = self.balances {
-            js_sys::Reflect::set(&obj, &"balances".into(), map).unwrap();
-        }
-        obj.into()
+        js_obj(&[("balances", self.balances.clone().into())])
     }
 
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> JsValue {
         self.to_object()
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedTokenIdentitiesBalancesWasm> {
+        let map_val = js_sys::Reflect::get(&value, &"balances".into())
+            .map_err(|_| WasmDppError::generic("Missing property: balances"))?;
+        Ok(VerifiedTokenIdentitiesBalancesWasm {
+            balances: map_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedTokenIdentitiesBalancesWasm> {
+        Self::from_object(value)
     }
 }
 
@@ -225,7 +297,7 @@ pub struct VerifiedPartialIdentityWasm {
 }
 
 impl_wasm_type_info!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
-impl_wasm_serde_conversions!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
+impl_wasm_conversions!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
 
 // --- VerifiedBalanceTransfer ---
 
@@ -240,37 +312,45 @@ pub struct VerifiedBalanceTransferWasm {
 }
 
 impl_wasm_type_info!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
-impl_wasm_serde_conversions!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
+impl_wasm_conversions!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
 
 // --- VerifiedDocuments ---
 
 #[wasm_bindgen(js_name = "VerifiedDocuments")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedDocumentsWasm {
-    #[serde(skip)]
-    documents: Option<Map>, // Map<IdentifierWasm, DocumentWasm | null>
+    documents: Map, // Map<IdentifierWasm, DocumentWasm | undefined>
 }
 
 #[wasm_bindgen(js_class = VerifiedDocuments)]
 impl VerifiedDocumentsWasm {
     #[wasm_bindgen(getter)]
-    pub fn documents(&self) -> Option<Map> {
+    pub fn documents(&self) -> Map {
         self.documents.clone()
     }
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> JsValue {
-        let obj = js_sys::Object::new();
-        if let Some(ref map) = self.documents {
-            js_sys::Reflect::set(&obj, &"documents".into(), map).unwrap();
-        }
-        obj.into()
+        js_obj(&[("documents", self.documents.clone().into())])
     }
 
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> JsValue {
         self.to_object()
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedDocumentsWasm> {
+        let map_val = js_sys::Reflect::get(&value, &"documents".into())
+            .map_err(|_| WasmDppError::generic("Missing property: documents"))?;
+        Ok(VerifiedDocumentsWasm {
+            documents: map_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedDocumentsWasm> {
+        Self::from_object(value)
     }
 }
 
@@ -290,7 +370,7 @@ impl_wasm_type_info!(
     VerifiedTokenActionWithDocumentWasm,
     VerifiedTokenActionWithDocument
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenActionWithDocumentWasm,
     VerifiedTokenActionWithDocument
 );
@@ -311,7 +391,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithDocumentWasm,
     VerifiedTokenGroupActionWithDocument
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenGroupActionWithDocumentWasm,
     VerifiedTokenGroupActionWithDocument
 );
@@ -335,7 +415,7 @@ impl VerifiedTokenGroupActionWithTokenBalanceWasm {
     pub fn balance(&self) -> JsValue {
         match self.balance {
             Some(b) => BigInt::from(b).into(),
-            None => JsValue::NULL,
+            None => JsValue::undefined(),
         }
     }
 }
@@ -344,7 +424,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenBalance
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenBalance
 );
@@ -367,7 +447,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfo
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfo
 );
@@ -390,7 +470,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm,
     VerifiedTokenGroupActionWithTokenPricingSchedule
 );
-impl_wasm_serde_conversions!(
+impl_wasm_conversions!(
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm,
     VerifiedTokenGroupActionWithTokenPricingSchedule
 );
@@ -406,7 +486,7 @@ pub struct VerifiedMasternodeVoteWasm {
 }
 
 impl_wasm_type_info!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
-impl_wasm_serde_conversions!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
+impl_wasm_conversions!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
 
 // --- VerifiedNextDistribution ---
 
@@ -419,37 +499,45 @@ pub struct VerifiedNextDistributionWasm {
 }
 
 impl_wasm_type_info!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
-impl_wasm_serde_conversions!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
+impl_wasm_conversions!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
 
 // --- VerifiedAddressInfos ---
 
 #[wasm_bindgen(js_name = "VerifiedAddressInfos")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedAddressInfosWasm {
-    #[serde(skip)]
-    address_infos: Option<Map>, // Map<PlatformAddressWasm, { nonce: number, credits: BigInt } | null>
+    address_infos: Map, // Map<string(hex), { address: PlatformAddress, nonce: number, credits: BigInt } | undefined>
 }
 
 #[wasm_bindgen(js_class = VerifiedAddressInfos)]
 impl VerifiedAddressInfosWasm {
     #[wasm_bindgen(getter = "addressInfos")]
-    pub fn address_infos(&self) -> Option<Map> {
+    pub fn address_infos(&self) -> Map {
         self.address_infos.clone()
     }
 
     #[wasm_bindgen(js_name = toObject)]
     pub fn to_object(&self) -> JsValue {
-        let obj = js_sys::Object::new();
-        if let Some(ref map) = self.address_infos {
-            js_sys::Reflect::set(&obj, &"addressInfos".into(), map).unwrap();
-        }
-        obj.into()
+        js_obj(&[("addressInfos", self.address_infos.clone().into())])
     }
 
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> JsValue {
         self.to_object()
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedAddressInfosWasm> {
+        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
+            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        Ok(VerifiedAddressInfosWasm {
+            address_infos: map_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedAddressInfosWasm> {
+        Self::from_object(value)
     }
 }
 
@@ -458,35 +546,64 @@ impl_wasm_type_info!(VerifiedAddressInfosWasm, VerifiedAddressInfos);
 // --- VerifiedIdentityFullWithAddressInfos ---
 
 #[wasm_bindgen(js_name = "VerifiedIdentityFullWithAddressInfos")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedIdentityFullWithAddressInfosWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub identity: IdentityWasm,
-    #[serde(skip)]
-    address_infos: Option<Map>,
+    address_infos: Map,
 }
 
 #[wasm_bindgen(js_class = VerifiedIdentityFullWithAddressInfos)]
 impl VerifiedIdentityFullWithAddressInfosWasm {
     #[wasm_bindgen(getter = "addressInfos")]
-    pub fn address_infos(&self) -> Option<Map> {
+    pub fn address_infos(&self) -> Map {
         self.address_infos.clone()
     }
 
     #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
-        let obj = wasm_dpp2::serialization::to_object(self)
-            .map_err(WasmSdkError::from)?;
-        if let Some(ref map) = self.address_infos {
-            js_sys::Reflect::set(&obj, &"addressInfos".into(), map).unwrap();
-        }
-        Ok(obj)
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let id = self.identity.to_object()?;
+        let map_js: JsValue = self.address_infos.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
+        Ok(obj.into())
     }
 
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let id = self.identity.to_json()?;
+        let map_js: JsValue = self.address_infos.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedIdentityFullWithAddressInfosWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_object(identity_val)?;
+        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
+            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        Ok(VerifiedIdentityFullWithAddressInfosWasm {
+            identity,
+            address_infos: map_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedIdentityFullWithAddressInfosWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_json(identity_val)?;
+        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
+            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        Ok(VerifiedIdentityFullWithAddressInfosWasm {
+            identity,
+            address_infos: map_val.unchecked_into(),
+        })
     }
 }
 
@@ -498,35 +615,66 @@ impl_wasm_type_info!(
 // --- VerifiedIdentityWithAddressInfos ---
 
 #[wasm_bindgen(js_name = "VerifiedIdentityWithAddressInfos")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub struct VerifiedIdentityWithAddressInfosWasm {
     #[wasm_bindgen(getter_with_clone, js_name = "partialIdentity")]
     pub partial_identity: PartialIdentityWasm,
-    #[serde(skip)]
-    address_infos: Option<Map>,
+    address_infos: Map,
 }
 
 #[wasm_bindgen(js_class = VerifiedIdentityWithAddressInfos)]
 impl VerifiedIdentityWithAddressInfosWasm {
     #[wasm_bindgen(getter = "addressInfos")]
-    pub fn address_infos(&self) -> Option<Map> {
+    pub fn address_infos(&self) -> Map {
         self.address_infos.clone()
     }
 
     #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
-        let obj = wasm_dpp2::serialization::to_object(self)
-            .map_err(WasmSdkError::from)?;
-        if let Some(ref map) = self.address_infos {
-            js_sys::Reflect::set(&obj, &"addressInfos".into(), map).unwrap();
-        }
-        Ok(obj)
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let pi = self.partial_identity.to_object()?;
+        let map_js: JsValue = self.address_infos.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"partialIdentity".into(), &pi.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
+        Ok(obj.into())
     }
 
     #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
-        self.to_object()
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let pi = self.partial_identity.to_json()?;
+        let map_js: JsValue = self.address_infos.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"partialIdentity".into(), &pi.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"addressInfos".into(), &map_js).unwrap();
+        Ok(obj.into())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedIdentityWithAddressInfosWasm> {
+        let pi_val = js_sys::Reflect::get(&value, &"partialIdentity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: partialIdentity"))?;
+        let partial_identity: PartialIdentityWasm =
+            crate::serialization::conversions::from_object(pi_val)?;
+        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
+            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        Ok(VerifiedIdentityWithAddressInfosWasm {
+            partial_identity,
+            address_infos: map_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedIdentityWithAddressInfosWasm> {
+        let pi_val = js_sys::Reflect::get(&value, &"partialIdentity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: partialIdentity"))?;
+        let partial_identity: PartialIdentityWasm =
+            crate::serialization::conversions::from_json(pi_val)?;
+        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
+            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        Ok(VerifiedIdentityWithAddressInfosWasm {
+            partial_identity,
+            address_infos: map_val.unchecked_into(),
+        })
     }
 }
 
@@ -549,38 +697,38 @@ fn doc_to_wasm(doc: Document) -> DocumentWasm {
     DocumentWasm::new(doc, Identifier::default(), String::new(), None)
 }
 
-/// Helper to build `Map<PlatformAddressWasm, { nonce: number, credits: BigInt } | null>`
+/// Helper to build `Map<string, { address: PlatformAddress, nonce: number, credits: BigInt } | undefined>`
 /// from the Rust address-info BTreeMap.  Shared by three variants.
+///
+/// Keys are hex-encoded PlatformAddress bytes so that JS consumers can
+/// look up entries by string (JS Map uses reference equality for object keys).
 fn build_address_infos_map(
-    map: std::collections::BTreeMap<
-        dash_sdk::dpp::address_funds::PlatformAddress,
-        Option<(u32, u64)>,
-    >,
+    map: std::collections::BTreeMap<dpp::address_funds::PlatformAddress, Option<(u32, u64)>>,
 ) -> Map {
     Map::from_entries(map.into_iter().map(|(address, info)| {
-        let key: JsValue = PlatformAddressWasm::from(address).into();
+        let address_wasm = PlatformAddressWasm::from(address);
+        let key: JsValue = address_wasm.to_hex().into();
         let val: JsValue = match info {
             Some((nonce, credits)) => {
                 let obj = js_sys::Object::new();
+                js_sys::Reflect::set(&obj, &"address".into(), &address_wasm.into()).unwrap();
                 js_sys::Reflect::set(&obj, &"nonce".into(), &nonce.into()).unwrap();
                 js_sys::Reflect::set(&obj, &"credits".into(), &BigInt::from(credits).into())
                     .unwrap();
                 obj.into()
             }
-            None => JsValue::NULL,
+            None => JsValue::undefined(),
         };
         (key, val)
     }))
 }
 
-fn action_status_to_string(
-    status: dash_sdk::dpp::group::group_action_status::GroupActionStatus,
-) -> String {
+fn action_status_to_string(status: dpp::group::group_action_status::GroupActionStatus) -> String {
     match status {
-        dash_sdk::dpp::group::group_action_status::GroupActionStatus::ActionActive => {
+        dpp::group::group_action_status::GroupActionStatus::ActionActive => {
             "ActionActive".to_string()
         }
-        dash_sdk::dpp::group::group_action_status::GroupActionStatus::ActionClosed => {
+        dpp::group::group_action_status::GroupActionStatus::ActionClosed => {
             "ActionClosed".to_string()
         }
     }
@@ -590,7 +738,7 @@ fn action_status_to_string(
 /// WASM wrapper, ready to be returned to JavaScript.
 pub fn convert_proof_result(
     result: StateTransitionProofResult,
-) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+) -> WasmDppResult<StateTransitionProofResultTypeJs> {
     let js_value: JsValue = match result {
         StateTransitionProofResult::VerifiedDataContract(dc) => VerifiedDataContractWasm {
             data_contract: dc.into(),
@@ -642,10 +790,7 @@ pub fn convert_proof_result(
                 let val: JsValue = BigInt::from(amount).into();
                 (key, val)
             }));
-            VerifiedTokenIdentitiesBalancesWasm {
-                balances: Some(map),
-            }
-            .into()
+            VerifiedTokenIdentitiesBalancesWasm { balances: map }.into()
         }
 
         StateTransitionProofResult::VerifiedPartialIdentity(pi) => VerifiedPartialIdentityWasm {
@@ -666,14 +811,11 @@ pub fn convert_proof_result(
                 let key: JsValue = IdentifierWasm::from(id).into();
                 let val: JsValue = match maybe_doc {
                     Some(doc) => doc_to_wasm(doc).into(),
-                    None => JsValue::NULL,
+                    None => JsValue::undefined(),
                 };
                 (key, val)
             }));
-            VerifiedDocumentsWasm {
-                documents: Some(map),
-            }
-            .into()
+            VerifiedDocumentsWasm { documents: map }.into()
         }
 
         StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
@@ -724,27 +866,23 @@ pub fn convert_proof_result(
         }
         .into(),
 
-        StateTransitionProofResult::VerifiedMasternodeVote(vote) => VerifiedMasternodeVoteWasm {
-            vote: vote.into(),
+        StateTransitionProofResult::VerifiedMasternodeVote(vote) => {
+            VerifiedMasternodeVoteWasm { vote: vote.into() }.into()
         }
-        .into(),
 
         StateTransitionProofResult::VerifiedNextDistribution(vote) => {
-            VerifiedNextDistributionWasm {
-                vote: vote.into(),
-            }
-            .into()
+            VerifiedNextDistributionWasm { vote: vote.into() }.into()
         }
 
         StateTransitionProofResult::VerifiedAddressInfos(infos) => VerifiedAddressInfosWasm {
-            address_infos: Some(build_address_infos_map(infos)),
+            address_infos: build_address_infos_map(infos),
         }
         .into(),
 
         StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(identity, infos) => {
             VerifiedIdentityFullWithAddressInfosWasm {
                 identity: identity.into(),
-                address_infos: Some(build_address_infos_map(infos)),
+                address_infos: build_address_infos_map(infos),
             }
             .into()
         }
@@ -752,7 +890,7 @@ pub fn convert_proof_result(
         StateTransitionProofResult::VerifiedIdentityWithAddressInfos(pi, infos) => {
             VerifiedIdentityWithAddressInfosWasm {
                 partial_identity: pi.into(),
-                address_infos: Some(build_address_infos_map(infos)),
+                address_infos: build_address_infos_map(infos),
             }
             .into()
         }
