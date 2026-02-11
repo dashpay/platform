@@ -30,22 +30,20 @@ public struct AccountInfo: Identifiable, Hashable, Sendable {
     public let category: AccountCategory
     public let index: UInt32? // present only for indexed account types
     public let label: String
-    public let balance: (confirmed: UInt64, unconfirmed: UInt64)
+    public let balance: Balance
     public let addressCount: (external: Int, internal: Int)
-    public let nextReceiveAddress: String?
 
     public init(category: AccountCategory,
                 index: UInt32? = nil,
                 label: String,
-                balance: (confirmed: UInt64, unconfirmed: UInt64),
-                addressCount: (external: Int, internal: Int),
-                nextReceiveAddress: String?) {
+                balance: Balance,
+                addressCount: (external: Int, internal: Int)) {
         self.category = category
         self.index = index
         self.label = label
         self.balance = balance
         self.addressCount = addressCount
-        self.nextReceiveAddress = nextReceiveAddress
+        
         // Build a stable id
         if let idx = index {
             self.id = "\(category)-\(idx)"

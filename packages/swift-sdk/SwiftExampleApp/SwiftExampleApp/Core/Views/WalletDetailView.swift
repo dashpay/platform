@@ -385,22 +385,18 @@ struct WalletInfoView: View {
 
     private func loadAccountCounts() async {
         // TODO: This can probably be refactored now with with single network manager?
+        let count = walletService.walletManager.getAccounts(for: wallet).count
+        
         if mainnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                mainnetAccountCount = list.count
-            }
+            mainnetAccountCount = count
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                testnetAccountCount = list.count
-            }
+            testnetAccountCount = count
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                devnetAccountCount = list.count
-            }
+            devnetAccountCount = count
         } else { devnetAccountCount = nil }
     }
 

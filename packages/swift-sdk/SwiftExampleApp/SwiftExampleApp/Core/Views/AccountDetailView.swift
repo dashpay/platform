@@ -25,11 +25,7 @@ struct AccountDetailView: View {
     
     var body: some View {
         ScrollView {
-            if isLoading {
-                ProgressView("Loading account details...")
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = errorMessage {
+            if let error = errorMessage {
                 ContentUnavailableView(
                     "Failed to Load Details",
                     systemImage: "exclamationmark.triangle",
@@ -62,7 +58,7 @@ struct AccountDetailView: View {
         .navigationTitle(account.label)
         .navigationBarTitleDisplayMode(.large)
         .task {
-            await loadAccountDetails()
+            loadAccountDetails()
         }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
@@ -622,27 +618,11 @@ struct AccountDetailView: View {
     
     // MARK: - Data Loading
     
-    private func loadAccountDetails() async {
-        isLoading = true
-        errorMessage = nil
-        
-        do {
-            // Get extended public key and other details
-            let details = try await walletService.walletManager.getAccountDetails(
-                for: wallet,
-                accountInfo: account
-            )
-            
-            await MainActor.run {
-                self.detailInfo = details
-                self.isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.isLoading = false
-            }
-        }
+    private func loadAccountDetails() {
+        self.detailInfo = walletService.walletManager.getAccountDetails(
+            for: wallet,
+            accountInfo: account
+        )
     }
 }
 

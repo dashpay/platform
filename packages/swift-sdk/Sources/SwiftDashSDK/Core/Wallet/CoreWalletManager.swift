@@ -162,18 +162,31 @@ public class CoreWalletManager: ObservableObject {
         return try! managedAccount.getTransactions(currentHeight: currentHeight)
     }
 
-    public func getBalance(for wallet: HDWallet, accountIndex: UInt32 = 0) -> Balance {
-        let managedAccount = try! sdkWalletManager.getManagedAccount(
-            walletId: wallet.walletId,
-            accountIndex: accountIndex,
-            accountType: .standardBIP44
-        )
+    public func getBalance(for wallet: HDWallet) -> Balance {
+        let accounts = self.getAccounts(for: wallet)
         
-        return try! managedAccount.getBalance()
+        var confirmed: UInt64 = 0
+        var unconfirmed: UInt64 = 0
+        var immature: UInt64 = 0
+        var locked: UInt64 = 0
+        
+        for account in accounts {
+            confirmed += account.balance.confirmed
+            unconfirmed += account.balance.unconfirmed
+            immature += account.balance.immature
+            locked += account.balance.locked
+        }
+        
+        return Balance(
+            confirmed: confirmed, 
+            unconfirmed: unconfirmed, 
+            immature: immature, 
+            locked: locked
+        )
     }
     
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
-        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: 0)
+        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
     }
     
     /// Get detailed account information including xpub and addresses
@@ -181,8 +194,12 @@ public class CoreWalletManager: ObservableObject {
     ///   - wallet: The wallet containing the account
     ///   - accountInfo: The account info to get details for
     /// - Returns: Detailed account information
-    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) -> AccountDetailInfo {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+        
+        guard let collection else {
+            assert(false, "The walletId is always valid")
+        }
 
         // Resolve managed account from category and optional index
         var managed: ManagedAccount?
@@ -335,8 +352,11 @@ public class CoreWalletManager: ObservableObject {
     /// - Parameters:
     ///   - wallet: The wallet model
     /// - Returns: Account information including balances and address counts
-    public func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    public func getAccounts(for wallet: HDWallet) -> [AccountInfo] {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+        
+        guard let collection else { assert(false, "The walletId is always valid") }
+        
         var list: [AccountInfo] = []
 
         func counts(_ m: ManagedAccount) -> (Int, Int) {
@@ -349,63 +369,63 @@ public class CoreWalletManager: ObservableObject {
         // BIP44
         for idx in collection.getBIP44Indices() {
             if let m = collection.getBIP44Account(at: idx) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: b, addressCount: c))
             }
         }
         // BIP32 (5000+)
         for raw in collection.getBIP32Indices() {
             if let m = collection.getBIP32Account(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: b, addressCount: c))
             }
         }
         // CoinJoin (1000+)
         for raw in collection.getCoinJoinIndices() {
             if let m = collection.getCoinJoinAccount(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 var total = 0
                 if let p = m.getAddressPool(type: .single), let infos = try? p.getAddresses(from: 0, to: 1000) { total = infos.count }
-                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (total, 0), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: b, addressCount: (total, 0)))
             }
         }
         // Identity accounts
         if let m = collection.getIdentityRegistrationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityInvitationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityTopUpNotBoundAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: b, addressCount: (0, 0)))
         }
         for raw in collection.getIdentityTopUpIndices() {
             if let m = collection.getIdentityTopUpAccount(registrationIndex: raw) {
-                let b = try? m.getBalance()
-                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+                let b = m.getBalance()
+                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: b, addressCount: (0, 0)))
             }
         }
         // Provider
         if let m = collection.getProviderVotingKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOwnerKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOperatorKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderPlatformKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: b, addressCount: (0, 0)))
         }
 
         // Sort BIP44 by index first, then other types below

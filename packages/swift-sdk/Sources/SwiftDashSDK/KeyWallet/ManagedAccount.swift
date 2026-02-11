@@ -135,13 +135,11 @@ public class ManagedAccount {
     // MARK: - Balance
     
     /// Get the balance for this account
-    public func getBalance() throws -> Balance {
+    public func getBalance() -> Balance {
         var ffiBalance = FFIBalance()
         let success = managed_core_account_get_balance(handle, &ffiBalance)
         
-        guard success else {
-            throw KeyWalletError.invalidState("Failed to get balance for managed account")
-        }
+        assert(success, "This can only fail if handle or ffiBalance are null")
         
         return Balance(ffiBalance: ffiBalance)
     }
