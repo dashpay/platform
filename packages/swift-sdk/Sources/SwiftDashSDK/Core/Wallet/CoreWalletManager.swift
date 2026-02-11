@@ -172,6 +172,10 @@ public class CoreWalletManager: ObservableObject {
         return try! managedAccount.getBalance()
     }
     
+    public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
+        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: 0)
+    }
+    
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
