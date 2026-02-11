@@ -12,7 +12,7 @@ import Foundation
 ///  - Once stopped, the SPVClient cannot be restarted without creating a new instance, FFI limitation
 ///  - The pointers are freed automatically but, to be able to create a new instance (with the same dataDir)
 ///    without causing the initialization to fail, you must call SPVClient::destroy manually, this is because,
-///    FFIDashSpvClient locks the dir manually to avoid concurrency corruption and its only possible to
+///    FFIDashSpvClient locks the dir to avoid concurrency corruption and its only possible to
 ///    ensure is unlocked by freeing the pointer, FFI limitation
 ///  - Clearing the storage stops the SPVClient, a new one has to be created, FFI limitation
 class SPVClient: @unchecked Sendable {
@@ -22,8 +22,8 @@ class SPVClient: @unchecked Sendable {
     private var walletEventsHandler: SPVWalletEventsHandler?
 
     // FFI handles
-    private let client: UnsafeMutablePointer<FFIDashSpvClient>
-    private let config: UnsafeMutablePointer<FFIClientConfig>
+    private var client: UnsafeMutablePointer<FFIDashSpvClient>?
+    private var config: UnsafeMutablePointer<FFIClientConfig>?
 
     // Sync tracking
 
@@ -266,6 +266,9 @@ class SPVClient: @unchecked Sendable {
     func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
+        
+        client = nil
+        config = nil
     }
 
     // MARK: - Synchronization
