@@ -1,0 +1,456 @@
+<!DOCTYPE HTML>
+<html lang="en" class="navy sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Identities - The Dash Platform Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A guide to the design philosophy, patterns, and conventions of the Dash Platform Rust codebase">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "navy";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-390db66e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-96a58d02.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('navy')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Dash Platform Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/dashpay/platform" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="identities"><a class="header" href="#identities">Identities</a></h1>
+<p>Before a user can do anything on Dash Platform – register a name, send a contact request, create a data contract – they need an <strong>identity</strong>. An identity is the platform-level representation of a user. It is the anchor for everything: documents are owned by identities, state transitions are signed by identity keys, and fees are paid from identity balances.</p>
+<p>If you are coming from Ethereum, think of an identity as an account. But unlike Ethereum’s single-key accounts, a Dash Platform identity can have multiple public keys with different purposes and security levels, making it more flexible and more secure.</p>
+<h2 id="the-identity-enum"><a class="header" href="#the-identity-enum">The Identity Enum</a></h2>
+<p>Following the standard versioning pattern, <code>Identity</code> is defined in <code>packages/rs-dpp/src/identity/identity.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Debug, Clone, PartialEq, From)]
+pub enum Identity {
+    V0(IdentityV0),
+}
+<span class="boring">}</span></code></pre>
+<p>Currently only V0 exists. The <code>IdentityV0</code> struct lives in <code>packages/rs-dpp/src/identity/v0/mod.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct IdentityV0 {
+    pub id: Identifier,
+    pub public_keys: BTreeMap&lt;KeyID, IdentityPublicKey&gt;,
+    pub balance: u64,
+    pub revision: Revision,
+}
+<span class="boring">}</span></code></pre>
+<p>Four fields. That is it. An identity is remarkably simple:</p>
+<ul>
+<li>
+<p><strong><code>id</code></strong>: A 32-byte unique identifier. For identities created via asset locks, this is derived from the locking transaction. For identities created via address-based funding, it is derived from the input addresses and nonces.</p>
+</li>
+<li>
+<p><strong><code>public_keys</code></strong>: A <code>BTreeMap</code> mapping key IDs (simple integers) to <code>IdentityPublicKey</code> objects. Each public key has a purpose (authentication, encryption, decryption, transfer, voting, owner), a security level (master, critical, high, medium), and the actual key data. An identity can have many keys for different scenarios.</p>
+</li>
+<li>
+<p><strong><code>balance</code></strong>: The identity’s credit balance, measured in platform credits. Credits are the unit of account for fee payment on the platform. Users convert Dash into credits through a process called “topping up.”</p>
+</li>
+<li>
+<p><strong><code>revision</code></strong>: A monotonically increasing counter that increments with every identity update (adding keys, disabling keys, etc.). This prevents replay attacks – each update must reference the current revision.</p>
+</li>
+</ul>
+<h2 id="the-credit-system"><a class="header" href="#the-credit-system">The Credit System</a></h2>
+<p>Platform credits are the fuel that powers everything on the network. Every state transition (creating a document, updating a contract, transferring tokens) costs credits. The credit system is how the platform measures and charges for computational and storage resources.</p>
+<p>The balance field is a simple <code>u64</code> representing the number of credits an identity holds. When an operation is performed, the fee system calculates the cost (as we will see in the <a href="../drive/cost-tracking.html">Cost Tracking</a> chapter) and deducts it from the identity’s balance. If the balance is insufficient, the operation is rejected.</p>
+<h2 id="public-keys-and-key-types"><a class="header" href="#public-keys-and-key-types">Public Keys and Key Types</a></h2>
+<p>An identity’s public keys are not just random cryptographic keys – they are structured with purpose and security level. Each <code>IdentityPublicKey</code> carries:</p>
+<ul>
+<li><strong>Key ID</strong> (<code>KeyID</code>): A numeric identifier unique within the identity, used to reference the key.</li>
+<li><strong>Purpose</strong>: What the key is for – authentication, encryption, decryption, transfer, voting, or owner operations.</li>
+<li><strong>Security Level</strong>: How sensitive operations signed by this key are – master, critical, high, or medium.</li>
+<li><strong>Key Type</strong>: The cryptographic algorithm – ECDSA_SECP256K1, BLS12_381, ECDSA_HASH160, BIP13_SCRIPT_HASH, or EDDSA_25519_HASH160.</li>
+<li><strong>Data</strong>: The actual public key bytes.</li>
+<li><strong>Disabled At</strong>: An optional timestamp marking when the key was disabled.</li>
+</ul>
+<p>This multi-key design means an identity can have a master key stored in cold storage, a critical key for important operations, and a high-level key for everyday use – all belonging to the same identity. If a day-to-day key is compromised, the master key can disable it and add a replacement without losing the identity.</p>
+<h2 id="the-partialidentity-pattern"><a class="header" href="#the-partialidentity-pattern">The PartialIdentity Pattern</a></h2>
+<p>Here is where the codebase reveals a practical optimization. Loading a full identity from storage is expensive – you need to fetch the balance, all the keys, the revision, and potentially more. But most operations do not need all of that. A balance transfer only needs the balance. A document creation only needs to verify one key.</p>
+<p>Enter <code>PartialIdentity</code>, defined alongside <code>Identity</code> in <code>packages/rs-dpp/src/identity/identity.rs</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct PartialIdentity {
+    pub id: Identifier,
+    pub loaded_public_keys: BTreeMap&lt;KeyID, IdentityPublicKey&gt;,
+    pub balance: Option&lt;Credits&gt;,
+    pub revision: Option&lt;Revision&gt;,
+    pub not_found_public_keys: BTreeSet&lt;KeyID&gt;,
+}
+<span class="boring">}</span></code></pre>
+<p>A <code>PartialIdentity</code> is exactly what it sounds like – a partially-loaded identity. Notice the differences from <code>Identity</code>:</p>
+<ul>
+<li><code>balance</code> is <code>Option&lt;Credits&gt;</code> rather than a bare <code>u64</code>. It might not have been loaded.</li>
+<li><code>revision</code> is <code>Option&lt;Revision&gt;</code>. Same story.</li>
+<li><code>loaded_public_keys</code> might only contain the specific keys that were requested.</li>
+<li><code>not_found_public_keys</code> tracks which keys were requested but did not exist on the identity.</li>
+</ul>
+<p>You can convert a full <code>Identity</code> into a <code>PartialIdentity</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl IdentityV0 {
+    pub fn into_partial_identity_info(self) -&gt; PartialIdentity {
+        let Self { id, public_keys, balance, revision, .. } = self;
+        PartialIdentity {
+            id,
+            loaded_public_keys: public_keys,
+            balance: Some(balance),
+            revision: Some(revision),
+            not_found_public_keys: Default::default(),
+        }
+    }
+
+    pub fn into_partial_identity_info_no_balance(self) -&gt; PartialIdentity {
+        let Self { id, public_keys, revision, .. } = self;
+        PartialIdentity {
+            id,
+            loaded_public_keys: public_keys,
+            balance: None,  // explicitly not loaded
+            revision: Some(revision),
+            not_found_public_keys: Default::default(),
+        }
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>PartialIdentity</code> pattern is used extensively in Drive’s query and validation code. When processing a state transition, Drive fetches only the identity fields it actually needs, wraps them in a <code>PartialIdentity</code>, and passes that through the validation pipeline. This avoids unnecessary storage reads and keeps things efficient.</p>
+<h2 id="identity-nonces"><a class="header" href="#identity-nonces">Identity Nonces</a></h2>
+<p>Replay protection on Dash Platform uses <strong>nonces</strong> rather than sequential transaction counters. There are two kinds:</p>
+<ol>
+<li><strong>Identity nonce</strong>: A per-identity counter used for identity-level operations (like key updates).</li>
+<li><strong>Identity-contract nonce</strong>: A per-identity-per-contract counter used for document operations. This allows operations on different contracts to be submitted in parallel without conflicting.</li>
+</ol>
+<p>The nonce system is defined in <code>packages/rs-dpp/src/identity/identity_nonce.rs</code> and is more sophisticated than a simple incrementing counter. The nonce value is actually a packed <code>u64</code> that contains both the counter value and a bitfield tracking recently-used nonces:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub const IDENTITY_NONCE_VALUE_FILTER: u64 = 0xFFFFFFFFFF;
+pub const MISSING_IDENTITY_REVISIONS_FILTER: u64 = 0xFFFFFF0000000000;
+pub const MAX_MISSING_IDENTITY_REVISIONS: u64 = 24;
+<span class="boring">}</span></code></pre>
+<p>The lower 40 bits hold the current nonce tip. The upper 24 bits form a bitfield that tracks which of the last 24 nonce values have been seen. This allows out-of-order submission within a window: if a user submits nonces 5, 7, and 6 in that order, all three are accepted. But nonce 5 cannot be submitted again because it is already marked in the bitfield.</p>
+<p>The validation function checks several conditions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub fn validate_identity_nonce_update(
+    existing_nonce: IdentityNonce,
+    new_revision_nonce: IdentityNonce,
+    identity_id: Identifier,
+) -&gt; SimpleConsensusValidationResult {
+    let actual_existing_revision = existing_nonce &amp; IDENTITY_NONCE_VALUE_FILTER;
+    match actual_existing_revision.cmp(&amp;new_revision_nonce) {
+        std::cmp::Ordering::Equal =&gt; {
+            // Nonce already used at the tip
+            // -&gt; NonceAlreadyPresentAtTip error
+        }
+        std::cmp::Ordering::Less =&gt; {
+            // Nonce is in the future -- check it's within window
+            // -&gt; NonceTooFarInFuture if gap &gt; 24
+        }
+        std::cmp::Ordering::Greater =&gt; {
+            // Nonce is in the past -- check bitfield
+            // -&gt; NonceTooFarInPast if gap &gt; 24
+            // -&gt; NonceAlreadyPresentInPast if bit is already set
+        }
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>This design balances several concerns:</p>
+<ul>
+<li><strong>Replay protection</strong>: A nonce cannot be reused.</li>
+<li><strong>Out-of-order tolerance</strong>: Within a 24-nonce window, transactions can arrive in any order.</li>
+<li><strong>Bounded storage</strong>: Only 8 bytes are needed to track the full nonce state (the packed <code>u64</code>).</li>
+<li><strong>Parallel submission</strong>: Identity-contract nonces let different contracts have independent nonce spaces.</li>
+</ul>
+<h2 id="creating-an-identity"><a class="header" href="#creating-an-identity">Creating an Identity</a></h2>
+<p>The <code>Identity</code> enum provides versioned constructors:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>impl Identity {
+    pub fn new_with_id_and_keys(
+        id: Identifier,
+        public_keys: BTreeMap&lt;KeyID, IdentityPublicKey&gt;,
+        platform_version: &amp;PlatformVersion,
+    ) -&gt; Result&lt;Identity, ProtocolError&gt; {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 =&gt; {
+                let identity_v0 = IdentityV0 {
+                    id,
+                    public_keys,
+                    balance: 0,
+                    revision: 0,
+                };
+                Ok(identity_v0.into())
+            }
+            version =&gt; Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::new_with_id_and_keys".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+}
+<span class="boring">}</span></code></pre>
+<p>New identities start with a balance of 0 and a revision of 0. The balance is filled by the identity creation state transition (which includes an asset lock or address-based funding), and the revision increments from there.</p>
+<h2 id="how-identity-differs-from-other-types"><a class="header" href="#how-identity-differs-from-other-types">How Identity Differs from Other Types</a></h2>
+<p>One important thing to note: the identity is <strong>not stored as a single blob in Drive</strong>. Unlike documents and data contracts (which are serialized and stored as items), identity fields are stored in separate locations within GroveDB’s tree structure. The balance is in one place, each key is in another, the revision somewhere else. This is because different operations need to update different parts of the identity independently and atomically.</p>
+<p>The <code>Identity</code> struct is primarily used for:</p>
+<ul>
+<li>Creating new identities (assembling all fields for the creation state transition)</li>
+<li>Client-side representation (what the SDK returns when you query an identity)</li>
+<li>Transport (serialized for gRPC responses)</li>
+</ul>
+<p>Inside Drive and ABCI, you will more commonly see <code>PartialIdentity</code> or direct field access through Drive’s identity methods.</p>
+<h2 id="rules-and-guidelines"><a class="header" href="#rules-and-guidelines">Rules and Guidelines</a></h2>
+<p><strong>Do:</strong></p>
+<ul>
+<li>Use <code>PartialIdentity</code> when you only need a subset of identity fields. It avoids unnecessary storage reads.</li>
+<li>Validate nonces through the provided <code>validate_identity_nonce_update</code> function – the bitfield logic is subtle.</li>
+<li>Always go through <code>PlatformVersion</code> when constructing identities to ensure the correct structure version.</li>
+</ul>
+<p><strong>Do not:</strong></p>
+<ul>
+<li>Assume an identity has only one key. Identities commonly have multiple keys with different purposes and security levels.</li>
+<li>Manually pack or unpack nonce bitfields. Use the provided constants and validation functions.</li>
+<li>Store or cache full <code>Identity</code> objects when a <code>PartialIdentity</code> would suffice. The full identity can be large if it has many keys.</li>
+<li>Treat identity balance as Dash amounts. Credits are the unit of account on the platform; the conversion to/from Dash happens at the protocol level.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../data-model/documents.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../drive/grove-operations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../data-model/documents.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../drive/grove-operations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

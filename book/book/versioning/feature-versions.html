@@ -1,0 +1,687 @@
+<!DOCTYPE HTML>
+<html lang="en" class="navy sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Feature Versions - The Dash Platform Book</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A guide to the design philosophy, patterns, and conventions of the Dash Platform Rust codebase">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-2459343d.css">
+        <link rel="stylesheet" href="../css/chrome-ae938929.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "navy";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-390db66e.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-96a58d02.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('navy')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Dash Platform Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/dashpay/platform" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="feature-versions"><a class="header" href="#feature-versions">Feature Versions</a></h1>
+<h2 id="the-problem-granularity"><a class="header" href="#the-problem-granularity">The Problem: Granularity</a></h2>
+<p>The previous chapter showed how <code>PlatformVersion</code> is an immutable snapshot of
+the entire platform’s behavior at a given protocol version. But a snapshot is
+only useful if it can describe behavior at a fine enough granularity.</p>
+<p>Consider the Drive storage layer. It has dozens of grove operations, hundreds
+of document methods, contract methods, identity methods, and more. When you
+fix a bug in <code>update_contract</code>, you need to bump <em>that one method’s</em> version
+without affecting <code>insert_contract</code> or <code>prove_contract</code>. The system needs a
+way to assign a version number to individual methods and then compose those
+numbers into larger subsystem snapshots.</p>
+<p>This is where <code>FeatureVersion</code> and the nested version structs come in.</p>
+<h2 id="the-featureversion-type"><a class="header" href="#the-featureversion-type">The FeatureVersion Type</a></h2>
+<p>At the very bottom of the version tree is a single type, defined in the
+external <code>versioned-feature-core</code> crate:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// versioned-feature-core/src/lib.rs
+
+pub type FeatureVersion = u16;
+pub type OptionalFeatureVersion = Option&lt;u16&gt;;
+<span class="boring">}</span></code></pre>
+<p>That is it. A <code>FeatureVersion</code> is a <code>u16</code> – a number that says “use version N
+of this particular function.” The value <code>0</code> means “use the v0 implementation,”
+<code>1</code> means “use v1,” and so on.</p>
+<p><code>OptionalFeatureVersion</code> is <code>Option&lt;u16&gt;</code>. It represents a feature that did not
+exist in earlier protocol versions. When the value is <code>None</code>, the feature is
+not active – calling it returns a <code>VersionNotActive</code> error. When it is
+<code>Some(0)</code>, the feature exists and should use its v0 implementation.</p>
+<p>There is also a bounds type for serialization format versions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct FeatureVersionBounds {
+    pub min_version: FeatureVersion,
+    pub max_version: FeatureVersion,
+    pub default_current_version: FeatureVersion,
+}
+<span class="boring">}</span></code></pre>
+<p>This is used when a field can accept a <em>range</em> of versions – for example, a
+data contract serialization format where the system can read versions 0 through
+2 but writes version 2 by default.</p>
+<h2 id="version-structs-the-middle-of-the-tree"><a class="header" href="#version-structs-the-middle-of-the-tree">Version Structs: The Middle of the Tree</a></h2>
+<p>Between the top-level <code>PlatformVersion</code> and the leaf-level <code>FeatureVersion</code>
+numbers sit dozens of intermediate structs. These structs group related method
+versions together, forming a hierarchy that mirrors the codebase’s module
+structure.</p>
+<p>Let us trace a path from the top down.</p>
+<h3 id="level-1-platformversion"><a class="header" href="#level-1-platformversion">Level 1: PlatformVersion</a></h3>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct PlatformVersion {
+    pub protocol_version: ProtocolVersion,
+    pub dpp: DPPVersion,
+    pub drive: DriveVersion,
+    pub drive_abci: DriveAbciVersion,
+    pub consensus: ConsensusVersions,
+    pub fee_version: FeeVersion,
+    pub system_data_contracts: SystemDataContractVersions,
+    pub system_limits: SystemLimits,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="level-2-driveversion"><a class="header" href="#level-2-driveversion">Level 2: DriveVersion</a></h3>
+<p>The <code>drive</code> field contains <code>DriveVersion</code>, which groups all storage layer
+versions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// packages/rs-platform-version/src/version/drive_versions/mod.rs
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVersion {
+    pub structure: DriveStructureVersion,
+    pub methods: DriveMethodVersions,
+    pub grove_methods: DriveGroveMethodVersions,
+    pub grove_version: GroveVersion,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="level-3-drivemethodversions"><a class="header" href="#level-3-drivemethodversions">Level 3: DriveMethodVersions</a></h3>
+<p>The <code>methods</code> field expands into every category of Drive operation:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveMethodVersions {
+    pub initialization: DriveInitializationMethodVersions,
+    pub credit_pools: DriveCreditPoolMethodVersions,
+    pub protocol_upgrade: DriveProtocolUpgradeVersions,
+    pub prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions,
+    pub balances: DriveBalancesMethodVersions,
+    pub document: DriveDocumentMethodVersions,
+    pub vote: DriveVoteMethodVersions,
+    pub contract: DriveContractMethodVersions,
+    pub fees: DriveFeesMethodVersions,
+    pub estimated_costs: DriveEstimatedCostsMethodVersions,
+    pub asset_lock: DriveAssetLockMethodVersions,
+    pub verify: DriveVerifyMethodVersions,
+    pub identity: DriveIdentityMethodVersions,
+    pub token: DriveTokenMethodVersions,
+    pub platform_system: DrivePlatformSystemMethodVersions,
+    pub operations: DriveOperationsMethodVersion,
+    pub batch_operations: DriveBatchOperationsMethodVersion,
+    pub fetch: DriveFetchMethodVersions,
+    pub prove: DriveProveMethodVersions,
+    pub state_transitions: DriveStateTransitionMethodVersions,
+    pub platform_state: DrivePlatformStateMethodVersions,
+    pub group: DriveGroupMethodVersions,
+    pub address_funds: DriveAddressFundsMethodVersions,
+    pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
+}
+<span class="boring">}</span></code></pre>
+<h3 id="level-4-individual-method-categories"><a class="header" href="#level-4-individual-method-categories">Level 4: Individual Method Categories</a></h3>
+<p>Each category struct contains <code>FeatureVersion</code> fields for individual methods.
+For example, the contract method versions:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveContractMethodVersions {
+    pub prove: DriveContractProveMethodVersions,
+    pub apply: DriveContractApplyMethodVersions,
+    pub insert: DriveContractInsertMethodVersions,
+    pub update: DriveContractUpdateMethodVersions,
+    pub costs: DriveContractCostsMethodVersions,
+    pub get: DriveContractGetMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveContractUpdateMethodVersions {
+    pub update_contract: FeatureVersion,
+    pub update_description: FeatureVersion,
+    pub update_keywords: FeatureVersion,
+}
+<span class="boring">}</span></code></pre>
+<p>So the full path to read “which version of <code>update_contract</code> should I use?” is:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>platform_version.drive.methods.contract.update.update_contract
+<span class="boring">}</span></code></pre>
+<p>That is a five-level deep field access, and it resolves to a plain <code>u16</code>.</p>
+<h2 id="the-grove-methods-branch"><a class="header" href="#the-grove-methods-branch">The Grove Methods Branch</a></h2>
+<p>Let us trace a different path. The <code>grove_methods</code> field on <code>DriveVersion</code>
+holds versions for low-level GroveDB operations:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveGroveMethodVersions {
+    pub basic: DriveGroveBasicMethodVersions,
+    pub batch: DriveGroveBatchMethodVersions,
+    pub apply: DriveGroveApplyMethodVersions,
+    pub costs: DriveGroveCostMethodVersions,
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>basic</code> struct is where individual grove operations live:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveGroveBasicMethodVersions {
+    pub grove_insert: FeatureVersion,
+    pub grove_insert_empty_tree: FeatureVersion,
+    pub grove_insert_if_not_exists: FeatureVersion,
+    pub grove_clear: FeatureVersion,
+    pub grove_delete: FeatureVersion,
+    pub grove_get_raw: FeatureVersion,
+    pub grove_get_raw_optional: FeatureVersion,
+    pub grove_get: FeatureVersion,
+    pub grove_get_path_query: FeatureVersion,
+    pub grove_get_proved_path_query: FeatureVersion,
+    pub grove_get_sum_tree_total_value: FeatureVersion,
+    pub grove_has_raw: FeatureVersion,
+    // ... and many more
+}
+<span class="boring">}</span></code></pre>
+<p>So the path for <code>grove_get_raw</code> is:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>drive_version.grove_methods.basic.grove_get_raw
+<span class="boring">}</span></code></pre>
+<p>Notice something: grove operations take a <code>&amp;DriveVersion</code> rather than
+<code>&amp;PlatformVersion</code>. This is a minor optimization – when you are deep in the
+Drive layer, you only need the drive-specific version numbers, not the entire
+platform snapshot. The caller extracts <code>&amp;platform_version.drive</code> once and
+passes it down.</p>
+<h2 id="the-dpp-branch"><a class="header" href="#the-dpp-branch">The DPP Branch</a></h2>
+<p>The Dash Platform Protocol has its own deep tree. <code>DPPVersion</code> contains
+fourteen sub-version structs:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DPPVersion {
+    pub costs: DPPCostsVersions,
+    pub validation: DPPValidationVersions,
+    pub state_transition_serialization_versions: DPPStateTransitionSerializationVersions,
+    pub state_transition_conversion_versions: DPPStateTransitionConversionVersions,
+    pub state_transition_method_versions: DPPStateTransitionMethodVersions,
+    pub state_transitions: DPPStateTransitionVersions,
+    pub contract_versions: DPPContractVersions,
+    pub document_versions: DPPDocumentVersions,
+    pub identity_versions: DPPIdentityVersions,
+    pub voting_versions: DPPVotingVersions,
+    pub token_versions: DPPTokenVersions,
+    pub asset_lock_versions: DPPAssetLockVersions,
+    pub methods: DPPMethodVersions,
+    pub factory_versions: DPPFactoryVersions,
+}
+<span class="boring">}</span></code></pre>
+<p>And those go deeper. For example, <code>DPPContractVersions</code> contains not just
+<code>FeatureVersion</code> values but also <code>FeatureVersionBounds</code> and further nesting:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DPPContractVersions {
+    pub max_serialized_size: u32,
+    pub contract_serialization_version: FeatureVersionBounds,
+    pub contract_structure_version: FeatureVersion,
+    pub created_data_contract_structure: FeatureVersion,
+    pub config: FeatureVersionBounds,
+    pub methods: DataContractMethodVersions,
+    pub document_type_versions: DocumentTypeVersions,
+    pub token_versions: TokenVersions,
+}
+<span class="boring">}</span></code></pre>
+<p>Notice <code>max_serialized_size: u32</code>. Not every field is a <code>FeatureVersion</code>. Some
+are configuration values – limits, thresholds, constants – that change between
+protocol versions. The version struct is flexible enough to hold both “which
+implementation to use” and “what parameters to use.”</p>
+<h2 id="the-drive-abci-branch"><a class="header" href="#the-drive-abci-branch">The Drive ABCI Branch</a></h2>
+<p>The <code>DriveAbciVersion</code> struct covers the application blockchain interface –
+the layer that processes blocks, validates state transitions, and handles
+protocol upgrades:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveAbciVersion {
+    pub structs: DriveAbciStructureVersions,
+    pub methods: DriveAbciMethodVersions,
+    pub validation_and_processing: DriveAbciValidationVersions,
+    pub withdrawal_constants: DriveAbciWithdrawalConstants,
+    pub query: DriveAbciQueryVersions,
+    pub checkpoints: DriveAbciCheckpointParameters,
+}
+<span class="boring">}</span></code></pre>
+<p>The <code>validation_and_processing</code> field is where state transition validation
+versions live. This is where <code>OptionalFeatureVersion</code> becomes important:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct DriveAbciStateTransitionValidationVersion {
+    pub basic_structure: OptionalFeatureVersion,
+    pub advanced_structure: OptionalFeatureVersion,
+    pub identity_signatures: OptionalFeatureVersion,
+    pub nonce: OptionalFeatureVersion,
+    pub state: FeatureVersion,
+    pub transform_into_action: FeatureVersion,
+}
+<span class="boring">}</span></code></pre>
+<p><code>basic_structure</code> is <code>OptionalFeatureVersion</code> – in some protocol versions,
+basic structure validation may not exist for a particular state transition. The
+dispatch code handles this with a three-arm match:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>match platform_version
+    .drive_abci
+    .validation_and_processing
+    .state_transitions
+    .identity_create_state_transition
+    .basic_structure
+{
+    Some(0) =&gt; self.validate_basic_structure_v0(platform_version),
+    Some(version) =&gt; Err(Error::Execution(
+        ExecutionError::UnknownVersionMismatch { /* ... */ }
+    )),
+    None =&gt; Err(Error::Execution(
+        ExecutionError::VersionNotActive { /* ... */ }
+    )),
+}
+<span class="boring">}</span></code></pre>
+<p>Compare with <code>state</code> and <code>transform_into_action</code> which are plain
+<code>FeatureVersion</code> – those validations always exist, so there is no <code>None</code> arm.</p>
+<h2 id="non-method-version-fields"><a class="header" href="#non-method-version-fields">Non-Method Version Fields</a></h2>
+<p>Some version structs contain values that are not method versions at all, but
+protocol parameters:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[derive(Clone, Debug, Default)]
+pub struct SystemLimits {
+    pub estimated_contract_max_serialized_size: u16,
+    pub max_field_value_size: u32,
+    pub max_state_transition_size: u64,
+    pub max_transitions_in_documents_batch: u16,
+    pub withdrawal_transactions_per_block_limit: u16,
+    pub max_withdrawal_amount: u64,
+    pub max_contract_group_size: u16,
+    pub max_token_redemption_cycles: u32,
+    // ...
+}
+<span class="boring">}</span></code></pre>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
+    pub choose_quorum: FeatureVersion,
+    pub verify_chain_lock: FeatureVersion,
+    // ...
+    pub recent_block_count_amount: u32,
+}
+<span class="boring">}</span></code></pre>
+<p>The chain lock struct mixes method versions (<code>choose_quorum: FeatureVersion</code>)
+with protocol constants (<code>recent_block_count_amount: u32</code>). This is perfectly
+fine – the version snapshot captures <em>all</em> protocol-specific values, whether
+they control dispatch or configure behavior.</p>
+<h2 id="how-subsystem-version-constants-compose"><a class="header" href="#how-subsystem-version-constants-compose">How Subsystem Version Constants Compose</a></h2>
+<p>Each subsystem version constant (like <code>DRIVE_VERSION_V1</code>) is assembled from
+smaller constants:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// packages/rs-platform-version/src/version/drive_versions/v1.rs
+
+pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
+    structure: DRIVE_STRUCTURE_V1,
+    methods: DriveMethodVersions {
+        initialization: DriveInitializationMethodVersions {
+            create_initial_state_structure: 0,
+        },
+        credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
+        protocol_upgrade: DriveProtocolUpgradeVersions {
+            clear_version_information: 0,
+            fetch_versions_with_counter: 0,
+            // ...
+        },
+        balances: DriveBalancesMethodVersions {
+            add_to_system_credits: 0,
+            remove_from_system_credits: 0,
+            calculate_total_credits_balance: 0,
+            // ...
+        },
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V1,
+        // ...
+    },
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
+    grove_version: GROVE_V1,
+};
+<span class="boring">}</span></code></pre>
+<p>Notice the mix of inline construction and named constants. Small structs like
+<code>DriveProtocolUpgradeVersions</code> are often written inline because all their
+fields are <code>0</code> in every version. Larger, frequently-changing structs like
+<code>DRIVE_CONTRACT_METHOD_VERSIONS_V1</code> get their own named constant so they can
+be reused or overridden in later versions.</p>
+<p>When <code>DRIVE_VERSION_V6</code> (used in <code>PLATFORM_V12</code>) needs to change contract
+methods, it simply references <code>DRIVE_CONTRACT_METHOD_VERSIONS_V2</code> instead of
+<code>V1</code>:</p>
+<pre class="playground"><code class="language-rust"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// packages/rs-platform-version/src/version/drive_versions/v6.rs
+
+pub const DRIVE_VERSION_V6: DriveVersion = DriveVersion {
+    structure: DRIVE_STRUCTURE_V1,
+    methods: DriveMethodVersions {
+        // ...
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V2,  // changed!
+        // ...
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2, // also changed!
+        // ...
+    },
+    grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,  // unchanged
+    grove_version: GROVE_V2,  // changed!
+};
+<span class="boring">}</span></code></pre>
+<p>The unchanged parts reference the same V1 constants they always did. Only the
+parts that actually changed get new constants.</p>
+<h2 id="the-file-layout"><a class="header" href="#the-file-layout">The File Layout</a></h2>
+<p>The version structs follow a consistent directory layout in
+<code>packages/rs-platform-version/src/version/</code>:</p>
+<pre><code>version/
+  mod.rs                        # ProtocolVersion type alias, module declarations
+  protocol_version.rs           # PlatformVersion struct, PLATFORM_VERSIONS array, get()
+  v1.rs .. v12.rs               # PLATFORM_V* snapshot constants
+  drive_versions/
+    mod.rs                      # DriveVersion, DriveMethodVersions, etc.
+    v1.rs .. v6.rs              # DRIVE_VERSION_V* constants
+    drive_grove_method_versions/
+      mod.rs                    # DriveGroveMethodVersions struct
+      v1.rs                     # DRIVE_GROVE_METHOD_VERSIONS_V1
+    drive_contract_method_versions/
+      mod.rs                    # DriveContractMethodVersions struct
+      v1.rs, v2.rs              # versioned constants
+    ...
+  drive_abci_versions/
+    mod.rs                      # DriveAbciVersion struct
+    drive_abci_method_versions/
+      mod.rs                    # DriveAbciMethodVersions and sub-structs
+      v1.rs .. v7.rs            # versioned constants
+    drive_abci_validation_versions/
+      mod.rs                    # DriveAbciValidationVersions struct
+      v1.rs .. v7.rs
+    ...
+  dpp_versions/
+    mod.rs                      # DPPVersion struct
+    dpp_contract_versions/
+      mod.rs                    # DPPContractVersions struct
+      v1.rs, v2.rs, v3.rs
+    ...
+  fee/
+    mod.rs                      # FeeVersion struct
+    v1.rs, v2.rs
+    storage.rs, signature.rs, ...
+  system_limits/
+    mod.rs                      # SystemLimits struct
+    v1.rs
+</code></pre>
+<p>The pattern is: <code>mod.rs</code> defines the struct, and <code>v*.rs</code> files define the
+concrete constants. The struct definition is the <em>schema</em>. The version files
+are the <em>data</em>.</p>
+<h2 id="rules"><a class="header" href="#rules">Rules</a></h2>
+<p><strong>Do:</strong></p>
+<ul>
+<li>When adding a new method to Drive, DPP, or Drive ABCI, add a corresponding
+<code>FeatureVersion</code> field to the appropriate version struct. Then set its value
+in every <code>v*.rs</code> constant – the compiler will force you.</li>
+<li>Use <code>OptionalFeatureVersion</code> for features that are being introduced in a
+non-initial protocol version. Set them to <code>None</code> in earlier versions and
+<code>Some(0)</code> in the version that introduces the feature.</li>
+<li>Group related methods into their own sub-struct when the parent struct
+grows too large. Follow the existing naming pattern:
+<code>Drive&lt;Category&gt;MethodVersions</code>.</li>
+</ul>
+<p><strong>Do not:</strong></p>
+<ul>
+<li>Never use a raw <code>u16</code> where you mean <code>FeatureVersion</code>. The type alias exists
+for readability and future-proofing – if we ever need to change the
+underlying type, the alias is the single point of change.</li>
+<li>Never put runtime-computed values into a version struct. Every field must be
+a compile-time constant. This is what makes the snapshot deterministic.</li>
+<li>Never reuse a version constant with different semantics. If
+<code>DRIVE_CONTRACT_METHOD_VERSIONS_V1</code> means something, creating a V2 that
+changes one field is correct. Silently modifying V1 is not – it would change
+the behavior of every platform version that references it.</li>
+</ul>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../versioning/platform-version.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../versioning/versioned-dispatch.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../versioning/platform-version.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../versioning/versioned-dispatch.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+        <!-- Livereload script (if served using the cli tool) -->
+        <script>
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsAddress = wsProtocol + "//" + location.host + "/" + "__livereload";
+            const socket = new WebSocket(wsAddress);
+            socket.onmessage = function (event) {
+                if (event.data === "reload") {
+                    socket.close();
+                    location.reload();
+                }
+            };
+
+            window.onbeforeunload = function() {
+                socket.close();
+            }
+        </script>
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-a0b12cfe.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>
