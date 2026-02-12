@@ -156,10 +156,7 @@ public class CoreWalletManager: ObservableObject {
             accountType: .standardBIP44
         )
 
-        // Get current height (TODO: get from SPV client when available)
-        let currentHeight: UInt32 = 0
-
-        return try! managedAccount.getTransactions(currentHeight: currentHeight)
+        return managedAccount.getTransactions()
     }
 
     public func getBalance(for wallet: HDWallet) -> Balance {

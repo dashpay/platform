@@ -55,15 +55,13 @@ public class ManagedAccount {
     /// Get all transactions for this account
     /// - Parameter currentHeight: Current blockchain height for calculating confirmations
     /// - Returns: Array of transactions
-    public func getTransactions(currentHeight: UInt32 = 0) throws -> [WalletTransaction] {
+    public func getTransactions() -> [WalletTransaction] {
         var transactionsPtr: UnsafeMutablePointer<FFITransactionRecord>?
         var count: size_t = 0
 
         let success = managed_core_account_get_transactions(handle, &transactionsPtr, &count)
 
-        guard success else {
-            throw KeyWalletError.invalidState("Failed to get transactions from managed account")
-        }
+        assert(success, "This can only fail if any pointer is nil")
 
         // Handle empty case
         guard count > 0, let ptr = transactionsPtr else {
@@ -80,24 +78,6 @@ public class ManagedAccount {
 
         for i in 0..<count {
             let ffiTx = ptr.advanced(by: i).pointee
-
-            // Calculate confirmations
-            let confirmations: Int
-            if ffiTx.height > 0 && currentHeight >= ffiTx.height {
-                confirmations = Int(currentHeight - ffiTx.height) + 1
-            } else {
-                confirmations = 0
-            }
-
-            // Determine transaction type
-            let type: String
-            if ffiTx.net_amount > 0 {
-                type = "received"
-            } else if ffiTx.net_amount < 0 {
-                type = "sent"
-            } else {
-                type = "self"
-            }
 
             // Convert txid to hex string
             let txidHex = withUnsafeBytes(of: ffiTx.txid) { buffer in
@@ -117,12 +97,10 @@ public class ManagedAccount {
             let transaction = WalletTransaction(
                 txid: txidHex,
                 netAmount: ffiTx.net_amount,
-                height: ffiTx.height > 0 ? ffiTx.height : nil,
+                height: ffiTx.height,
                 blockHash: blockHashHex,
                 timestamp: ffiTx.timestamp,
                 fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
-                confirmations: confirmations,
-                type: type,
                 isOurs: ffiTx.is_ours
             )
 
@@ -181,30 +159,24 @@ public struct WalletTransaction: Identifiable {
     public let txid: String
     /// Net amount for the account (positive = received, negative = sent)
     public let netAmount: Int64
-    /// Block height if confirmed
-    public let height: UInt32?
+    /// Block height, 0 if not confirmed
+    public let height: UInt32
     /// Block hash if confirmed (hex string)
     public let blockHash: String?
     /// Unix timestamp
     public let timestamp: UInt64
     /// Fee if known
     public let fee: UInt64?
-    /// Number of confirmations
-    public let confirmations: Int
-    /// Transaction type: "received", "sent", or "self"
-    public let type: String
     /// Whether this is our transaction
     public let isOurs: Bool
 
     public init(
         txid: String,
         netAmount: Int64,
-        height: UInt32?,
+        height: UInt32,
         blockHash: String?,
         timestamp: UInt64,
         fee: UInt64?,
-        confirmations: Int,
-        type: String,
         isOurs: Bool
     ) {
         self.txid = txid
@@ -213,8 +185,6 @@ public struct WalletTransaction: Identifiable {
         self.blockHash = blockHash
         self.timestamp = timestamp
         self.fee = fee
-        self.confirmations = confirmations
-        self.type = type
         self.isOurs = isOurs
     }
 
@@ -225,7 +195,7 @@ public struct WalletTransaction: Identifiable {
 
     /// Is the transaction confirmed
     public var isConfirmed: Bool {
-        return confirmations > 0
+        return blockHash != nil && height > 0
     }
 
     /// Formatted amount string

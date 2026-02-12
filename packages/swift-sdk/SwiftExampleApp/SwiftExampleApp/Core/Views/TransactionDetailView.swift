@@ -5,43 +5,37 @@ struct TransactionDetailView: View {
     let transaction: WalletTransaction
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
-
+    
     private var typeDescription: String {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "Received"
-        case "sent":
+        case let amount where amount < 0:
             return "Sent"
-        case "self":
-            return "Self-Transfer"
         default:
-            return "Unknown"
+            return "Self-Transfer"
         }
     }
 
     private var typeIcon: String {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "arrow.down.circle.fill"
-        case "sent":
+        case let amount where amount < 0:
             return "arrow.up.circle.fill"
-        case "self":
-            return "arrow.triangle.2.circlepath"
         default:
-            return "questionmark.circle"
+            return "arrow.triangle.2.circlepath"
         }
     }
-
+    
     private var typeColor: Color {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return .green
-        case "sent":
+        case let amount where amount < 0:
             return .red
-        case "self":
-            return .blue
         default:
-            return .gray
+            return .blue
         }
     }
 
@@ -69,9 +63,7 @@ struct TransactionDetailView: View {
                     VStack(spacing: 16) {
                         TransactionDetailRow(
                             label: "Status",
-                            value: transaction.confirmations == 0 ? "Pending" :
-                                   transaction.confirmations < 6 ? "\(transaction.confirmations) confirmations" :
-                                   "Confirmed"
+                            value: !transaction.isConfirmed ? "Pending" : "Confirmed"
                         )
 
                         TransactionDetailRow(
@@ -79,14 +71,14 @@ struct TransactionDetailView: View {
                             value: formatDate(transaction.date)
                         )
 
-                        if let height = transaction.height {
+                        if transaction.height != 0 {
                             TransactionDetailRow(
                                 label: "Block Height",
-                                value: "\(height)"
+                                value: "\(transaction.height)"
                             )
                         }
 
-                        if let fee = transaction.formattedFee, transaction.type == "sent" {
+                        if let fee = transaction.formattedFee, transaction.netAmount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee
@@ -239,8 +231,6 @@ struct TransactionDetailRow: View {
             blockHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
             timestamp: UInt64(Date().timeIntervalSince1970),
             fee: 226,
-            confirmations: 6,
-            type: "received",
             isOurs: false
         )
     )
