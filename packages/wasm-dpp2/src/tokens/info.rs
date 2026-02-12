@@ -4,7 +4,8 @@ use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "IdentityTokenInfo")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityTokenInfoWasm(IdentityTokenInfo);
 
 impl From<IdentityTokenInfo> for IdentityTokenInfoWasm {

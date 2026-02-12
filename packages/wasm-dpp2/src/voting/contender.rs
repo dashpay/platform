@@ -43,7 +43,8 @@ extern "C" {
     pub type ContenderWithSerializedDocumentJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "ContenderWithSerializedDocument")]
 pub struct ContenderWithSerializedDocumentWasm(ContenderWithSerializedDocument);
 

@@ -34,7 +34,8 @@ extern "C" {
     pub type ResourceVoteChoiceJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "ResourceVoteChoice")]
 pub struct ResourceVoteChoiceWasm(ResourceVoteChoice);
 
