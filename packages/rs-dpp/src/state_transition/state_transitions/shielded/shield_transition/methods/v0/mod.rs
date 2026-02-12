@@ -21,6 +21,7 @@ use platform_version::version::PlatformVersion;
 
 pub trait ShieldTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
+    #[allow(clippy::too_many_arguments)]
     fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,

@@ -1,45 +1,26 @@
 #[cfg(test)]
 mod tests {
-    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        create_dummy_serialized_action, insert_anchor_into_state, insert_dummy_encrypted_notes,
+        insert_nullifier_into_state, process_transition, set_pool_total_balance, setup_platform,
+    };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
-    use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::identity::core_script::CoreScript;
-    use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
     use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
     use dpp::state_transition::StateTransition;
     use dpp::withdrawal::Pooling;
-    use drive::drive::shielded::paths::{
-        shielded_anchors_credit_pool_path, shielded_credit_pool_encrypted_notes_path,
-        shielded_credit_pool_nullifiers_path, shielded_credit_pool_path,
-        SHIELDED_TOTAL_BALANCE_KEY,
-    };
-    use drive::grovedb::Element;
     use platform_version::version::PlatformVersion;
 
     // ==========================================
-    // Helper Functions
+    // Helper Functions (transition-specific)
     // ==========================================
-
-    /// Create a `SerializedAction` with syntactically valid sizes but meaningless crypto data.
-    /// Passes structure validation (correct field sizes) but will fail ZK proof verification.
-    fn create_dummy_serialized_action() -> SerializedAction {
-        SerializedAction {
-            nullifier: [1u8; 32],
-            rk: [2u8; 32],
-            cmx: [3u8; 32],
-            encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
-            cv_net: [5u8; 32],
-            spend_auth_sig: [6u8; 64],
-        }
-    }
 
     /// Create a dummy CoreScript (P2PKH) for the withdrawal output.
     fn create_output_script() -> CoreScript {
@@ -96,182 +77,6 @@ mod tests {
             create_output_script(), // P2PKH output script
             0,                      // user_fee_increase
         )
-    }
-
-    /// Insert a fake anchor into the shielded anchors tree via GroveDB.
-    fn insert_anchor_into_state(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        anchor: &[u8; 32],
-    ) {
-        let platform_version = PlatformVersion::latest();
-        let grove_version = &platform_version.drive.grove_version;
-        let transaction = platform.drive.grove.start_transaction();
-        let anchors_path = shielded_anchors_credit_pool_path();
-
-        platform
-            .drive
-            .grove
-            .insert(
-                &anchors_path,
-                anchor,
-                Element::Item(vec![], None),
-                None,
-                Some(&transaction),
-                grove_version,
-            )
-            .unwrap()
-            .expect("should insert anchor");
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("should commit transaction");
-    }
-
-    /// Insert a nullifier into the nullifiers tree via GroveDB.
-    fn insert_nullifier_into_state(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        nullifier: &[u8; 32],
-    ) {
-        let platform_version = PlatformVersion::latest();
-        let grove_version = &platform_version.drive.grove_version;
-        let transaction = platform.drive.grove.start_transaction();
-        let nullifiers_path = shielded_credit_pool_nullifiers_path();
-
-        platform
-            .drive
-            .grove
-            .insert(
-                &nullifiers_path,
-                nullifier,
-                Element::Item(vec![], None),
-                None,
-                Some(&transaction),
-                grove_version,
-            )
-            .unwrap()
-            .expect("should insert nullifier");
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("should commit transaction");
-    }
-
-    /// Set the shielded pool total balance in GroveDB.
-    fn set_pool_total_balance(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        balance: u64,
-    ) {
-        let platform_version = PlatformVersion::latest();
-        let grove_version = &platform_version.drive.grove_version;
-        let transaction = platform.drive.grove.start_transaction();
-        let pool_path = shielded_credit_pool_path();
-
-        platform
-            .drive
-            .grove
-            .insert(
-                &pool_path,
-                &[SHIELDED_TOTAL_BALANCE_KEY],
-                Element::new_sum_item(balance as i64),
-                None,
-                Some(&transaction),
-                grove_version,
-            )
-            .unwrap()
-            .expect("should set total balance");
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("should commit transaction");
-    }
-
-    /// Insert dummy encrypted notes into the shielded pool to meet the minimum
-    /// notes threshold for outgoing transitions.
-    fn insert_dummy_encrypted_notes(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        count: u64,
-    ) {
-        let platform_version = PlatformVersion::latest();
-        let grove_version = &platform_version.drive.grove_version;
-        let transaction = platform.drive.grove.start_transaction();
-        let notes_path = shielded_credit_pool_encrypted_notes_path();
-
-        for i in 0..count {
-            platform
-                .drive
-                .grove
-                .insert(
-                    &notes_path,
-                    &i.to_be_bytes(),
-                    Element::Item(vec![0], None),
-                    None,
-                    Some(&transaction),
-                    grove_version,
-                )
-                .unwrap()
-                .expect("should insert dummy note");
-        }
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("should commit transaction");
-    }
-
-    /// Standard platform setup for tests.
-    fn setup_platform(
-    ) -> crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike> {
-        let platform_config = PlatformConfig {
-            testing_configs: PlatformTestConfig {
-                disable_instant_lock_signature_verification: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        TestPlatformBuilder::new()
-            .with_config(platform_config)
-            .with_latest_protocol_version()
-            .build_with_mock_rpc()
-            .set_genesis_state()
-    }
-
-    /// Execute a state transition through the full processing pipeline and return the result.
-    fn process_transition(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        transition: StateTransition,
-        platform_version: &PlatformVersion,
-    ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
-    {
-        let transition_bytes = transition
-            .serialize_to_bytes()
-            .expect("should serialize transition");
-        let platform_state = platform.state.load();
-        let transaction = platform.drive.grove.start_transaction();
-
-        platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![transition_bytes],
-                &platform_state,
-                &BlockInfo::default(),
-                &transaction,
-                platform_version,
-                false,
-                None,
-            )
-            .expect("expected to process state transition")
     }
 
     // ==========================================

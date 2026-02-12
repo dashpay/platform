@@ -3,6 +3,7 @@ mod tests;
 mod transform_into_action;
 
 use dpp::address_funds::PlatformAddress;
+use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use dpp::state_transition::shield_transition::ShieldTransition;
@@ -13,6 +14,7 @@ use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::shield::transform_into_action::v0::ShieldStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -26,6 +28,8 @@ pub trait StateTransitionShieldTransitionActionTransformer {
         &self,
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -35,6 +39,8 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
         &self,
         platform: &PlatformRef<C>,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -50,6 +56,8 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
                 platform.drive,
                 tx,
                 inputs_with_remaining_balance,
+                block_info,
+                execution_context,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

@@ -45,6 +45,19 @@ impl<C> Platform<C> {
             ));
         }
 
+        // Validate that all nullifiers are exactly 32 bytes
+        for (i, nullifier) in nullifiers.iter().enumerate() {
+            if nullifier.len() != 32 {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(format!(
+                        "nullifier at index {} has invalid length: expected 32 bytes, got {}",
+                        i,
+                        nullifier.len()
+                    )),
+                ));
+            }
+        }
+
         let response = if prove {
             let path_query = PathQuery {
                 path: shielded_credit_pool_nullifiers_path_vec(),

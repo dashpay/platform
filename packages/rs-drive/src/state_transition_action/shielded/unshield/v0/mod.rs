@@ -5,7 +5,7 @@ use dpp::fee::Credits;
 use dpp::prelude::UserFeeIncrease;
 
 /// Unshield transition action v0
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UnshieldTransitionActionV0 {
     /// The address receiving unshielded funds
     pub output_address: PlatformAddress,

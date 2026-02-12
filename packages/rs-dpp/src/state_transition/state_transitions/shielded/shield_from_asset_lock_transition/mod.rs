@@ -10,6 +10,8 @@ use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAs
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+pub type ShieldFromAssetLockTransitionLatest = ShieldFromAssetLockTransitionV0;
+
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;

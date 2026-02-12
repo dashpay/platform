@@ -2,11 +2,14 @@
 //!
 //! This module provides common test infrastructure for testing state transitions
 //! that involve platform addresses, including signers, address creation helpers,
-//! and balance setup utilities.
+//! balance setup utilities, and shielded pool state helpers.
 
+use crate::config::{PlatformConfig, PlatformTestConfig};
+use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use crate::rpc::core::MockCoreRPCLike;
-use crate::test::helpers::setup::TempPlatform;
+use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::blockdata::script::ScriptBuf;
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
@@ -14,7 +17,15 @@ use dpp::dashcore::PublicKey;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::AddressNonce;
+use dpp::serialization::PlatformSerializable;
+use dpp::shielded::SerializedAction;
+use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
+use drive::drive::shielded::paths::{
+    shielded_anchors_credit_pool_path, shielded_credit_pool_encrypted_notes_path,
+    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
+};
+use drive::grovedb::Element;
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
@@ -386,4 +397,183 @@ pub fn setup_address_with_balance_and_system_credits(
             &platform_version.drive,
         )
         .expect("expected to apply drive operations");
+}
+
+// ==========================================
+// Shielded Test Helpers
+// ==========================================
+
+/// Create a `SerializedAction` with syntactically valid sizes but meaningless crypto data.
+/// Passes structure validation (correct field sizes) but will fail ZK proof verification.
+pub fn create_dummy_serialized_action() -> SerializedAction {
+    SerializedAction {
+        nullifier: [1u8; 32],
+        rk: [2u8; 32],
+        cmx: [3u8; 32],
+        encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
+        cv_net: [5u8; 32],
+        spend_auth_sig: [6u8; 64],
+    }
+}
+
+/// Standard platform setup for shielded tests with instant lock signature verification disabled.
+pub fn setup_platform() -> TempPlatform<MockCoreRPCLike> {
+    let platform_config = PlatformConfig {
+        testing_configs: PlatformTestConfig {
+            disable_instant_lock_signature_verification: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    TestPlatformBuilder::new()
+        .with_config(platform_config)
+        .with_latest_protocol_version()
+        .build_with_mock_rpc()
+        .set_genesis_state()
+}
+
+/// Execute a state transition through the full processing pipeline and return the result.
+pub fn process_transition(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    transition: StateTransition,
+    platform_version: &PlatformVersion,
+) -> StateTransitionsProcessingResult {
+    let transition_bytes = transition
+        .serialize_to_bytes()
+        .expect("should serialize transition");
+    let platform_state = platform.state.load();
+    let transaction = platform.drive.grove.start_transaction();
+
+    platform
+        .platform
+        .process_raw_state_transitions(
+            &vec![transition_bytes],
+            &platform_state,
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+            false,
+            None,
+        )
+        .expect("expected to process state transition")
+}
+
+/// Insert a fake anchor into the shielded anchors tree via GroveDB.
+pub fn insert_anchor_into_state(platform: &TempPlatform<MockCoreRPCLike>, anchor: &[u8; 32]) {
+    let platform_version = PlatformVersion::latest();
+    let grove_version = &platform_version.drive.grove_version;
+    let transaction = platform.drive.grove.start_transaction();
+    let anchors_path = shielded_anchors_credit_pool_path();
+
+    platform
+        .drive
+        .grove
+        .insert(
+            &anchors_path,
+            anchor,
+            Element::Item(vec![], None),
+            None,
+            Some(&transaction),
+            grove_version,
+        )
+        .unwrap()
+        .expect("should insert anchor");
+
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("should commit transaction");
+}
+
+/// Insert a nullifier into the nullifiers tree via GroveDB.
+pub fn insert_nullifier_into_state(platform: &TempPlatform<MockCoreRPCLike>, nullifier: &[u8; 32]) {
+    let platform_version = PlatformVersion::latest();
+    let grove_version = &platform_version.drive.grove_version;
+    let transaction = platform.drive.grove.start_transaction();
+    let nullifiers_path = shielded_credit_pool_nullifiers_path();
+
+    platform
+        .drive
+        .grove
+        .insert(
+            &nullifiers_path,
+            nullifier,
+            Element::Item(vec![], None),
+            None,
+            Some(&transaction),
+            grove_version,
+        )
+        .unwrap()
+        .expect("should insert nullifier");
+
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("should commit transaction");
+}
+
+/// Set the shielded pool total balance in GroveDB.
+pub fn set_pool_total_balance(platform: &TempPlatform<MockCoreRPCLike>, balance: u64) {
+    let platform_version = PlatformVersion::latest();
+    let grove_version = &platform_version.drive.grove_version;
+    let transaction = platform.drive.grove.start_transaction();
+    let pool_path = shielded_credit_pool_path();
+
+    platform
+        .drive
+        .grove
+        .insert(
+            &pool_path,
+            &[SHIELDED_TOTAL_BALANCE_KEY],
+            Element::new_sum_item(balance as i64),
+            None,
+            Some(&transaction),
+            grove_version,
+        )
+        .unwrap()
+        .expect("should set total balance");
+
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("should commit transaction");
+}
+
+/// Insert dummy encrypted notes into the shielded pool to meet the minimum
+/// notes threshold for outgoing transitions.
+pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, count: u64) {
+    let platform_version = PlatformVersion::latest();
+    let grove_version = &platform_version.drive.grove_version;
+    let transaction = platform.drive.grove.start_transaction();
+    let notes_path = shielded_credit_pool_encrypted_notes_path();
+
+    for i in 0..count {
+        platform
+            .drive
+            .grove
+            .insert(
+                &notes_path,
+                &i.to_be_bytes(),
+                Element::Item(vec![0], None),
+                None,
+                Some(&transaction),
+                grove_version,
+            )
+            .unwrap()
+            .expect("should insert dummy note");
+    }
+
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("should commit transaction");
 }

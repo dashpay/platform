@@ -1,19 +1,24 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+    read_pool_total_balance, reconstruct_and_verify_bundle,
+};
 use dpp::address_funds::PlatformAddress;
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive::util::grove_operations::DirectQueryType;
 use std::collections::BTreeMap;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shield) trait ShieldStateTransitionTransformIntoActionValidationV0
@@ -23,6 +28,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         drive: &Drive,
         transaction: TransactionArg,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -33,6 +40,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         drive: &Drive,
         transaction: TransactionArg,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Extract note commitments and encrypted notes from serialized actions
@@ -75,18 +84,19 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
 
         // Read current shielded pool state from GroveDB
         let mut drive_operations = vec![];
-        let pool_path = shielded_credit_pool_path();
+        let current_total_balance =
+            read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
-        let current_total_balance = drive
-            .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&pool_path).into(),
-                &[SHIELDED_TOTAL_BALANCE_KEY],
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .unwrap_or(0);
+        // Calculate fees from the GroveDB operations
+        let fee = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         // Verify the ZK proof
         let (actions, flags, value_balance, anchor, proof, binding_signature) = match self {

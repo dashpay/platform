@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        create_dummy_serialized_action, process_transition, setup_platform,
+    };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
-    use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
@@ -31,21 +31,8 @@ mod tests {
     use std::sync::OnceLock;
 
     // ==========================================
-    // Helper Functions
+    // Helper Functions (transition-specific)
     // ==========================================
-
-    /// Create a `SerializedAction` with syntactically valid sizes but meaningless crypto data.
-    /// Passes structure validation (correct field sizes) but will fail ZK proof verification.
-    fn create_dummy_serialized_action() -> SerializedAction {
-        SerializedAction {
-            nullifier: [1u8; 32],
-            rk: [2u8; 32],
-            cmx: [3u8; 32],
-            encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
-            cv_net: [5u8; 32],
-            spend_auth_sig: [6u8; 64],
-        }
-    }
 
     /// Creates an asset lock proof and returns it with the private key bytes for ECDSA signing.
     fn create_asset_lock_proof_with_key(
@@ -141,51 +128,6 @@ mod tests {
                 signature: BinaryData::new(vec![0u8; 65]), // dummy signature
             },
         ))
-    }
-
-    /// Standard platform setup for tests with instant lock signature verification disabled.
-    fn setup_platform(
-    ) -> crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike> {
-        let platform_config = PlatformConfig {
-            testing_configs: PlatformTestConfig {
-                disable_instant_lock_signature_verification: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        TestPlatformBuilder::new()
-            .with_config(platform_config)
-            .with_latest_protocol_version()
-            .build_with_mock_rpc()
-            .set_genesis_state()
-    }
-
-    /// Execute a state transition through the full processing pipeline and return the result.
-    fn process_transition(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        transition: StateTransition,
-        platform_version: &PlatformVersion,
-    ) -> crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult
-    {
-        let transition_bytes = transition
-            .serialize_to_bytes()
-            .expect("should serialize transition");
-        let platform_state = platform.state.load();
-        let transaction = platform.drive.grove.start_transaction();
-
-        platform
-            .platform
-            .process_raw_state_transitions(
-                &vec![transition_bytes],
-                &platform_state,
-                &BlockInfo::default(),
-                &transaction,
-                platform_version,
-                false,
-                None,
-            )
-            .expect("expected to process state transition")
     }
 
     // ==========================================

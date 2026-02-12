@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Unshield value_balance ({value_balance}) must be >= amount ({amount})")]
+#[error("value_balance ({value_balance}) must be >= amount ({amount})")]
 #[platform_serialize(unversioned)]
 pub struct UnshieldValueBalanceBelowAmountError {
     /*

@@ -1,7 +1,7 @@
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
-mod v0_methods;
+pub(super) mod v0_methods;
 mod version;
 
 use crate::prelude::UserFeeIncrease;
@@ -34,7 +34,7 @@ pub struct ShieldedTransferTransitionV0 {
     /// Bundle flags (spends_enabled | outputs_enabled)
     pub flags: u8,
     /// Net value balance (fee amount extracted from shielded pool)
-    pub value_balance: i64,
+    pub value_balance: u64,
     /// Merkle root of the commitment tree used for spends
     pub anchor: [u8; 32],
     /// Halo2 proof bytes

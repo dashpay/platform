@@ -1,22 +1,23 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+    read_pool_total_balance, reconstruct_and_verify_bundle, validate_anchor_exists,
+    validate_minimum_pool_notes, validate_nullifiers,
+};
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
-use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
-use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
-};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
+use drive::state_transition_action::system::penalize_shielded_pool_action::v0::PenalizeShieldedPoolActionV0;
+use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive::util::grove_operations::DirectQueryType;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shielded_withdrawal) trait ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
 {
@@ -24,6 +25,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -36,6 +38,7 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -63,47 +66,17 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
 
         // Read current shielded pool total balance from GroveDB
         let mut drive_operations = vec![];
-        let pool_path = shielded_credit_pool_path();
-
-        let current_total_balance = drive
-            .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&pool_path).into(),
-                &[SHIELDED_TOTAL_BALANCE_KEY],
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .unwrap_or(0);
+        let current_total_balance =
+            read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
         // Check minimum notes threshold for outgoing transitions (anonymity set)
-        let min_notes = platform_version
-            .drive_abci
-            .validation_and_processing
-            .event_constants
-            .minimum_pool_notes_for_outgoing;
-        if min_notes > 0 {
-            let encrypted_notes_count = drive
-                .grove_get_raw_optional(
-                    (&pool_path).into(),
-                    &[SHIELDED_ENCRYPTED_NOTES_KEY],
-                    DirectQueryType::StatefulDirectQuery,
-                    transaction,
-                    &mut drive_operations,
-                    &platform_version.drive,
-                )?
-                .map(|element| element.count_value_or_default())
-                .unwrap_or(0);
-
-            if encrypted_notes_count < min_notes {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::InsufficientPoolNotesError(InsufficientPoolNotesError::new(
-                        encrypted_notes_count,
-                        min_notes,
-                    ))
-                    .into(),
-                ));
-            }
+        if let Some(err) = validate_minimum_pool_notes(
+            drive,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(err);
         }
 
         // Verify the pool has sufficient balance for the withdrawal.
@@ -129,56 +102,37 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         }
 
         // Verify the anchor exists in the recorded anchors tree
-        let anchors_path = shielded_anchors_credit_pool_path();
-        let anchor_exists = drive.grove_has_raw(
-            (&anchors_path).into(),
+        if let Some(err) = validate_anchor_exists(
+            drive,
             &anchor,
-            DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,
-            &platform_version.drive,
+            platform_version,
+        )? {
+            return Ok(err);
+        }
+
+        // Validate nullifiers: intra-bundle duplicates + already-spent in state
+        if let Some(err) = validate_nullifiers(
+            drive,
+            &nullifiers,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(err);
+        }
+
+        // Calculate fees from the GroveDB operations
+        let fee = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
         )?;
-
-        if !anchor_exists {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidAnchorError(InvalidAnchorError::new(anchor)).into(),
-            ));
-        }
-
-        // Defense-in-depth: reject duplicate nullifiers within the same bundle
-        let mut seen_nullifiers = std::collections::HashSet::new();
-        for nullifier in &nullifiers {
-            if !seen_nullifiers.insert(nullifier) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
-                        *nullifier,
-                    ))
-                    .into(),
-                ));
-            }
-        }
-
-        // Check that no nullifier has already been spent in the state
-        let nullifiers_path = shielded_credit_pool_nullifiers_path();
-        for nullifier in &nullifiers {
-            let exists = drive.grove_has_raw(
-                (&nullifiers_path).into(),
-                nullifier,
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?;
-
-            if exists {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
-                        *nullifier,
-                    ))
-                    .into(),
-                ));
-            }
-        }
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         // Verify the Orchard ZK proof, binding transparent fields to the sighash.
         // For shielded withdrawal, the extra_sighash_data binds the withdrawal
@@ -219,8 +173,25 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             st_binding_sig,
             &extra_sighash_data,
         ) {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(e).into(),
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+
+            let penalty_amount = std::cmp::min(penalty, current_total_balance);
+
+            let penalize_action = StateTransitionAction::PenalizeShieldedPoolAction(
+                PenalizeShieldedPoolAction::from(PenalizeShieldedPoolActionV0 {
+                    penalty_amount,
+                    nullifiers: nullifiers.clone(),
+                    current_total_balance,
+                }),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                penalize_action,
+                vec![StateError::InvalidShieldedProofError(e).into()],
             ));
         }
 

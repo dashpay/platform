@@ -1,21 +1,24 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
-use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
-use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+    read_pool_total_balance, reconstruct_and_verify_bundle, validate_anchor_exists,
+    validate_nullifiers,
+};
+use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
-};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
+use drive::state_transition_action::system::penalize_shielded_pool_action::v0::PenalizeShieldedPoolActionV0;
+use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive::util::grove_operations::DirectQueryType;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shielded_transfer) trait ShieldedTransferStateTransitionTransformIntoActionValidationV0
 {
@@ -23,6 +26,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -32,6 +37,8 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         &self,
         drive: &Drive,
         transaction: TransactionArg,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Extract nullifiers, note commitments, and encrypted notes from serialized actions
@@ -54,84 +61,72 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
             ShieldedTransferTransition::V0(v0) => v0.anchor,
         };
 
-        // The value_balance is positive for shielded transfer (fee extracted from pool)
+        // The value_balance is the fee amount extracted from the shielded pool
         let fee_amount: Credits = match self {
-            ShieldedTransferTransition::V0(v0) => v0.value_balance as u64,
+            ShieldedTransferTransition::V0(v0) => v0.value_balance,
         };
 
         // Read current shielded pool state from GroveDB
         let mut drive_operations = vec![];
-        let pool_path = shielded_credit_pool_path();
+        let current_total_balance =
+            read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
-        let current_total_balance = drive
-            .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&pool_path).into(),
-                &[SHIELDED_TOTAL_BALANCE_KEY],
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .unwrap_or(0);
-
-        // Verify the anchor exists in the recorded anchors tree
-        let anchors_path = shielded_anchors_credit_pool_path();
-        let anchor_exists = drive.grove_has_raw(
-            (&anchors_path).into(),
-            &anchor,
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut drive_operations,
-            &platform_version.drive,
-        )?;
-
-        if !anchor_exists {
+        // Verify the pool has sufficient balance for the fee
+        if current_total_balance < fee_amount {
             return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidAnchorError(InvalidAnchorError::new(anchor)).into(),
+                StateError::InvalidShieldedProofError(
+                    dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError::new(
+                        format!(
+                            "shielded pool has insufficient balance: pool has {} but fee requires {}",
+                            current_total_balance, fee_amount
+                        ),
+                    ),
+                )
+                .into(),
             ));
         }
 
-        // Defense-in-depth: reject duplicate nullifiers within the same bundle
-        let mut seen_nullifiers = std::collections::HashSet::new();
-        for nullifier in &nullifiers {
-            if !seen_nullifiers.insert(nullifier) {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
-                        *nullifier,
-                    ))
-                    .into(),
-                ));
-            }
+        // Verify the anchor exists in the recorded anchors tree
+        if let Some(err) = validate_anchor_exists(
+            drive,
+            &anchor,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(err);
         }
 
-        // Check that no nullifier has already been spent in the state
-        let nullifiers_path = shielded_credit_pool_nullifiers_path();
-        for nullifier in &nullifiers {
-            let exists = drive.grove_has_raw(
-                (&nullifiers_path).into(),
-                nullifier,
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?;
-
-            if exists {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
-                        *nullifier,
-                    ))
-                    .into(),
-                ));
-            }
+        // Validate nullifiers: intra-bundle duplicates + already-spent in state
+        if let Some(err) = validate_nullifiers(
+            drive,
+            &nullifiers,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(err);
         }
+
+        // Calculate fees from the GroveDB operations
+        let fee = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         // Verify the ZK proof
+        // Cast value_balance to i64 for Orchard protocol — safe because structure
+        // validation already verified value_balance <= i64::MAX
         let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig) = match self {
             ShieldedTransferTransition::V0(v0) => (
                 &v0.actions,
                 v0.flags,
-                v0.value_balance,
+                v0.value_balance as i64,
                 v0.proof.as_slice(),
                 &v0.binding_signature,
             ),
@@ -146,8 +141,25 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
             st_binding_sig,
             &[], // No transparent fields to bind for shielded transfer
         ) {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(e).into(),
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+
+            let penalty_amount = std::cmp::min(penalty, current_total_balance);
+
+            let penalize_action = StateTransitionAction::PenalizeShieldedPoolAction(
+                PenalizeShieldedPoolAction::from(PenalizeShieldedPoolActionV0 {
+                    penalty_amount,
+                    nullifiers: nullifiers.clone(),
+                    current_total_balance,
+                }),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                penalize_action,
+                vec![StateError::InvalidShieldedProofError(e).into()],
             ));
         }
 

@@ -1,4 +1,3 @@
-use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -15,7 +14,6 @@ use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::shielded_credit_pool_encrypted_notes_path_vec;
-use drive::error::query::QuerySyntaxError;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::GroveDBToUse;
@@ -37,15 +35,6 @@ impl<C> Platform<C> {
         } else {
             count as u16
         };
-
-        if limit > max_elements as u16 {
-            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                QuerySyntaxError::InvalidLimit(format!(
-                    "trying to get {} encrypted notes, maximum is {}",
-                    limit, max_elements
-                )),
-            )));
-        }
 
         let query = if start_index == 0 {
             Query::new_range_full()

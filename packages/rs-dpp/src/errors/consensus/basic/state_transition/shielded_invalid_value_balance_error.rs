@@ -16,6 +16,11 @@ pub struct ShieldedInvalidValueBalanceError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
+    /// A human-readable description of the validation failure (e.g. "must be negative",
+    /// "must be positive", "must be zero"). Ideally this would be typed fields such as
+    /// `value_balance: i64` and `reason: &'static str`, but because this struct derives
+    /// `PlatformSerialize`/`Encode` and is part of the consensus protocol (error code 10822),
+    /// changing the field layout would break wire compatibility. Use a new version instead.
     message: String,
 }
 

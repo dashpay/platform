@@ -4,7 +4,7 @@ use dpp::fee::Credits;
 use dpp::prelude::UserFeeIncrease;
 
 /// Shielded transfer transition action v0
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ShieldedTransferTransitionActionV0 {
     /// Nullifiers from spent notes
     pub nullifiers: Vec<[u8; 32]>,

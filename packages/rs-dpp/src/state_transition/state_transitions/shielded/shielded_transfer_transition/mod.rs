@@ -9,6 +9,8 @@ use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferT
 use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+pub type ShieldedTransferTransitionLatest = ShieldedTransferTransitionV0;
+
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

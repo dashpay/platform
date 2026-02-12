@@ -46,7 +46,9 @@ impl ShieldedWithdrawalTransitionActionV0 {
         let withdrawal_document = DocumentV0 {
             id: document_id,
             owner_id,
-            properties: document_data.into_btree_string_map().unwrap(),
+            properties: document_data
+                .into_btree_string_map()
+                .expect("platform_value macro produces a map"),
             revision: Some(1),
             created_at: Some(creation_time_ms),
             updated_at: Some(creation_time_ms),

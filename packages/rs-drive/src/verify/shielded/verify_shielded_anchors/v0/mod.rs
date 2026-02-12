@@ -1,5 +1,6 @@
 use crate::drive::shielded::paths::shielded_anchors_credit_pool_path_vec;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
@@ -9,7 +10,7 @@ impl Drive {
     pub(super) fn verify_shielded_anchors_v0(
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
+    ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
         let path_query = PathQuery {
             path: shielded_anchors_credit_pool_path_vec(),
             query: SizedQuery {
@@ -22,10 +23,15 @@ impl Drive {
         let (root_hash, proved_key_values) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
-        let anchors = proved_key_values
-            .into_iter()
-            .map(|(_, key, _)| key)
-            .collect();
+        let mut anchors = Vec::with_capacity(proved_key_values.len());
+        for (_, key, _) in proved_key_values {
+            let anchor: [u8; 32] = key.try_into().map_err(|_: Vec<u8>| {
+                Error::Drive(DriveError::CorruptedElementType(
+                    "anchor key is not 32 bytes",
+                ))
+            })?;
+            anchors.push(anchor);
+        }
 
         Ok((root_hash, anchors))
     }

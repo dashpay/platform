@@ -3,6 +3,7 @@ mod transform_into_action;
 #[cfg(test)]
 mod tests;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::validation::ConsensusValidationResult;
 use drive::grovedb::TransactionArg;
@@ -10,6 +11,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::unshield::transform_into_action::v0::UnshieldStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -22,6 +24,8 @@ pub trait StateTransitionUnshieldTransitionActionTransformer {
     fn transform_into_action_for_unshield_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -30,6 +34,8 @@ impl StateTransitionUnshieldTransitionActionTransformer for UnshieldTransition {
     fn transform_into_action_for_unshield_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -41,7 +47,13 @@ impl StateTransitionUnshieldTransitionActionTransformer for UnshieldTransition {
             .unshield_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform.drive, tx, platform_version),
+            0 => self.transform_into_action_v0(
+                platform.drive,
+                tx,
+                block_info,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "unshield transition: transform_into_action".to_string(),
                 known_versions: vec![0],

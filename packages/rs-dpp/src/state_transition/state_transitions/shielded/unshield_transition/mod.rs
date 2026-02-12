@@ -9,6 +9,8 @@ use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+pub type UnshieldTransitionLatest = UnshieldTransitionV0;
+
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

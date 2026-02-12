@@ -11,7 +11,7 @@ impl Drive {
     pub fn verify_shielded_anchors(
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<Vec<u8>>), Error> {
+    ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
         match platform_version
             .drive
             .methods

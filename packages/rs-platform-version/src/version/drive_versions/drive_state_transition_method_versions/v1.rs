@@ -50,7 +50,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 address_credit_withdrawal_transition: 0,
                 address_funding_from_asset_lock_transition: 0,
                 shield_transition: 0,
+                shield_from_asset_lock_transition: 0,
                 shielded_transfer_transition: 0,
                 unshield_transition: 0,
+                shielded_withdrawal_transition: 0,
             },
     };

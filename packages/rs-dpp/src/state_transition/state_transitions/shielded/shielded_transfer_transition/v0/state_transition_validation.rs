@@ -1,9 +1,9 @@
-use crate::consensus::basic::state_transition::{
-    ShieldedEmptyProofError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
-    ShieldedZeroAnchorError,
-};
+use crate::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use crate::consensus::basic::BasicError;
 use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+use crate::state_transition::state_transitions::shielded::common_validation::{
+    validate_actions_not_empty, validate_anchor_not_zero, validate_proof_not_empty,
+};
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_version::version::PlatformVersion;
@@ -14,19 +14,16 @@ impl StateTransitionStructureValidation for ShieldedTransferTransitionV0 {
         _platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         // Actions must not be empty
-        if self.actions.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedNoActionsError(ShieldedNoActionsError::new()).into(),
-            );
+        if let Some(err) = validate_actions_not_empty(&self.actions) {
+            return err;
         }
 
-        // value_balance must be >= 0 (fee extracted from pool, 0 means no fee)
-        if self.value_balance < 0 {
+        // value_balance must fit in i64 (required for Orchard protocol)
+        if self.value_balance > i64::MAX as u64 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
-                        "shielded transfer value_balance must be non-negative (fee only)"
-                            .to_string(),
+                        "shielded transfer value_balance exceeds maximum allowed value".to_string(),
                     ),
                 )
                 .into(),
@@ -34,17 +31,13 @@ impl StateTransitionStructureValidation for ShieldedTransferTransitionV0 {
         }
 
         // Proof must not be empty
-        if self.proof.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedEmptyProofError(ShieldedEmptyProofError::new()).into(),
-            );
+        if let Some(err) = validate_proof_not_empty(&self.proof) {
+            return err;
         }
 
         // Anchor must not be all zeros
-        if self.anchor == [0u8; 32] {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedZeroAnchorError(ShieldedZeroAnchorError::new()).into(),
-            );
+        if let Some(err) = validate_anchor_not_zero(&self.anchor) {
+            return err;
         }
 
         SimpleConsensusValidationResult::new()

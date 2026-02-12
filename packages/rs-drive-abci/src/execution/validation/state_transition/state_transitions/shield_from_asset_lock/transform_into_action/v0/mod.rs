@@ -7,12 +7,15 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
-use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
+use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+    read_pool_total_balance, reconstruct_and_verify_bundle,
+};
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
+use dpp::block::block_info::BlockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
@@ -28,13 +31,12 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransitionSingleSigned};
-use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY};
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive::util::grove_operations::DirectQueryType;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shield_from_asset_lock) trait ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 {
@@ -43,6 +45,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -56,6 +59,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -238,19 +242,19 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 
         // Step 8: Read current shielded pool total balance from GroveDB
         let mut drive_operations = vec![];
-        let pool_path = shielded_credit_pool_path();
+        let current_total_balance =
+            read_pool_total_balance(&platform.drive, tx, &mut drive_operations, platform_version)?;
 
-        let current_total_balance = platform
-            .drive
-            .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&pool_path).into(),
-                &[SHIELDED_TOTAL_BALANCE_KEY],
-                DirectQueryType::StatefulDirectQuery,
-                tx,
-                &mut drive_operations,
-                &platform_version.drive,
-            )?
-            .unwrap_or(0);
+        // Calculate fees from the GroveDB operations
+        let fee = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            &block_info.epoch,
+            platform.drive.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
         // Use EMPTY extra_sighash_data -- no transparent binding needed since

@@ -3,6 +3,7 @@ use crate::drive::shielded::paths::{
     SHIELDED_COMMITMENTS_KEY, SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
@@ -74,11 +75,16 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
             }
             ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance } => {
                 let pool_path = shielded_credit_pool_path_vec();
+                let balance_i64 = i64::try_from(new_total_balance).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "shielded pool total balance exceeds i64::MAX".to_string(),
+                    ))
+                })?;
                 Ok(vec![GroveOperation(
                     QualifiedGroveDbOp::insert_or_replace_op(
                         pool_path,
                         vec![SHIELDED_TOTAL_BALANCE_KEY],
-                        Element::new_sum_item(new_total_balance as i64),
+                        Element::new_sum_item(balance_i64),
                     ),
                 )])
             }

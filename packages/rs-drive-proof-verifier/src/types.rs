@@ -799,7 +799,7 @@ pub struct ShieldedEncryptedNotes(pub Vec<ShieldedEncryptedNote>);
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct ShieldedAnchors(pub Vec<Vec<u8>>);
+pub struct ShieldedAnchors(pub Vec<[u8; 32]>);
 
 /// Status of a single nullifier (spent or unspent)
 #[derive(Debug, Clone)]

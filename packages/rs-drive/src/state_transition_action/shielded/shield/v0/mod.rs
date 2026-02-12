@@ -6,7 +6,7 @@ use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 
 /// Shield transition action v0
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ShieldTransitionActionV0 {
     /// inputs with remaining balance after shielding
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,

@@ -2,7 +2,7 @@ mod state_transition_like;
 mod state_transition_validation;
 mod types;
 #[cfg(feature = "state-transition-signing")]
-mod v0_methods;
+pub(super) mod v0_methods;
 mod version;
 
 use std::collections::BTreeMap;

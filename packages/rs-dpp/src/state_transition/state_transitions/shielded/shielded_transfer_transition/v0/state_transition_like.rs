@@ -27,7 +27,7 @@ impl StateTransitionLike for ShieldedTransferTransitionV0 {
         ShieldedTransfer
     }
 
-    /// Returns ID of the created contract
+    /// Returns IDs of modified data (none for shielded transitions)
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![]
     }

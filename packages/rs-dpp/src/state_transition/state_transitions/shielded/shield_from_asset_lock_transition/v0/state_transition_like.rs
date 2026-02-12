@@ -27,7 +27,7 @@ impl StateTransitionLike for ShieldFromAssetLockTransitionV0 {
         StateTransitionType::ShieldFromAssetLock
     }
 
-    /// Returns IDs of the modified data
+    /// Returns IDs of modified data (none for shielded transitions)
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![]
     }

@@ -3,6 +3,7 @@ mod transform_into_action;
 #[cfg(test)]
 mod tests;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
 use crate::error::execution::ExecutionError;
@@ -25,6 +26,7 @@ pub(in crate::execution) trait StateTransitionShieldFromAssetLockTransitionActio
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -38,6 +40,7 @@ impl StateTransitionShieldFromAssetLockTransitionActionTransformer
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
+        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -54,6 +57,7 @@ impl StateTransitionShieldFromAssetLockTransitionActionTransformer
                 platform,
                 signable_bytes,
                 validation_mode,
+                block_info,
                 execution_context,
                 tx,
             ),

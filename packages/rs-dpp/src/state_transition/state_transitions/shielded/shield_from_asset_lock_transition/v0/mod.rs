@@ -2,7 +2,7 @@ mod proved;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
-mod v0_methods;
+pub(super) mod v0_methods;
 mod version;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;

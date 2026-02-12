@@ -1,3 +1,4 @@
+#[cfg(test)]
 mod tests;
 mod transform_into_action;
 
@@ -9,6 +10,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::shielded_withdrawal::transform_into_action::v0::ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -21,6 +23,7 @@ pub trait StateTransitionShieldedWithdrawalTransitionActionTransformer {
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -30,6 +33,7 @@ impl StateTransitionShieldedWithdrawalTransitionActionTransformer for ShieldedWi
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -41,7 +45,13 @@ impl StateTransitionShieldedWithdrawalTransitionActionTransformer for ShieldedWi
             .shielded_withdrawal_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform.drive, block_info, tx, platform_version),
+            0 => self.transform_into_action_v0(
+                platform.drive,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shielded withdrawal transition: transform_into_action".to_string(),
                 known_versions: vec![0],

@@ -1,8 +1,10 @@
 use crate::consensus::basic::state_transition::{
-    ShieldedEmptyProofError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
-    ShieldedZeroAnchorError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError,
+    ShieldedInvalidValueBalanceError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError,
 };
 use crate::consensus::basic::BasicError;
+use crate::state_transition::state_transitions::shielded::common_validation::{
+    validate_actions_not_empty, validate_anchor_not_zero, validate_proof_not_empty,
+};
 use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use crate::state_transition::StateTransitionStructureValidation;
 use crate::validation::SimpleConsensusValidationResult;
@@ -14,10 +16,8 @@ impl StateTransitionStructureValidation for UnshieldTransitionV0 {
         _platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         // Actions must not be empty
-        if self.actions.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedNoActionsError(ShieldedNoActionsError::new()).into(),
-            );
+        if let Some(err) = validate_actions_not_empty(&self.actions) {
+            return err;
         }
 
         // Amount must be > 0
@@ -50,17 +50,13 @@ impl StateTransitionStructureValidation for UnshieldTransitionV0 {
         }
 
         // Proof must not be empty
-        if self.proof.is_empty() {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedEmptyProofError(ShieldedEmptyProofError::new()).into(),
-            );
+        if let Some(err) = validate_proof_not_empty(&self.proof) {
+            return err;
         }
 
         // Anchor must not be all zeros
-        if self.anchor == [0u8; 32] {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedZeroAnchorError(ShieldedZeroAnchorError::new()).into(),
-            );
+        if let Some(err) = validate_anchor_not_zero(&self.anchor) {
+            return err;
         }
 
         SimpleConsensusValidationResult::new()

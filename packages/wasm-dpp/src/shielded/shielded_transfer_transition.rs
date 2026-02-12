@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 use crate::buffer::Buffer;
 use crate::utils::WithJsError;
 
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 
@@ -102,6 +102,16 @@ impl ShieldedTransferTransitionWasm {
         ))
         .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name = fromBuffer)]
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<ShieldedTransferTransitionWasm, JsValue> {
+        let state_transition: StateTransition =
+            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
+        match state_transition {
+            StateTransition::ShieldedTransfer(st) => Ok(st.into()),
+            _ => Err(JsValue::from_str("Invalid state transition type")),
+        }
     }
 
     #[wasm_bindgen(js_name = toJSON)]

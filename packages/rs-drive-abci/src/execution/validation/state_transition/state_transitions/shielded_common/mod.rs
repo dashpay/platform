@@ -1,6 +1,23 @@
+use crate::error::Error;
+use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
+use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
+use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::fee::Credits;
+use dpp::prelude::ConsensusValidationResult;
 pub use dpp::shielded::compute_platform_sighash;
 use dpp::shielded::SerializedAction;
+use dpp::version::PlatformVersion;
+use drive::drive::shielded::paths::{
+    shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
+    shielded_credit_pool_path, SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+};
+use drive::drive::Drive;
+use drive::fees::op::LowLevelDriveOperation;
+use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
+use drive::util::grove_operations::DirectQueryType;
 use grovedb_commitment_tree::{
     Action, Anchor, Authorized, BatchValidator, Bundle, ExtractedNoteCommitment, Flags, Nullifier,
     Proof, VerifyingKey,
@@ -66,15 +83,17 @@ pub fn reconstruct_and_verify_bundle(
                 a.encrypted_note.len()
             )));
         }
-        let epk_bytes: [u8; 32] = a.encrypted_note[..EPK_SIZE].try_into().unwrap();
+        let epk_bytes: [u8; 32] = a.encrypted_note[..EPK_SIZE]
+            .try_into()
+            .expect("length verified to be ENCRYPTED_NOTE_SIZE");
         let enc_ciphertext: [u8; ENC_CIPHERTEXT_SIZE] = a.encrypted_note
             [EPK_SIZE..EPK_SIZE + ENC_CIPHERTEXT_SIZE]
             .try_into()
-            .unwrap();
+            .expect("length verified to be ENCRYPTED_NOTE_SIZE");
         let out_ciphertext: [u8; OUT_CIPHERTEXT_SIZE] = a.encrypted_note
             [EPK_SIZE + ENC_CIPHERTEXT_SIZE..]
             .try_into()
-            .unwrap();
+            .expect("length verified to be ENCRYPTED_NOTE_SIZE");
 
         let nullifier: Nullifier = Option::from(Nullifier::from_bytes(&a.nullifier))
             .ok_or_else(|| InvalidShieldedProofError::new("invalid nullifier bytes".to_string()))?;
@@ -158,4 +177,130 @@ pub fn reconstruct_and_verify_bundle(
     }
 
     Ok(())
+}
+
+/// Read the current shielded pool total balance from GroveDB.
+/// Returns 0 if the balance key doesn't exist yet.
+pub fn read_pool_total_balance(
+    drive: &Drive,
+    transaction: TransactionArg,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let pool_path = shielded_credit_pool_path();
+    Ok(drive
+        .grove_get_raw_value_u64_from_encoded_var_vec(
+            (&pool_path).into(),
+            &[SHIELDED_TOTAL_BALANCE_KEY],
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?
+        .unwrap_or(0))
+}
+
+/// Verify that the anchor exists in the recorded anchors tree.
+/// Returns a consensus error if the anchor is not found.
+pub fn validate_anchor_exists(
+    drive: &Drive,
+    anchor: &[u8; 32],
+    transaction: TransactionArg,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
+    let anchors_path = shielded_anchors_credit_pool_path();
+    let anchor_exists = drive.grove_has_raw(
+        (&anchors_path).into(),
+        anchor,
+        DirectQueryType::StatefulDirectQuery,
+        transaction,
+        drive_operations,
+        &platform_version.drive,
+    )?;
+    if !anchor_exists {
+        Ok(Some(ConsensusValidationResult::new_with_error(
+            StateError::InvalidAnchorError(InvalidAnchorError::new(*anchor)).into(),
+        )))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Defense-in-depth: reject duplicate nullifiers within the same bundle,
+/// then check that no nullifier has already been spent in state.
+pub fn validate_nullifiers(
+    drive: &Drive,
+    nullifiers: &[[u8; 32]],
+    transaction: TransactionArg,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
+    // Intra-bundle duplicate check
+    let mut seen_nullifiers = std::collections::HashSet::new();
+    for nullifier in nullifiers {
+        if !seen_nullifiers.insert(nullifier) {
+            return Ok(Some(ConsensusValidationResult::new_with_error(
+                StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(*nullifier))
+                    .into(),
+            )));
+        }
+    }
+    // Check against state
+    let nullifiers_path = shielded_credit_pool_nullifiers_path();
+    for nullifier in nullifiers {
+        let exists = drive.grove_has_raw(
+            (&nullifiers_path).into(),
+            nullifier,
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
+        if exists {
+            return Ok(Some(ConsensusValidationResult::new_with_error(
+                StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(*nullifier))
+                    .into(),
+            )));
+        }
+    }
+    Ok(None)
+}
+
+/// Check minimum notes threshold for outgoing transitions (anonymity set).
+pub fn validate_minimum_pool_notes(
+    drive: &Drive,
+    transaction: TransactionArg,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    if min_notes > 0 {
+        let pool_path = shielded_credit_pool_path();
+        let encrypted_notes_count = drive
+            .grove_get_raw_optional(
+                (&pool_path).into(),
+                &[SHIELDED_ENCRYPTED_NOTES_KEY],
+                DirectQueryType::StatefulDirectQuery,
+                transaction,
+                drive_operations,
+                &platform_version.drive,
+            )?
+            .map(|element| element.count_value_or_default())
+            .unwrap_or(0);
+        if encrypted_notes_count < min_notes {
+            return Ok(Some(ConsensusValidationResult::new_with_error(
+                StateError::InsufficientPoolNotesError(InsufficientPoolNotesError::new(
+                    encrypted_notes_count,
+                    min_notes,
+                ))
+                .into(),
+            )));
+        }
+    }
+    Ok(None)
 }

@@ -24,6 +24,7 @@ use drive::state_transition_action::shielded::shielded_transfer::ShieldedTransfe
 use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
+use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolActionAccessorsV0;
 use drive::util::batch::DriveOperation;
 
 /// An execution event
@@ -498,6 +499,15 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: 0,
+                })
+            }
+            StateTransitionAction::PenalizeShieldedPoolAction(ref penalize_action) => {
+                let penalty_amount = penalize_action.penalty_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: penalty_amount,
                 })
             }
             _ => {

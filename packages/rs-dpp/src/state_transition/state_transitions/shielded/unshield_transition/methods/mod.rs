@@ -2,17 +2,22 @@ mod v0;
 
 pub use v0::*;
 
+#[cfg(feature = "state-transition-signing")]
 use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
 use crate::shielded::SerializedAction;
 use crate::state_transition::unshield_transition::UnshieldTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     prelude::UserFeeIncrease,
     state_transition::{unshield_transition::v0::UnshieldTransitionV0, StateTransition},
     ProtocolError,
 };
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl UnshieldTransitionMethodsV0 for UnshieldTransition {
+    #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         output_address: PlatformAddress,
         amount: u64,

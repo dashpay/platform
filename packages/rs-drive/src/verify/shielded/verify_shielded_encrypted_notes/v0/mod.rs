@@ -1,5 +1,6 @@
 use crate::drive::shielded::paths::shielded_credit_pool_encrypted_notes_path_vec;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
@@ -39,21 +40,28 @@ impl Drive {
         let (root_hash, proved_key_values) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
-        let notes = proved_key_values
-            .into_iter()
-            .filter_map(|(_, _key, maybe_element)| {
-                if let Some(Element::Item(value, _)) = maybe_element {
+        let mut notes = Vec::with_capacity(proved_key_values.len());
+        for (_, _key, maybe_element) in proved_key_values {
+            match maybe_element {
+                Some(Element::Item(value, _)) => {
                     // Value format: cmx (32 bytes) || encrypted_note (remaining bytes)
-                    if value.len() > 32 {
-                        Some((value[..32].to_vec(), value[32..].to_vec()))
-                    } else {
-                        None
+                    if value.len() <= 32 {
+                        return Err(Error::Drive(DriveError::CorruptedElementType(
+                            "encrypted note value too short: expected more than 32 bytes",
+                        )));
                     }
-                } else {
-                    None
+                    notes.push((value[..32].to_vec(), value[32..].to_vec()));
                 }
-            })
-            .collect();
+                Some(_) => {
+                    return Err(Error::Drive(DriveError::CorruptedElementType(
+                        "expected Item element for encrypted note, got different element type",
+                    )));
+                }
+                None => {
+                    // Absent elements in proof results are normal (key doesn't exist)
+                }
+            }
+        }
 
         Ok((root_hash, notes))
     }

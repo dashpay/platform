@@ -9,6 +9,8 @@ use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdra
 use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
+pub type ShieldedWithdrawalTransitionLatest = ShieldedWithdrawalTransitionV0;
+
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

@@ -10,7 +10,7 @@ use thiserror::Error;
 )]
 #[platform_serialize(unversioned)]
 #[error(
-    "shielded pool has insufficient notes for outgoing transition: pool has {current_count} notes but minimum {minimum_required} required"
+    "Shielded pool has insufficient notes for outgoing transition: pool has {current_count} notes but minimum {minimum_required} required"
 )]
 pub struct InsufficientPoolNotesError {
     /*

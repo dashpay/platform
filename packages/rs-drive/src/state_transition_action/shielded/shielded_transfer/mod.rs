@@ -17,19 +17,19 @@ pub enum ShieldedTransferTransitionAction {
 
 impl ShieldedTransferTransitionAction {
     /// Get nullifiers
-    pub fn nullifiers(&self) -> &Vec<[u8; 32]> {
+    pub fn nullifiers(&self) -> &[[u8; 32]] {
         match self {
             ShieldedTransferTransitionAction::V0(transition) => &transition.nullifiers,
         }
     }
     /// Get note commitments
-    pub fn note_commitments(&self) -> &Vec<[u8; 32]> {
+    pub fn note_commitments(&self) -> &[[u8; 32]] {
         match self {
             ShieldedTransferTransitionAction::V0(transition) => &transition.note_commitments,
         }
     }
     /// Get encrypted notes
-    pub fn encrypted_notes(&self) -> &Vec<Vec<u8>> {
+    pub fn encrypted_notes(&self) -> &[Vec<u8>] {
         match self {
             ShieldedTransferTransitionAction::V0(transition) => &transition.encrypted_notes,
         }

@@ -1,11 +1,17 @@
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::core_script::CoreScript;
+#[cfg(feature = "state-transition-signing")]
 use crate::shielded::SerializedAction;
 use crate::state_transition::StateTransitionType;
+#[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
+#[cfg(feature = "state-transition-signing")]
 use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 pub trait ShieldedWithdrawalTransitionMethodsV0 {
+    #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     fn try_from_bundle(
         amount: u64,
