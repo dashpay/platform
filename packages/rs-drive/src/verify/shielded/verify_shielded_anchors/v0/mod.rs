@@ -9,6 +9,7 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     pub(super) fn verify_shielded_anchors_v0(
         proof: &[u8],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
         let path_query = PathQuery {
@@ -20,8 +21,11 @@ impl Drive {
             },
         };
 
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+        };
 
         let mut anchors = Vec::with_capacity(proved_key_values.len());
         for (_, key, _) in proved_key_values {

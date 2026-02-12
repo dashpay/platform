@@ -30,11 +30,12 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedEncryptedNotesResponseV0>, Error> {
         let max_elements = platform_version.drive_abci.query.max_returned_elements as u32;
-        let limit = if count == 0 || count > max_elements {
-            max_elements as u16
+        let effective = if count == 0 || count > max_elements {
+            max_elements
         } else {
-            count as u16
+            count
         };
+        let limit = effective.min(u16::MAX as u32) as u16;
 
         let query = if start_index == 0 {
             Query::new_range_full()

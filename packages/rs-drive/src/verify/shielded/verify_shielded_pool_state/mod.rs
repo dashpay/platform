@@ -10,6 +10,7 @@ impl Drive {
     /// Verifies a proof for the shielded pool total balance.
     pub fn verify_shielded_pool_state(
         proof: &[u8],
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<u64>), Error> {
         match platform_version
@@ -19,7 +20,9 @@ impl Drive {
             .shielded
             .verify_shielded_pool_state
         {
-            0 => Self::verify_shielded_pool_state_v0(proof, platform_version),
+            0 => {
+                Self::verify_shielded_pool_state_v0(proof, verify_subset_of_proof, platform_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_shielded_pool_state".to_string(),
                 known_versions: vec![0],

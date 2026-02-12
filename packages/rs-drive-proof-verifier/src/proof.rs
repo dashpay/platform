@@ -2300,7 +2300,7 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, maybe_balance) =
-            Drive::verify_shielded_pool_state(&proof.grovedb_proof, platform_version)
+            Drive::verify_shielded_pool_state(&proof.grovedb_proof, false, platform_version)
                 .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -2332,7 +2332,7 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, anchors) =
-            Drive::verify_shielded_anchors(&proof.grovedb_proof, platform_version)
+            Drive::verify_shielded_anchors(&proof.grovedb_proof, false, platform_version)
                 .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -2379,6 +2379,7 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             start_index,
             count,
             max_elements,
+            false,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -2428,9 +2429,13 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
             get_shielded_nullifiers_request::Version::V0(v0) => v0.nullifiers,
         };
 
-        let (root_hash, statuses) =
-            Drive::verify_shielded_nullifiers(&proof.grovedb_proof, &nullifiers, platform_version)
-                .map_drive_error(proof, mtd)?;
+        let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+            &proof.grovedb_proof,
+            &nullifiers,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

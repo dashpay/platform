@@ -51,6 +51,25 @@ pub struct ShieldedPoolParams {
     pub checkpoint_id_counter: u64,
 }
 
+/// Common Orchard bundle parameters shared across all shielded transition types.
+///
+/// Groups the fields that every shielded transition carries identically:
+/// the serialized actions, bundle flags, commitment tree anchor, Halo 2 proof,
+/// and RedPallas binding signature. Using this struct reduces parameter counts
+/// in SDK helper functions from 10-12 down to 5-8.
+pub struct OrchardBundleParams {
+    /// The serialized Orchard actions (spends + outputs).
+    pub actions: Vec<SerializedAction>,
+    /// Bundle flags byte.
+    pub flags: u8,
+    /// Merkle root of the commitment tree at bundle creation time (32 bytes).
+    pub anchor: [u8; 32],
+    /// Halo 2 zero-knowledge proof bytes.
+    pub proof: Vec<u8>,
+    /// RedPallas binding signature (64 bytes) over the bundle's value balance.
+    pub binding_signature: [u8; 64],
+}
+
 /// A serialized Orchard action extracted from a bundle.
 ///
 /// Each Orchard action structurally contains one spend and one output. The spend

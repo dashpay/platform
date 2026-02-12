@@ -12,13 +12,15 @@ impl Drive {
         start_index: u64,
         count: u32,
         max_elements: u32,
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>)>), Error> {
-        let limit = if count == 0 || count > max_elements {
-            max_elements as u16
+        let effective = if count == 0 || count > max_elements {
+            max_elements
         } else {
-            count as u16
+            count
         };
+        let limit = effective.min(u16::MAX as u32) as u16;
 
         let query = if start_index == 0 {
             Query::new_range_full()
@@ -37,8 +39,11 @@ impl Drive {
             },
         };
 
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = if verify_subset_of_proof {
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+        } else {
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+        };
 
         let mut notes = Vec::with_capacity(proved_key_values.len());
         for (_, _key, maybe_element) in proved_key_values {

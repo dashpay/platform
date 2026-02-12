@@ -13,6 +13,7 @@ impl Drive {
         start_index: u64,
         count: u32,
         max_elements: u32,
+        verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>)>), Error> {
         match platform_version
@@ -27,6 +28,7 @@ impl Drive {
                 start_index,
                 count,
                 max_elements,
+                verify_subset_of_proof,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

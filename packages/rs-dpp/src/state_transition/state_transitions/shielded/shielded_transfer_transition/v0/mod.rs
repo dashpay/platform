@@ -48,3 +48,43 @@ pub struct ShieldedTransferTransitionV0 {
     /// Fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use std::fmt::Debug;
+
+    fn test_round_trip<T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq>(
+        transition: T,
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
+        let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
+        let deserialized =
+            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
+        assert_eq!(transition, deserialized);
+    }
+
+    #[test]
+    fn test_shielded_transfer_transition_v0_serialization_round_trip() {
+        let transition = ShieldedTransferTransitionV0 {
+            actions: vec![SerializedAction {
+                nullifier: [1u8; 32],
+                rk: [2u8; 32],
+                cmx: [3u8; 32],
+                encrypted_note: vec![4u8; 692],
+                cv_net: [5u8; 32],
+                spend_auth_sig: [6u8; 64],
+            }],
+            flags: 0u8,
+            value_balance: 0u64,
+            anchor: [7u8; 32],
+            proof: vec![8u8; 100],
+            binding_signature: [9u8; 64],
+            user_fee_increase: 0u16,
+        };
+
+        test_round_trip(transition);
+    }
+}

@@ -3,7 +3,7 @@ use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::identity::core_script::CoreScript;
-use dpp::shielded::SerializedAction;
+use dpp::shielded::OrchardBundleParams;
 use dpp::state_transition::shielded_withdrawal_transition::methods::ShieldedWithdrawalTransitionMethodsV0;
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::withdrawal::Pooling;
@@ -17,12 +17,8 @@ pub trait WithdrawShielded {
     async fn withdraw_shielded(
         &self,
         amount: u64,
-        actions: Vec<SerializedAction>,
-        flags: u8,
+        bundle: OrchardBundleParams,
         value_balance: i64,
-        anchor: [u8; 32],
-        proof: Vec<u8>,
-        binding_signature: [u8; 64],
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -32,15 +28,12 @@ pub trait WithdrawShielded {
 
 #[async_trait::async_trait]
 impl WithdrawShielded for Sdk {
+    #[allow(clippy::too_many_arguments)]
     async fn withdraw_shielded(
         &self,
         amount: u64,
-        actions: Vec<SerializedAction>,
-        flags: u8,
+        bundle: OrchardBundleParams,
         value_balance: i64,
-        anchor: [u8; 32],
-        proof: Vec<u8>,
-        binding_signature: [u8; 64],
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -50,6 +43,14 @@ impl WithdrawShielded for Sdk {
             .as_ref()
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
+
+        let OrchardBundleParams {
+            actions,
+            flags,
+            anchor,
+            proof,
+            binding_signature,
+        } = bundle;
 
         let state_transition = ShieldedWithdrawalTransition::try_from_bundle(
             amount,

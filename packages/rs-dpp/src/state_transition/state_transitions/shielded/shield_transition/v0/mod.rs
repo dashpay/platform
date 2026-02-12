@@ -62,3 +62,52 @@ pub struct ShieldTransitionV0 {
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use std::fmt::Debug;
+
+    fn test_round_trip<T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq>(
+        transition: T,
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
+        let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
+        let deserialized =
+            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
+        assert_eq!(transition, deserialized);
+    }
+
+    #[test]
+    fn test_shield_transition_v0_serialization_round_trip() {
+        let mut inputs = BTreeMap::new();
+        let address = PlatformAddress::P2pkh([
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ]);
+        inputs.insert(address, (1u32, 1000u64)); // nonce, credits
+
+        let transition = ShieldTransitionV0 {
+            inputs,
+            actions: vec![SerializedAction {
+                nullifier: [1u8; 32],
+                rk: [2u8; 32],
+                cmx: [3u8; 32],
+                encrypted_note: vec![4u8; 692],
+                cv_net: [5u8; 32],
+                spend_auth_sig: [6u8; 64],
+            }],
+            flags: 0u8,
+            value_balance: -1000i64,
+            anchor: [7u8; 32],
+            proof: vec![8u8; 100],
+            binding_signature: [9u8; 64],
+            fee_strategy: vec![],
+            user_fee_increase: 0u16,
+            input_witnesses: vec![],
+        };
+
+        test_round_trip(transition);
+    }
+}
