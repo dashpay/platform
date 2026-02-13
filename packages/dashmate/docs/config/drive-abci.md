@@ -99,7 +99,7 @@ These settings control the metrics endpoint for monitoring Drive ABCI:
 |--------|-------------|---------|---------|
 | `platform.drive.abci.metrics.enabled` | Enable metrics | `false` | `true` |
 | `platform.drive.abci.metrics.host` | Host binding for metrics | `127.0.0.1` | `0.0.0.0` |
-| `platform.drive.abci.metrics.port` | Port for metrics | `29090` | `29091` |
+| `platform.drive.abci.metrics.port` | Port for metrics | `29090` (mainnet), `39090` (testnet), `49090` (local) | `29091` |
 
 Metrics provide performance and health information about the Drive ABCI service. When enabled, the metrics server will be accessible at the specified host and port.
 
@@ -110,10 +110,10 @@ These settings control developer and debugging tools:
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.drive.abci.tokioConsole.enabled` | Enable Tokio debugging console | `false` | `true` |
-| `platform.drive.abci.tokioConsole.port` | Tokio console port | `6669` | `6670` |
+| `platform.drive.abci.tokioConsole.port` | Tokio console port | `6669` (mainnet), `16669` (testnet), `26669` (local) | `6670` |
 | `platform.drive.abci.tokioConsole.retention` | Tokio console data retention (seconds) | `180` | `300` |
 | `platform.drive.abci.grovedbVisualizer.enabled` | Enable GroveDB visualization tool | `false` | `true` |
-| `platform.drive.abci.grovedbVisualizer.port` | GroveDB visualization port | `8083` | `8084` |
+| `platform.drive.abci.grovedbVisualizer.port` | GroveDB visualization port | `8083` (mainnet), `18083` (testnet), `28083` (local) | `8084` |
 
 - Tokio Console: A debugging tool for Rust's async runtime
 - GroveDB Visualizer: A visualization tool for the GroveDB database structure
