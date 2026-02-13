@@ -955,6 +955,23 @@ async fn fetch_nonces_into_address_map(
         .filter_map(|(k, v)| v.map(|info| (k, info)))
         .collect::<BTreeMap<_, _>>();
 
+    merge_nonces_into_inputs(inputs_map, fetched_addresses)
+}
+
+/// Merge fetched address info (nonces, balances) into the requested inputs map.
+///
+/// For each address in `inputs_map`, this function:
+/// 1. Validates that the address was found in `fetched_addresses`.
+/// 2. Validates that the requested amount does not exceed the available balance.
+/// 3. Returns the **next** nonce (`current + 1`), matching the `nonce_inc()` pattern
+///    used by `rs-sdk` for `transfer`/`top_up`/`withdraw` operations.
+///
+/// Returns error when any address is not found, has insufficient balance,
+/// or when there is an unexpected address mismatch.
+fn merge_nonces_into_inputs(
+    inputs_map: BTreeMap<PlatformAddress, Credits>,
+    fetched_addresses: BTreeMap<PlatformAddress, AddressInfo>,
+) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, WasmSdkError> {
     // sanity check - filter_map above should have removed any non-existing addresses
     if inputs_map.len() != fetched_addresses.len() {
         return Err(WasmSdkError::invalid_argument(
@@ -979,11 +996,145 @@ async fn fetch_nonces_into_address_map(
                         address_requested, amount, info_received.balance
                     )))?
                 }
-                let nonce = info_received.nonce;
+                // Platform expects the next nonce (current + 1), matching
+                // nonce_inc() used by rs-sdk's transfer/top_up/withdraw.
+                let nonce = info_received.nonce + 1;
                 Ok((address_requested, (nonce, amount)))
             },
         )
         .collect::<Result<BTreeMap<_, _>, WasmSdkError>>()?;
 
     Ok(inputs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
+    }
+
+    fn info(address: PlatformAddress, nonce: AddressNonce, balance: Credits) -> AddressInfo {
+        AddressInfo {
+            address,
+            nonce,
+            balance,
+        }
+    }
+
+    #[test]
+    fn merge_nonces_increments_nonce_by_one() {
+        let address = addr(1);
+        let current_nonce: AddressNonce = 5;
+        let balance: Credits = 1_000_000;
+        let requested_amount: Credits = 500_000;
+
+        let inputs_map = BTreeMap::from([(address, requested_amount)]);
+        let fetched = BTreeMap::from([(address, info(address, current_nonce, balance))]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched).unwrap();
+
+        assert_eq!(result.len(), 1);
+        let (nonce, amount) = result[&address];
+        assert_eq!(nonce, current_nonce + 1, "nonce must be incremented by 1");
+        assert_eq!(amount, requested_amount);
+    }
+
+    #[test]
+    fn merge_nonces_increments_zero_nonce() {
+        let address = addr(2);
+        let inputs_map = BTreeMap::from([(address, 100)]);
+        let fetched = BTreeMap::from([(address, info(address, 0, 1000))]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched).unwrap();
+
+        let (nonce, _) = result[&address];
+        assert_eq!(nonce, 1, "nonce 0 should become 1 after increment");
+    }
+
+    #[test]
+    fn merge_nonces_handles_multiple_addresses() {
+        let addr_a = addr(10);
+        let addr_b = addr(11);
+
+        let inputs_map = BTreeMap::from([(addr_a, 500), (addr_b, 1000)]);
+        let fetched = BTreeMap::from([
+            (addr_a, info(addr_a, 3, 10_000)),
+            (addr_b, info(addr_b, 7, 20_000)),
+        ]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[&addr_a], (4, 500));
+        assert_eq!(result[&addr_b], (8, 1000));
+    }
+
+    #[test]
+    fn merge_nonces_allows_exact_balance() {
+        let address = addr(3);
+        let balance: Credits = 1_000_000;
+
+        let inputs_map = BTreeMap::from([(address, balance)]);
+        let fetched = BTreeMap::from([(address, info(address, 0, balance))]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched);
+        assert!(result.is_ok(), "requesting exact balance should succeed");
+    }
+
+    #[test]
+    fn merge_nonces_errors_on_insufficient_balance() {
+        let address = addr(4);
+        let balance: Credits = 500;
+        let requested: Credits = 1000;
+
+        let inputs_map = BTreeMap::from([(address, requested)]);
+        let fetched = BTreeMap::from([(address, info(address, 0, balance))]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("insufficient balance"),
+            "error should mention insufficient balance, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn merge_nonces_errors_on_missing_address() {
+        let addr_a = addr(5);
+        let addr_b = addr(6);
+
+        // Request two addresses but only one is fetched
+        let inputs_map = BTreeMap::from([(addr_a, 100), (addr_b, 200)]);
+        let fetched = BTreeMap::from([(addr_a, info(addr_a, 1, 10_000))]);
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("not found"),
+            "error should mention addresses not found, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn merge_nonces_errors_on_empty_fetched_with_nonempty_inputs() {
+        let address = addr(7);
+        let inputs_map = BTreeMap::from([(address, 100)]);
+        let fetched = BTreeMap::new();
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn merge_nonces_succeeds_with_empty_inputs() {
+        let inputs_map = BTreeMap::new();
+        let fetched = BTreeMap::new();
+
+        let result = merge_nonces_into_inputs(inputs_map, fetched).unwrap();
+        assert!(result.is_empty());
+    }
 }
