@@ -979,7 +979,9 @@ async fn fetch_nonces_into_address_map(
                         address_requested, amount, info_received.balance
                     )))?
                 }
-                let nonce = info_received.nonce;
+                // Platform expects the next nonce (current + 1), matching
+                // nonce_inc() used by rs-sdk's transfer/top_up/withdraw.
+                let nonce = info_received.nonce + 1;
                 Ok((address_requested, (nonce, amount)))
             },
         )
