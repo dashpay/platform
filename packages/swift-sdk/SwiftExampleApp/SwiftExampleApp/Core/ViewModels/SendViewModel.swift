@@ -270,8 +270,20 @@ class SendViewModel: ObservableObject {
                 successMessage = "Transfer to Platform complete"
 
             case .coreToCore:
-                // TODO: Implement standard Core → Core transaction
-                error = "Core to Core transfer not yet implemented"
+                let outputs = [
+                    Transaction.Output(address: recipientAddress, amount: amount)
+                ]
+
+                // TODO: The model is using hardoced estimated fees
+                let (tx, _) = try walletService.walletManager
+                    .buildSignedTransaction(
+                        for: wallet,
+                        accIndex: 0,
+                        outputs: outputs
+                    )
+
+                try walletService.broadcastTransaction(tx)
+                successMessage = "Transfer to Core complete"
             }
 
             // Refresh shielded balance

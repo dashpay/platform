@@ -406,7 +406,7 @@ public class Wallet {
 
         return count
     }
-    
+
     // MARK: - Key Derivation
 
     /// Get the extended public key for an account
