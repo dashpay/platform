@@ -207,6 +207,10 @@ public class WalletService: ObservableObject {
       self.initializeNewSPVClient()
     }
 
+    public func broadcastTransaction(_ data: Data) throws {
+        try self.spvClient.broadcastTransaction(data)
+    }
+    
     public func clearSpvStorage() {
         if syncProgress.state.isRunning() {
             print("[SPV][Clear] Sync task is running, cannot clear storage")

@@ -18,7 +18,7 @@ struct CoreContentView: View {
     // Display helpers
     private var headerHeightsDisplay: String? {
         let headers = walletService.syncProgress.headers
-        let cur = (headers?.currentHeight ?? 0) + (headers?.buffered ?? 0)
+        let cur = (headers?.tipHeight ?? 0) + (headers?.buffered ?? 0)
         let tot = headers?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)

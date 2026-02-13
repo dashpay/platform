@@ -53,7 +53,7 @@ public enum SPVSyncState: UInt32, Sendable {
 
 public struct SPVBlockHeadersProgress: Sendable {
     public let state: SPVSyncState
-    public let currentHeight: UInt32
+    public let tipHeight: UInt32
     public let targetHeight: UInt32
     public let processed: UInt32
     public let buffered: UInt32
@@ -62,7 +62,7 @@ public struct SPVBlockHeadersProgress: Sendable {
 
     public init(_ ffi: FFIBlockHeadersProgress) {
         state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
-        currentHeight = ffi.current_height
+        tipHeight = ffi.tip_height
         targetHeight = ffi.target_height
         processed = ffi.processed
         buffered = ffi.buffered
