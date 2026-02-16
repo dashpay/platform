@@ -32,6 +32,7 @@ describe('IdentitiesFacade', () => {
   let getIdentityByNonUniquePublicKeyHashStub: SinonStub;
   let getIdentityByNonUniquePublicKeyHashWithProofInfoStub: SinonStub;
   let getIdentitiesContractKeysStub: SinonStub;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let getIdentitiesContractKeysWithProofInfoStub: SinonStub;
   let getIdentityTokenBalancesStub: SinonStub;
   let getIdentityTokenBalancesWithProofInfoStub: SinonStub;
@@ -43,7 +44,7 @@ describe('IdentitiesFacade', () => {
 
   beforeEach(async function setup() {
     await init();
-    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnet();
     wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
@@ -75,7 +76,8 @@ describe('IdentitiesFacade', () => {
       metadata: {},
     });
     getIdentityContractNonceStub = this.sinon.stub(wasmSdk, 'getIdentityContractNonce').resolves(BigInt(0));
-    getIdentityContractNonceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityContractNonceWithProofInfo').resolves({
+    getIdentityContractNonceWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityContractNonceWithProofInfo').resolves({
       data: BigInt(0),
       proof: {},
       metadata: {},
@@ -109,7 +111,8 @@ describe('IdentitiesFacade', () => {
         proof: {},
         metadata: {},
       });
-    getIdentityByNonUniquePublicKeyHashStub = this.sinon.stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHash').resolves([]);
+    getIdentityByNonUniquePublicKeyHashStub = this.sinon
+      .stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHash').resolves([]);
     getIdentityByNonUniquePublicKeyHashWithProofInfoStub = this.sinon
       .stub(wasmSdk, 'getIdentityByNonUniquePublicKeyHashWithProofInfo').resolves({
         data: [],
@@ -124,7 +127,8 @@ describe('IdentitiesFacade', () => {
         metadata: {},
       });
     getIdentityTokenBalancesStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves(new Map());
-    getIdentityTokenBalancesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
+    getIdentityTokenBalancesWithProofInfoStub = this.sinon
+      .stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves({
       data: new Map(),
       proof: {},
       metadata: {},

@@ -39,7 +39,8 @@ pub enum GroupActionEventVariant {
     TokenEvent = 0,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "GroupActionEvent")]
 pub struct GroupActionEventWasm(GroupActionEvent);
 

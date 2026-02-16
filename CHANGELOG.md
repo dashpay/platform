@@ -1,3 +1,66 @@
+### [3.0.1](///compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
+
+### [3.0.1-hotfix.4](///compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update PlatformAddress encoding and HRP constants (#3059)
+* **platform:** 3.0 audit report fixes (#3053)
+
+### Features
+
+* **platform:** update PlatformAddress encoding and HRP constants ([#3059](undefined/undefined/undefined/issues/3059))
+
+
+### Bug Fixes
+
+* **platform:** 3.0 audit report fixes ([#3053](undefined/undefined/undefined/issues/3053))
+
+
+### Miscellaneous Chores
+
+* update all package versions to 3.0.1-hotfix.4 ([#3060](undefined/undefined/undefined/issues/3060))
+
+### [3.0.1-hotfix.3](///compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](undefined/undefined/undefined/issues/3018))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 23 ([#3054](undefined/undefined/undefined/issues/3054))
+* **release:** update changelog and bump version to 3.0.1-hotfix.3 ([#3055](undefined/undefined/undefined/issues/3055))
+
+### [3.0.1-hotfix.3](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+
+
+### Bug Fixes
+
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](https://github.com/dashpay/platform/issues/3018))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** upgrade to Core 23 ([#3054](https://github.com/dashpay/platform/issues/3054))
+
+### [3.0.1-hotfix.2](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.1...v3.0.1-hotfix.2) (2026-02-02)
+
+
+### Bug Fixes
+
+* **dashmate:** pass --profile shortlived on letsencrypt renewal
+
+### [3.0.1-hotfix.1](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.1) (2026-01-26)
+
+
+### Bug Fixes
+
+* use single quotes and preserve ctx values in merge
+
 ## [3.0.0-rc.3](///compare/v3.0.0-rc.2...v3.0.0-rc.3) (2026-01-20)
 
 

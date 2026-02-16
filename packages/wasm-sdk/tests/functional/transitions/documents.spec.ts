@@ -32,8 +32,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
-    const builder = sdk.WasmSdkBuilder.localTrusted();
+    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
   });
 

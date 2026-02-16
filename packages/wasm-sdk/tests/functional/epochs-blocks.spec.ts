@@ -9,8 +9,8 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
-    const builder = sdk.WasmSdkBuilder.localTrusted();
+    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
 
     // Get the proTxHash from the node status

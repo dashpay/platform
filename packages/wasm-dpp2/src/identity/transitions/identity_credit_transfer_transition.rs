@@ -8,7 +8,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
@@ -79,7 +79,8 @@ struct IdentityCreditTransferOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "IdentityCreditTransfer")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
@@ -198,11 +199,6 @@ impl IdentityCreditTransferWasm {
     #[wasm_bindgen(getter = "signature")]
     pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]

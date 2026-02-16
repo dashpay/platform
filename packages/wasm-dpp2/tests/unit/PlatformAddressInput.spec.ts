@@ -8,9 +8,9 @@ before(async () => {
 describe('PlatformAddressInput', () => {
   describe('constructor()', () => {
     it('should create from PlatformAddress object', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -21,9 +21,9 @@ describe('PlatformAddressInput', () => {
     });
 
     it('should create from bech32m address string', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
       const bech32m = platformAddr.toBech32m('testnet');
@@ -35,9 +35,9 @@ describe('PlatformAddressInput', () => {
     });
 
     it('should create from Uint8Array', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
 
       const input = new wasm.PlatformAddressInput(addressBytes, 0, BigInt(100000));
@@ -47,9 +47,9 @@ describe('PlatformAddressInput', () => {
     });
 
     it('should handle zero nonce', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -58,9 +58,9 @@ describe('PlatformAddressInput', () => {
     });
 
     it('should handle large amounts', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -70,9 +70,9 @@ describe('PlatformAddressInput', () => {
     });
 
     it('should handle max u32 nonce', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -84,9 +84,9 @@ describe('PlatformAddressInput', () => {
 
   describe('address', () => {
     it('should return the address', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -99,9 +99,9 @@ describe('PlatformAddressInput', () => {
 
   describe('nonce', () => {
     it('should return the nonce', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 
@@ -112,9 +112,9 @@ describe('PlatformAddressInput', () => {
 
   describe('amount', () => {
     it('should return the amount', () => {
-      // 0xb0 is P2PKH address type
+      // 0x00 is P2PKH variant index in storage format
       const addressBytes = new Uint8Array([
-        0xb0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
       ]);
       const platformAddr = wasm.PlatformAddress.fromBytes(addressBytes);
 

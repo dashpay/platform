@@ -129,6 +129,20 @@ impl DocumentQuery {
 
         self
     }
+
+    /// Create a clone of this query with a different data contract.
+    ///
+    /// Preserves all where/order_by/limit/start clauses.
+    pub fn clone_with_contract(&self, contract: Arc<DataContract>) -> Self {
+        Self {
+            data_contract: contract,
+            document_type_name: self.document_type_name.clone(),
+            where_clauses: self.where_clauses.clone(),
+            order_by_clauses: self.order_by_clauses.clone(),
+            limit: self.limit,
+            start: self.start.clone(),
+        }
+    }
 }
 
 impl TransportRequest for DocumentQuery {

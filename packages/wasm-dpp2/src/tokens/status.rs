@@ -4,7 +4,8 @@ use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "TokenStatus")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct TokenStatusWasm(TokenStatus);
 
 impl From<TokenStatus> for TokenStatusWasm {

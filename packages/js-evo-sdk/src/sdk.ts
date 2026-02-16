@@ -8,6 +8,7 @@ import { TokensFacade } from './tokens/facade.js';
 import { DpnsFacade } from './dpns/facade.js';
 import { EpochFacade } from './epoch/facade.js';
 import { ProtocolFacade } from './protocol/facade.js';
+import { StateTransitionsFacade } from './state-transitions/facade.js';
 import { SystemFacade } from './system/facade.js';
 import { GroupFacade } from './group/facade.js';
 import { VotingFacade } from './voting/facade.js';
@@ -47,6 +48,7 @@ export class EvoSDK {
   public dpns!: DpnsFacade;
   public epoch!: EpochFacade;
   public protocol!: ProtocolFacade;
+  public stateTransitions!: StateTransitionsFacade;
   public system!: SystemFacade;
   public group!: GroupFacade;
   public voting!: VotingFacade;
@@ -63,13 +65,16 @@ export class EvoSDK {
     this.dpns = new DpnsFacade(this);
     this.epoch = new EpochFacade(this);
     this.protocol = new ProtocolFacade(this);
+    this.stateTransitions = new StateTransitionsFacade(this);
     this.system = new SystemFacade(this);
     this.group = new GroupFacade(this);
     this.voting = new VotingFacade(this);
   }
 
   get wasm(): wasm.WasmSdk {
-    if (!this.wasmSdk) throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    if (!this.wasmSdk) {
+      throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
+    }
     return this.wasmSdk;
   }
 
@@ -83,47 +88,63 @@ export class EvoSDK {
   }
 
   async connect(): Promise<void> {
-    if (this.wasmSdk) return; // idempotent
+    if (this.wasmSdk) {
+      return; // idempotent
+    }
     await initWasm();
 
     const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
 
+    // Prefetch trusted context only when trusted mode is requested
+    let context: wasm.WasmTrustedContext | undefined;
+    if (trusted) {
+      if (network === 'mainnet') {
+        context = await wasm.WasmTrustedContext.prefetchMainnet();
+      } else if (network === 'testnet') {
+        context = await wasm.WasmTrustedContext.prefetchTestnet();
+      } else if (network === 'local') {
+        context = await wasm.WasmTrustedContext.prefetchLocal();
+      } else {
+        throw new Error(`Unknown network: ${network}`);
+      }
+    }
+
     let builder: wasm.WasmSdkBuilder;
 
-    // If specific addresses are provided, use them instead of network presets
     if (addresses && addresses.length > 0) {
-      // Prefetch trusted quorums for the network before creating builder with addresses
-      if (network === 'mainnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-      } else if (network === 'testnet') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-      } else if (network === 'local') {
-        await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
-      }
       builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
+      builder = wasm.WasmSdkBuilder.mainnet();
     } else if (network === 'testnet') {
-      await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
-
-      builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+      builder = wasm.WasmSdkBuilder.testnet();
     } else if (network === 'local') {
-      // Default local dashmate gateway and quorum list sidecar
-      await wasm.WasmSdk.prefetchTrustedQuorumsLocal();
-
-      builder = trusted ? wasm.WasmSdkBuilder.localTrusted() : wasm.WasmSdkBuilder.local();
+      builder = wasm.WasmSdkBuilder.local();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
 
-    if (version) builder = builder.withVersion(version);
-    if (typeof proofs === 'boolean') builder = builder.withProofs(proofs);
-    if (logs) builder = builder.withLogs(logs);
+    // Attach trusted context for proof verification and discovered addresses
+    if (context) {
+      builder = builder.withTrustedContext(context);
+    }
+
+    if (version) {
+      builder = builder.withVersion(version);
+    }
+    if (typeof proofs === 'boolean') {
+      builder = builder.withProofs(proofs);
+    }
+    if (logs) {
+      builder = builder.withLogs(logs);
+    }
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
-      builder = builder.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
+      builder = builder.withSettings(
+        connectTimeoutMs ?? null,
+        timeoutMs ?? null,
+        retries ?? null,
+        banFailedAddress ?? null,
+      );
     }
 
     this.wasmSdk = builder.build();
@@ -184,6 +205,7 @@ export { TokensFacade } from './tokens/facade.js';
 export { DpnsFacade } from './dpns/facade.js';
 export { EpochFacade } from './epoch/facade.js';
 export { ProtocolFacade } from './protocol/facade.js';
+export { StateTransitionsFacade } from './state-transitions/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
 export { VotingFacade } from './voting/facade.js';

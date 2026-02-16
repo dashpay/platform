@@ -12,7 +12,7 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::IdentityNonce;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
@@ -84,7 +84,8 @@ struct MasternodeVoteTransitionOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct MasternodeVoteTransitionWasm(MasternodeVoteTransition);
 
 impl From<MasternodeVoteTransition> for MasternodeVoteTransitionWasm {
@@ -242,11 +243,6 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(getter = "userFeeIncrease")]
     pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
-    }
-
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        self.0.signable_bytes().map_err(Into::into)
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]

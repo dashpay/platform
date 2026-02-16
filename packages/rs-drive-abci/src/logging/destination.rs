@@ -10,6 +10,7 @@ use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::str::from_utf8;
+use tracing_subscriber::fmt::writer::TestWriter;
 
 use serde::de::Visitor;
 use serde::{de, Deserialize, Deserializer, Serialize};
@@ -24,6 +25,8 @@ pub enum LogDestination {
     #[default]
     /// Standard out
     StdOut,
+    /// Test output (shown on failure unless --nocapture)
+    TestWriter,
     /// File
     File(PathBuf),
     /// Blob of bytes for testing
@@ -36,6 +39,7 @@ impl Display for LogDestination {
         match self {
             LogDestination::StdErr => write!(f, "stderr"),
             LogDestination::StdOut => write!(f, "stdout"),
+            LogDestination::TestWriter => write!(f, "testwriter"),
             LogDestination::File(path) => write!(f, "{}", path.to_string_lossy()),
             #[cfg(test)]
             LogDestination::Bytes => write!(f, "bytes"),
@@ -49,6 +53,7 @@ impl From<&str> for LogDestination {
         match value {
             "stdout" => LogDestination::StdOut,
             "stderr" => LogDestination::StdErr,
+            "testwriter" => LogDestination::TestWriter,
             #[cfg(test)]
             "bytes" => LogDestination::Bytes,
             file_path => LogDestination::File(PathBuf::from(file_path)),
@@ -143,6 +148,8 @@ pub(super) enum LogDestinationWriter {
     StdErr,
     /// Standard out
     StdOut,
+    /// Test output (shown on failure unless --nocapture)
+    TestWriter,
     /// File
     File(Writer<Reopen<File>>),
     /// Rotated file
@@ -158,6 +165,7 @@ impl LogDestinationWriter {
         match self {
             LogDestinationWriter::StdErr => Box::new(std::io::stderr()) as Box<dyn Write>,
             LogDestinationWriter::StdOut => Box::new(std::io::stdout()) as Box<dyn Write>,
+            LogDestinationWriter::TestWriter => Box::new(TestWriter::new()) as Box<dyn Write>,
             LogDestinationWriter::File(f) => Box::new(f.clone()) as Box<dyn Write>,
             LogDestinationWriter::RotationWriter(w) => Box::new(w.clone()) as Box<dyn Write>,
             #[cfg(test)]
@@ -170,6 +178,7 @@ impl LogDestinationWriter {
         let s = match self {
             LogDestinationWriter::StdOut => "stdout",
             LogDestinationWriter::StdErr => "stderr",
+            LogDestinationWriter::TestWriter => "testwriter",
             LogDestinationWriter::File(_) => "file",
             LogDestinationWriter::RotationWriter(_) => "RotationWriter",
             #[cfg(test)]
@@ -274,6 +283,7 @@ impl TryFrom<&LogConfig> for LogDestinationWriter {
         let destination = match &value.destination {
             LogDestination::StdOut => LogDestinationWriter::StdOut,
             LogDestination::StdErr => LogDestinationWriter::StdErr,
+            LogDestination::TestWriter => LogDestinationWriter::TestWriter,
             #[cfg(test)]
             LogDestination::Bytes => LogDestinationWriter::Bytes(Vec::<u8>::new().into()),
             LogDestination::File(path_string) => {

@@ -13,13 +13,12 @@ describe('SystemFacade', () => {
   let getTotalCreditsInPlatformWithProofInfoStub: SinonStub;
   let getPrefundedSpecializedBalanceStub: SinonStub;
   let getPrefundedSpecializedBalanceWithProofInfoStub: SinonStub;
-  let waitForStateTransitionResultStub: SinonStub;
   let getPathElementsStub: SinonStub;
   let getPathElementsWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
-    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnet();
     wasmSdk = await builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
@@ -29,7 +28,6 @@ describe('SystemFacade', () => {
     getTotalCreditsInPlatformWithProofInfoStub = this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatformWithProofInfo').resolves('ok');
     getPrefundedSpecializedBalanceStub = this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalance').resolves('ok');
     getPrefundedSpecializedBalanceWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalanceWithProofInfo').resolves('ok');
-    waitForStateTransitionResultStub = this.sinon.stub(wasmSdk, 'waitForStateTransitionResult').resolves('ok');
     getPathElementsStub = this.sinon.stub(wasmSdk, 'getPathElements').resolves('ok');
     getPathElementsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
   });
@@ -73,13 +71,6 @@ describe('SystemFacade', () => {
     it('should forward to getPrefundedSpecializedBalanceWithProofInfo', async () => {
       await client.system.prefundedSpecializedBalanceWithProof('i');
       expect(getPrefundedSpecializedBalanceWithProofInfoStub).to.be.calledOnce();
-    });
-  });
-
-  describe('waitForStateTransitionResult()', () => {
-    it('should forward to waitForStateTransitionResult', async () => {
-      await client.system.waitForStateTransitionResult('h');
-      expect(waitForStateTransitionResultStub).to.be.calledOnce();
     });
   });
 
