@@ -94,7 +94,8 @@ mod tests {
         assert!(config_v1_true.sized_integer_types());
         assert!(!config_v1_false.sized_integer_types());
 
-        let result = config_v1_true.validate_update_v1(&config_v1_false, contract_id, platform_version);
+        let result =
+            config_v1_true.validate_update_v1(&config_v1_false, contract_id, platform_version);
         assert!(
             !result.is_valid(),
             "V1(sized=true)→V1(sized=false) should be rejected. Errors: {:?}",
@@ -182,7 +183,8 @@ mod tests {
         modified3.can_be_deleted = !modified3.can_be_deleted;
         let config_can_be_deleted = DataContractConfig::V1(modified3);
 
-        let result3 = config_v1.validate_update_v1(&config_can_be_deleted, contract_id, platform_version);
+        let result3 =
+            config_v1.validate_update_v1(&config_can_be_deleted, contract_id, platform_version);
         assert!(
             !result3.is_valid(),
             "Changing can_be_deleted should be rejected by validate_update_v1"
@@ -194,7 +196,8 @@ mod tests {
             !modified4.documents_mutable_contract_default;
         let config_docs_mutable = DataContractConfig::V1(modified4);
 
-        let result4 = config_v1.validate_update_v1(&config_docs_mutable, contract_id, platform_version);
+        let result4 =
+            config_v1.validate_update_v1(&config_docs_mutable, contract_id, platform_version);
         assert!(
             !result4.is_valid(),
             "Changing documents_mutable_contract_default should be rejected by validate_update_v1"
