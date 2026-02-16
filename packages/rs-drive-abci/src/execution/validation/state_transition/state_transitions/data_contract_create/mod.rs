@@ -105,7 +105,7 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
             })),
         }
     }
