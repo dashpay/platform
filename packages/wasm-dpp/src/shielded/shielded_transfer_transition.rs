@@ -47,9 +47,9 @@ impl ShieldedTransferTransitionWasm {
         }
     }
 
-    /// Returns the net value balance.
+    /// Returns the value balance (fee amount leaving the pool).
     #[wasm_bindgen(js_name = getValueBalance)]
-    pub fn get_value_balance(&self) -> i64 {
+    pub fn get_value_balance(&self) -> u64 {
         match &self.0 {
             ShieldedTransferTransition::V0(v0) => v0.value_balance,
         }
@@ -82,12 +82,10 @@ impl ShieldedTransferTransitionWasm {
         Buffer::from_bytes(sig)
     }
 
-    /// Returns the user fee increase multiplier.
+    /// Always returns 0 — the fee is cryptographically locked by the Orchard binding signature.
     #[wasm_bindgen(js_name = getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        match &self.0 {
-            ShieldedTransferTransition::V0(v0) => v0.user_fee_increase,
-        }
+        0
     }
 
     #[wasm_bindgen(js_name = toObject)]

@@ -7,7 +7,6 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::UserFeeIncrease,
     state_transition::{
         shielded_transfer_transition::v0::ShieldedTransferTransitionV0, StateTransition,
     },
@@ -25,7 +24,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransition {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -41,7 +39,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransition {
                 anchor,
                 proof,
                 binding_signature,
-                user_fee_increase,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

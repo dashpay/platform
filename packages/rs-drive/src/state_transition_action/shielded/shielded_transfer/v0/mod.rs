@@ -1,7 +1,6 @@
 mod transformer;
 
 use dpp::fee::Credits;
-use dpp::prelude::UserFeeIncrease;
 
 /// Shielded transfer transition action v0
 #[derive(Debug, Clone)]
@@ -16,8 +15,6 @@ pub struct ShieldedTransferTransitionActionV0 {
     pub anchor: [u8; 32],
     /// Fee amount extracted from the value balance
     pub fee_amount: Credits,
-    /// fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,
 }

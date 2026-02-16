@@ -9,7 +9,6 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::unshield_transition::UnshieldTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::UserFeeIncrease,
     state_transition::{unshield_transition::v0::UnshieldTransitionV0, StateTransition},
     ProtocolError,
 };
@@ -27,7 +26,6 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransition {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -45,7 +43,6 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransition {
                 anchor,
                 proof,
                 binding_signature,
-                user_fee_increase,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

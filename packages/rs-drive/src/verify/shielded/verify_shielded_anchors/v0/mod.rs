@@ -1,9 +1,9 @@
-use crate::drive::shielded::paths::shielded_anchors_credit_pool_path_vec;
+use crate::drive::shielded::paths::shielded_credit_pool_anchors_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
+use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -13,7 +13,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<[u8; 32]>), Error> {
         let path_query = PathQuery {
-            path: shielded_anchors_credit_pool_path_vec(),
+            path: shielded_credit_pool_anchors_path_vec(),
             query: SizedQuery {
                 query: Query::new_range_full(),
                 limit: None,
@@ -28,13 +28,23 @@ impl Drive {
         };
 
         let mut anchors = Vec::with_capacity(proved_key_values.len());
-        for (_, key, _) in proved_key_values {
-            let anchor: [u8; 32] = key.try_into().map_err(|_: Vec<u8>| {
-                Error::Drive(DriveError::CorruptedElementType(
-                    "anchor key is not 32 bytes",
-                ))
-            })?;
-            anchors.push(anchor);
+        for (_, _key, maybe_element) in proved_key_values {
+            match maybe_element {
+                Some(Element::Item(value, _)) => {
+                    let anchor: [u8; 32] = value.try_into().map_err(|_v: Vec<u8>| {
+                        Error::Drive(DriveError::CorruptedElementType(
+                            "anchor value is not 32 bytes",
+                        ))
+                    })?;
+                    anchors.push(anchor);
+                }
+                Some(_) => {
+                    return Err(Error::Drive(DriveError::CorruptedElementType(
+                        "expected Item element for anchor, got different element type",
+                    )));
+                }
+                None => {}
+            }
         }
 
         Ok((root_hash, anchors))

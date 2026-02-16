@@ -4,8 +4,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle, validate_anchor_exists,
-    validate_nullifiers,
+    read_pool_total_balance, validate_anchor_exists, validate_nullifiers,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
@@ -16,8 +15,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
-use drive::state_transition_action::system::penalize_shielded_pool_action::v0::PenalizeShieldedPoolActionV0;
-use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shielded_transfer) trait ShieldedTransferStateTransitionTransformIntoActionValidationV0
@@ -118,50 +115,6 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
             None,
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
-        // Verify the ZK proof
-        // Cast value_balance to i64 for Orchard protocol — safe because structure
-        // validation already verified value_balance <= i64::MAX
-        let (st_actions, st_flags, st_value_balance, st_proof, st_binding_sig) = match self {
-            ShieldedTransferTransition::V0(v0) => (
-                &v0.actions,
-                v0.flags,
-                v0.value_balance as i64,
-                v0.proof.as_slice(),
-                &v0.binding_signature,
-            ),
-        };
-
-        if let Err(e) = reconstruct_and_verify_bundle(
-            st_actions,
-            st_flags,
-            st_value_balance,
-            &anchor,
-            st_proof,
-            st_binding_sig,
-            &[], // No transparent fields to bind for shielded transfer
-        ) {
-            let penalty = platform_version
-                .drive_abci
-                .validation_and_processing
-                .penalties
-                .shielded_proof_verification_failure;
-
-            let penalty_amount = std::cmp::min(penalty, current_total_balance);
-
-            let penalize_action = StateTransitionAction::PenalizeShieldedPoolAction(
-                PenalizeShieldedPoolAction::from(PenalizeShieldedPoolActionV0 {
-                    penalty_amount,
-                    nullifiers: nullifiers.clone(),
-                    current_total_balance,
-                }),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                penalize_action,
-                vec![StateError::InvalidShieldedProofError(e).into()],
-            ));
-        }
 
         let result = ShieldedTransferTransitionAction::try_from_transition(
             self,

@@ -1,7 +1,4 @@
-use super::{
-    append_note_commitments, insert_encrypted_notes, insert_nullifiers,
-    update_balance_and_record_anchor,
-};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -30,13 +27,10 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                     // 1. Insert each nullifier (InsertOnly to prevent double-spend)
                     insert_nullifiers(&mut ops, &v0.nullifiers);
 
-                    // 2. Append each note commitment to the commitment tree
-                    append_note_commitments(&mut ops, &v0.note_commitments);
+                    // 2. Insert notes into CommitmentTree
+                    insert_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
 
-                    // 3. Insert encrypted notes with auto-incremented keys in count tree
-                    insert_encrypted_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
-
-                    // 4. Update total balance and record anchor
+                    // 3. Update total balance (pool decreases by fee_amount)
                     let new_total_balance = v0
                         .current_total_balance
                         .checked_sub(v0.fee_amount)
@@ -46,7 +40,7 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                                     .to_string(),
                             ))
                         })?;
-                    update_balance_and_record_anchor(&mut ops, new_total_balance);
+                    update_balance(&mut ops, new_total_balance);
 
                     Ok(ops)
                 }

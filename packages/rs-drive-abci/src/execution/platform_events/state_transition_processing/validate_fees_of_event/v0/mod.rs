@@ -8,6 +8,7 @@ use dpp::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::deduct
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
@@ -217,6 +218,50 @@ where
                                 input_current_balances.clone(),
                                 required_balance,
                             ),
+                        )
+                        .into()],
+                    ))
+                }
+            }
+            ExecutionEvent::PaidFromAssetLockToPool {
+                fees_to_add_to_pool,
+                operations,
+                execution_operations,
+                user_fee_increase,
+            } => {
+                let mut estimated_fee_result = self
+                    .drive
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        platform_version,
+                        Some(previous_fee_versions),
+                    )
+                    .map_err(Error::Drive)?;
+
+                ValidationOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    platform_version,
+                )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
+
+                let required_fee = estimated_fee_result.total_base_fee();
+                if *fees_to_add_to_pool >= required_fee {
+                    Ok(ConsensusValidationResult::new_with_data(
+                        estimated_fee_result,
+                    ))
+                } else {
+                    Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::InvalidShieldedProofError(
+                            InvalidShieldedProofError::new(format!(
+                                "shield_from_asset_lock fee insufficient: provided {} but minimum required {}",
+                                fees_to_add_to_pool, required_fee
+                            )),
                         )
                         .into()],
                     ))

@@ -17,10 +17,9 @@ use dpp::state_transition::unshield_transition::methods::UnshieldTransitionMetho
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::ProtocolError;
 use grovedb_commitment_tree::{
-    new_memory_store, Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-    CommitmentTree, ExtractedNoteCommitment, Flags as OrchardFlags, FullViewingKey,
-    MemoryCommitmentStore, MerklePath, Note, NoteValue, Position, ProvingKey, Retention, Scope,
-    SpendAuthorizingKey, SpendingKey,
+    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, ClientCommitmentTree,
+    ExtractedNoteCommitment, Flags as OrchardFlags, FullViewingKey, MerklePath, Note, NoteValue,
+    Position, ProvingKey, Retention, Scope, SpendAuthorizingKey, SpendingKey,
 };
 use orchard::note::RandomSeed;
 
@@ -156,7 +155,7 @@ const TEST_SK_BYTES: [u8; 32] = [0u8; 32];
 /// with valid Merkle witnesses.
 pub struct ShieldedState {
     /// Local commitment tree mirroring the on-chain tree.
-    pub tree: CommitmentTree<MemoryCommitmentStore>,
+    pub tree: ClientCommitmentTree,
     /// Spendable notes: (Note, Position in commitment tree).
     /// Notes are removed once spent.
     pub spendable_notes: Vec<(Note, Position)>,
@@ -179,7 +178,7 @@ impl ShieldedState {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
         Self {
-            tree: CommitmentTree::new(new_memory_store(), 1000),
+            tree: ClientCommitmentTree::new(1000),
             spendable_notes: Vec::new(),
             checkpoint_counter: 0,
             sk,
@@ -208,7 +207,8 @@ impl ShieldedState {
 
         // Append to commitment tree
         let cmx = ExtractedNoteCommitment::from(note.commitment());
-        self.tree.append(cmx, Retention::Marked).unwrap();
+        let cmx_bytes: [u8; 32] = cmx.to_bytes();
+        self.tree.append(cmx_bytes, Retention::Marked).unwrap();
 
         let position = self.tree.max_leaf_position().unwrap().unwrap();
         self.spendable_notes.push((note, position));
@@ -233,7 +233,7 @@ impl ShieldedState {
             return None;
         }
         let (note, position) = self.spendable_notes.remove(0);
-        let merkle_path = self.tree.orchard_witness(position).ok()??;
+        let merkle_path = self.tree.witness(position, 0).ok()??;
         let anchor = self.tree.anchor().ok()?;
         Some((note, merkle_path, anchor))
     }
@@ -2953,7 +2953,6 @@ impl NetworkStrategy {
             anchor_bytes,
             proof_bytes,
             binding_sig,
-            0,
             platform_version,
         )
         .expect("expected to create shielded transfer transition");
@@ -3042,7 +3041,6 @@ impl NetworkStrategy {
             anchor_bytes,
             proof_bytes,
             binding_sig,
-            0,
             platform_version,
         )
         .expect("expected to create unshield transition");
@@ -3132,7 +3130,6 @@ impl NetworkStrategy {
             1, // core_fee_per_byte
             Pooling::Never,
             output_script,
-            0,
             platform_version,
         )
         .expect("expected to create shielded withdrawal transition");

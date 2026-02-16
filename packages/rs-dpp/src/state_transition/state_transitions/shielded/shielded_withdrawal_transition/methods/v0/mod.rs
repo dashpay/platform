@@ -6,7 +6,7 @@ use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
-use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+use crate::{state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
@@ -24,7 +24,6 @@ pub trait ShieldedWithdrawalTransitionMethodsV0 {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError>;
 

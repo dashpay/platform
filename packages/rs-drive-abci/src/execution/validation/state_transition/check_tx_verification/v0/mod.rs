@@ -16,6 +16,7 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::{StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0};
 use crate::execution::validation::state_transition::processor::addresses_minimum_balance::StateTransitionAddressesMinimumBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -123,6 +124,19 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let result = state_transition
                     .validate_basic_structure(platform.config.network, platform_version)?;
 
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // Verify ZK proof for shielded transitions (stateless, like signature verification).
+            // This happens before any state reads to reject invalid proofs cheaply.
+            if state_transition.has_shielded_proof_validation() {
+                let result = state_transition.validate_shielded_proof(platform_version)?;
                 if !result.is_valid() {
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(

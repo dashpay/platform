@@ -3,9 +3,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle,
-};
+use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
@@ -17,7 +15,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
-use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -97,52 +94,6 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             None,
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
-        // Verify the ZK proof
-        let (actions, flags, value_balance, anchor, proof, binding_signature) = match self {
-            ShieldTransition::V0(v0) => (
-                &v0.actions,
-                v0.flags,
-                v0.value_balance,
-                &v0.anchor,
-                v0.proof.as_slice(),
-                &v0.binding_signature,
-            ),
-        };
-
-        if let Err(e) = reconstruct_and_verify_bundle(
-            actions,
-            flags,
-            value_balance,
-            anchor,
-            proof,
-            binding_signature,
-            &[], // No transparent fields to bind for shield
-        ) {
-            let penalty = platform_version
-                .drive_abci
-                .validation_and_processing
-                .penalties
-                .shielded_proof_verification_failure;
-
-            let (fee_strategy, user_fee_increase) = match self {
-                ShieldTransition::V0(v0) => (&v0.fee_strategy, v0.user_fee_increase),
-            };
-
-            let bump_action = StateTransitionAction::BumpAddressInputNoncesAction(
-                BumpAddressInputNoncesAction::from_inputs_with_remaining_balance(
-                    &inputs_with_remaining_balance,
-                    fee_strategy,
-                    penalty,
-                    user_fee_increase,
-                ),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                vec![StateError::InvalidShieldedProofError(e).into()],
-            ));
-        }
 
         let result = ShieldTransitionAction::try_from_transition(
             self,

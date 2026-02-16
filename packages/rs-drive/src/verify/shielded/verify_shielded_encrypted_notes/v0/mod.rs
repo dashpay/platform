@@ -1,4 +1,4 @@
-use crate::drive::shielded::paths::shielded_credit_pool_encrypted_notes_path_vec;
+use crate::drive::shielded::paths::shielded_credit_pool_notes_path_vec;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -31,7 +31,7 @@ impl Drive {
         };
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_encrypted_notes_path_vec(),
+            path: shielded_credit_pool_notes_path_vec(),
             query: SizedQuery {
                 query,
                 limit: Some(limit),

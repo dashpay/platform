@@ -5,7 +5,6 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::address_funds::PlatformAddress;
-use crate::prelude::UserFeeIncrease;
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -50,8 +49,6 @@ pub struct UnshieldTransitionV0 {
         serde(with = "crate::shielded::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
-    /// Fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
 }
 
 #[cfg(test)]
@@ -92,7 +89,6 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
-            user_fee_increase: 0u16,
         };
 
         test_round_trip(transition);

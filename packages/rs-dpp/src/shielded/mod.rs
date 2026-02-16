@@ -44,13 +44,6 @@ pub(crate) mod serde_bytes_64 {
     }
 }
 
-/// Parameters for a shielded pool, stored as an Item in the pool's subtree
-#[derive(Debug, Clone, Encode, Decode, Default, PartialEq)]
-pub struct ShieldedPoolParams {
-    /// Counter for commitment tree checkpoint IDs (monotonically increasing)
-    pub checkpoint_id_counter: u64,
-}
-
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:

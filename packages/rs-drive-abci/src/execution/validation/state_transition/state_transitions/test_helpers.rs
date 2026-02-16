@@ -22,8 +22,9 @@ use dpp::shielded::SerializedAction;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
 use drive::drive::shielded::paths::{
-    shielded_anchors_credit_pool_path, shielded_credit_pool_encrypted_notes_path,
-    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_anchors_path, shielded_credit_pool_notes_path,
+    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path, SHIELDED_NOTES_KEY,
+    SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::grovedb::Element;
 use platform_version::version::PlatformVersion;
@@ -460,19 +461,20 @@ pub fn process_transition(
 }
 
 /// Insert a fake anchor into the shielded anchors tree via GroveDB.
+/// Anchors are stored as block_height_be → anchor_bytes in [AddressBalances, "s", [6]].
 pub fn insert_anchor_into_state(platform: &TempPlatform<MockCoreRPCLike>, anchor: &[u8; 32]) {
     let platform_version = PlatformVersion::latest();
     let grove_version = &platform_version.drive.grove_version;
     let transaction = platform.drive.grove.start_transaction();
-    let anchors_path = shielded_anchors_credit_pool_path();
+    let anchors_path = shielded_credit_pool_anchors_path();
 
     platform
         .drive
         .grove
         .insert(
             &anchors_path,
-            anchor,
-            Element::Item(vec![], None),
+            &0u64.to_be_bytes(),
+            Element::new_item(anchor.to_vec()),
             None,
             Some(&transaction),
             grove_version,
@@ -538,6 +540,13 @@ pub fn set_pool_total_balance(platform: &TempPlatform<MockCoreRPCLike>, balance:
         .unwrap()
         .expect("should set total balance");
 
+    // The shielded pool is part of total system credits, so ensure system credits
+    // cover the pool balance (needed for RemoveFromSystemCredits in withdrawals).
+    platform
+        .drive
+        .add_to_system_credits(balance, Some(&transaction), platform_version)
+        .expect("should add to system credits");
+
     platform
         .drive
         .grove
@@ -546,34 +555,41 @@ pub fn set_pool_total_balance(platform: &TempPlatform<MockCoreRPCLike>, balance:
         .expect("should commit transaction");
 }
 
-/// Insert dummy encrypted notes into the shielded pool to meet the minimum
+/// Insert dummy notes into the CommitmentTree to meet the minimum
 /// notes threshold for outgoing transitions.
+/// Uses `commitment_tree_insert` to properly update the Sinsemilla frontier.
 pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, count: u64) {
     let platform_version = PlatformVersion::latest();
     let grove_version = &platform_version.drive.grove_version;
-    let transaction = platform.drive.grove.start_transaction();
-    let notes_path = shielded_credit_pool_encrypted_notes_path();
+    let pool_path = shielded_credit_pool_path();
 
     for i in 0..count {
+        // Generate a deterministic dummy cmx from the index.
+        // Use a valid Pallas base field element (just set it to a small value).
+        let mut cmx = [0u8; 32];
+        cmx[..8].copy_from_slice(&(i + 1).to_le_bytes());
+        let dummy_payload = vec![0u8; 32]; // minimal dummy payload
+
+        let transaction = platform.drive.grove.start_transaction();
         platform
             .drive
             .grove
-            .insert(
-                &notes_path,
-                &i.to_be_bytes(),
-                Element::Item(vec![0], None),
-                None,
+            .commitment_tree_insert(
+                &pool_path,
+                &[SHIELDED_NOTES_KEY],
+                cmx,
+                dummy_payload,
                 Some(&transaction),
                 grove_version,
             )
             .unwrap()
             .expect("should insert dummy note");
-    }
 
-    platform
-        .drive
-        .grove
-        .commit_transaction(transaction)
-        .unwrap()
-        .expect("should commit transaction");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+    }
 }

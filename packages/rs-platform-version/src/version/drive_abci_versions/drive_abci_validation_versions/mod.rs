@@ -14,6 +14,7 @@ pub struct DriveAbciValidationVersions {
     pub has_nonce_validation: FeatureVersion,
     pub has_address_witness_validation: FeatureVersion,
     pub validate_address_witnesses: FeatureVersion,
+    pub validate_shielded_proof: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,

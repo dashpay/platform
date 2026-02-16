@@ -29,6 +29,9 @@ impl Drive {
             TreeType::ProvableCountTree => Element::empty_provable_count_tree(),
             TreeType::ProvableCountSumTree => Element::empty_provable_count_sum_tree(),
             TreeType::CommitmentTree => Element::empty_commitment_tree(),
+            TreeType::MmrTree => Element::empty_mmr_tree(),
+            TreeType::BulkAppendTree => Element::empty_bulk_append_tree(4),
+            TreeType::DenseAppendOnlyFixedSizeTree => Element::empty_dense_tree(8),
         };
         let cost_context = self.grove.insert(
             path,

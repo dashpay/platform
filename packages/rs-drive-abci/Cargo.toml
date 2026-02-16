@@ -106,6 +106,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
+grovedb-commitment-tree = { path = "../../../grovedb/grovedb-commitment-tree", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }

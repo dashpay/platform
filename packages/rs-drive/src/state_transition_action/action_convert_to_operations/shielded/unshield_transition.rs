@@ -1,7 +1,4 @@
-use super::{
-    append_note_commitments, insert_encrypted_notes, insert_nullifiers,
-    update_balance_and_record_anchor,
-};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -39,23 +36,27 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                         },
                     ));
 
-                    // 3. Append each note commitment (change outputs) to the commitment tree
-                    append_note_commitments(&mut ops, &v0.note_commitments);
+                    // 3. Insert notes into CommitmentTree (change outputs)
+                    insert_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
 
-                    // 4. Insert encrypted notes with auto-incremented keys in count tree
-                    insert_encrypted_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
-
-                    // 5. Update total balance and record anchor
+                    // 4. Update total balance
+                    // Pool decreases by amount (to output address) + fee_amount (to proposers)
+                    let total_deduction =
+                        v0.amount.checked_add(v0.fee_amount).ok_or_else(|| {
+                            Error::Drive(DriveError::CorruptedDriveState(
+                                "overflow when adding unshield amount and fee".to_string(),
+                            ))
+                        })?;
                     let new_total_balance =
                         v0.current_total_balance
-                            .checked_sub(v0.amount)
+                            .checked_sub(total_deduction)
                             .ok_or_else(|| {
                                 Error::Drive(DriveError::CorruptedDriveState(
-                                "shielded pool total balance underflow when subtracting unshield amount"
+                                "shielded pool total balance underflow when subtracting unshield amount and fee"
                                     .to_string(),
                             ))
                             })?;
-                    update_balance_and_record_anchor(&mut ops, new_total_balance);
+                    update_balance(&mut ops, new_total_balance);
 
                     Ok(ops)
                 }

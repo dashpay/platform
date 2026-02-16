@@ -28,10 +28,8 @@ use drive::drive::saved_block_transactions::{
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
 use drive::drive::shielded::paths::{
-    shielded_anchors_path, shielded_credit_pool_path, SHIELDED_ANCHORS_KEY_U8,
-    SHIELDED_COMMITMENTS_KEY, SHIELDED_CREDIT_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
-    SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_PARAMS_KEY,
-    SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
+    SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
@@ -627,11 +625,12 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Commitments tree (CommitmentTree): [AddressBalances, "s"] / [1]
+        // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
+        // [AddressBalances, "s"] / [1]
         let shielded_pool_path = shielded_credit_pool_path();
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
-            &[SHIELDED_COMMITMENTS_KEY],
+            &[SHIELDED_NOTES_KEY],
             Element::empty_commitment_tree(),
             Some(transaction),
             None,
@@ -648,29 +647,6 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Encrypted notes tree (NormalTree): [AddressBalances, "s"] / [3]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_ENCRYPTED_NOTES_KEY],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Params item: [AddressBalances, "s"] / [4]
-        let initial_params = dpp::shielded::ShieldedPoolParams::default();
-        let encoded_params = bincode::encode_to_vec(&initial_params, bincode::config::standard())
-            .expect("expected to encode default shielded pool params");
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_PARAMS_KEY],
-            Element::new_item(encoded_params),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
         // Total balance SumItem(0): [AddressBalances, "s"] / [5]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
@@ -681,21 +657,11 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Anchors tree (NormalTree) under AddressBalances: [AddressBalances] / "a"
+        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
+        // Stores block_height_be → anchor_bytes
         self.drive.grove_insert_if_not_exists(
-            addresses_path.as_slice().into(),
-            &[SHIELDED_ANCHORS_KEY_U8],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Credit pool anchors tree: [AddressBalances, "a"] / "s"
-        let anchors_path = shielded_anchors_path();
-        self.drive.grove_insert_if_not_exists(
-            (&anchors_path).into(),
-            SHIELDED_CREDIT_POOL_KEY,
+            (&shielded_pool_path).into(),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
             Element::empty_tree(),
             Some(transaction),
             None,

@@ -5,7 +5,6 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::identity::core_script::CoreScript;
-use crate::prelude::UserFeeIncrease;
 use crate::shielded::SerializedAction;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
@@ -55,8 +54,6 @@ pub struct ShieldedWithdrawalTransitionV0 {
     pub pooling: Pooling,
     /// Core address receiving withdrawn funds
     pub output_script: CoreScript,
-    /// Fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
 }
 
 #[cfg(test)]
@@ -96,7 +93,6 @@ mod tests {
             core_fee_per_byte: 1u32,
             pooling: Pooling::Never,
             output_script: CoreScript::new_p2pkh([11u8; 20]),
-            user_fee_increase: 0u16,
         };
 
         test_round_trip(transition);

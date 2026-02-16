@@ -17,6 +17,9 @@ use crate::execution::validation::state_transition::processor::identity_nonces::
 use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
 use crate::execution::validation::state_transition::processor::prefunded_specialized_balance::StateTransitionPrefundedSpecializedBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
+    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -156,6 +159,15 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
                     consensus_result.errors,
                 ),
             );
+        }
+    }
+
+    // Verify ZK proof for shielded transitions (stateless, like signature verification).
+    // This happens before any state reads to reject invalid proofs cheaply.
+    if state_transition.has_shielded_proof_validation() {
+        let result = state_transition.validate_shielded_proof(platform_version)?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
         }
     }
 

@@ -344,6 +344,15 @@ where
             platform_version,
         )?;
 
+        // Record shielded pool anchor if the commitment tree changed this block.
+        // This stores block_height → anchor_bytes so shielded transactions can
+        // reference a recent anchor for spend authorization.
+        self.record_shielded_pool_anchor_if_changed(
+            block_proposal.height,
+            transaction,
+            platform_version,
+        )?;
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue

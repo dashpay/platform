@@ -7,7 +7,6 @@ use crate::state_transition_action::shielded::unshield::v0::UnshieldTransitionAc
 use derive_more::From;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::prelude::UserFeeIncrease;
 
 /// Unshield transition action
 #[derive(Debug, Clone, From)]
@@ -53,10 +52,10 @@ impl UnshieldTransitionAction {
             UnshieldTransitionAction::V0(transition) => &transition.anchor,
         }
     }
-    /// fee multiplier
-    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+    /// Fee amount (value_balance - amount), paid to proposers
+    pub fn fee_amount(&self) -> Credits {
         match self {
-            UnshieldTransitionAction::V0(transition) => transition.user_fee_increase,
+            UnshieldTransitionAction::V0(transition) => transition.fee_amount,
         }
     }
 }

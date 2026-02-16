@@ -3,7 +3,7 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::shielded_transfer_transition::methods::ShieldedTransferTransitionMethodsV0;
 use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+use crate::{state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
@@ -16,7 +16,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransitionV0 {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         let transition = ShieldedTransferTransitionV0 {
@@ -26,7 +25,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransitionV0 {
             anchor,
             proof,
             binding_signature,
-            user_fee_increase,
         };
         Ok(transition.into())
     }

@@ -10,8 +10,8 @@ pub use dpp::shielded::compute_platform_sighash;
 use dpp::shielded::SerializedAction;
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::{
-    shielded_anchors_credit_pool_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_ENCRYPTED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_anchors_path, shielded_credit_pool_nullifiers_path,
+    shielded_credit_pool_path, SHIELDED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::Drive;
 use drive::fees::op::LowLevelDriveOperation;
@@ -201,24 +201,52 @@ pub fn read_pool_total_balance(
 }
 
 /// Verify that the anchor exists in the recorded anchors tree.
+/// Anchors are stored as block_height_be → anchor_bytes in [AddressBalances, "s", [6]].
 /// Returns a consensus error if the anchor is not found.
 pub fn validate_anchor_exists(
     drive: &Drive,
     anchor: &[u8; 32],
     transaction: TransactionArg,
-    drive_operations: &mut Vec<LowLevelDriveOperation>,
+    _drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
-    let anchors_path = shielded_anchors_credit_pool_path();
-    let anchor_exists = drive.grove_has_raw(
-        (&anchors_path).into(),
-        anchor,
-        DirectQueryType::StatefulDirectQuery,
-        transaction,
-        drive_operations,
-        &platform_version.drive,
-    )?;
-    if !anchor_exists {
+    use drive::grovedb::query_result_type::QueryResultType;
+    use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
+
+    let anchors_path = shielded_credit_pool_anchors_path();
+    let path_query = PathQuery {
+        path: anchors_path.iter().map(|p| p.to_vec()).collect(),
+        query: SizedQuery {
+            query: Query::new_range_full(),
+            limit: None,
+            offset: None,
+        },
+    };
+
+    let grove_version = &platform_version.drive.grove_version;
+    let results = drive
+        .grove
+        .query_raw(
+            &path_query,
+            true,
+            true,
+            true,
+            QueryResultType::QueryKeyElementPairResultType,
+            transaction,
+            grove_version,
+        )
+        .unwrap()
+        .map_err(drive::error::Error::from)?;
+
+    let found = results.0.to_key_elements().into_iter().any(|(_, element)| {
+        if let Element::Item(value, _) = element {
+            value.as_slice() == anchor
+        } else {
+            false
+        }
+    });
+
+    if !found {
         Ok(Some(ConsensusValidationResult::new_with_error(
             StateError::InvalidAnchorError(InvalidAnchorError::new(*anchor)).into(),
         )))
@@ -284,7 +312,7 @@ pub fn validate_minimum_pool_notes(
         let encrypted_notes_count = drive
             .grove_get_raw_optional(
                 (&pool_path).into(),
-                &[SHIELDED_ENCRYPTED_NOTES_KEY],
+                &[SHIELDED_NOTES_KEY],
                 DirectQueryType::StatefulDirectQuery,
                 transaction,
                 drive_operations,

@@ -32,11 +32,6 @@ impl UnshieldFunds for Sdk {
         value_balance: i64,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let user_fee_increase = settings
-            .as_ref()
-            .and_then(|s| s.user_fee_increase)
-            .unwrap_or_default();
-
         let OrchardBundleParams {
             actions,
             flags,
@@ -54,7 +49,6 @@ impl UnshieldFunds for Sdk {
             anchor,
             proof,
             binding_signature,
-            user_fee_increase,
             self.version(),
         )?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;

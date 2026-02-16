@@ -4,8 +4,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle, validate_anchor_exists,
-    validate_minimum_pool_notes, validate_nullifiers,
+    read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
+    validate_nullifiers,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
@@ -15,8 +15,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
-use drive::state_transition_action::system::penalize_shielded_pool_action::v0::PenalizeShieldedPoolActionV0;
-use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shielded_withdrawal) trait ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
@@ -133,67 +131,6 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             None,
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-
-        // Verify the Orchard ZK proof, binding transparent fields to the sighash.
-        // For shielded withdrawal, the extra_sighash_data binds the withdrawal
-        // destination (output_script) and amount, preventing an attacker from
-        // substituting a different output_script or amount while reusing a valid
-        // Orchard bundle.
-        let (
-            st_actions,
-            st_flags,
-            st_value_balance,
-            st_proof,
-            st_binding_sig,
-            output_script,
-            amount,
-        ) = match self {
-            ShieldedWithdrawalTransition::V0(v0) => (
-                &v0.actions,
-                v0.flags,
-                v0.value_balance,
-                v0.proof.as_slice(),
-                &v0.binding_signature,
-                &v0.output_script,
-                v0.amount,
-            ),
-        };
-
-        // Serialize transparent fields to bind them to the Orchard sighash.
-        // output_script.as_bytes() || amount.to_le_bytes()
-        let mut extra_sighash_data = output_script.as_bytes().to_vec();
-        extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
-
-        if let Err(e) = reconstruct_and_verify_bundle(
-            st_actions,
-            st_flags,
-            st_value_balance,
-            &anchor,
-            st_proof,
-            st_binding_sig,
-            &extra_sighash_data,
-        ) {
-            let penalty = platform_version
-                .drive_abci
-                .validation_and_processing
-                .penalties
-                .shielded_proof_verification_failure;
-
-            let penalty_amount = std::cmp::min(penalty, current_total_balance);
-
-            let penalize_action = StateTransitionAction::PenalizeShieldedPoolAction(
-                PenalizeShieldedPoolAction::from(PenalizeShieldedPoolActionV0 {
-                    penalty_amount,
-                    nullifiers: nullifiers.clone(),
-                    current_total_balance,
-                }),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                penalize_action,
-                vec![StateError::InvalidShieldedProofError(e).into()],
-            ));
-        }
 
         // Build the action, which includes creating the withdrawal document
         let creation_time_ms = block_info.time_ms;

@@ -11,7 +11,6 @@ use crate::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalT
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::UserFeeIncrease,
     state_transition::{
         shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0, StateTransition,
     },
@@ -33,7 +32,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransition {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -53,7 +51,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransition {
                 core_fee_per_byte,
                 pooling,
                 output_script,
-                user_fee_increase,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

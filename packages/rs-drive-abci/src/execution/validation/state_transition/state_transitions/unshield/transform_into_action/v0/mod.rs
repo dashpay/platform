@@ -4,19 +4,16 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle, validate_anchor_exists,
-    validate_minimum_pool_notes, validate_nullifiers,
+    read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
+    validate_nullifiers,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
-use drive::state_transition_action::system::penalize_shielded_pool_action::v0::PenalizeShieldedPoolActionV0;
-use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::unshield) trait UnshieldStateTransitionTransformIntoActionValidationV0
@@ -108,31 +105,14 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
-        // Verify the ZK proof, binding transparent fields to the sighash
-        let (
-            st_actions,
-            st_flags,
-            st_value_balance,
-            st_proof,
-            st_binding_sig,
-            output_address,
-            amount,
-        ) = match self {
-            UnshieldTransition::V0(v0) => (
-                &v0.actions,
-                v0.flags,
-                v0.value_balance,
-                v0.proof.as_slice(),
-                &v0.binding_signature,
-                v0.output_address,
-                v0.amount,
-            ),
+        // Verify the pool has sufficient balance for the unshield amount
+        let amount = match self {
+            UnshieldTransition::V0(v0) => v0.amount,
         };
 
-        // Verify the pool has sufficient balance for the unshield amount
         if current_total_balance < amount {
             return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(
+                dpp::consensus::state::state_error::StateError::InvalidShieldedProofError(
                     dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError::new(
                         format!(
                             "shielded pool has insufficient balance: pool has {} but unshield requires {}",
@@ -141,43 +121,6 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
                     ),
                 )
                 .into(),
-            ));
-        }
-
-        // Serialize transparent fields to bind them to the Orchard sighash.
-        // This prevents an attacker from substituting a different output_address
-        // or amount while reusing a valid Orchard bundle.
-        let mut extra_sighash_data = output_address.to_bytes();
-        extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
-
-        if let Err(e) = reconstruct_and_verify_bundle(
-            st_actions,
-            st_flags,
-            st_value_balance,
-            &anchor,
-            st_proof,
-            st_binding_sig,
-            &extra_sighash_data,
-        ) {
-            let penalty = platform_version
-                .drive_abci
-                .validation_and_processing
-                .penalties
-                .shielded_proof_verification_failure;
-
-            let penalty_amount = std::cmp::min(penalty, current_total_balance);
-
-            let penalize_action = StateTransitionAction::PenalizeShieldedPoolAction(
-                PenalizeShieldedPoolAction::from(PenalizeShieldedPoolActionV0 {
-                    penalty_amount,
-                    nullifiers: nullifiers.clone(),
-                    current_total_balance,
-                }),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                penalize_action,
-                vec![StateError::InvalidShieldedProofError(e).into()],
             ));
         }
 

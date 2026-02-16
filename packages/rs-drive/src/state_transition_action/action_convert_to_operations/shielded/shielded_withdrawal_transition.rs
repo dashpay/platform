@@ -1,7 +1,4 @@
-use super::{
-    append_note_commitments, insert_encrypted_notes, insert_nullifiers,
-    update_balance_and_record_anchor,
-};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -32,25 +29,29 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
                     // 1. Insert nullifiers (prevent double-spend)
                     insert_nullifiers(&mut ops, &v0.nullifiers);
 
-                    // 2. Append change note commitments to commitment tree
-                    append_note_commitments(&mut ops, &v0.note_commitments);
+                    // 2. Insert change notes into CommitmentTree
+                    insert_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
 
-                    // 3. Insert encrypted change notes with auto-incremented keys in count tree
-                    insert_encrypted_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
-
-                    // 4. Update total balance: subtract withdrawal amount
+                    // 3. Update total balance: subtract withdrawal amount + fee (both leave the pool)
+                    let total_deduction =
+                        v0.amount.checked_add(v0.fee_amount).ok_or_else(|| {
+                            Error::Drive(DriveError::CorruptedDriveState(
+                                "overflow when adding shielded_withdrawal amount and fee"
+                                    .to_string(),
+                            ))
+                        })?;
                     let new_total_balance =
                         v0.current_total_balance
-                            .checked_sub(v0.amount)
+                            .checked_sub(total_deduction)
                             .ok_or_else(|| {
                                 Error::Drive(DriveError::CorruptedDriveState(
-                                "shielded pool total balance underflow when subtracting shielded_withdrawal amount"
+                                "shielded pool total balance underflow when subtracting shielded_withdrawal amount and fee"
                                     .to_string(),
                             ))
                             })?;
-                    update_balance_and_record_anchor(&mut ops, new_total_balance);
+                    update_balance(&mut ops, new_total_balance);
 
-                    // 5. Add withdrawal document
+                    // 4. Add withdrawal document
                     ops.push(DriveOperation::DocumentOperation(
                         DocumentOperationType::AddWithdrawalDocument {
                             owned_document_info: OwnedDocumentInfo {
@@ -63,7 +64,7 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
                         },
                     ));
 
-                    // 6. Remove credits from system (they leave the system to Core)
+                    // 5. Remove credits from system (they leave the system to Core)
                     ops.push(DriveOperation::SystemOperation(
                         SystemOperationType::RemoveFromSystemCredits { amount: v0.amount },
                     ));

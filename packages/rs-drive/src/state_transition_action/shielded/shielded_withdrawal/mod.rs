@@ -8,7 +8,6 @@ use derive_more::From;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::UserFeeIncrease;
 use dpp::withdrawal::Pooling;
 
 /// Shielded withdrawal transition action
@@ -67,10 +66,10 @@ impl ShieldedWithdrawalTransitionAction {
             ShieldedWithdrawalTransitionAction::V0(transition) => &transition.output_script,
         }
     }
-    /// fee multiplier
-    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+    /// Fee amount (value_balance - amount), paid to proposers
+    pub fn fee_amount(&self) -> Credits {
         match self {
-            ShieldedWithdrawalTransitionAction::V0(transition) => transition.user_fee_increase,
+            ShieldedWithdrawalTransitionAction::V0(transition) => transition.fee_amount,
         }
     }
     /// Get prepared withdrawal document

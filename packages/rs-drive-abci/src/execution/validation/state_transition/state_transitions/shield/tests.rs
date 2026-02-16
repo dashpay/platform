@@ -83,7 +83,7 @@ mod tests {
             actions,
             flags,
             value_balance,
-            anchor: [0u8; 32],
+            anchor: [42u8; 32],
             proof,
             binding_signature,
             fee_strategy,
@@ -765,10 +765,9 @@ mod tests {
             // at the actual proof verification step.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
-                    ..
-                }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
             );
         }
 
@@ -899,13 +898,12 @@ mod tests {
             let processing_result = process_transition(&platform, transition, platform_version);
 
             // The encrypted_note size check happens in reconstruct_and_verify_bundle,
-            // which runs during transform_into_action after all prior validations pass.
+            // which now runs at the processor level before state validation.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
-                    ..
-                }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
             );
         }
     }
@@ -1054,10 +1052,9 @@ mod tests {
             // Mutated value_balance changes the sighash, causing signature verification to fail.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
-                    ..
-                }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
             );
         }
     }

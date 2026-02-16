@@ -42,10 +42,10 @@ impl StateTransitionLike for ShieldedTransferTransitionV0 {
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
-        self.user_fee_increase
+        0
     }
 
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        self.user_fee_increase = user_fee_increase
+    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
+        // No-op: fee is cryptographically locked by the Orchard binding signature
     }
 }

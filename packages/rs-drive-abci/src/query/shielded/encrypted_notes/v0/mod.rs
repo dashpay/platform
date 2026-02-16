@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::get_shielded_encrypted_notes_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_credit_pool_encrypted_notes_path_vec;
+use drive::drive::shielded::paths::shielded_credit_pool_notes_path_vec;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::GroveDBToUse;
@@ -46,7 +46,7 @@ impl<C> Platform<C> {
         };
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_encrypted_notes_path_vec(),
+            path: shielded_credit_pool_notes_path_vec(),
             query: SizedQuery {
                 query,
                 limit: Some(limit),

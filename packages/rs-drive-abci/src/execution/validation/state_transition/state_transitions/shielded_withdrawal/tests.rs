@@ -41,7 +41,6 @@ mod tests {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        user_fee_increase: u16,
     ) -> StateTransition {
         StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(
             ShieldedWithdrawalTransitionV0 {
@@ -55,7 +54,6 @@ mod tests {
                 core_fee_per_byte,
                 pooling,
                 output_script,
-                user_fee_increase,
             },
         ))
     }
@@ -75,7 +73,6 @@ mod tests {
             1,                      // core_fee_per_byte
             Pooling::Never,         // pooling strategy
             create_output_script(), // P2PKH output script
-            0,                      // user_fee_increase
         )
     }
 
@@ -102,7 +99,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -131,7 +127,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -160,7 +155,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -189,7 +183,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -218,7 +211,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -247,7 +239,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -276,7 +267,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -313,10 +303,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before pool notes check, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InsufficientPoolNotesError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -327,15 +319,20 @@ mod tests {
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
 
+            // Set pool balance so the balance check passes before anchor validation
+            set_pool_total_balance(&platform, 10_000);
+
             // Non-zero anchor that doesn't exist in state
             let transition = create_default_shielded_withdrawal_transition();
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before anchor validation, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidAnchorError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -370,10 +367,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before nullifier validation, so the
+            // dummy proof data is rejected before the nullifier check is reached.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -386,9 +385,9 @@ mod tests {
     mod proof_verification {
         use super::*;
         use grovedb_commitment_tree::{
-            new_memory_store, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, Position,
-            ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
+            Authorized as OrchardAuthorized, Builder, Bundle, BundleType, ClientCommitmentTree,
+            ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, Position, ProvingKey,
+            Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -485,11 +484,11 @@ mod tests {
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = CommitmentTree::new(new_memory_store(), 100);
-            tree.append(cmx, Retention::Marked).unwrap();
+            let mut tree = ClientCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
             // --- Build bundle: spend 10,000 -> output 5,000 (value_balance = 5,000) ---
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
@@ -537,7 +536,6 @@ mod tests {
                 1,              // core_fee_per_byte
                 Pooling::Never, // pooling strategy
                 output_script,
-                0, // user_fee_increase
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -577,7 +575,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -603,9 +600,9 @@ mod tests {
     mod security_audit {
         use super::*;
         use grovedb_commitment_tree::{
-            new_memory_store, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, Position,
-            ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
+            Authorized as OrchardAuthorized, Builder, Bundle, BundleType, ClientCommitmentTree,
+            ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, Position, ProvingKey,
+            Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -673,11 +670,11 @@ mod tests {
                 Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = CommitmentTree::new(new_memory_store(), 100);
-            tree.append(cmx, Retention::Marked).unwrap();
+            let mut tree = ClientCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
             // Spend 10,000 -> output 5,000 -> value_balance = 5,000
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
@@ -719,7 +716,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -766,7 +762,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 output_script,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -820,7 +815,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 output_script,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -872,7 +866,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 attacker_script, // ATTACKER's script, not the original
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -924,7 +917,6 @@ mod tests {
                 1,
                 Pooling::Never,
                 output_script,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -939,14 +931,9 @@ mod tests {
             );
         }
 
-        /// AUDIT FINDING: No intra-bundle duplicate nullifier check.
-        ///
-        /// Same as the shielded_transfer and unshield findings. The nullifier
-        /// check only queries state, not checking for duplicates within the
-        /// bundle itself. Mitigated by ZK proof verification (fabricated data
-        /// with duplicate nullifiers produces an invalid proof).
-        ///
-        /// Severity: LOW (defense-in-depth gap, caught by ZK proof verification)
+        /// Duplicate nullifiers within the same bundle — proof verification now
+        /// runs before the intra-bundle dedup check, so the invalid proof is
+        /// rejected first.
         #[test]
         fn test_duplicate_nullifiers_in_same_bundle() {
             let platform_version = PlatformVersion::latest();
@@ -972,12 +959,12 @@ mod tests {
                 1,
                 Pooling::Never,
                 create_output_script(),
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // Caught by proof verification, not by application-level dedup
+            // Proof verification now runs before nullifier dedup, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(

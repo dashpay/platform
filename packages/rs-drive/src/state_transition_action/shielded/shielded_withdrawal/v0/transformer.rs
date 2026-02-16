@@ -63,6 +63,9 @@ impl ShieldedWithdrawalTransitionActionV0 {
         }
         .into();
 
+        // fee_amount = value_balance - amount (validated to be >= 0 in structure validation)
+        let fee_amount = (value.value_balance as u64).saturating_sub(value.amount);
+
         ConsensusValidationResult::new_with_data(ShieldedWithdrawalTransitionActionV0 {
             amount: value.amount,
             nullifiers,
@@ -72,7 +75,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
             core_fee_per_byte: value.core_fee_per_byte,
             pooling: value.pooling,
             output_script: value.output_script.clone(),
-            user_fee_increase: value.user_fee_increase,
+            fee_amount,
             current_total_balance,
             prepared_withdrawal_document: withdrawal_document,
         })

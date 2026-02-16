@@ -580,6 +580,13 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
             TreeType::CommitmentTree => Element::empty_commitment_tree_with_flags(element_flags),
+            TreeType::MmrTree => Element::empty_mmr_tree_with_flags(element_flags),
+            TreeType::BulkAppendTree => {
+                Element::empty_bulk_append_tree_with_flags(4, element_flags)
+            }
+            TreeType::DenseAppendOnlyFixedSizeTree => {
+                Element::empty_dense_tree_with_flags(8, element_flags)
+            }
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
@@ -600,6 +607,7 @@ impl DriveCost for OperationCost {
             storage_cost,
             storage_loaded_bytes,
             hash_node_calls,
+            sinsemilla_hash_calls,
         } = self;
         let epoch_cost_for_processing_credit_per_byte =
             fee_version.storage.storage_processing_credit_per_byte;
@@ -625,12 +633,14 @@ impl DriveCost for OperationCost {
         let blake3_total = fee_version.hashing.blake3_base + fee_version.hashing.blake3_per_block;
         // this can't overflow
         let hash_node_cost = blake3_total * (*hash_node_calls as u64);
+        let sinsemilla_cost = fee_version.hashing.sinsemilla_base * (*sinsemilla_hash_calls as u64);
         seek_cost
             .checked_add(storage_added_bytes_ephemeral_cost)
             .and_then(|c| c.checked_add(storage_replaced_bytes_ephemeral_cost))
             .and_then(|c| c.checked_add(storage_loaded_bytes_cost))
             .and_then(|c| c.checked_add(storage_removed_bytes_ephemeral_cost))
             .and_then(|c| c.checked_add(hash_node_cost))
+            .and_then(|c| c.checked_add(sinsemilla_cost))
             .ok_or_else(|| get_overflow_error("ephemeral cost addition overflow"))
     }
 }

@@ -115,12 +115,10 @@ impl ShieldedWithdrawalTransitionWasm {
         Buffer::from_bytes(script.as_bytes())
     }
 
-    /// Returns the user fee increase multiplier.
+    /// Always returns 0 — the fee is cryptographically locked by the Orchard binding signature.
     #[wasm_bindgen(js_name = getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => v0.user_fee_increase,
-        }
+        0
     }
 
     #[wasm_bindgen(js_name = toObject)]

@@ -3,7 +3,6 @@ mod transformer;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
-use dpp::prelude::UserFeeIncrease;
 use dpp::withdrawal::Pooling;
 
 /// Shielded withdrawal transition action v0
@@ -25,8 +24,8 @@ pub struct ShieldedWithdrawalTransitionActionV0 {
     pub pooling: Pooling,
     /// Core address receiving funds
     pub output_script: CoreScript,
-    /// fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
+    /// Fee amount (value_balance - amount), paid to proposers
+    pub fee_amount: Credits,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,
     /// Pre-built withdrawal document (status: QUEUED)

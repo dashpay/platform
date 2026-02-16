@@ -11,7 +11,7 @@ use dapi_grpc::platform::v0::get_shielded_anchors_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_anchors_credit_pool_path_vec;
+use drive::drive::shielded::paths::shielded_credit_pool_anchors_path_vec;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::{PathQuery, Query, SizedQuery};
 use drive::util::grove_operations::GroveDBToUse;
@@ -24,7 +24,7 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedAnchorsResponseV0>, Error> {
         let path_query = PathQuery {
-            path: shielded_anchors_credit_pool_path_vec(),
+            path: shielded_credit_pool_anchors_path_vec(),
             query: SizedQuery {
                 query: Query::new_range_full(),
                 limit: None,
@@ -56,10 +56,11 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
+            // Anchors are stored as block_height_be → anchor_bytes; extract values
             let anchors: Vec<Vec<u8>> = results
                 .to_key_elements()
                 .into_iter()
-                .map(|(key, _element)| key)
+                .filter_map(|(_key, element)| element.into_item_bytes().ok())
                 .collect();
 
             GetShieldedAnchorsResponseV0 {

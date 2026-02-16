@@ -251,6 +251,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
         validate_address_witnesses: 0,
+        validate_shielded_proof: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

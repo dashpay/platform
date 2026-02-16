@@ -6,7 +6,6 @@ pub mod v0;
 use crate::state_transition_action::shielded::shielded_transfer::v0::ShieldedTransferTransitionActionV0;
 use derive_more::From;
 use dpp::fee::Credits;
-use dpp::prelude::UserFeeIncrease;
 
 /// Shielded transfer transition action
 #[derive(Debug, Clone, From)]
@@ -44,12 +43,6 @@ impl ShieldedTransferTransitionAction {
     pub fn fee_amount(&self) -> Credits {
         match self {
             ShieldedTransferTransitionAction::V0(transition) => transition.fee_amount,
-        }
-    }
-    /// fee multiplier
-    pub fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            ShieldedTransferTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }

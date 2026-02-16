@@ -40,7 +40,6 @@ mod tests {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: u16,
     ) -> StateTransition {
         StateTransition::Unshield(UnshieldTransition::V0(UnshieldTransitionV0 {
             output_address,
@@ -51,7 +50,6 @@ mod tests {
             anchor,
             proof,
             binding_signature,
-            user_fee_increase,
         }))
     }
 
@@ -67,7 +65,6 @@ mod tests {
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
-            0,
         )
     }
 
@@ -92,7 +89,6 @@ mod tests {
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -119,7 +115,6 @@ mod tests {
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -146,7 +141,6 @@ mod tests {
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -173,7 +167,6 @@ mod tests {
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -200,7 +193,6 @@ mod tests {
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -227,7 +219,6 @@ mod tests {
                 [42u8; 32],
                 vec![], // Empty proof — invalid
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -254,7 +245,6 @@ mod tests {
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -288,10 +278,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before pool notes check, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InsufficientPoolNotesError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -307,10 +299,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before anchor validation, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidAnchorError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -342,10 +336,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // Proof verification now runs before nullifier validation, so the
+            // dummy proof data is rejected before the nullifier check is reached.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }
@@ -358,9 +354,10 @@ mod tests {
     mod proof_verification {
         use super::*;
         use grovedb_commitment_tree::{
-            new_memory_store, Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue,
-            Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientCommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
+            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
+            SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -454,11 +451,11 @@ mod tests {
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = CommitmentTree::new(new_memory_store(), 100);
-            tree.append(cmx, Retention::Marked).unwrap();
+            let mut tree = ClientCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
             // --- Build bundle: spend 10,000 → output 5,000 (value_balance = 5,000) ---
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
@@ -505,7 +502,6 @@ mod tests {
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -540,7 +536,6 @@ mod tests {
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -561,9 +556,10 @@ mod tests {
     mod security_audit {
         use super::*;
         use grovedb_commitment_tree::{
-            new_memory_store, Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            CommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue,
-            Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientCommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
+            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
+            SpendingKey,
         };
         use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
@@ -631,11 +627,11 @@ mod tests {
                 Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = CommitmentTree::new(new_memory_store(), 100);
-            tree.append(cmx, Retention::Marked).unwrap();
+            let mut tree = ClientCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
-            let merkle_path = tree.orchard_witness(Position::from(0u64)).unwrap().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
             // Spend 10,000 → output 5,000 → value_balance = 5,000
             let mut builder = Builder::new(BundleType::DEFAULT, anchor);
@@ -696,7 +692,6 @@ mod tests {
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -747,7 +742,6 @@ mod tests {
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -763,8 +757,9 @@ mod tests {
             );
         }
 
-        /// Duplicate nullifiers within the same bundle are caught by the
-        /// intra-bundle dedup check before reaching proof verification.
+        /// Duplicate nullifiers within the same bundle — proof verification now
+        /// runs before the intra-bundle dedup check, so the invalid proof is
+        /// rejected first.
         #[test]
         fn test_duplicate_nullifiers_in_same_bundle() {
             let platform_version = PlatformVersion::latest();
@@ -788,16 +783,16 @@ mod tests {
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // Intra-bundle duplicate nullifier check catches this before proof verification
+            // Proof verification now runs before nullifier dedup, so the
+            // dummy proof data is rejected first.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
             );
         }

@@ -323,9 +323,9 @@ mod tests {
                 vec![create_dummy_serialized_action()],
                 0x03, // spends_enabled | outputs_enabled
                 value_balance,
-                [0u8; 32],      // dummy anchor
+                [42u8; 32], // non-zero anchor (won't match any stored anchor, but proof check is first)
                 vec![0u8; 100], // dummy proof bytes
-                [0u8; 64],      // dummy binding signature
+                [0u8; 64],  // dummy binding signature
                 0,
             );
 
@@ -365,7 +365,7 @@ mod tests {
                     actions: vec![create_dummy_serialized_action()],
                     flags: 0x03,
                     value_balance: -5000,
-                    anchor: [0u8; 32],
+                    anchor: [42u8; 32],
                     proof: vec![0u8; 100],
                     binding_signature: [0u8; 64],
                     user_fee_increase: 0,
@@ -407,7 +407,7 @@ mod tests {
                 vec![create_dummy_serialized_action()],
                 0x03,
                 -5000,
-                [0u8; 32],
+                [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
                 0,
@@ -519,7 +519,7 @@ mod tests {
                 vec![create_dummy_serialized_action()],
                 0x03,
                 -5000,
-                [0u8; 32],
+                [42u8; 32],
                 vec![0u8; 100], // random proof data
                 [0u8; 64],
                 0,
@@ -569,7 +569,7 @@ mod tests {
                 vec![create_dummy_serialized_action()],
                 0x03,
                 i64::MIN, // -9223372036854775808 -- would overflow on negation
-                [0u8; 32],
+                [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
                 0,

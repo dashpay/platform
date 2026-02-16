@@ -26,17 +26,11 @@ impl StateTransitionLike for ShieldedWithdrawalTransition {
 
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            ShieldedWithdrawalTransition::V0(transition) => transition.user_fee_increase(),
-        }
+        0
     }
     /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        match self {
-            ShieldedWithdrawalTransition::V0(transition) => {
-                transition.set_user_fee_increase(user_fee_increase)
-            }
-        }
+    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
+        // No-op: shielded withdrawal fees are cryptographically locked by the Orchard binding signature
     }
 
     fn unique_identifiers(&self) -> Vec<String> {

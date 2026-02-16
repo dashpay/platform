@@ -10,6 +10,8 @@ pub struct FeeHashingVersion {
     pub sha256_ripe_md160_base: u64,
     pub single_sha256_base: u64,
     pub ripemd160_per_block: u64,
+    /// Cost per Sinsemilla hash operation (elliptic curve, ~100x more expensive than Blake3)
+    pub sinsemilla_base: u64,
 }
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]

@@ -334,7 +334,8 @@ where
         let maybe_fee_validation_result = match event {
             ExecutionEvent::PaidFromAssetLock { .. }
             | ExecutionEvent::Paid { .. }
-            | ExecutionEvent::PaidFromAddressInputs { .. } => Some(self.validate_fees_of_event(
+            | ExecutionEvent::PaidFromAddressInputs { .. }
+            | ExecutionEvent::PaidFromAssetLockToPool { .. } => Some(self.validate_fees_of_event(
                 &event,
                 block_info,
                 Some(transaction),
@@ -506,6 +507,36 @@ where
                     ))
                 } else {
                     Ok(UnpaidConsensusExecutionError(consensus_errors))
+                }
+            }
+            ExecutionEvent::PaidFromAssetLockToPool {
+                fees_to_add_to_pool,
+                operations,
+                ..
+            } => {
+                let fee_validation_result = maybe_fee_validation_result
+                    .expect("fee validation result must exist for PaidFromAssetLockToPool");
+                let mut all_errors = fee_validation_result.errors;
+                all_errors.extend(consensus_errors);
+
+                if all_errors.is_empty() {
+                    self.drive
+                        .apply_drive_operations(
+                            operations,
+                            true,
+                            block_info,
+                            Some(transaction),
+                            platform_version,
+                            Some(previous_fee_versions),
+                        )
+                        .map_err(Error::Drive)?;
+
+                    Ok(SuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                    ))
+                } else {
+                    Ok(UnpaidConsensusExecutionError(all_errors))
                 }
             }
             ExecutionEvent::Free { operations } => {

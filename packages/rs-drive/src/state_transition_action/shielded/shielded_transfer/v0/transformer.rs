@@ -6,7 +6,7 @@ use dpp::state_transition::state_transitions::shielded::shielded_transfer_transi
 impl ShieldedTransferTransitionActionV0 {
     /// Transforms the shielded transfer transition into an action
     pub fn try_from_transition(
-        value: &ShieldedTransferTransitionV0,
+        _value: &ShieldedTransferTransitionV0,
         nullifiers: Vec<[u8; 32]>,
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
@@ -20,7 +20,6 @@ impl ShieldedTransferTransitionActionV0 {
             encrypted_notes,
             anchor,
             fee_amount,
-            user_fee_increase: value.user_fee_increase,
             current_total_balance,
         })
     }

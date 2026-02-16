@@ -5,7 +5,6 @@ use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use dpp::shielded::ShieldedPoolParams;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg, TreeType};
 use grovedb_path::SubtreePath;
@@ -79,10 +78,10 @@ impl Drive {
             Element::empty_sum_tree(),
         );
 
-        // 2. Commitments tree (CommitmentTree)
+        // 2. Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
         batch.add_insert(
             shielded_credit_pool_path_vec(),
-            vec![SHIELDED_COMMITMENTS_KEY],
+            vec![SHIELDED_NOTES_KEY],
             Element::empty_commitment_tree(),
         );
 
@@ -93,42 +92,17 @@ impl Drive {
             Element::empty_tree(),
         );
 
-        // 4. Encrypted notes tree (CountTree — count tracks the next sequential index)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_ENCRYPTED_NOTES_KEY],
-            Element::empty_count_tree(),
-        );
-
-        // 5. Params item
-        let initial_params = ShieldedPoolParams::default();
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_PARAMS_KEY],
-            Element::new_item(
-                bincode::encode_to_vec(&initial_params, bincode::config::standard())
-                    .expect("expected to encode"),
-            ),
-        );
-
-        // 6. Total balance SumItem(0)
+        // 4. Total balance SumItem(0)
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_TOTAL_BALANCE_KEY],
             Element::new_sum_item(0),
         );
 
-        // 7. Anchors tree (NormalTree) under AddressBalances
+        // 5. Anchors tree (NormalTree) inside pool: block_height_be → anchor_bytes
         batch.add_insert(
-            vec![vec![RootTree::AddressBalances as u8]],
-            vec![SHIELDED_ANCHORS_KEY_U8],
-            Element::empty_tree(),
-        );
-
-        // 8. Credit pool anchors tree
-        batch.add_insert(
-            shielded_anchors_path_vec(),
-            SHIELDED_CREDIT_POOL_KEY.to_vec(),
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_ANCHORS_IN_POOL_KEY],
             Element::empty_tree(),
         );
 

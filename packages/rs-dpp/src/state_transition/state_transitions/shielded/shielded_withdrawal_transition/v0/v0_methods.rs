@@ -7,7 +7,7 @@ use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdra
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
-use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+use crate::{state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
@@ -24,7 +24,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         let transition = ShieldedWithdrawalTransitionV0 {
@@ -38,7 +37,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
             core_fee_per_byte,
             pooling,
             output_script,
-            user_fee_increase,
         };
         Ok(transition.into())
     }

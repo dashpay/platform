@@ -156,10 +156,16 @@ impl StateTransitionAction {
                 action.user_fee_increase()
             }
             StateTransitionAction::ShieldAction(action) => action.user_fee_increase(),
-            StateTransitionAction::ShieldedTransferAction(action) => action.user_fee_increase(),
-            StateTransitionAction::UnshieldAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldedTransferAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
+            StateTransitionAction::UnshieldAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
             StateTransitionAction::ShieldFromAssetLockAction(action) => action.user_fee_increase(),
-            StateTransitionAction::ShieldedWithdrawalAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldedWithdrawalAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
             StateTransitionAction::PenalizeShieldedPoolAction(_) => {
                 UserFeeIncrease::default() // 0 (no user fee increase for penalty actions)
             }

@@ -1,4 +1,4 @@
-use super::{append_note_commitments, insert_encrypted_notes, update_balance_and_record_anchor};
+use super::{insert_notes, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -49,13 +49,10 @@ impl DriveHighLevelOperationConverter for ShieldFromAssetLockTransitionAction {
                         },
                     ));
 
-                    // 3. Append note commitments to commitment tree
-                    append_note_commitments(&mut ops, &v0.note_commitments);
+                    // 3. Insert notes into CommitmentTree
+                    insert_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
 
-                    // 4. Insert encrypted notes with auto-incremented keys in count tree
-                    insert_encrypted_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
-
-                    // 5. Update total balance and record anchor
+                    // 4. Update total balance
                     let new_total_balance =
                         v0.current_total_balance
                             .checked_add(v0.shield_amount)
@@ -65,7 +62,7 @@ impl DriveHighLevelOperationConverter for ShieldFromAssetLockTransitionAction {
                                     .to_string(),
                             ))
                             })?;
-                    update_balance_and_record_anchor(&mut ops, new_total_balance);
+                    update_balance(&mut ops, new_total_balance);
 
                     Ok(ops)
                 }
