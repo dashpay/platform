@@ -93,6 +93,7 @@ wasm-dpp2 = { path = "../wasm-dpp2" }
 
 [dev-dependencies]
 wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 
 [profile.release]
 opt-level = "z"
