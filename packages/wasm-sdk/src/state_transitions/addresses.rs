@@ -989,3 +989,75 @@ async fn fetch_nonces_into_address_map(
 
     Ok(inputs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::Sdk;
+    use drive_proof_verifier::types::AddressInfos;
+
+    /// Verify that `fetch_nonces_into_address_map` returns the **next** nonce
+    /// (current + 1) for every input address, matching the `nonce_inc()` pattern
+    /// used by rs-sdk's transfer/top_up/withdraw operations.
+    ///
+    /// This is a regression test for <https://github.com/dashpay/platform/issues/3083>
+    /// where the function was returning the current nonce instead of the next one.
+    #[tokio::test]
+    async fn fetch_nonces_returns_incremented_nonces() {
+        let mut sdk = Sdk::new_mock();
+
+        let addr_a = PlatformAddress::P2pkh([10; 20]);
+        let addr_b = PlatformAddress::P2sh([11; 20]);
+        let nonce_a: AddressNonce = 5;
+        let nonce_b: AddressNonce = 0;
+        let balance_a: Credits = 1_000_000;
+        let balance_b: Credits = 2_000_000;
+
+        let mock_response: AddressInfos = [
+            (
+                addr_a,
+                Some(AddressInfo {
+                    address: addr_a,
+                    nonce: nonce_a,
+                    balance: balance_a,
+                }),
+            ),
+            (
+                addr_b,
+                Some(AddressInfo {
+                    address: addr_b,
+                    nonce: nonce_b,
+                    balance: balance_b,
+                }),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let query = BTreeSet::from([addr_a, addr_b]);
+        sdk.mock()
+            .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
+                query,
+                Some(mock_response),
+            )
+            .await
+            .expect("set up mock expectation");
+
+        let inputs_map = BTreeMap::from([(addr_a, 500_000u64), (addr_b, 1_000_000u64)]);
+        let result = fetch_nonces_into_address_map(&sdk, inputs_map)
+            .await
+            .expect("fetch_nonces_into_address_map should succeed");
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[&addr_a],
+            (nonce_a + 1, 500_000),
+            "nonce for addr_a must be incremented by 1"
+        );
+        assert_eq!(
+            result[&addr_b],
+            (nonce_b + 1, 1_000_000),
+            "nonce for addr_b (starting at 0) must be incremented to 1"
+        );
+    }
+}
