@@ -35,7 +35,8 @@ extern "C" {
     pub type ContestedDocumentVotePollWinnerInfoJSONJs;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "ContestedDocumentVotePollWinnerInfo")]
 pub struct ContestedDocumentVotePollWinnerInfoWasm(ContestedDocumentVotePollWinnerInfo);
 

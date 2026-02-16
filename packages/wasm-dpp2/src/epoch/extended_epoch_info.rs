@@ -67,7 +67,8 @@ struct ExtendedEpochInfoOptionsInput {
     protocol_version: u32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "ExtendedEpochInfo")]
 pub struct ExtendedEpochInfoWasm(ExtendedEpochInfo);
 

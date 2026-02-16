@@ -39,7 +39,8 @@ extern "C" {
     pub type InstantAssetLockProofJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "InstantAssetLockProof")]
 pub struct InstantAssetLockProofWasm(InstantAssetLockProof);
 

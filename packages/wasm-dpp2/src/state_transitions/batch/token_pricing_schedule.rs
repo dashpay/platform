@@ -16,7 +16,8 @@ extern "C" {
     pub type TokenPricingScheduleValueJs;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "TokenPricingSchedule")]
 pub struct TokenPricingScheduleWasm(TokenPricingSchedule);
 

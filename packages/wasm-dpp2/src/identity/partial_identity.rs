@@ -62,7 +62,8 @@ extern "C" {
     pub type PartialIdentityJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "PartialIdentity")]
 pub struct PartialIdentityWasm(PartialIdentity);
 

@@ -61,7 +61,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "BlockInfo")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct BlockInfoWasm(BlockInfo);
 
 #[wasm_bindgen(js_class = BlockInfo)]

@@ -38,6 +38,7 @@ extern "C" {
 
 #[wasm_bindgen(js_name = "ChainAssetLockProof")]
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct ChainAssetLockProofWasm(ChainAssetLockProof);
 
 impl From<ChainAssetLockProofWasm> for ChainAssetLockProof {
