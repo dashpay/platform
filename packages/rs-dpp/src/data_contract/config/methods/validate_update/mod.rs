@@ -21,7 +21,7 @@ impl DataContractConfig {
             .validate_config_update
         {
             0 => Ok(self.validate_update_v0(new_config, contract_id)),
-            1 => Ok(self.validate_update_v1(new_config, contract_id)),
+            1 => Ok(self.validate_update_v1(new_config, contract_id, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_update".to_string(),
                 known_versions: vec![0, 1],
