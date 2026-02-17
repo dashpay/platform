@@ -62,11 +62,26 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 ..Default::default()
             };
 
-        let public_keys = identity
+        let public_keys: Vec<IdentityPublicKeyInCreation> = identity
             .public_keys()
             .values()
             .map(|public_key| public_key.clone().into())
             .collect();
+
+        // Validate public key structure (purpose/security level compatibility)
+        // before broadcasting, so invalid combinations are caught client-side
+        // rather than being rejected by the network.
+        let validation_result =
+            IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                &public_keys,
+                true, // in create_identity context
+                _platform_version,
+            )?;
+        if !validation_result.is_valid() {
+            let first_error = validation_result.errors.into_iter().next().unwrap();
+            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        }
+
         identity_create_from_addresses_transition.set_public_keys(public_keys);
 
         // Get signable bytes for the state transition
