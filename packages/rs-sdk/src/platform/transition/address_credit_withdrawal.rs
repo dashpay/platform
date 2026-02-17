@@ -111,6 +111,7 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
             .await?
+            .into_inner()
         {
             StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {
                 let mut expected_addresses: BTreeSet<PlatformAddress> =

@@ -68,7 +68,10 @@ impl TopUpIdentity for Identity {
             None,
         )?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
+        let identity: PartialIdentity = state_transition
+            .broadcast_and_wait::<PartialIdentity>(sdk, settings)
+            .await?
+            .into_inner();
 
         identity
             .balance

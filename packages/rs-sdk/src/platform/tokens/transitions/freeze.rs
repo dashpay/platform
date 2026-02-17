@@ -71,8 +71,8 @@ impl Sdk {
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
-
+            .await?
+            .into_inner();
         match proof_result {
             StateTransitionProofResult::VerifiedTokenIdentityInfo(owner_id_result, info) => {
                 Ok(FreezeResult::IdentityInfo(owner_id_result, info))

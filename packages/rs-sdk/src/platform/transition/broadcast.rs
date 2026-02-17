@@ -1,5 +1,6 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
 use super::put_settings::PutSettings;
+use super::state_transition_result::StateTransitionResult;
 use crate::error::StateTransitionBroadcastError;
 use crate::platform::block_info_from_metadata::block_info_from_metadata;
 use crate::sync::retry;
@@ -30,7 +31,7 @@ pub trait BroadcastStateTransition {
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
-    ) -> Result<T, Error>;
+    ) -> Result<StateTransitionResult<T>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -264,8 +265,14 @@ impl BroadcastStateTransition for StateTransition {
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
-    ) -> Result<T, Error> {
+    ) -> Result<StateTransitionResult<T>, Error> {
         trace!(state_transition = %self.name(), "broadcast_and_wait: start");
+
+        // Compute the transition hash deterministically BEFORE broadcast.
+        // This is a SHA-256 hash of the serialized StateTransition and does
+        // not depend on blockchain state, so there is no race condition.
+        let transition_hash = self.transaction_id()?;
+
         trace!("broadcast_and_wait: step 1 - broadcasting");
         self.broadcast(sdk, settings).await?;
         trace!("broadcast_and_wait: step 2 - waiting for response");
@@ -274,6 +281,6 @@ impl BroadcastStateTransition for StateTransition {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
         }
-        result
+        result.map(|inner| StateTransitionResult::new(inner, transition_hash))
     }
 }

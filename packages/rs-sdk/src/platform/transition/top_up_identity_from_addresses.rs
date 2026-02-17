@@ -85,6 +85,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?
+            .into_inner()
         {
             StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
                 identity,

@@ -227,7 +227,8 @@ async fn broadcast_and_collect_address_infos(
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     let st_result = state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-        .await?;
+        .await?
+        .into_inner();
     match st_result {
         StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
             let expected_addresses = expected

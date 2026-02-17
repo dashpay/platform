@@ -221,7 +221,8 @@ impl Sdk {
         trace!("document_replace: broadcasting and awaiting response");
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+            .await?
+            .into_inner();
         trace!("document_replace: broadcast completed");
 
         match proof_result {

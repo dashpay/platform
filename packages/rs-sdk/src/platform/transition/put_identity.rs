@@ -391,6 +391,7 @@ async fn put_identity_with_address_funding<
     match state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
         .await?
+        .into_inner()
     {
         StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
             proved_identity,

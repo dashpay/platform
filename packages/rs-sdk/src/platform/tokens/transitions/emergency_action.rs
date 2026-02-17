@@ -64,7 +64,8 @@ impl Sdk {
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+            .await?
+            .into_inner();
 
         match proof_result {
             StateTransitionProofResult::VerifiedTokenActionWithDocument(document) => {

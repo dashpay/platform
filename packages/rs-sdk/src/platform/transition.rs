@@ -28,6 +28,7 @@ pub mod transfer;
 pub mod transfer_address_funds;
 pub mod transfer_document;
 pub mod transfer_to_addresses;
+pub mod state_transition_result;
 mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
@@ -36,4 +37,5 @@ pub(crate) mod validation;
 pub mod vote;
 pub mod waitable;
 pub mod withdraw_from_identity;
+pub use state_transition_result::StateTransitionResult;
 pub use txid::TxId;

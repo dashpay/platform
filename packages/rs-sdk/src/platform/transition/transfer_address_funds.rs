@@ -97,6 +97,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
             .await?
+            .into_inner()
         {
             StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {
                 collect_address_infos_from_proof(address_infos_map, &expected_addresses)
