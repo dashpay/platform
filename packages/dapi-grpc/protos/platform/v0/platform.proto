@@ -2148,8 +2148,9 @@ message GetShieldedEncryptedNotesRequest {
 message GetShieldedEncryptedNotesResponse {
   message GetShieldedEncryptedNotesResponseV0 {
     message EncryptedNote {
-      bytes cmx = 1;
-      bytes encrypted_note = 2;
+      bytes nullifier = 1;      // 32-byte nullifier (needed for Rho derivation in trial decryption)
+      bytes cmx = 2;            // 32-byte extracted note commitment
+      bytes encrypted_note = 3; // encrypted note payload (epk + enc_ciphertext + out_ciphertext)
     }
     message EncryptedNotes {
       repeated EncryptedNote entries = 1;

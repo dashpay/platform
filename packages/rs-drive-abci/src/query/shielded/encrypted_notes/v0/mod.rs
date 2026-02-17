@@ -103,10 +103,12 @@ impl<C> Platform<C> {
                     .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
 
                 match maybe_value {
-                    Some(value) if value.len() > 32 => {
+                    // Stored value = cmx (32) || nullifier (32) || encrypted_note (rest)
+                    Some(value) if value.len() > 64 => {
                         entries.push(EncryptedNote {
                             cmx: value[..32].to_vec(),
-                            encrypted_note: value[32..].to_vec(),
+                            nullifier: value[32..64].to_vec(),
+                            encrypted_note: value[64..].to_vec(),
                         });
                     }
                     _ => break, // past end of tree
@@ -119,9 +121,7 @@ impl<C> Platform<C> {
                         EncryptedNotes { entries },
                     ),
                 ),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

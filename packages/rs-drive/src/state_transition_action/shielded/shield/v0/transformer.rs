@@ -11,6 +11,7 @@ impl ShieldTransitionActionV0 {
         value: &ShieldTransitionV0,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         shield_amount: Credits,
+        nullifiers: Vec<[u8; 32]>,
         note_commitments: Vec<[u8; 32]>,
         encrypted_notes: Vec<Vec<u8>>,
         current_total_balance: Credits,
@@ -18,6 +19,7 @@ impl ShieldTransitionActionV0 {
         ConsensusValidationResult::new_with_data(ShieldTransitionActionV0 {
             inputs_with_remaining_balance,
             shield_amount,
+            nullifiers,
             note_commitments,
             encrypted_notes,
             fee_strategy: value.fee_strategy.clone(),

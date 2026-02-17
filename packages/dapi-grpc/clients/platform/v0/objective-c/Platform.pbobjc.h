@@ -8663,14 +8663,20 @@ void GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Clear
 #pragma mark - GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote
 
 typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber) {
-  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx = 1,
-  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote = 2,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Nullifier = 1,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx = 2,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote = 3,
 };
 
 GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote : GPBMessage
 
+/** 32-byte nullifier (needed for Rho derivation in trial decryption) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *nullifier;
+
+/** 32-byte extracted note commitment */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *cmx;
 
+/** encrypted note payload (epk + enc_ciphertext + out_ciphertext) */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *encryptedNote;
 
 @end

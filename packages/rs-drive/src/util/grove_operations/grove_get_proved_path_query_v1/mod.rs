@@ -33,11 +33,9 @@ impl Drive {
             .basic
             .grove_get_proved_path_query_v1
         {
-            0 => self.grove_get_proved_path_query_v1_v0(
-                path_query,
-                drive_operations,
-                drive_version,
-            ),
+            0 => {
+                self.grove_get_proved_path_query_v1_v0(path_query, drive_operations, drive_version)
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "grove_get_proved_path_query_v1".to_string(),
                 known_versions: vec![0],

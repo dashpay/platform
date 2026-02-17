@@ -12,6 +12,8 @@ pub struct ShieldTransitionActionV0 {
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// The amount being shielded (sent into the shielded pool)
     pub shield_amount: Credits,
+    /// Nullifiers from the orchard bundle actions (needed for Rho derivation in trial decryption)
+    pub nullifiers: Vec<[u8; 32]>,
     /// Note commitments from the orchard bundle (cmx values)
     pub note_commitments: Vec<[u8; 32]>,
     /// Encrypted notes from the orchard bundle

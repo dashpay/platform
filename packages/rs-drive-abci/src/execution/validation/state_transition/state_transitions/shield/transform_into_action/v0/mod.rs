@@ -41,7 +41,10 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Extract note commitments and encrypted notes from serialized actions
+        // Extract nullifiers, note commitments, and encrypted notes from serialized actions
+        let nullifiers: Vec<[u8; 32]> = match self {
+            ShieldTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
+        };
         let note_commitments: Vec<[u8; 32]> = match self {
             ShieldTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
         };
@@ -99,6 +102,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             self,
             inputs_with_remaining_balance,
             shield_amount,
+            nullifiers,
             note_commitments,
             encrypted_notes,
             current_total_balance,

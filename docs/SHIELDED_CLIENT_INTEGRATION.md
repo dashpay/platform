@@ -693,38 +693,109 @@ The BulkAppendTree's epoch structure (epoch_size = 2048) enables efficient bulk 
 
 ## 9. Trial Decryption
 
-Light clients discover their notes by attempting to decrypt every encrypted note on-chain:
+Light clients discover their notes by attempting to decrypt every encrypted note on-chain. The Orchard protocol uses standard `try_note_decryption` from `zcash_note_encryption`, parameterized with `OrchardDomain<DashMemo>`.
+
+### 9.1 Decrypting from Bundle Actions
+
+When you have a full `Bundle` (e.g., from a state transition you submitted or received via P2P), use `try_note_decryption` directly on each action:
 
 ```rust
-use grovedb_commitment_tree::{
-    IncomingViewingKey, Note, TransmittedNoteCiphertext,
-    ExtractedNoteCommitment, PaymentAddress,
-    DashMemo, NoteBytesData,
+use dash_sdk::grovedb_commitment_tree::{
+    OrchardDomain, DashMemo, IncomingViewingKey, Note, PaymentAddress,
+    try_note_decryption, Bundle, Authorized, Action,
 };
 
-fn try_decrypt_note(
+fn scan_bundle_for_owned_notes(
     ivk: &IncomingViewingKey,
-    encrypted_note: &[u8],  // 216 bytes
-    cmx: &[u8; 32],
+    bundle: &Bundle<Authorized, i64, DashMemo>,
+) -> Vec<(Note, PaymentAddress, [u8; 36])> {
+    let mut found = Vec::new();
+    for action in bundle.actions() {
+        // OrchardDomain binds the decryption to this action's Rho (nullifier-derived)
+        let domain = OrchardDomain::<DashMemo>::for_action(action);
+        // Action implements ShieldedOutput<OrchardDomain<DashMemo>>,
+        // so it can be passed directly to try_note_decryption
+        if let Some((note, address, memo)) = try_note_decryption(&domain, ivk, action) {
+            found.push((note, address, memo));
+        }
+    }
+    found
+}
+```
+
+### 9.2 Decrypting from RPC Encrypted Notes
+
+When syncing from the `GetShieldedEncryptedNotes` RPC, each entry includes:
+- `nullifier` (32 bytes) -- the nullifier from the action that created this note (needed for Rho derivation)
+- `cmx` (32 bytes) -- the extracted note commitment
+- `encrypted_note` (216 bytes) -- `epk (32) || enc_ciphertext (104) || out_ciphertext (80)`
+
+The nullifier is essential because `OrchardDomain` uses `Rho::from_nf_old(nullifier)` to validate `RandomSeed` and construct the `Note` during decryption.
+
+#### Compact Trial Decryption (Fast Scanning)
+
+Compact decryption only uses the first 52 bytes of the enc_ciphertext (version + diversifier + value + rseed). It's faster for scanning but does not recover the memo:
+
+```rust
+use dash_sdk::grovedb_commitment_tree::{
+    OrchardDomain, DashMemo, IncomingViewingKey, Note,
+    CompactAction, try_compact_note_decryption,
+    ExtractedNoteCommitment, Nullifier, EphemeralKeyBytes,
+    COMPACT_NOTE_SIZE,
+};
+
+/// Attempt compact trial decryption on an entry from GetShieldedEncryptedNotes.
+fn try_compact_decrypt(
+    ivk: &IncomingViewingKey,
+    nullifier_bytes: &[u8; 32],
+    cmx_bytes: &[u8; 32],
+    encrypted_note: &[u8],
 ) -> Option<Note> {
-    // Parse the encrypted note into its components
+    let nf = Nullifier::from_bytes(nullifier_bytes).into()?;
+    let cmx = ExtractedNoteCommitment::from_bytes(cmx_bytes).into()?;
     let epk_bytes: [u8; 32] = encrypted_note[0..32].try_into().ok()?;
-    let enc_ciphertext: [u8; 104] = encrypted_note[32..136].try_into().ok()?;
-    let out_ciphertext: [u8; 80] = encrypted_note[136..216].try_into().ok()?;
 
-    // Use from_parts() — struct literal not available (private PhantomData field)
-    let transmitted = TransmittedNoteCiphertext::<DashMemo>::from_parts(
-        epk_bytes,
-        NoteBytesData(enc_ciphertext),
-        out_ciphertext,
-    );
+    let enc_compact: [u8; COMPACT_NOTE_SIZE] =
+        encrypted_note[32..32 + COMPACT_NOTE_SIZE].try_into().ok()?;
 
-    // Attempt decryption with our incoming viewing key
-    // Returns None if the note is not addressed to us
-    let (note, _address, _memo) = transmitted.decrypt(ivk, cmx)?;
+    let compact = CompactAction::from_parts(nf, cmx, EphemeralKeyBytes(epk_bytes), enc_compact);
+    let domain = OrchardDomain::<DashMemo>::for_compact_action(&compact);
+    let (note, _address) = try_compact_note_decryption(&domain, ivk, &compact)?;
     Some(note)
 }
 ```
+
+#### Full Sync Loop
+
+```rust
+// Fetch notes from the RPC
+let response = client.get_shielded_encrypted_notes(start_index, count, false).await?;
+for (pos, entry) in response.entries.iter().enumerate() {
+    let position = start_index + pos as u64;
+    let nf: [u8; 32] = entry.nullifier.as_slice().try_into()?;
+    let cmx: [u8; 32] = entry.cmx.as_slice().try_into()?;
+
+    if let Some(note) = try_compact_decrypt(&ivk, &nf, &cmx, &entry.encrypted_note) {
+        // This note belongs to us -- mark position in commitment tree for future spending
+        tree.mark_position(position);
+        wallet.add_note(note, position);
+    }
+
+    // Always append the cmx to the commitment tree (even for non-owned notes)
+    tree.append(cmx);
+}
+```
+
+### 9.3 Integration with ClientCommitmentTree
+
+After detecting an owned note via trial decryption, mark it in the `ClientCommitmentTree`:
+
+```rust
+// After successful decryption at position `pos`:
+tree.mark_position(pos);
+```
+
+This ensures the tree retains the witness (Merkle path) for this note, enabling future spend proofs.
 
 Trial decryption is the core privacy guarantee: the server cannot determine which notes belong to which client. The client downloads all encrypted notes and tests each one locally.
 

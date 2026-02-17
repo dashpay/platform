@@ -83715,6 +83715,7 @@ $root.org = (function() {
                                  * Properties of an EncryptedNote.
                                  * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
                                  * @interface IEncryptedNote
+                                 * @property {Uint8Array|null} [nullifier] EncryptedNote nullifier
                                  * @property {Uint8Array|null} [cmx] EncryptedNote cmx
                                  * @property {Uint8Array|null} [encryptedNote] EncryptedNote encryptedNote
                                  */
@@ -83733,6 +83734,14 @@ $root.org = (function() {
                                             if (properties[keys[i]] != null)
                                                 this[keys[i]] = properties[keys[i]];
                                 }
+
+                                /**
+                                 * EncryptedNote nullifier.
+                                 * @member {Uint8Array} nullifier
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 */
+                                EncryptedNote.prototype.nullifier = $util.newBuffer([]);
 
                                 /**
                                  * EncryptedNote cmx.
@@ -83774,10 +83783,12 @@ $root.org = (function() {
                                 EncryptedNote.encode = function encode(message, writer) {
                                     if (!writer)
                                         writer = $Writer.create();
+                                    if (message.nullifier != null && Object.hasOwnProperty.call(message, "nullifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nullifier);
                                     if (message.cmx != null && Object.hasOwnProperty.call(message, "cmx"))
-                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.cmx);
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.cmx);
                                     if (message.encryptedNote != null && Object.hasOwnProperty.call(message, "encryptedNote"))
-                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.encryptedNote);
+                                        writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.encryptedNote);
                                     return writer;
                                 };
 
@@ -83813,9 +83824,12 @@ $root.org = (function() {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
                                         case 1:
-                                            message.cmx = reader.bytes();
+                                            message.nullifier = reader.bytes();
                                             break;
                                         case 2:
+                                            message.cmx = reader.bytes();
+                                            break;
+                                        case 3:
                                             message.encryptedNote = reader.bytes();
                                             break;
                                         default:
@@ -83853,6 +83867,9 @@ $root.org = (function() {
                                 EncryptedNote.verify = function verify(message) {
                                     if (typeof message !== "object" || message === null)
                                         return "object expected";
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        if (!(message.nullifier && typeof message.nullifier.length === "number" || $util.isString(message.nullifier)))
+                                            return "nullifier: buffer expected";
                                     if (message.cmx != null && message.hasOwnProperty("cmx"))
                                         if (!(message.cmx && typeof message.cmx.length === "number" || $util.isString(message.cmx)))
                                             return "cmx: buffer expected";
@@ -83874,6 +83891,11 @@ $root.org = (function() {
                                     if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote)
                                         return object;
                                     var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote();
+                                    if (object.nullifier != null)
+                                        if (typeof object.nullifier === "string")
+                                            $util.base64.decode(object.nullifier, message.nullifier = $util.newBuffer($util.base64.length(object.nullifier)), 0);
+                                        else if (object.nullifier.length >= 0)
+                                            message.nullifier = object.nullifier;
                                     if (object.cmx != null)
                                         if (typeof object.cmx === "string")
                                             $util.base64.decode(object.cmx, message.cmx = $util.newBuffer($util.base64.length(object.cmx)), 0);
@@ -83902,6 +83924,13 @@ $root.org = (function() {
                                     var object = {};
                                     if (options.defaults) {
                                         if (options.bytes === String)
+                                            object.nullifier = "";
+                                        else {
+                                            object.nullifier = [];
+                                            if (options.bytes !== Array)
+                                                object.nullifier = $util.newBuffer(object.nullifier);
+                                        }
+                                        if (options.bytes === String)
                                             object.cmx = "";
                                         else {
                                             object.cmx = [];
@@ -83916,6 +83945,8 @@ $root.org = (function() {
                                                 object.encryptedNote = $util.newBuffer(object.encryptedNote);
                                         }
                                     }
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        object.nullifier = options.bytes === String ? $util.base64.encode(message.nullifier, 0, message.nullifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifier) : message.nullifier;
                                     if (message.cmx != null && message.hasOwnProperty("cmx"))
                                         object.cmx = options.bytes === String ? $util.base64.encode(message.cmx, 0, message.cmx.length) : options.bytes === Array ? Array.prototype.slice.call(message.cmx) : message.cmx;
                                     if (message.encryptedNote != null && message.hasOwnProperty("encryptedNote"))

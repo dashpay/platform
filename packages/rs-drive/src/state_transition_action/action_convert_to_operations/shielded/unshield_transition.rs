@@ -37,7 +37,12 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     ));
 
                     // 3. Insert notes into CommitmentTree (change outputs)
-                    insert_notes(&mut ops, &v0.note_commitments, &v0.encrypted_notes);
+                    insert_notes(
+                        &mut ops,
+                        &v0.nullifiers,
+                        &v0.note_commitments,
+                        &v0.encrypted_notes,
+                    );
 
                     // 4. Update total balance
                     // Pool decreases by amount (to output address) + fee_amount (to proposers)

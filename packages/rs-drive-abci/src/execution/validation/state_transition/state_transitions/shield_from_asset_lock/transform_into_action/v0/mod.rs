@@ -65,7 +65,12 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        // Extract note commitments and encrypted notes from serialized actions
+        // Extract nullifiers, note commitments, and encrypted notes from serialized actions
+        let nullifiers: Vec<[u8; 32]> = match self {
+            ShieldFromAssetLockTransition::V0(v0) => {
+                v0.actions.iter().map(|a| a.nullifier).collect()
+            }
+        };
         let note_commitments: Vec<[u8; 32]> = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
         };
@@ -349,6 +354,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
             asset_lock_value_credits,
             signable_bytes_hash,
             shield_amount,
+            nullifiers,
             note_commitments,
             encrypted_notes,
             current_total_balance,

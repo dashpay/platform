@@ -10615,6 +10615,11 @@ export namespace GetShieldedEncryptedNotesResponse {
     }
 
     export class EncryptedNote extends jspb.Message {
+      getNullifier(): Uint8Array | string;
+      getNullifier_asU8(): Uint8Array;
+      getNullifier_asB64(): string;
+      setNullifier(value: Uint8Array | string): void;
+
       getCmx(): Uint8Array | string;
       getCmx_asU8(): Uint8Array;
       getCmx_asB64(): string;
@@ -10637,6 +10642,7 @@ export namespace GetShieldedEncryptedNotesResponse {
 
     export namespace EncryptedNote {
       export type AsObject = {
+        nullifier: Uint8Array | string,
         cmx: Uint8Array | string,
         encryptedNote: Uint8Array | string,
       }

@@ -22550,11 +22550,13 @@ void GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_Clear
 
 @implementation GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote
 
+@dynamic nullifier;
 @dynamic cmx;
 @dynamic encryptedNote;
 
 typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_ {
   uint32_t _has_storage_[1];
+  NSData *nullifier;
   NSData *cmx;
   NSData *encryptedNote;
 } GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_;
@@ -22566,10 +22568,19 @@ typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesRespon
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
+        .name = "nullifier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Nullifier,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_, nullifier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
         .name = "cmx",
         .dataTypeSpecific.clazz = Nil,
         .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx,
-        .hasIndex = 0,
+        .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_, cmx),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
@@ -22578,7 +22589,7 @@ typedef struct GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesRespon
         .name = "encryptedNote",
         .dataTypeSpecific.clazz = Nil,
         .number = GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote,
-        .hasIndex = 1,
+        .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote__storage_, encryptedNote),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,

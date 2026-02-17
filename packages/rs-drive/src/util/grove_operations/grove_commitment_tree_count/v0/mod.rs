@@ -18,12 +18,9 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<u64, Error> {
-        let CostContext { value, cost } = self.grove.commitment_tree_count(
-            path,
-            key,
-            transaction,
-            &drive_version.grove_version,
-        );
+        let CostContext { value, cost } =
+            self.grove
+                .commitment_tree_count(path, key, transaction, &drive_version.grove_version);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::from)
     }

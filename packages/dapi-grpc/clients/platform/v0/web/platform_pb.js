@@ -80852,6 +80852,7 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.toObject = function(includeInstance, msg) {
   var f, obj = {
+    nullifier: msg.getNullifier_asB64(),
     cmx: msg.getCmx_asB64(),
     encryptedNote: msg.getEncryptedNote_asB64()
   };
@@ -80892,9 +80893,13 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
     switch (field) {
     case 1:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setCmx(value);
+      msg.setNullifier(value);
       break;
     case 2:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setCmx(value);
+      break;
+    case 3:
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setEncryptedNote(value);
       break;
@@ -80927,17 +80932,24 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getCmx_asU8();
+  f = message.getNullifier_asU8();
   if (f.length > 0) {
     writer.writeBytes(
       1,
       f
     );
   }
-  f = message.getEncryptedNote_asU8();
+  f = message.getCmx_asU8();
   if (f.length > 0) {
     writer.writeBytes(
       2,
+      f
+    );
+  }
+  f = message.getEncryptedNote_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      3,
       f
     );
   }
@@ -80945,16 +80957,58 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
 
 
 /**
- * optional bytes cmx = 1;
+ * optional bytes nullifier = 1;
  * @return {string}
  */
-proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCmx = function() {
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getNullifier = function() {
   return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
 };
 
 
 /**
- * optional bytes cmx = 1;
+ * optional bytes nullifier = 1;
+ * This is a type-conversion wrapper around `getNullifier()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getNullifier_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getNullifier()));
+};
+
+
+/**
+ * optional bytes nullifier = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getNullifier()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getNullifier_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getNullifier()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setNullifier = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional bytes cmx = 2;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCmx = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * optional bytes cmx = 2;
  * This is a type-conversion wrapper around `getCmx()`
  * @return {string}
  */
@@ -80965,7 +81019,7 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
 
 
 /**
- * optional bytes cmx = 1;
+ * optional bytes cmx = 2;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
  * This is a type-conversion wrapper around `getCmx()`
@@ -80982,21 +81036,21 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  * @return {!proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} returns this
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setCmx = function(value) {
-  return jspb.Message.setProto3BytesField(this, 1, value);
+  return jspb.Message.setProto3BytesField(this, 2, value);
 };
 
 
 /**
- * optional bytes encrypted_note = 2;
+ * optional bytes encrypted_note = 3;
  * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getEncryptedNote = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
 };
 
 
 /**
- * optional bytes encrypted_note = 2;
+ * optional bytes encrypted_note = 3;
  * This is a type-conversion wrapper around `getEncryptedNote()`
  * @return {string}
  */
@@ -81007,7 +81061,7 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
 
 
 /**
- * optional bytes encrypted_note = 2;
+ * optional bytes encrypted_note = 3;
  * Note that Uint8Array is not supported on all browsers.
  * @see http://caniuse.com/Uint8Array
  * This is a type-conversion wrapper around `getEncryptedNote()`
@@ -81024,7 +81078,7 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  * @return {!proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} returns this
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setEncryptedNote = function(value) {
-  return jspb.Message.setProto3BytesField(this, 2, value);
+  return jspb.Message.setProto3BytesField(this, 3, value);
 };
 
 
