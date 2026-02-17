@@ -79,6 +79,8 @@ pub use dpp::dash_spv;
 #[cfg(feature = "core_rpc_client")]
 pub use dpp::dashcore_rpc;
 pub use drive;
+#[cfg(feature = "shielded")]
+pub use grovedb_commitment_tree;
 pub use drive_proof_verifier::types as query_types;
 pub use drive_proof_verifier::Error as ProofVerifierError;
 #[cfg(feature = "platform-wallet")]

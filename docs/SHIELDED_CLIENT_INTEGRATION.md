@@ -53,17 +53,17 @@ All five types carry Orchard bundle data: serialized actions, a Halo 2 zero-know
 
 ## 2. Dependencies
 
-Client applications use the `grovedb-commitment-tree` crate, which re-exports all necessary Orchard types:
+The Dash Platform SDK (`dash-sdk`) re-exports all necessary Orchard and commitment tree types behind the `shielded` feature:
 
 ```toml
 [dependencies]
-grovedb-commitment-tree = { version = "4", features = ["client"] }
+dash-sdk = { version = "3", features = ["shielded"] }
 ```
 
-The `client` feature enables `ClientCommitmentTree` for wallet-side note tracking and Merkle witness generation. All Orchard types are re-exported from this crate:
+The `shielded` feature enables `ClientCommitmentTree` for wallet-side note tracking and Merkle witness generation, as well as the Orchard builder for constructing shielded bundles. All Orchard types are re-exported from `dash_sdk::grovedb_commitment_tree`:
 
 ```rust
-use grovedb_commitment_tree::{
+use dash_sdk::grovedb_commitment_tree::{
     // Builder
     Builder, BundleType,
     // Key management
@@ -85,10 +85,17 @@ use grovedb_commitment_tree::{
 };
 ```
 
-For the platform sighash, also depend on `dpp`:
+For the platform sighash, use the re-exported `dpp`:
 
 ```rust
-use dpp::shielded::compute_platform_sighash;
+use dash_sdk::dpp::shielded::compute_platform_sighash;
+```
+
+Alternatively, for projects that don't use the full SDK, the crate can be used directly:
+
+```toml
+[dependencies]
+grovedb-commitment-tree = { version = "4", features = ["client"] }
 ```
 
 ---
@@ -149,7 +156,32 @@ let ovk: OutgoingViewingKey = fvk.to_ovk(Scope::External);
 
 ## 4. Commitment Tree and Note Tracking
 
-### ClientCommitmentTree
+### Server-Side Storage: BulkAppendTree
+
+On the platform, encrypted notes are stored in a **CommitmentTree** element backed by a **BulkAppendTree** — a two-level append-only authenticated data structure:
+
+```
+CommitmentTree (epoch_size = 2048)
+  |
+  +-- Buffer (dense Merkle tree, up to 2048 entries)
+  |     Entries 0..2047 of the current epoch
+  |
+  +-- MMR (Merkle Mountain Range of completed epochs)
+        Epoch 0: entries 0..2047    (immutable blob, CDN-cacheable)
+        Epoch 1: entries 2048..4095 (immutable blob, CDN-cacheable)
+        ...
+```
+
+When the buffer fills (2048 notes), all entries are compacted into an immutable epoch blob and appended to the MMR. This gives:
+- **O(1) append** for new notes
+- **O(log n) authenticated reads** by global position
+- **CDN-cacheable epoch blobs** for bulk syncing (completed epochs never change)
+
+Each note is stored as `cmx (32 bytes) || encrypted_note (216 bytes)` = 248 bytes, accessed by its global position (0-indexed `u64`).
+
+Separately, the CommitmentTree maintains a **Sinsemilla frontier** in auxiliary storage, used to compute the Orchard anchor (Merkle root) at the end of each block.
+
+### Client-Side: ClientCommitmentTree
 
 The `ClientCommitmentTree` maintains a local copy of the on-chain Sinsemilla Merkle tree (depth 32). It supports:
 
@@ -163,7 +195,7 @@ use grovedb_commitment_tree::{ClientCommitmentTree, Retention, Position, Anchor,
 // Create a new client tree (retain up to 1000 checkpoints)
 let mut tree = ClientCommitmentTree::new(1000);
 
-// Append notes as they appear on-chain
+// Append notes as they appear on-chain (in global position order)
 // Use Retention::Marked for notes belonging to this wallet (need witnesses later)
 // Use Retention::Ephemeral for notes belonging to other wallets
 tree.append(cmx_bytes, Retention::Marked)?;   // Our note
@@ -179,6 +211,8 @@ let anchor: Anchor = tree.anchor()?;
 let merkle_path: MerklePath = tree.witness(position, 0)?
     .expect("witness should exist for marked leaf");
 ```
+
+The `ClientCommitmentTree` tracks the Sinsemilla tree only — it does not replicate the BulkAppendTree structure. The server stores notes in the BulkAppendTree for efficient retrieval; the client appends cmx values to its Sinsemilla tree for witness generation.
 
 ### Wallet Note State
 
@@ -199,7 +233,7 @@ For each detected note, store:
 | Field | Source | Purpose |
 |-------|--------|---------|
 | `Note` | Trial decryption | The note object (value, address, rho, rseed) |
-| `Position` | Tree append order | Location in commitment tree (for witness generation) |
+| `Position` | Tree append order (= global position) | Location in commitment tree (for witness generation) |
 | `cmx` | `ExtractedNoteCommitment::from(note.commitment())` | For tree tracking |
 | `nullifier` | Known from note + spending key | To detect when the note is spent |
 | `block_height` | Block where cmx appeared | For sync tracking |
@@ -585,32 +619,75 @@ Light clients must synchronize with the on-chain shielded pool state. The protoc
 | Query | Returns | Purpose |
 |-------|---------|---------|
 | `GetShieldedPoolState` | Pool parameters, total balance, note count | Initial state check |
-| `GetShieldedEncryptedNotes` | Encrypted notes in block range | Note discovery via trial decryption |
+| `GetShieldedEncryptedNotes` | Encrypted notes by global position range | Note discovery via trial decryption |
 | `GetShieldedAnchors` | Historical anchors by block height | Verify spend witnesses |
 | `GetShieldedNullifiers` | Published nullifiers | Detect spent notes |
+
+### GetShieldedEncryptedNotes
+
+Notes are indexed by **global position** (a monotonically increasing `u64`). The request takes:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `start_index` | `u64` | First global position to fetch (0-based) |
+| `count` | `u32` | Maximum number of notes to return |
+| `prove` | `bool` | Whether to return a GroveDB proof (V1) instead of raw data |
+
+**Non-proved response** (`prove = false`): Returns a list of `EncryptedNote { cmx, encrypted_note }` for each position in the requested range. The response stops early if the position is past the end of the tree.
+
+**Proved response** (`prove = true`): Returns a GroveDB **V1 proof** (supports BulkAppendTree subqueries). The client verifies using:
+
+```rust
+use grovedb::GroveDb;
+use grovedb::VerifyOptions;
+
+let (root_hash, result_set) = GroveDb::verify_query_with_options(
+    &proof_bytes,
+    &path_query,  // Same PathQuery structure as the server used
+    VerifyOptions {
+        absence_proofs_for_non_existing_searched_keys: false,
+        verify_proof_succinctness: false,
+        include_empty_trees_in_result: false,
+    },
+    grove_version,
+)?;
+```
+
+V1 proofs authenticate BulkAppendTree entries by global position range. A single proof covers all requested positions efficiently (epoch blobs + buffer entries).
 
 ### Sync Flow
 
 ```
 1. Query pool state to get current note count and latest block height
-2. For each unseen block range:
-   a. Fetch encrypted notes
+2. Determine the last synced position (wallet state)
+3. Fetch notes in batches by position range:
+   a. GetShieldedEncryptedNotes(start_index = last_synced + 1, count = batch_size)
    b. Trial-decrypt each note with IncomingViewingKey
    c. For decrypted notes: record (Note, Position, cmx) in wallet
    d. Append ALL cmx values to ClientCommitmentTree (Marked for ours, Ephemeral for others)
-   e. Checkpoint the tree at each block boundary
-3. Query nullifiers to detect which of our notes have been spent
-4. Remove spent notes from the spendable set
+   e. Repeat until fewer than batch_size notes returned (caught up)
+4. Checkpoint the ClientCommitmentTree at the current sync point
+5. Query nullifiers to detect which of our notes have been spent
+6. Remove spent notes from the spendable set
 ```
+
+### Epoch-Based Bulk Syncing
+
+The BulkAppendTree's epoch structure (epoch_size = 2048) enables efficient bulk syncing:
+
+- **Completed epochs** (positions 0..2047, 2048..4095, ...) are immutable blobs that never change
+- These can be served from CDN/cache without re-querying the state tree
+- A client syncing from scratch can download completed epoch blobs in parallel
+- Only the current (partial) buffer needs fresh queries from platform nodes
 
 ### Sync Strategies
 
 | Strategy | Description | Best For |
 |----------|-------------|----------|
-| Sequential | Process every block in order | Simple implementation, full history |
+| Sequential | Process every position in order | Simple implementation, full history |
 | Warp Sync | Scan notes first, compute witnesses later | Fast initial sync (10-100x faster) |
 | Spend-Before-Sync | Use server-provided witness for immediate spending | Spending before full sync completes |
-| Parallel Block Scanning | Scan multiple block ranges concurrently | Multi-core devices |
+| Epoch-Parallel | Download completed epoch blobs concurrently | Initial sync on fast connections |
 
 ---
 

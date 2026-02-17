@@ -18,6 +18,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 platform-wallet = { path = "../rs-platform-wallet", optional = true }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
+grovedb-commitment-tree = { path = "../../../grovedb/grovedb-commitment-tree", features = ["client"], optional = true }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 http = { version = "1.1" }
@@ -150,6 +151,7 @@ core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
 platform_wallet_manager = ["platform-wallet/manager"]
+shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-bundle-building"]
 
 [[example]]
 

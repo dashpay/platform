@@ -48,6 +48,12 @@ pub mod grove_get_raw_path_query;
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
 
+/// V1 proved path query in grove (supports BulkAppendTree/CommitmentTree)
+pub mod grove_get_proved_path_query_v1;
+
+/// Get total count from a CommitmentTree
+pub mod grove_commitment_tree_count;
+
 /// Proved branch chunk query in grove
 pub mod grove_get_proved_branch_chunk_query;
 

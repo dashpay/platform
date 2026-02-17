@@ -1526,6 +1526,7 @@ dependencies = [
  "drive-proof-verifier",
  "envy",
  "futures",
+ "grovedb-commitment-tree",
  "hex",
  "http",
  "js-sys",

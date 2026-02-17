@@ -307,17 +307,13 @@ pub fn validate_minimum_pool_notes(
         .minimum_pool_notes_for_outgoing;
     if min_notes > 0 {
         let pool_path = shielded_credit_pool_path();
-        let encrypted_notes_count = drive
-            .grove_get_raw_optional(
-                (&pool_path).into(),
-                &[SHIELDED_NOTES_KEY],
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                drive_operations,
-                &platform_version.drive,
-            )?
-            .map(|element| element.count_value_or_default())
-            .unwrap_or(0);
+        let encrypted_notes_count = drive.grove_commitment_tree_count(
+            (&pool_path).into(),
+            &[SHIELDED_NOTES_KEY],
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )?;
         if encrypted_notes_count < min_notes {
             return Ok(Some(ConsensusValidationResult::new_with_error(
                 StateError::InsufficientPoolNotesError(InsufficientPoolNotesError::new(

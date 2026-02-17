@@ -13,9 +13,11 @@ use dapi_grpc::platform::v0::get_shielded_encrypted_notes_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_credit_pool_notes_path_vec;
-use drive::grovedb::query_result_type::QueryResultType;
-use drive::grovedb::{PathQuery, Query, SizedQuery};
+use drive::drive::shielded::paths::{
+    shielded_credit_pool_path, shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY,
+};
+use drive::grovedb::{PathQuery, Query, QueryItem, SizedQuery, SubqueryBranch};
+use drive::grovedb_path::SubtreePath;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -37,30 +39,38 @@ impl<C> Platform<C> {
         };
         let limit = effective.min(u16::MAX as u32) as u16;
 
-        let query = if start_index == 0 {
-            Query::new_range_full()
-        } else {
-            let mut q = Query::new();
-            q.insert_range_from(start_index.to_be_bytes().to_vec()..);
-            q
-        };
-
-        let path_query = PathQuery {
-            path: shielded_credit_pool_notes_path_vec(),
-            query: SizedQuery {
-                query,
-                limit: Some(limit),
-                offset: None,
-            },
-        };
-
         let response = if prove {
-            let proof = check_validation_result_with_data!(self.drive.grove_get_proved_path_query(
-                &path_query,
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            ));
+            // V1 proof: PathQuery with subquery targeting positions in the CommitmentTree
+            let end_index = start_index + limit as u64 - 1;
+            let mut inner_query = Query::new();
+            inner_query.insert_range_inclusive(
+                start_index.to_be_bytes().to_vec()..=end_index.to_be_bytes().to_vec(),
+            );
+
+            let path_query = PathQuery {
+                path: shielded_credit_pool_path_vec(),
+                query: SizedQuery {
+                    query: Query {
+                        items: vec![QueryItem::Key(vec![SHIELDED_NOTES_KEY])],
+                        default_subquery_branch: SubqueryBranch {
+                            subquery_path: None,
+                            subquery: Some(inner_query.into()),
+                        },
+                        left_to_right: true,
+                        conditional_subquery_branches: None,
+                        add_parent_tree_on_subquery: false,
+                    },
+                    limit: None,
+                    offset: None,
+                },
+            };
+
+            let proof =
+                check_validation_result_with_data!(self.drive.grove_get_proved_path_query_v1(
+                    &path_query,
+                    &mut vec![],
+                    &platform_version.drive,
+                ));
 
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
@@ -72,31 +82,36 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            let (results, _) = self.drive.grove_get_raw_path_query(
-                &path_query,
-                None,
-                QueryResultType::QueryKeyElementPairResultType,
-                &mut vec![],
-                &platform_version.drive,
-            )?;
+            // Non-proved: loop over commitment_tree_get_value for each position
+            let pool_path = shielded_credit_pool_path();
+            let pool_subtree: SubtreePath<&[u8]> = (&pool_path).into();
+            let notes_key: &[u8] = &[SHIELDED_NOTES_KEY];
 
-            let entries: Vec<EncryptedNote> = results
-                .to_key_elements()
-                .into_iter()
-                .filter_map(|(_key, element)| {
-                    element.into_item_bytes().ok().and_then(|value| {
-                        // Value format: cmx (32 bytes) || encrypted_note (remaining bytes)
-                        if value.len() > 32 {
-                            Some(EncryptedNote {
-                                cmx: value[..32].to_vec(),
-                                encrypted_note: value[32..].to_vec(),
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect();
+            let mut entries = Vec::with_capacity(limit as usize);
+            for pos in start_index..(start_index + limit as u64) {
+                let maybe_value = self
+                    .drive
+                    .grove
+                    .commitment_tree_get_value(
+                        pool_subtree.clone(),
+                        notes_key,
+                        pos,
+                        None,
+                        &platform_version.drive.grove_version,
+                    )
+                    .unwrap()
+                    .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
+
+                match maybe_value {
+                    Some(value) if value.len() > 32 => {
+                        entries.push(EncryptedNote {
+                            cmx: value[..32].to_vec(),
+                            encrypted_note: value[32..].to_vec(),
+                        });
+                    }
+                    _ => break, // past end of tree
+                }
+            }
 
             GetShieldedEncryptedNotesResponseV0 {
                 result: Some(
@@ -104,7 +119,9 @@ impl<C> Platform<C> {
                         EncryptedNotes { entries },
                     ),
                 ),
-                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+                metadata: Some(
+                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                ),
             }
         };
 
