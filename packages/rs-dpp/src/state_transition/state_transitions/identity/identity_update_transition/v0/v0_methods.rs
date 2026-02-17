@@ -52,10 +52,25 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let add_public_keys_in_creation = add_public_keys
+        let add_public_keys_in_creation: Vec<IdentityPublicKeyInCreation> = add_public_keys
             .iter()
             .map(|public_key| public_key.into())
             .collect();
+
+        // Validate public key structure (purpose/security level compatibility)
+        // before broadcasting, so invalid combinations are caught client-side
+        // rather than being rejected by the network.
+        let validation_result =
+            IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                &add_public_keys_in_creation,
+                false, // not in create_identity context
+                _platform_version,
+            )?;
+        if !validation_result.is_valid() {
+            // Return the first validation error as a ProtocolError
+            let first_error = validation_result.errors.into_iter().next().unwrap();
+            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        }
 
         let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
