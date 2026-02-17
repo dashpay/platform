@@ -49,7 +49,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         identity_public_key_signer: &S,
         address_signer: &WS,
         user_fee_increase: UserFeeIncrease,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the unsigned transition
         let mut identity_create_from_addresses_transition =
@@ -75,7 +75,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
                 &public_keys,
                 true, // in create_identity context
-                _platform_version,
+                platform_version,
             )?;
         if !validation_result.is_valid() {
             let first_error = validation_result.errors.into_iter().next().unwrap();
