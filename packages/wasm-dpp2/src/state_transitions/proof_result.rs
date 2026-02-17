@@ -57,7 +57,8 @@ export type StateTransitionProofResultType =
   | VerifiedNextDistribution
   | VerifiedAddressInfos
   | VerifiedIdentityFullWithAddressInfos
-  | VerifiedIdentityWithAddressInfos;
+  | VerifiedIdentityWithAddressInfos
+  | VerifiedShieldedPoolState;
 "#;
 
 #[wasm_bindgen]
@@ -734,6 +735,28 @@ fn action_status_to_string(status: dpp::group::group_action_status::GroupActionS
     }
 }
 
+// --- VerifiedShieldedPoolState ---
+
+#[wasm_bindgen(js_name = "VerifiedShieldedPoolState")]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct VerifiedShieldedPoolStateWasm {
+    pool_balance: Option<u64>,
+}
+
+impl_wasm_type_info!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
+impl_wasm_conversions!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
+
+#[wasm_bindgen(js_class = VerifiedShieldedPoolState)]
+impl VerifiedShieldedPoolStateWasm {
+    #[wasm_bindgen(getter, js_name = "poolBalance")]
+    pub fn pool_balance(&self) -> JsValue {
+        match self.pool_balance {
+            Some(b) => BigInt::from(b).into(),
+            None => JsValue::undefined(),
+        }
+    }
+}
+
 /// Convert a Rust `StateTransitionProofResult` into the corresponding typed
 /// WASM wrapper, ready to be returned to JavaScript.
 pub fn convert_proof_result(
@@ -891,6 +914,13 @@ pub fn convert_proof_result(
             VerifiedIdentityWithAddressInfosWasm {
                 partial_identity: pi.into(),
                 address_infos: build_address_infos_map(infos),
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedShieldedPoolState(maybe_balance) => {
+            VerifiedShieldedPoolStateWasm {
+                pool_balance: maybe_balance,
             }
             .into()
         }

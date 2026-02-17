@@ -2596,6 +2596,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "axum 0.8.8",
  "bincode",
@@ -2633,6 +2634,7 @@ dependencies = [
 [[package]]
 name = "grovedb-bulk-append-tree"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "bincode",
  "blake3",
@@ -2645,17 +2647,18 @@ dependencies = [
 [[package]]
 name = "grovedb-commitment-tree"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "incrementalmerkletree",
  "orchard",
  "shardtree",
  "thiserror 2.0.17",
- "zcash_note_encryption",
 ]
 
 [[package]]
 name = "grovedb-costs"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2665,6 +2668,7 @@ dependencies = [
 [[package]]
 name = "grovedb-dense-fixed-sized-merkle-tree"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "bincode",
  "blake3",
@@ -2674,6 +2678,7 @@ dependencies = [
 [[package]]
 name = "grovedb-element"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -2688,6 +2693,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2699,6 +2705,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -2723,6 +2730,7 @@ dependencies = [
 [[package]]
 name = "grovedb-mmr"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "bincode",
  "blake3",
@@ -2733,6 +2741,7 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "hex",
 ]
@@ -2740,6 +2749,7 @@ dependencies = [
 [[package]]
 name = "grovedb-storage"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2758,6 +2768,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "thiserror 2.0.17",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2766,6 +2777,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -2774,6 +2786,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=8a8852060a7bb2a92b9016622ce67cb68a86e8db#8a8852060a7bb2a92b9016622ce67cb68a86e8db"
 dependencies = [
  "serde",
  "serde_with 3.16.1",
@@ -4372,6 +4385,7 @@ dependencies = [
 [[package]]
 name = "orchard"
 version = "0.12.0"
+source = "git+https://github.com/dashpay/orchard.git?rev=41c8f7169f2683c99cf0e0c63e8d25ec12c47a79#41c8f7169f2683c99cf0e0c63e8d25ec12c47a79"
 dependencies = [
  "aes",
  "bitvec",
@@ -8293,6 +8307,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.4.1"
+source = "git+https://github.com/dashpay/zcash_note_encryption?rev=9f7e93d#9f7e93d42cef839d02b9d75918117941d453f8cb"
 dependencies = [
  "chacha20",
  "chacha20poly1305",
