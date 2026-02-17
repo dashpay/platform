@@ -22,6 +22,7 @@ use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dash_sdk::dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dash_sdk::dpp::fee::Credits;
@@ -570,6 +571,18 @@ impl WasmSdk {
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
         let document: Document = document_wasm.clone().into();
 
+        // Guard: reject documents with no revision or INITIAL_REVISION — those are creates, not replaces
+        let revision = document.revision().ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "Document must have a revision set for replace. Use prepareDocumentCreate for new documents.",
+            )
+        })?;
+        if revision == INITIAL_REVISION {
+            return Err(WasmSdkError::invalid_argument(
+                "Document revision is INITIAL_REVISION (1). Replace requires revision > 1. Use prepareDocumentCreate for new documents.",
+            ));
+        }
+
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
         let document_type_name = document_wasm.document_type_name();
@@ -1105,8 +1118,6 @@ async fn build_document_create_or_replace_transition(
     sdk: &dash_sdk::Sdk,
     settings: Option<dash_sdk::platform::transition::put_settings::PutSettings>,
 ) -> Result<dash_sdk::dpp::state_transition::StateTransition, WasmSdkError> {
-    use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-
     let new_identity_contract_nonce = sdk
         .get_identity_contract_nonce(
             document.owner_id(),
