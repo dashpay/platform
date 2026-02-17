@@ -1,16 +1,34 @@
 //! Document state transition implementations for the WASM SDK.
 //!
 //! This module provides WASM bindings for document operations like create, replace, delete, etc.
+//!
+//! # Two-Phase API (Prepare + Execute)
+//!
+//! In addition to the all-in-one methods (`documentCreate`, `documentReplace`, `documentDelete`),
+//! this module provides `prepare_*` variants that build and sign a `StateTransition` without
+//! broadcasting it. This enables idempotent retry patterns:
+//!
+//! 1. Call `prepareDocumentCreate()` to get a signed `StateTransition`
+//! 2. Cache `stateTransition.toBytes()` for retry safety
+//! 3. Call `broadcastStateTransition(st)` + `waitForResponse(st)`
+//! 4. On timeout, deserialize cached bytes and rebroadcast the **identical** ST
+//!
+//! This avoids the duplicate state transition problem that occurs when retrying
+//! the all-in-one methods after a timeout (which would create a new ST with a new nonce).
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
+use dash_sdk::dpp::dashcore::secp256k1::rand::rngs::StdRng;
+use dash_sdk::dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
@@ -26,6 +44,7 @@ use wasm_dpp2::utils::{
     IntoWasm,
 };
 use wasm_dpp2::IdentitySignerWasm;
+use wasm_dpp2::StateTransitionWasm;
 
 // ============================================================================
 // Document Create
@@ -392,6 +411,332 @@ impl WasmSdk {
 }
 
 // ============================================================================
+// Prepare Document Create (Two-Phase API)
+// ============================================================================
+
+/// TypeScript interface for prepare document create options
+#[wasm_bindgen(typescript_custom_section)]
+const PREPARE_DOCUMENT_CREATE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for preparing a document creation state transition without broadcasting.
+ *
+ * Use this for idempotent retry patterns:
+ * 1. Call `prepareDocumentCreate()` to get a signed `StateTransition`
+ * 2. Cache `stateTransition.toBytes()` for retry safety
+ * 3. Call `broadcastStateTransition(st)` + `waitForResponse(st)`
+ * 4. On timeout, deserialize cached bytes and rebroadcast the **identical** ST
+ */
+export interface PrepareDocumentCreateOptions {
+  /** The document to create. */
+  document: Document;
+  /** The identity public key to use for signing. */
+  identityKey: IdentityPublicKey;
+  /** Signer containing the private key for the identity key. */
+  signer: IdentitySigner;
+  /** Optional settings (retries, timeouts, userFeeIncrease). */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PrepareDocumentCreateOptions")]
+    pub type PrepareDocumentCreateOptionsJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Prepare a document creation state transition without broadcasting.
+    ///
+    /// This method handles nonce management, ST construction, and signing, but does
+    /// **not** broadcast or wait for a response. The returned `StateTransition` can be:
+    ///
+    /// - Serialized with `toBytes()` and cached for retry safety
+    /// - Broadcast with `broadcastStateTransition(st)`
+    /// - Awaited with `waitForResponse(st)`
+    ///
+    /// This is the "prepare" half of the two-phase API. Use it when you need
+    /// idempotent retry behavior — on timeout, you can rebroadcast the exact same
+    /// signed transition instead of creating a new one with a new nonce.
+    ///
+    /// @param options - Creation options including document, identity key, and signer
+    /// @returns The signed StateTransition ready for broadcasting
+    #[wasm_bindgen(js_name = "prepareDocumentCreate")]
+    pub async fn prepare_document_create(
+        &self,
+        options: PrepareDocumentCreateOptionsJs,
+    ) -> Result<StateTransitionWasm, WasmSdkError> {
+        // Extract document from options
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        let document: Document = document_wasm.clone().into();
+
+        // Get metadata from document
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
+
+        // Get entropy from document
+        let entropy = document_wasm.entropy().ok_or_else(|| {
+            WasmSdkError::invalid_argument("Document must have entropy set for creation")
+        })?;
+
+        if entropy.len() != 32 {
+            return Err(WasmSdkError::invalid_argument(
+                "Document entropy must be exactly 32 bytes",
+            ));
+        }
+
+        let mut entropy_array = [0u8; 32];
+        entropy_array.copy_from_slice(&entropy);
+
+        // Extract identity key from options
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+
+        // Get document type (owned)
+        let document_type = get_document_type(&data_contract, &document_type_name)?;
+
+        // Extract settings from options
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Build and sign the state transition without broadcasting
+        let state_transition = build_document_create_or_replace_transition(
+            &document,
+            &document_type,
+            Some(entropy_array),
+            &identity_key,
+            &signer,
+            self.inner_sdk(),
+            settings,
+        )
+        .await?;
+
+        Ok(state_transition.into())
+    }
+}
+
+// ============================================================================
+// Prepare Document Replace (Two-Phase API)
+// ============================================================================
+
+/// TypeScript interface for prepare document replace options
+#[wasm_bindgen(typescript_custom_section)]
+const PREPARE_DOCUMENT_REPLACE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for preparing a document replace state transition without broadcasting.
+ *
+ * Use this for idempotent retry patterns. See `prepareDocumentCreate` for the full pattern.
+ */
+export interface PrepareDocumentReplaceOptions {
+  /** The document with updated data (same ID, incremented revision). */
+  document: Document;
+  /** The identity public key to use for signing. */
+  identityKey: IdentityPublicKey;
+  /** Signer containing the private key for the identity key. */
+  signer: IdentitySigner;
+  /** Optional settings (retries, timeouts, userFeeIncrease). */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PrepareDocumentReplaceOptions")]
+    pub type PrepareDocumentReplaceOptionsJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Prepare a document replace state transition without broadcasting.
+    ///
+    /// This method handles nonce management, ST construction, and signing, but does
+    /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
+    /// the full two-phase usage pattern.
+    ///
+    /// @param options - Replace options including document, identity key, and signer
+    /// @returns The signed StateTransition ready for broadcasting
+    #[wasm_bindgen(js_name = "prepareDocumentReplace")]
+    pub async fn prepare_document_replace(
+        &self,
+        options: PrepareDocumentReplaceOptionsJs,
+    ) -> Result<StateTransitionWasm, WasmSdkError> {
+        // Extract document from options
+        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        let document: Document = document_wasm.clone().into();
+
+        // Get metadata from document
+        let contract_id: Identifier = document_wasm.data_contract_id().into();
+        let document_type_name = document_wasm.document_type_name();
+
+        // Extract identity key from options
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+
+        // Get document type (owned)
+        let document_type = get_document_type(&data_contract, &document_type_name)?;
+
+        // Extract settings from options
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Build and sign the state transition without broadcasting
+        let state_transition = build_document_create_or_replace_transition(
+            &document,
+            &document_type,
+            None, // entropy not needed for replace
+            &identity_key,
+            &signer,
+            self.inner_sdk(),
+            settings,
+        )
+        .await?;
+
+        Ok(state_transition.into())
+    }
+}
+
+// ============================================================================
+// Prepare Document Delete (Two-Phase API)
+// ============================================================================
+
+/// TypeScript interface for prepare document delete options
+#[wasm_bindgen(typescript_custom_section)]
+const PREPARE_DOCUMENT_DELETE_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for preparing a document delete state transition without broadcasting.
+ *
+ * Use this for idempotent retry patterns. See `prepareDocumentCreate` for the full pattern.
+ */
+export interface PrepareDocumentDeleteOptions {
+  /**
+   * The document to delete — either a Document instance or an object with identifiers.
+   */
+  document: Document | {
+    id: IdentifierLike;
+    ownerId: IdentifierLike;
+    dataContractId: IdentifierLike;
+    documentTypeName: string;
+  };
+  /** The identity public key to use for signing. */
+  identityKey: IdentityPublicKey;
+  /** Signer containing the private key for the identity key. */
+  signer: IdentitySigner;
+  /** Optional settings (retries, timeouts, userFeeIncrease). */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PrepareDocumentDeleteOptions")]
+    pub type PrepareDocumentDeleteOptionsJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Prepare a document delete state transition without broadcasting.
+    ///
+    /// This method handles nonce management, ST construction, and signing, but does
+    /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
+    /// the full two-phase usage pattern.
+    ///
+    /// @param options - Delete options including document identifiers, identity key, and signer
+    /// @returns The signed StateTransition ready for broadcasting
+    #[wasm_bindgen(js_name = "prepareDocumentDelete")]
+    pub async fn prepare_document_delete(
+        &self,
+        options: PrepareDocumentDeleteOptionsJs,
+    ) -> Result<StateTransitionWasm, WasmSdkError> {
+        // Extract document field - can be either a Document instance or plain object
+        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
+            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
+
+        if document_js.is_undefined() || document_js.is_null() {
+            return Err(WasmSdkError::invalid_argument("document is required"));
+        }
+
+        // Check if it's a Document instance or a plain object with fields
+        let (document_id, owner_id, contract_id, document_type_name): (
+            Identifier,
+            Identifier,
+            Identifier,
+            String,
+        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
+            let doc: DocumentWasm = document_js
+                .to_wasm::<DocumentWasm>("Document")
+                .map(|boxed| (*boxed).clone())?;
+            let doc_inner: Document = doc.clone().into();
+            (
+                doc.id().into(),
+                doc_inner.owner_id(),
+                doc.data_contract_id().into(),
+                doc.document_type_name(),
+            )
+        } else {
+            (
+                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
+                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
+                try_from_options_with(&document_js, "documentTypeName", |v| {
+                    try_to_string(v, "documentTypeName")
+                })?,
+            )
+        };
+
+        // Extract identity key from options
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
+        let identity_key: IdentityPublicKey = identity_key_wasm.into();
+
+        // Extract signer from options
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        // Fetch the data contract (using cache)
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+
+        // Extract settings from options
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Build the delete transition using the builder's sign method (which does NOT broadcast)
+        let builder = DocumentDeleteTransitionBuilder::new(
+            Arc::new(data_contract),
+            document_type_name,
+            document_id,
+            owner_id,
+        );
+
+        let builder = if let Some(s) = settings {
+            builder.with_settings(s)
+        } else {
+            builder
+        };
+
+        let state_transition = builder
+            .sign(
+                self.inner_sdk(),
+                &identity_key,
+                &signer,
+                self.inner_sdk().version(),
+            )
+            .await?;
+
+        Ok(state_transition.into())
+    }
+}
+
+// ============================================================================
 // Document Transfer
 // ============================================================================
 
@@ -741,6 +1086,83 @@ impl WasmSdk {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Build and sign a document create or replace state transition without broadcasting.
+///
+/// This replicates the ST construction logic from `PutDocument::put_to_platform` in `rs-sdk`,
+/// but stops before the broadcast step. The returned `StateTransition` is fully signed and
+/// ready to be broadcast via `broadcastStateTransition()`.
+///
+/// Whether this produces a create or replace transition depends on the document's revision:
+/// - If revision is `None` or `INITIAL_REVISION` → create transition
+/// - Otherwise → replace transition
+async fn build_document_create_or_replace_transition(
+    document: &Document,
+    document_type: &DocumentType,
+    document_state_transition_entropy: Option<[u8; 32]>,
+    identity_public_key: &IdentityPublicKey,
+    signer: &IdentitySignerWasm,
+    sdk: &dash_sdk::Sdk,
+    settings: Option<dash_sdk::platform::transition::put_settings::PutSettings>,
+) -> Result<dash_sdk::dpp::state_transition::StateTransition, WasmSdkError> {
+    use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    let new_identity_contract_nonce = sdk
+        .get_identity_contract_nonce(
+            document.owner_id(),
+            document_type.data_contract_id(),
+            true,
+            settings,
+        )
+        .await?;
+
+    let put_settings = settings.unwrap_or_default();
+
+    let transition = if document.revision().is_some()
+        && document.revision().unwrap() != INITIAL_REVISION
+    {
+        BatchTransition::new_document_replacement_transition_from_document(
+            document.clone(),
+            document_type.as_ref(),
+            identity_public_key,
+            new_identity_contract_nonce,
+            put_settings.user_fee_increase.unwrap_or_default(),
+            None, // token_payment_info
+            signer,
+            sdk.version(),
+            put_settings.state_transition_creation_options,
+        )
+    } else {
+        let (doc, entropy) = document_state_transition_entropy
+            .map(|entropy| (document.clone(), entropy))
+            .unwrap_or_else(|| {
+                let mut rng = StdRng::from_entropy();
+                let mut doc = document.clone();
+                let entropy = rng.gen::<[u8; 32]>();
+                doc.set_id(Document::generate_document_id_v0(
+                    &document_type.data_contract_id(),
+                    &doc.owner_id(),
+                    document_type.name(),
+                    entropy.as_slice(),
+                ));
+                (doc, entropy)
+            });
+        BatchTransition::new_document_creation_transition_from_document(
+            doc,
+            document_type.as_ref(),
+            entropy,
+            identity_public_key,
+            new_identity_contract_nonce,
+            put_settings.user_fee_increase.unwrap_or_default(),
+            None, // token_payment_info
+            signer,
+            sdk.version(),
+            put_settings.state_transition_creation_options,
+        )
+    }?;
+
+    Ok(transition)
+}
 
 /// Get an owned DocumentType from a DataContract
 fn get_document_type(
