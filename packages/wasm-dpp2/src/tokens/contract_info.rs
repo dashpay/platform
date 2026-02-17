@@ -50,7 +50,7 @@ impl TokenContractInfoWasm {
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("tokenContractPosition"),
-            &JsValue::from_f64(self.token_contract_position() as f64),
+            &JsValue::from_f64(f64::from(self.token_contract_position())),
         )?;
         Ok(obj.into())
     }
