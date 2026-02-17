@@ -1866,6 +1866,7 @@ dependencies = [
  "dpp",
  "env_logger 0.11.8",
  "getrandom 0.2.16",
+ "grovedb-commitment-tree",
  "hex",
  "indexmap 2.12.1",
  "integer-encoding",
@@ -1975,7 +1976,6 @@ dependencies = [
  "metrics-exporter-prometheus",
  "mockall",
  "nonempty",
- "orchard",
  "platform-version",
  "prost 0.14.1",
  "rand 0.8.5",
@@ -2649,6 +2649,7 @@ dependencies = [
  "orchard",
  "shardtree",
  "thiserror 2.0.17",
+ "zcash_note_encryption",
 ]
 
 [[package]]
@@ -4370,8 +4371,6 @@ dependencies = [
 [[package]]
 name = "orchard"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c01cd4ea711aab5f263f2b7aa6966687a2d6c7df4f78eb1b97a66a7a4e78e3b"
 dependencies = [
  "aes",
  "bitvec",
@@ -8293,8 +8292,6 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77efec759c3798b6e4d829fcc762070d9b229b0f13338c40bf993b7b609c2272"
 dependencies = [
  "chacha20",
  "chacha20poly1305",

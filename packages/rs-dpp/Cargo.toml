@@ -71,6 +71,7 @@ strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
+grovedb-commitment-tree = { path = "../../../grovedb/grovedb-commitment-tree", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -327,5 +328,9 @@ extended-document = [
 ]
 token-reward-explanations = ["dep:chrono-tz"]
 
+shielded-bundle-building = [
+  "state-transition-signing",
+  "dep:grovedb-commitment-tree",
+]
 factories = []
 client = ["factories", "state-transitions"]

@@ -18,10 +18,10 @@ use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::ProtocolError;
 use grovedb_commitment_tree::{
     Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, ClientCommitmentTree,
-    ExtractedNoteCommitment, Flags as OrchardFlags, FullViewingKey, MerklePath, Note, NoteValue,
-    Position, ProvingKey, Retention, Scope, SpendAuthorizingKey, SpendingKey,
+    DashMemo, ExtractedNoteCommitment, Flags as OrchardFlags, FullViewingKey, MerklePath, Note,
+    NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey,
+    SpendingKey,
 };
-use orchard::note::RandomSeed;
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -201,7 +201,7 @@ impl ShieldedState {
         rho_bytes[..8].copy_from_slice(&self.rho_counter.to_le_bytes());
         self.rho_counter += 1;
 
-        let rho = orchard::note::Rho::from_bytes(&rho_bytes).unwrap();
+        let rho = Rho::from_bytes(&rho_bytes).unwrap();
         let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
         let note = Note::from_parts(recipient, NoteValue::from_raw(value), rho, rseed).unwrap();
 
@@ -246,16 +246,16 @@ impl ShieldedState {
 
 /// Decompose an authorized Orchard bundle into platform serialization fields.
 fn serialize_authorized_bundle(
-    bundle: &Bundle<OrchardAuthorized, i64>,
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
 ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
     let actions: Vec<SerializedAction> = bundle
         .actions()
         .iter()
         .map(|action| {
             let enc = action.encrypted_note();
-            let mut encrypted_note = Vec::with_capacity(692);
+            let mut encrypted_note = Vec::with_capacity(216);
             encrypted_note.extend_from_slice(&enc.epk_bytes);
-            encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+            encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
             encrypted_note.extend_from_slice(&enc.out_ciphertext);
             SerializedAction {
                 nullifier: action.nullifier().to_bytes(),
@@ -2735,7 +2735,7 @@ impl NetworkStrategy {
 
         // 3. Build output-only Orchard bundle (shield = outputs only, no spends)
         let anchor = Anchor::empty_tree();
-        let mut builder = Builder::new(
+        let mut builder = Builder::<DashMemo>::new(
             BundleType::Transactional {
                 flags: OrchardFlags::SPENDS_DISABLED,
                 bundle_required: false,
@@ -2751,7 +2751,7 @@ impl NetworkStrategy {
                 None,
                 recipient,
                 NoteValue::from_raw(shield_value),
-                [0u8; 512],
+                [0u8; 36],
             )
             .expect("expected to add output");
 
@@ -2831,7 +2831,7 @@ impl NetworkStrategy {
 
         // 3. Build output-only Orchard bundle (same as Shield)
         let anchor = Anchor::empty_tree();
-        let mut builder = Builder::new(
+        let mut builder = Builder::<DashMemo>::new(
             BundleType::Transactional {
                 flags: OrchardFlags::SPENDS_DISABLED,
                 bundle_required: false,
@@ -2844,7 +2844,7 @@ impl NetworkStrategy {
                 None,
                 recipient,
                 NoteValue::from_raw(funded_amount),
-                [0u8; 512],
+                [0u8; 36],
             )
             .expect("expected to add output");
 
@@ -2916,12 +2916,12 @@ impl NetworkStrategy {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         // Build bundle: spend note -> output same value (value_balance = 0)
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk, note, merkle_path)
             .expect("expected to add spend");
         builder
-            .add_output(None, recipient, NoteValue::from_raw(note_value), [0u8; 512])
+            .add_output(None, recipient, NoteValue::from_raw(note_value), [0u8; 36])
             .expect("expected to add output");
 
         let pk = get_proving_key();
@@ -2994,7 +2994,7 @@ impl NetworkStrategy {
         let change_amount = note_value - unshield_amount;
 
         // Build bundle: spend note -> output change (value_balance = unshield_amount)
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk, note, merkle_path)
             .expect("expected to add spend");
@@ -3003,7 +3003,7 @@ impl NetworkStrategy {
                 None,
                 recipient,
                 NoteValue::from_raw(change_amount),
-                [0u8; 512],
+                [0u8; 36],
             )
             .expect("expected to add output");
 
@@ -3081,7 +3081,7 @@ impl NetworkStrategy {
         let change_amount = note_value - withdrawal_amount;
 
         // Build bundle: spend note -> output change (value_balance = withdrawal_amount)
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk, note, merkle_path)
             .expect("expected to add spend");
@@ -3090,7 +3090,7 @@ impl NetworkStrategy {
                 None,
                 recipient,
                 NoteValue::from_raw(change_amount),
-                [0u8; 512],
+                [0u8; 36],
             )
             .expect("expected to add output");
 

@@ -231,11 +231,10 @@ mod tests {
         use super::*;
         use grovedb_commitment_tree::{
             Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientCommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
-            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
-            SpendingKey,
+            ClientCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, MerklePath,
+            Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
         };
-        use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
         use std::sync::OnceLock;
 
@@ -245,16 +244,16 @@ mod tests {
         }
 
         fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64>,
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
         ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
                 .map(|action| {
                     let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(692);
+                    let mut encrypted_note = Vec::with_capacity(216);
                     encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
                     encrypted_note.extend_from_slice(&enc.out_ciphertext);
                     SerializedAction {
                         nullifier: action.nullifier().to_bytes(),
@@ -332,10 +331,10 @@ mod tests {
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
             // --- Build bundle: spend 10_000 → output 10_000 (value_balance = 0) ---
-            let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 36])
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
@@ -419,11 +418,10 @@ mod tests {
         use super::*;
         use grovedb_commitment_tree::{
             Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientCommitmentTree, ExtractedNoteCommitment, FullViewingKey, MerklePath, Note,
-            NoteValue, Position, ProvingKey, Retention, Rho, Scope, SpendAuthorizingKey,
-            SpendingKey,
+            ClientCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, MerklePath,
+            Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
         };
-        use orchard::note::RandomSeed;
         use rand::rngs::OsRng;
         use std::sync::OnceLock;
 
@@ -433,16 +431,16 @@ mod tests {
         }
 
         fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64>,
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
         ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
                 .map(|action| {
                     let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(692);
+                    let mut encrypted_note = Vec::with_capacity(216);
                     encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
                     encrypted_note.extend_from_slice(&enc.out_ciphertext);
                     SerializedAction {
                         nullifier: action.nullifier().to_bytes(),
@@ -491,10 +489,10 @@ mod tests {
             let anchor = tree.anchor().unwrap();
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
-            let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 36])
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();

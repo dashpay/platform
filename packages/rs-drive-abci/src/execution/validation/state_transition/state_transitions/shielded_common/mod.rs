@@ -19,12 +19,10 @@ use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use drive::util::grove_operations::DirectQueryType;
 use grovedb_commitment_tree::{
-    Action, Anchor, Authorized, BatchValidator, Bundle, ExtractedNoteCommitment, Flags, Nullifier,
-    Proof, VerifyingKey,
+    redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
+    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
+    ValueCommitment, VerifyingKey,
 };
-use orchard::note::TransmittedNoteCiphertext;
-use orchard::primitives::redpallas;
-use orchard::value::ValueCommitment;
 use std::sync::OnceLock;
 
 /// Cached verifying key for shielded proof verification.
@@ -38,11 +36,11 @@ fn get_verifying_key() -> &'static VerifyingKey {
 }
 
 const EPK_SIZE: usize = 32;
-const ENC_CIPHERTEXT_SIZE: usize = 580;
+const ENC_CIPHERTEXT_SIZE: usize = 104;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
-const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 692
+const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTEXT_SIZE; // 216
 
-/// Reconstructs an orchard `Bundle<Authorized, i64>` from the serialized fields
+/// Reconstructs an orchard `Bundle<Authorized, i64, DashMemo>` from the serialized fields
 /// of a shielded state transition and verifies the Halo 2 ZK proof along with
 /// all RedPallas signatures (spend auth + binding).
 ///
@@ -76,7 +74,7 @@ pub fn reconstruct_and_verify_bundle(
     // Reconstruct each Action
     let mut orchard_actions = Vec::with_capacity(actions.len());
     for a in actions {
-        // Parse encrypted_note (692 bytes = epk 32 + enc 580 + out 80)
+        // Parse encrypted_note (216 bytes = epk 32 + enc 104 + out 80)
         if a.encrypted_note.len() != ENCRYPTED_NOTE_SIZE {
             return Err(InvalidShieldedProofError::new(format!(
                 "encrypted note size mismatch: expected {ENCRYPTED_NOTE_SIZE}, got {}",
@@ -116,11 +114,11 @@ pub fn reconstruct_and_verify_bundle(
             nullifier,
             rk,
             cmx,
-            TransmittedNoteCiphertext {
+            TransmittedNoteCiphertext::<DashMemo>::from_parts(
                 epk_bytes,
-                enc_ciphertext,
+                NoteBytesData(enc_ciphertext),
                 out_ciphertext,
-            },
+            ),
             cv_net,
             redpallas::Signature::from(a.spend_auth_sig),
         );

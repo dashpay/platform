@@ -24,7 +24,7 @@ mod tests {
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
     use grovedb_commitment_tree::{
-        Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+        Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
         Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
     };
     use platform_version::version::PlatformVersion;
@@ -146,16 +146,16 @@ mod tests {
     /// Extract serialized fields from an authorized Orchard bundle into the
     /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
     fn serialize_authorized_bundle(
-        bundle: &Bundle<OrchardAuthorized, i64>,
+        bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
     ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
         let actions: Vec<SerializedAction> = bundle
             .actions()
             .iter()
             .map(|action| {
                 let enc = action.encrypted_note();
-                let mut encrypted_note = Vec::with_capacity(692);
+                let mut encrypted_note = Vec::with_capacity(216);
                 encrypted_note.extend_from_slice(&enc.epk_bytes);
-                encrypted_note.extend_from_slice(&enc.enc_ciphertext);
+                encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
                 encrypted_note.extend_from_slice(&enc.out_ciphertext);
 
                 SerializedAction {
@@ -790,7 +790,7 @@ mod tests {
             let recipient = fvk.address_at(0u32, Scope::External);
 
             let anchor = Anchor::empty_tree();
-            let mut builder = Builder::new(
+            let mut builder = Builder::<DashMemo>::new(
                 BundleType::Transactional {
                     flags: OrchardFlags::SPENDS_DISABLED,
                     bundle_required: false,
@@ -804,7 +804,7 @@ mod tests {
                     None,
                     recipient,
                     NoteValue::from_raw(shield_value),
-                    [0u8; 512],
+                    [0u8; 36],
                 )
                 .unwrap();
 
@@ -877,7 +877,7 @@ mod tests {
 
             // Create action with wrong encrypted_note size
             let mut bad_action = create_dummy_serialized_action();
-            bad_action.encrypted_note = vec![0u8; 100]; // 100 bytes instead of 692
+            bad_action.encrypted_note = vec![0u8; 100]; // 100 bytes instead of 216
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
@@ -978,7 +978,7 @@ mod tests {
             let recipient = fvk.address_at(0u32, Scope::External);
 
             let anchor = Anchor::empty_tree();
-            let mut builder = Builder::new(
+            let mut builder = Builder::<DashMemo>::new(
                 BundleType::Transactional {
                     flags: OrchardFlags::SPENDS_DISABLED,
                     bundle_required: false,
@@ -987,7 +987,7 @@ mod tests {
             );
 
             builder
-                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 512])
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();

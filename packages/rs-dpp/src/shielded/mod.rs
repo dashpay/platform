@@ -1,3 +1,6 @@
+#[cfg(feature = "shielded-bundle-building")]
+pub mod builder;
+
 use bincode::{Decode, Encode};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -105,11 +108,11 @@ pub struct SerializedAction {
     /// decryption key) can identify and spend this note.
     pub cmx: [u8; 32],
 
-    /// Encrypted note ciphertext (692 bytes = epk 32 + enc_ciphertext 580 + out_ciphertext 80).
+    /// Encrypted note ciphertext (216 bytes = epk 32 + enc_ciphertext 104 + out_ciphertext 80).
     /// Contains the `TransmittedNoteCiphertext` fields packed contiguously:
-    /// - `epk`: ephemeral public key for Diffie-Hellman key agreement
-    /// - `enc_ciphertext`: note plaintext encrypted to the recipient (value, address, memo)
-    /// - `out_ciphertext`: encrypted to the sender for wallet recovery
+    /// - `epk`: ephemeral public key for Diffie-Hellman key agreement (32 bytes)
+    /// - `enc_ciphertext`: note plaintext encrypted to the recipient (104 bytes = 52 compact + 36 memo + 16 AEAD tag)
+    /// - `out_ciphertext`: encrypted to the sender for wallet recovery (80 bytes)
     /// Stored on-chain so recipients can scan and decrypt notes addressed to them.
     /// Only the intended recipient (or sender) can decrypt; all others see random bytes.
     pub encrypted_note: Vec<u8>,
