@@ -1,1 +1,10 @@
 * @QuantumExplorer
+
+# SDK packages
+/packages/rs-sdk/ @QuantumExplorer @shumkov
+/packages/rs-sdk-ffi/ @QuantumExplorer @shumkov
+/packages/rs-sdk-trusted-context-provider/ @QuantumExplorer @shumkov
+/packages/js-dash-sdk/ @QuantumExplorer @shumkov
+/packages/js-evo-sdk/ @QuantumExplorer @shumkov
+/packages/wasm-sdk/ @QuantumExplorer @shumkov
+/packages/swift-sdk/ @QuantumExplorer @shumkov
