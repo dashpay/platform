@@ -49,7 +49,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let add_public_keys_in_creation: Vec<IdentityPublicKeyInCreation> = add_public_keys
@@ -64,7 +64,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
                 &add_public_keys_in_creation,
                 false, // not in create_identity context
-                _platform_version,
+                platform_version,
             )?;
         if !validation_result.is_valid() {
             // Return the first validation error as a ProtocolError
