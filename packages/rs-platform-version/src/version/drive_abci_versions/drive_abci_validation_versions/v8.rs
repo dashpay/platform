@@ -53,6 +53,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             },
             identity_credit_withdrawal_state_transition:
                 DriveAbciStateTransitionValidationVersion {
+                    // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
+                    // accepted because it lacks sized_integer_types support.
                     basic_structure: Some(1),
                     advanced_structure: None,
                     identity_signatures: None,
