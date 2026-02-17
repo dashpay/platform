@@ -1118,8 +1118,9 @@ async fn build_document_create_or_replace_transition(
 
     let put_settings = settings.unwrap_or_default();
 
-    let transition = if document.revision().is_some()
-        && document.revision().unwrap() != INITIAL_REVISION
+    let transition = if document
+        .revision()
+        .map_or(false, |rev| rev != INITIAL_REVISION)
     {
         BatchTransition::new_document_replacement_transition_from_document(
             document.clone(),
