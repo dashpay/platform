@@ -355,8 +355,8 @@ mod tests {
         use super::*;
         use grovedb_commitment_tree::{
             Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, MerklePath,
-            Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
+            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
         use rand::rngs::OsRng;
@@ -450,7 +450,7 @@ mod tests {
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = ClientCommitmentTree::new(100);
+            let mut tree = ClientMemoryCommitmentTree::new(100);
             tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();
@@ -556,8 +556,8 @@ mod tests {
         use super::*;
         use grovedb_commitment_tree::{
             Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, MerklePath,
-            Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
+            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
         use rand::rngs::OsRng;
@@ -625,7 +625,7 @@ mod tests {
                 Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let mut tree = ClientCommitmentTree::new(100);
+            let mut tree = ClientMemoryCommitmentTree::new(100);
             tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
             tree.checkpoint(0u32).unwrap();
             let anchor = tree.anchor().unwrap();

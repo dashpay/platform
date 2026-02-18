@@ -199,7 +199,7 @@ install_protoc() {
 install_protoc
 
 install_cargo_tools() {
-  local wasm_bindgen_version="0.2.103"
+  local wasm_bindgen_version="0.2.108"
 
   if ! command -v wasm-bindgen >/dev/null 2>&1 || [[ "$(wasm-bindgen --version | awk '{print $2}')" != "${wasm_bindgen_version}" ]]; then
     log "Installing wasm-bindgen-cli ${wasm_bindgen_version}"

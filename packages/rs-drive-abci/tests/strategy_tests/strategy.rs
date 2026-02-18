@@ -17,10 +17,10 @@ use dpp::state_transition::unshield_transition::methods::UnshieldTransitionMetho
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::ProtocolError;
 use grovedb_commitment_tree::{
-    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, ClientCommitmentTree,
-    DashMemo, ExtractedNoteCommitment, Flags as OrchardFlags, FullViewingKey, MerklePath, Note,
-    NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey,
-    SpendingKey,
+    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+    ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, Flags as OrchardFlags,
+    FullViewingKey, MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho,
+    Scope, SpendAuthorizingKey, SpendingKey,
 };
 
 use dpp::dashcore::secp256k1::SecretKey;
@@ -155,7 +155,7 @@ const TEST_SK_BYTES: [u8; 32] = [0u8; 32];
 /// with valid Merkle witnesses.
 pub struct ShieldedState {
     /// Local commitment tree mirroring the on-chain tree.
-    pub tree: ClientCommitmentTree,
+    pub tree: ClientMemoryCommitmentTree,
     /// Spendable notes: (Note, Position in commitment tree).
     /// Notes are removed once spent.
     pub spendable_notes: Vec<(Note, Position)>,
@@ -178,7 +178,7 @@ impl ShieldedState {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
         Self {
-            tree: ClientCommitmentTree::new(1000),
+            tree: ClientMemoryCommitmentTree::new(1000),
             spendable_notes: Vec::new(),
             checkpoint_counter: 0,
             sk,
