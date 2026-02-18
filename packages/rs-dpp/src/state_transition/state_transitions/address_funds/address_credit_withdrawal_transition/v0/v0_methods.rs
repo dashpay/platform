@@ -14,6 +14,8 @@ use crate::serialization::Signable;
 use crate::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransitionStructureValidation;
+#[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -35,7 +37,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         output_script: CoreScript,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_inputs_with_signer: Started");
         tracing::debug!(
@@ -66,6 +68,14 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         address_credit_withdrawal_transition.input_witnesses = input_witnesses;
+
+        // Validate the fully-constructed transition structure
+        let validation_result =
+            address_credit_withdrawal_transition.validate_structure(platform_version);
+        if !validation_result.is_valid() {
+            let first_error = validation_result.errors.into_iter().next().unwrap();
+            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        }
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");
         Ok(address_credit_withdrawal_transition.into())
