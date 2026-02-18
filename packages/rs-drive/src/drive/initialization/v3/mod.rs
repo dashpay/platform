@@ -82,7 +82,7 @@ impl Drive {
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(2048),
+            Element::empty_commitment_tree(11),
         );
 
         // 3. Nullifiers tree (NormalTree)
