@@ -19,6 +19,7 @@ use {
         prelude::{AddressNonce, UserFeeIncrease},
         serialization::Signable,
         state_transition::StateTransition,
+        state_transition::StateTransitionStructureValidation,
         version::FeatureVersion,
         ProtocolError,
     },
@@ -33,7 +34,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut identity_top_up_from_addresses_transition =
@@ -57,6 +58,14 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
             .keys()
             .map(|address| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
+
+        // Validate the fully-constructed transition structure
+        let validation_result =
+            identity_top_up_from_addresses_transition.validate_structure(platform_version);
+        if !validation_result.is_valid() {
+            let first_error = validation_result.errors.into_iter().next().unwrap();
+            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+        }
 
         Ok(identity_top_up_from_addresses_transition.into())
     }

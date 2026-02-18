@@ -6,6 +6,8 @@ use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransitionStructureValidation;
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
         accessors::IdentityGettersV0,
@@ -35,22 +37,31 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         signer: &S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_identity: Started");
         tracing::debug!(identity_id = %identity.id(), "try_from_identity");
         tracing::debug!(recipient_addresses = ?to_recipient_addresses, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
 
-        let mut transition: StateTransition = IdentityCreditTransferToAddressesTransitionV0 {
+        let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: identity.id(),
             recipient_addresses: to_recipient_addresses,
             nonce,
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
+        };
+
+        // Validate structure before .into() conversion and signing, since this transition
+        // uses sign_external on the StateTransition rather than setting witnesses on the V0 struct.
+        let validation_result = transition_v0.validate_structure(platform_version);
+        if !validation_result.is_valid() {
+            let first_error = validation_result.errors.into_iter().next().unwrap();
+            return Err(ProtocolError::ConsensusError(Box::new(first_error)));
         }
-        .into();
+
+        let mut transition: StateTransition = transition_v0.into();
 
         let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => {
