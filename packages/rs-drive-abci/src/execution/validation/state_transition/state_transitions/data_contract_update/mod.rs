@@ -3,6 +3,7 @@ mod identity_contract_nonce;
 mod state;
 
 use basic_structure::v0::DataContractUpdateStateTransitionBasicStructureValidationV0;
+use basic_structure::v1::DataContractUpdateStateTransitionBasicStructureValidationV1;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -44,9 +45,10 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
             .basic_structure
         {
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
+            Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_basic_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
@@ -104,6 +106,7 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::DataContractConfig;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -632,6 +635,8 @@ mod tests {
             .expect("expected to get data contract");
 
         contract.set_owner_id(identity.id());
+        // Upgrade config to V1 (required since protocol version 12)
+        contract.set_config(DataContractConfig::default_for_version(platform_version).unwrap());
 
         platform
             .drive
@@ -653,6 +658,9 @@ mod tests {
                 .expect("expected to get data contract");
 
         contract_not_restricted_to_owner.set_owner_id(identity.id());
+        // Upgrade config to V1 (required since protocol version 12)
+        contract_not_restricted_to_owner
+            .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
 
         contract_not_restricted_to_owner.set_version(2);
 
