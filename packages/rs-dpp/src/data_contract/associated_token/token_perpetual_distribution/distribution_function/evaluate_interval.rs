@@ -3538,6 +3538,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 17_550);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 1,000 tokens and increases by 25/1 tokens at each interval. \
@@ -3577,6 +3578,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 5_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 2,000 tokens from interval 0, 1,500 tokens from interval 5, 1,000 tokens from interval 10, and 1 more step. \
@@ -3639,6 +3641,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
@@ -3671,6 +3674,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
@@ -3713,6 +3717,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 500_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 50,000 tokens and decreases by 7.0% every 210,000 intervals. \
@@ -3755,6 +3760,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 100_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 10,000 tokens and decreases by 10.0% every 100 intervals. \
@@ -3794,6 +3800,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 10_500);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
@@ -3833,6 +3840,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 42_250);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 5,000 tokens and decreases by 50/1 tokens at each interval. \
