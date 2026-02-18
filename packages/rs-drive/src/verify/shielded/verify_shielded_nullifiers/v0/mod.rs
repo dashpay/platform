@@ -19,7 +19,7 @@ impl Drive {
             path: shielded_credit_pool_nullifiers_path_vec(),
             query: SizedQuery {
                 query,
-                limit: None,
+                limit: Some(nullifiers.len() as u16),
                 offset: None,
             },
         };
