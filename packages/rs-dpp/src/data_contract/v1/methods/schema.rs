@@ -161,6 +161,7 @@ mod test {
         assert_eq!(defs_map.as_ref(), data_contract.schema_defs())
     }
 
+    #[test]
     fn should_set_empty_schema_defs() {
         let platform_version = PlatformVersion::latest();
 
@@ -175,13 +176,25 @@ mod test {
 
         let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
 
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
         let serialization_format = DataContractInSerializationFormatV0 {
             id: Identifier::random(),
             config,
             version: 0,
             owner_id: Default::default(),
             schema_defs: defs_map,
-            document_schemas: Default::default(),
+            document_schemas: BTreeMap::from([("document_type_name".to_string(), schema)]),
         };
 
         let mut data_contract = DataContractV1::try_from_platform_versioned(
