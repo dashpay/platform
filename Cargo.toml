@@ -53,5 +53,5 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "53d699
 
 [workspace.package]
 
-version = "3.0.1"
+version = "3.1.0-dev.1"
 rust-version = "1.92"
