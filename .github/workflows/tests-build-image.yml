@@ -21,6 +21,8 @@ on:
 jobs:
   build-image:
     name: Build ${{ inputs.name }} image
+    # Skip Docker builds for external contributors (when AWS secrets are unavailable)
+    if: ${{ vars.AWS_REGION != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

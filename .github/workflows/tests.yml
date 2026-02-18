@@ -211,7 +211,8 @@ jobs:
       name: ${{ matrix.name }}
       test-pattern: ${{ matrix.test-pattern }}
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
-    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+    # Run if dashmate changed AND (build-images succeeded OR was skipped)
+    if: contains(needs.changes.outputs.js-packages, 'dashmate') && (needs.build-images.result == 'success' || needs.build-images.result == 'skipped')
 
   test-suite:
     name: Test Suite
@@ -220,7 +221,8 @@ jobs:
       - build-images
       - changes
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    # Run if test-suite should run AND (build-images succeeded OR was skipped)
+    if: needs.changes.outputs.test-suite == 'true' && (needs.build-images.result == 'success' || needs.build-images.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -251,5 +253,6 @@ jobs:
       - build-images
       - changes
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    # Run if test-suite should run AND (build-images succeeded OR was skipped)
+    if: needs.changes.outputs.test-suite == 'true' && (needs.build-images.result == 'success' || needs.build-images.result == 'skipped')
     uses: ./.github/workflows/tests-packges-functional.yml
