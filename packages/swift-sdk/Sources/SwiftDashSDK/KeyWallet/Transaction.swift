@@ -1,6 +1,20 @@
 import Foundation
 import DashSDKFFI
 
+public enum FeeRate {
+    case economy
+    case normal
+    case priority
+    
+    func intoFFI() -> FFIFeeRate {
+        switch self {
+        case .economy: return FFIFeeRate(0)
+        case .normal: return FFIFeeRate(1)
+        case .priority: return FFIFeeRate(2)
+        }
+    }
+}
+
 /// Transaction utilities for wallet operations
 public class Transaction {
     
@@ -15,104 +29,9 @@ public class Transaction {
         }
         
         func toFFI() -> FFITxOutput {
-            return address.withCString { addressCStr in
-                FFITxOutput(address: addressCStr, amount: amount)
-            }
+            let cString = strdup(address)
+            return FFITxOutput(address: cString, amount: amount)
         }
-    }
-    
-    /// Build a transaction
-    /// - Parameters:
-    ///   - wallet: The wallet to build from
-    ///   - accountIndex: The account index to use
-    ///   - outputs: The transaction outputs
-    ///   - feePerKB: Fee per kilobyte in satoshis
-    /// - Returns: The unsigned transaction bytes
-    public static func build(wallet: Wallet,
-                            accountIndex: UInt32 = 0,
-                            outputs: [Output],
-                            feePerKB: UInt64) throws -> Data {
-        guard !outputs.isEmpty else {
-            throw KeyWalletError.invalidInput("Transaction must have at least one output")
-        }
-        
-        var error = FFIError()
-        var txBytesPtr: UnsafeMutablePointer<UInt8>?
-        var txLen: size_t = 0
-        
-        // Convert outputs to FFI format
-        let ffiOutputs = outputs.map { $0.toFFI() }
-        
-        let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
-            wallet_build_transaction(
-                wallet.ffiHandle,
-                accountIndex,
-                outputsPtr.baseAddress,
-                outputs.count,
-                feePerKB,
-                &txBytesPtr,
-                &txLen,
-                &error)
-        }
-        
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            if let ptr = txBytesPtr {
-                transaction_bytes_free(ptr)
-            }
-        }
-        
-        guard success, let ptr = txBytesPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-        
-        // Copy the transaction data before freeing
-        let txData = Data(bytes: ptr, count: txLen)
-        
-        return txData
-    }
-    
-    /// Sign a transaction
-    /// - Parameters:
-    ///   - wallet: The wallet to sign with
-    ///   - transactionData: The unsigned transaction bytes
-    /// - Returns: The signed transaction bytes
-    public static func sign(wallet: Wallet, transactionData: Data) throws -> Data {
-        guard !wallet.isWatchOnly else {
-            throw KeyWalletError.invalidState("Cannot sign with watch-only wallet")
-        }
-        
-        var error = FFIError()
-        var signedTxPtr: UnsafeMutablePointer<UInt8>?
-        var signedLen: size_t = 0
-        
-        let success = transactionData.withUnsafeBytes { txBytes in
-            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_sign_transaction(
-                wallet.ffiHandle,
-                txPtr, transactionData.count,
-                &signedTxPtr, &signedLen, &error)
-        }
-        
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            if let ptr = signedTxPtr {
-                transaction_bytes_free(ptr)
-            }
-        }
-        
-        guard success, let ptr = signedTxPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-        
-        // Copy the signed transaction data before freeing
-        let signedData = Data(bytes: ptr, count: signedLen)
-        
-        return signedData
     }
     
     /// Check if a transaction belongs to a wallet

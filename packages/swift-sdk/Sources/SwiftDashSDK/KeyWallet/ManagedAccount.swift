@@ -49,9 +49,7 @@ public class ManagedAccount {
     public var utxoCount: UInt32 {
         return managed_core_account_get_utxo_count(handle)
     }
-
-    // MARK: - Transactions
-
+    
     /// Get all transactions for this account
     /// - Parameter currentHeight: Current blockchain height for calculating confirmations
     /// - Returns: Array of transactions

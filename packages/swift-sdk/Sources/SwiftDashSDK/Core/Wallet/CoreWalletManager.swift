@@ -143,6 +143,16 @@ public class CoreWalletManager: ObservableObject {
     
     // MARK: - Account Management
 
+    /// Build a signed transaction
+    /// - Parameters:
+    ///   - accountIndex: The account index to use
+    ///   - outputs: The transaction outputs
+    ///   - feePerKB: Fee per kilobyte in satoshis
+    /// - Returns: The unsigned transaction bytes
+    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output], feeRate: FeeRate) throws -> (Data, UInt64) {
+        try sdkWalletManager.buildSignedTransaction(for: wallet, accIndex: accIndex, outputs: outputs, feeRate: feeRate)
+    }
+    
     /// Get transactions for a wallet
     /// - Parameters:
     ///   - wallet: The wallet to get transactions for
@@ -180,6 +190,19 @@ public class CoreWalletManager: ObservableObject {
             immature: immature, 
             locked: locked
         )
+    }
+    
+    public func getBalance(for wallet: HDWallet, accType: AccountType, accIndex: UInt32) -> Balance {
+        let account = try! sdkWalletManager.getManagedAccount(
+            walletId: wallet.walletId,
+            accountIndex: accIndex,
+            accountType: accType,
+        )
+        return try! account.getBalance()
+    }
+    
+    public func getWallet(for wallet: HDWallet) -> Wallet? {
+        return try? sdkWalletManager.getWallet(id: wallet.walletId)
     }
     
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {

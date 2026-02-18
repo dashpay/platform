@@ -8,21 +8,29 @@ struct SendTransactionView: View {
     
     @State private var recipientAddress = ""
     @State private var amountString = ""
-    @State private var memo = ""
-    @State private var isSending = false
+    @State private var fee: UInt64 = 0
     @State private var error: Error?
-    @State private var successTxid: String?
     
-    private var amount: UInt64? {
-        guard let double = Double(amountString) else { return nil }
+    @State private var tx: Data? = nil
+    
+    private var feeString: String {
+        return formatDash(fee)
+    }
+    
+    private var amount: UInt64 {
+        guard let double = Double(amountString) else { return 0 }
         return UInt64(double * 100_000_000) // Convert DASH to duffs
     }
     
     private var canSend: Bool {
         !recipientAddress.isEmpty &&
-        amount != nil &&
-        amount! > 0 &&
-        amount! <= 99999
+        amount > 0 &&
+        amount + fee <= balance.spendable &&
+        tx != nil
+    }
+    
+    private var balance: Balance {
+        walletService.walletManager.getBalance(for: wallet, accType: .standardBIP44, accIndex: 0)
     }
     
     var body: some View {
@@ -38,7 +46,7 @@ struct SendTransactionView: View {
                 
                 Section {
                     HStack {
-                        TextField("0.00000000", text: $amountString)
+                        TextField("0", text: $amountString)
                             .keyboardType(.decimalPad)
                         
                         Text("DASH")
@@ -48,30 +56,24 @@ struct SendTransactionView: View {
                     HStack {
                         Text("Available:")
                         Spacer()
-                        Text(formatBalance(99999))
+                        Text(formatDash(balance.spendable))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 } header: {
                     Text("Amount")
                 } footer: {
-                    if let amount = amount, amount > 99999 {
+                    if amount > balance.spendable {
                         Text("Insufficient balance")
                             .foregroundColor(.red)
                     }
                 }
                 
                 Section {
-                    TextField("Optional message", text: $memo)
-                } header: {
-                    Text("Memo (Optional)")
-                }
-                
-                Section {
                     HStack {
                         Text("Network Fee:")
                         Spacer()
-                        Text("~0.00001000 DASH")
+                        Text(feeString)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -89,17 +91,14 @@ struct SendTransactionView: View {
                     Button("Send") {
                         sendTransaction()
                     }
-                    .disabled(!canSend || isSending)
+                    .disabled(!canSend)
                 }
             }
-            .disabled(isSending)
-            .overlay {
-                if isSending {
-                    ProgressView("Sending transaction...")
-                        .padding()
-                        .background(Color.gray.opacity(0.9))
-                        .cornerRadius(10)
-                }
+            .onChange(of: recipientAddress) {
+                recalculateTransaction()
+            }
+            .onChange(of: amountString) {
+                recalculateTransaction()
             }
             .alert("Error", isPresented: .constant(error != nil)) {
                 Button("OK") {
@@ -110,46 +109,64 @@ struct SendTransactionView: View {
                     Text(error.localizedDescription)
                 }
             }
-            .alert("Success", isPresented: .constant(successTxid != nil)) {
-                Button("Done") {
-                    dismiss()
-                }
-            } message: {
-                if successTxid != nil {
-                    Text("Transaction sent successfully!")
-                }
-            }
+        }
+    }
+    
+    private func recalculateTransaction() {
+        guard !recipientAddress.isEmpty,
+              amount > 0,
+              amount <= balance.spendable
+        else {
+            self.fee = 0
+            self.tx = nil
+            return
+        }
+    
+        do {
+            let (tx, fee) = try createTransaction()
+            
+            self.fee = fee
+            self.tx = tx
+        } catch {
+            self.fee = 0
+            self.tx = nil
         }
     }
     
     private func sendTransaction() {
-        // TODO: Send transactions is not yet implemented
+        guard canSend else { return }
+        guard let tx else { return }
+    
+        do {
+            try walletService.broadcastTransaction(tx)
+            dismiss()
+    
+        } catch {
+            self.error = error
+        }
     }
     
-    private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
-        
-        // Special case for zero
+    private func createTransaction() throws -> (Data, UInt64) {
+        let outputs = [
+            Transaction.Output(address: recipientAddress, amount: amount)
+        ]
+
+        return try walletService.walletManager
+            .buildSignedTransaction(
+                for: wallet,
+                accIndex: 0,
+                outputs: outputs,
+                feeRate: .normal
+            )
+    }
+    
+    private func formatDash(_ dash: UInt64) -> String {
         if dash == 0 {
             return "0 DASH"
         }
         
-        // Format with up to 8 decimal places, removing trailing zeros
-        let formatter = NumberFormatter()
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 8
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.decimalSeparator = "."
-        
-        if let formatted = formatter.string(from: NSNumber(value: dash)) {
-            return "\(formatted) DASH"
-        }
-        
-        // Fallback formatting
-        let formatted = String(format: "%.8f", dash)
-        let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
-            .replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
-        return "\(trimmed) DASH"
+        let dashPart = dash / 100_000_000
+        let decimalPart = dash % 100_000_000
+        return String(format: "~%llu.%08llu DASH", dashPart, decimalPart)
     }
 }
