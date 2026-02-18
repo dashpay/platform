@@ -29,7 +29,8 @@ pub mod v0;
         feature = "fixtures-and-mocks",
         feature = "state-transition-serde-conversion"
     ),
-    derive(serde::Serialize, serde::Deserialize)
+    derive(serde::Serialize, serde::Deserialize),
+    serde(untagged)
 )]
 pub enum TokenContractInfo {
     V0(TokenContractInfoV0),
