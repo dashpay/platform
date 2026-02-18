@@ -209,6 +209,11 @@ mod test {
             .set_schema_defs(None, true, &mut vec![], platform_version)
             .expect("should set defs");
 
-        assert_eq!(None, data_contract.schema_defs())
+        assert_eq!(None, data_contract.schema_defs());
+        assert_eq!(
+            1,
+            data_contract.document_types().len(),
+            "document types should be preserved after clearing schema defs"
+        );
     }
 }
