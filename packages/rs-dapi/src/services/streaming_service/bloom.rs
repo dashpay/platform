@@ -2,25 +2,7 @@ use std::sync::Arc;
 
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
-use dashcore_rpc::dashcore::{OutPoint, Script, ScriptBuf, Transaction as CoreTx, Txid};
-
-/// Extract pubkey hash from P2PKH script
-fn extract_pubkey_hash(script: &Script) -> Option<Vec<u8>> {
-    let bytes = script.as_bytes();
-    // P2PKH: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
-    if bytes.len() == 25
-        && bytes[0] == 0x76  // OP_DUP
-        && bytes[1] == 0xa9  // OP_HASH160
-        && bytes[2] == 0x14  // Push 20 bytes
-        && bytes[23] == 0x88 // OP_EQUALVERIFY
-        && bytes[24] == 0xac
-    // OP_CHECKSIG
-    {
-        Some(bytes[3..23].to_vec())
-    } else {
-        None
-    }
-}
+use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
 
 /// Convert outpoint to bytes for bloom filter
 fn outpoint_to_bytes(outpoint: &OutPoint) -> Vec<u8> {
@@ -36,8 +18,8 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
         return true;
     }
 
-    if let Some(pubkey_hash) = extract_pubkey_hash(script.as_script())
-        && filter.contains(&pubkey_hash)
+    if let Some(pubkey_hash) = script.as_script().p2pkh_public_key_hash_bytes()
+        && filter.contains(pubkey_hash)
     {
         return true;
     }
@@ -60,9 +42,7 @@ fn is_pubkey_script(script: &ScriptBuf) -> bool {
     if bytes.len() >= 35 && (bytes[0] == 33 || bytes[0] == 65) {
         return true;
     }
-    bytes.contains(&33u8)
-        || bytes.contains(&65u8)
-        || extract_pubkey_hash(script.as_script()).is_some()
+    bytes.contains(&33u8) || bytes.contains(&65u8) || script.as_script().is_p2pkh()
 }
 
 pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
