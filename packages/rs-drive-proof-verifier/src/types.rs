@@ -779,6 +779,8 @@ pub struct ShieldedPoolState(pub u64);
 pub struct ShieldedEncryptedNote {
     /// The note commitment (cmx), 32 bytes
     pub cmx: Vec<u8>,
+    /// The nullifier (32 bytes), needed for Rho derivation in trial decryption
+    pub nullifier: Vec<u8>,
     /// The encrypted note data
     pub encrypted_note: Vec<u8>,
 }

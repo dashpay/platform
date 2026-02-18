@@ -240,6 +240,12 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>>(
     memo: [u8; 36],
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
+    if fee_strategy.is_empty() {
+        return Err(ProtocolError::Generic(
+            "fee_strategy must have at least one step".to_string(),
+        ));
+    }
+
     let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
     let (actions, flags, value_balance, anchor, proof, binding_sig) =
         serialize_authorized_bundle(&bundle);

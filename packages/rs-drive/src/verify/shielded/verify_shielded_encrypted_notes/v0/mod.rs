@@ -1,9 +1,9 @@
-use crate::drive::shielded::paths::shielded_credit_pool_notes_path_vec;
+use crate::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
+use grovedb::{Element, GroveDb, PathQuery, Query, QueryItem, SizedQuery, SubqueryBranch};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -14,7 +14,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>), Error> {
         let effective = if count == 0 || count > max_elements {
             max_elements
         } else {
@@ -22,19 +22,29 @@ impl Drive {
         };
         let limit = effective.min(u16::MAX as u32) as u16;
 
-        let query = if start_index == 0 {
-            Query::new_range_full()
-        } else {
-            let mut q = Query::new();
-            q.insert_range_from(start_index.to_be_bytes().to_vec()..);
-            q
-        };
+        // PathQuery must match the server-side proof generation exactly:
+        // path = [AddressBalances, "s"], key = [SHIELDED_NOTES_KEY],
+        // subquery = range_inclusive(start..=end)
+        let end_index = start_index + limit as u64 - 1;
+        let mut inner_query = Query::new();
+        inner_query.insert_range_inclusive(
+            start_index.to_be_bytes().to_vec()..=end_index.to_be_bytes().to_vec(),
+        );
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_notes_path_vec(),
+            path: shielded_credit_pool_path_vec(),
             query: SizedQuery {
-                query,
-                limit: Some(limit),
+                query: Query {
+                    items: vec![QueryItem::Key(vec![SHIELDED_NOTES_KEY])],
+                    default_subquery_branch: SubqueryBranch {
+                        subquery_path: None,
+                        subquery: Some(inner_query.into()),
+                    },
+                    left_to_right: true,
+                    conditional_subquery_branches: None,
+                    add_parent_tree_on_subquery: false,
+                },
+                limit: None,
                 offset: None,
             },
         };
@@ -49,13 +59,18 @@ impl Drive {
         for (_, _key, maybe_element) in proved_key_values {
             match maybe_element {
                 Some(Element::Item(value, _)) => {
-                    // Value format: cmx (32 bytes) || encrypted_note (remaining bytes)
-                    if value.len() <= 32 {
+                    // Value format: cmx (32) || nullifier (32) || encrypted_note (rest)
+                    if value.len() <= 64 {
                         return Err(Error::Drive(DriveError::CorruptedElementType(
-                            "encrypted note value too short: expected more than 32 bytes",
+                            "encrypted note value too short: expected more than 64 bytes (cmx + nullifier + encrypted_note)",
                         )));
                     }
-                    notes.push((value[..32].to_vec(), value[32..].to_vec()));
+                    // Return (cmx, nullifier, encrypted_note)
+                    notes.push((
+                        value[..32].to_vec(),
+                        value[32..64].to_vec(),
+                        value[64..].to_vec(),
+                    ));
                 }
                 Some(_) => {
                     return Err(Error::Drive(DriveError::CorruptedElementType(

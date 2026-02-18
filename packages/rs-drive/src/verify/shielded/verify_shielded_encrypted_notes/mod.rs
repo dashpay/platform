@@ -15,7 +15,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>), Error> {
         match platform_version
             .drive
             .methods

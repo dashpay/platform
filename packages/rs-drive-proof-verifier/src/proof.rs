@@ -2392,8 +2392,9 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             Some(ShieldedEncryptedNotes(
                 notes
                     .into_iter()
-                    .map(|(cmx, encrypted_note)| ShieldedEncryptedNote {
+                    .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
                         cmx,
+                        nullifier,
                         encrypted_note,
                     })
                     .collect(),
