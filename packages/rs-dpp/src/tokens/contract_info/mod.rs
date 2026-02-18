@@ -24,6 +24,13 @@ pub mod v0;
     PartialEq,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
+#[cfg_attr(
+    any(
+        feature = "fixtures-and-mocks",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub enum TokenContractInfo {
     V0(TokenContractInfoV0),
 }

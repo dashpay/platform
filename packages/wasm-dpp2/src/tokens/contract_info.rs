@@ -1,10 +1,28 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use crate::impl_wasm_type_info;
+use crate::serialization;
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CONTRACT_INFO_TYPES_TS: &str = r#"
+/**
+ * TokenContractInfo serialized as JSON (with string identifiers).
+ */
+export interface TokenContractInfoJSON {
+    contractId: string;
+    tokenContractPosition: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenContractInfoJSON")]
+    pub type TokenContractInfoJSONJs;
+}
 
 #[wasm_bindgen(js_name = "TokenContractInfo")]
 #[derive(Clone, Debug, PartialEq)]
@@ -39,20 +57,9 @@ impl TokenContractInfoWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let obj = js_sys::Object::new();
-        let contract_id: IdentifierWasm = self.contract_id();
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("contractId"),
-            &JsValue::from_str(&contract_id.to_base58()),
-        )?;
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("tokenContractPosition"),
-            &JsValue::from_f64(f64::from(self.token_contract_position())),
-        )?;
-        Ok(obj.into())
+    pub fn to_json(&self) -> WasmDppResult<TokenContractInfoJSONJs> {
+        let js_value = serialization::to_json(&self.0)?;
+        Ok(js_value.into())
     }
 }
 
