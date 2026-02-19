@@ -381,6 +381,9 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     # so the XCFramework always uses a consistent library name)
     if [ -f "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
+      # Debug: check SPV symbols in source lib before merge
+      echo "  SPV lib symbols (config_add_peer):"
+      nm -gU "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a" 2>/dev/null | grep "dash_spv_ffi_config" || echo "  (none found)"
       libtool -static -o "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
         "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a"
@@ -450,18 +453,28 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
+      # Debug: check SPV symbols in source lib before merge
+      echo "  SPV sim lib symbols (config):"
+      nm -gU "$SIM_SPV_LIB" 2>/dev/null | grep "dash_spv_ffi_config" || echo "  (none found)"
       libtool -static -o "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
         "$SIM_SPV_LIB"
       mv "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/simulator/librs_sdk_ffi.a"
+      # Debug: verify symbols in merged lib
+      echo "  Merged sim lib symbols (config):"
+      nm -gU "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" 2>/dev/null | grep "dash_spv_ffi_config" || echo "  (none found in merged lib)"
     fi
     XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
 fi
 
 XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -output $OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"
 
+echo "  XCFramework cmd: $XCFRAMEWORK_CMD"
 if eval $XCFRAMEWORK_CMD > /tmp/xcframework.log 2>&1; then
     echo -e "${GREEN}✓ XCFramework created successfully${NC}"
+    # Debug: list XCFramework contents
+    echo "  XCFramework contents:"
+    find "$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework" -name '*.a' -exec echo "    {}" \;
 else
     echo -e "${RED}✗ XCFramework creation failed${NC}"
     cat /tmp/xcframework.log
