@@ -377,13 +377,14 @@ fi
 if [ "$BUILD_ARCH" != "x86" ]; then
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
-    # Merge with dash-spv-ffi device lib if available
+    # Merge with dash-spv-ffi device lib if available (overwrite librs_sdk_ffi.a
+    # so the XCFramework always uses a consistent library name)
     if [ -f "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
-      libtool -static -o "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" \
+      libtool -static -o "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
         "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a"
-      COMBINED_DEVICE_LIB=1
+      mv "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/device/librs_sdk_ffi.a"
     fi
 fi
 
@@ -436,11 +437,7 @@ rm -rf "$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"
 XCFRAMEWORK_CMD="xcodebuild -create-xcframework"
 
 if [ "$BUILD_ARCH" != "x86" ] && [ -f "$OUTPUT_DIR/device/librs_sdk_ffi.a" ]; then
-    if [ -n "${COMBINED_DEVICE_LIB:-}" ] && [ -f "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" ]; then
-      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/libDashSDKFFI_combined.a -headers $HEADERS_DIR"
-    else
-      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/librs_sdk_ffi.a -headers $HEADERS_DIR"
-    fi
+    XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/librs_sdk_ffi.a -headers $HEADERS_DIR"
 fi
 
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
@@ -453,13 +450,12 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
-      libtool -static -o "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" \
+      libtool -static -o "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
         "$SIM_SPV_LIB"
-      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/libDashSDKFFI_combined.a -headers $HEADERS_DIR"
-    else
-      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
+      mv "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/simulator/librs_sdk_ffi.a"
     fi
+    XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
 fi
 
 XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -output $OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"
