@@ -40,32 +40,27 @@ if [[ ! -f "$LIB_SIM_MAIN" ]]; then
   exit 1
 fi
 echo "   - Verifying required SPV symbols are present in XCFramework libs"
-# Prefer ripgrep if available; fall back to grep for portability
-# Avoid -q with pipefail, which can cause nm to SIGPIPE and fail the check.
-if command -v rg >/dev/null 2>&1; then
-  SEARCH_CMD=(rg -F)    # fixed-string match
-else
-  SEARCH_CMD=(grep -F)  # fixed-string match
+# Dump symbols to a temp file to avoid SIGPIPE issues with pipefail.
+# When piping nm to grep/rg, the search tool may exit early after finding a
+# match, causing nm to receive SIGPIPE and return exit code 141. With pipefail
+# enabled, this makes the pipeline fail even though the symbol was found.
+NM_SYMBOLS=$(mktemp)
+nm -gU "$LIB_SIM_MAIN" > "$NM_SYMBOLS" 2>/dev/null || true
+if [[ -f "$LIB_SIM_SPV" ]]; then
+  nm -gU "$LIB_SIM_SPV" >> "$NM_SYMBOLS" 2>/dev/null || true
 fi
 
 CHECK_OK=1
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
-  :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
-  :
-else
+if ! grep -qF "_dash_spv_ffi_config_add_peer" "$NM_SYMBOLS"; then
   echo "❌ Missing symbol: dash_spv_ffi_config_add_peer (in both main and spv libs)"
   CHECK_OK=0
 fi
 
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
-  :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
-  :
-else
+if ! grep -qF "_dash_spv_ffi_config_set_restrict_to_configured_peers" "$NM_SYMBOLS"; then
   echo "❌ Missing symbol: dash_spv_ffi_config_set_restrict_to_configured_peers (in both main and spv libs)"
   CHECK_OK=0
 fi
+rm -f "$NM_SYMBOLS"
 
 if [[ $CHECK_OK -ne 1 ]]; then
   echo "   Please ensure dash-spv-ffi exports these symbols and is included in the XCFramework."
