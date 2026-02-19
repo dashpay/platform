@@ -1,3 +1,4 @@
+use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -31,9 +32,26 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetShieldedEncryptedNotesResponseV0>, Error> {
-        let max_elements = platform_version.drive_abci.query.max_returned_elements as u32;
-        let effective = if count == 0 || count > max_elements {
-            max_elements
+        let max_notes = platform_version
+            .drive_abci
+            .query
+            .shielded_queries
+            .max_encrypted_notes_per_query as u32;
+
+        // start_index must be chunk-aligned (multiple of max_notes) so each
+        // query touches exactly one MMR chunk or the buffer.
+        let chunk_size = max_notes as u64;
+        if start_index % chunk_size != 0 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!(
+                    "start_index {} is not chunk-aligned; must be a multiple of {}",
+                    start_index, chunk_size
+                )),
+            ));
+        }
+
+        let effective = if count == 0 || count > max_notes {
+            max_notes
         } else {
             count
         };

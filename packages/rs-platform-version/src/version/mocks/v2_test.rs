@@ -412,6 +412,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                max_encrypted_notes_per_query: 2048,
             },
             address_funds_queries: DriveAbciQueryAddressFundsVersions {
                 addresses_infos: FeatureVersionBounds {

@@ -99,6 +99,9 @@ pub struct DriveAbciQueryShieldedVersions {
     pub anchors: FeatureVersionBounds,
     pub pool_state: FeatureVersionBounds,
     pub nullifiers: FeatureVersionBounds,
+    /// Maximum number of encrypted notes returned per query.
+    /// Should match the BulkAppendTree buffer capacity (2^chunk_power).
+    pub max_encrypted_notes_per_query: u16,
 }
 
 #[derive(Clone, Debug, Default)]
