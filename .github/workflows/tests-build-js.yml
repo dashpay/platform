@@ -23,7 +23,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        if: ${{ steps.check-artifact.outputs.exists != 'true' && secrets.DOCKERHUB_USERNAME != '' }}
 
       - name: Pre-pull protoc Docker image for gRPC codegen
         run: docker pull rvolosatovs/protoc:4.0.0
