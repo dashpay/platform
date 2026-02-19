@@ -4,14 +4,6 @@ use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
 use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
 
-/// Convert outpoint to bytes for bloom filter
-fn outpoint_to_bytes(outpoint: &OutPoint) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(36);
-    bytes.extend_from_slice(&outpoint.txid[..]);
-    bytes.extend_from_slice(&outpoint.vout.to_le_bytes());
-    bytes
-}
-
 fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
     let script_bytes = script.as_bytes();
     if filter.contains(script_bytes) {
@@ -80,10 +72,11 @@ pub fn matches_transaction(
             if flags == BloomFlags::All
                 || (flags == BloomFlags::PubkeyOnly && is_pubkey_script(&out.script_pubkey))
             {
-                let outpoint_bytes = outpoint_to_bytes(&OutPoint {
+                let outpoint_bytes: [u8; 36] = OutPoint {
                     txid,
                     vout: index as u32,
-                });
+                }
+                .into();
                 drop(filter);
                 if let Ok(mut f) = filter_lock.write().inspect_err(|e| {
                     tracing::debug!("Failed to acquire write lock for bloom filter: {}", e);
@@ -96,7 +89,7 @@ pub fn matches_transaction(
     }
 
     for input in tx.input.iter() {
-        let outpoint_bytes = outpoint_to_bytes(&input.previous_output);
+        let outpoint_bytes: [u8; 36] = input.previous_output.into();
         if filter.contains(&outpoint_bytes) || script_matches(&filter, &input.script_sig) {
             return true;
         }
@@ -197,10 +190,11 @@ mod tests {
             &tx,
             BloomFlags::All
         ));
-        let outpoint = outpoint_to_bytes(&OutPoint {
+        let outpoint: [u8; 36] = OutPoint {
             txid: tx.txid(),
             vout: 0,
-        });
+        }
+        .into();
         let guard = filter_lock.read().unwrap();
         assert!(guard.contains(&outpoint));
     }
@@ -326,10 +320,11 @@ mod tests {
             &tx_sh,
             BloomFlags::PubkeyOnly
         ));
-        let outpoint = outpoint_to_bytes(&OutPoint {
+        let outpoint: [u8; 36] = OutPoint {
             txid: tx_sh.txid(),
             vout: 0,
-        });
+        }
+        .into();
         assert!(!filter_lock.read().unwrap().contains(&outpoint));
         let mut opret_bytes2 = Vec::new();
         opret_bytes2.push(0x6a);
@@ -350,10 +345,11 @@ mod tests {
             &tx_or,
             BloomFlags::PubkeyOnly
         ));
-        let outpoint2 = outpoint_to_bytes(&OutPoint {
+        let outpoint2: [u8; 36] = OutPoint {
             txid: tx_or.txid(),
             vout: 0,
-        });
+        }
+        .into();
         assert!(!filter_lock.read().unwrap().contains(&outpoint2));
     }
 
