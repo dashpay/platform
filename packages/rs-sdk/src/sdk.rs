@@ -32,7 +32,7 @@ pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
-use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
@@ -43,8 +43,9 @@ use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 #[cfg(feature = "mocks")]
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::MutexGuard;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
@@ -368,9 +369,12 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let mut cache = self.internal_cache.identity_nonce_counter.lock().await;
-        let nonce =
-            Self::get_or_fetch_nonce(cache.entry(identity_id), bump_first, &settings, || async {
+        let nonce = Self::get_or_fetch_nonce(
+            &self.internal_cache.identity_nonce_counter,
+            identity_id,
+            bump_first,
+            &settings,
+            || async {
                 Ok(IdentityNonceFetcher::fetch_with_settings(
                     self,
                     identity_id,
@@ -379,8 +383,9 @@ impl Sdk {
                 .await?
                 .unwrap_or(IdentityNonceFetcher(0))
                 .0)
-            })
-            .await?;
+            },
+        )
+        .await?;
 
         tracing::trace!(
             identity_id = %identity_id,
@@ -404,13 +409,9 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let mut cache = self
-            .internal_cache
-            .identity_contract_nonce_counter
-            .lock()
-            .await;
         Self::get_or_fetch_nonce(
-            cache.entry((identity_id, contract_id)),
+            &self.internal_cache.identity_contract_nonce_counter,
+            (identity_id, contract_id),
             bump_first,
             &settings,
             || async {
@@ -429,8 +430,13 @@ impl Sdk {
 
     /// Shared nonce cache logic. Checks staleness and drift, fetches from
     /// Platform when needed, and maintains the cache entry.
-    async fn get_or_fetch_nonce<K: Ord, F, Fut>(
-        entry: Entry<'_, K, NonceCacheEntry>,
+    ///
+    /// The cache lock is held only briefly to read/write the entry; it is
+    /// **not** held across the async `fetch_from_platform` call so that other
+    /// callers are not blocked during the network round-trip.
+    async fn get_or_fetch_nonce<K: Ord + Copy, F, Fut>(
+        cache: &Mutex<BTreeMap<K, NonceCacheEntry>>,
+        key: K,
         bump_first: bool,
         settings: &PutSettings,
         fetch_from_platform: F,
@@ -441,53 +447,59 @@ impl Sdk {
     {
         let current_time_s = get_current_time_seconds();
 
-        let should_query_platform = match &entry {
-            Entry::Vacant(_) => true,
-            Entry::Occupied(e) => {
-                let (current_nonce, last_query_time, last_platform_nonce) = e.get();
-                // Re-fetch if the cache is stale by time OR if local bumps
-                // have drifted too far ahead of what Platform last reported.
-                *last_query_time
+        // Phase 1: Try to serve from cache without a network fetch.
+        {
+            let mut cache_guard = cache.lock().await;
+            if let Some(&(current_nonce, last_query_time, last_platform_nonce)) =
+                cache_guard.get(&key)
+            {
+                let stale_by_time = last_query_time
                     < current_time_s.saturating_sub(
                         settings
                             .identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
-                    )
-                    || current_nonce.saturating_sub(*last_platform_nonce)
-                        > MAX_MISSING_IDENTITY_REVISIONS
-            }
-        };
+                    );
+                // Precautionary: use >= so we stay within Platform's own
+                // MAX_MISSING_IDENTITY_REVISIONS limit.
+                let drifted = current_nonce.saturating_sub(last_platform_nonce)
+                    >= MAX_MISSING_IDENTITY_REVISIONS;
 
-        if should_query_platform {
-            // Strip the upper "missing revisions" bits immediately so the
-            // cache only ever holds plain nonce values.
-            let platform_nonce = fetch_from_platform().await? & IDENTITY_NONCE_VALUE_FILTER;
-            let insert_nonce = if bump_first {
-                platform_nonce + 1
-            } else {
-                platform_nonce
-            };
-            entry
-                .and_modify(|e| *e = (insert_nonce, current_time_s, platform_nonce))
-                .or_insert((insert_nonce, current_time_s, platform_nonce));
-            Ok(insert_nonce)
-        } else {
-            match entry {
-                Entry::Vacant(_) => {
-                    panic!("this can not happen, vacant entry not possible");
-                }
-                Entry::Occupied(mut e) => {
-                    let (current_nonce, _, last_platform_nonce) = e.get();
+                if !stale_by_time && !drifted {
+                    // Cache is fresh — serve from it.
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
-                        e.insert((insert_nonce, current_time_s, *last_platform_nonce));
-                        Ok(insert_nonce)
+                        cache_guard
+                            .insert(key, (insert_nonce, current_time_s, last_platform_nonce));
+                        return Ok(insert_nonce);
                     } else {
-                        Ok(*current_nonce)
+                        return Ok(current_nonce);
                     }
                 }
             }
-        }
+        } // lock released — entry was absent or stale
+
+        // Phase 2: Fetch from Platform without holding the cache lock.
+        // Strip the upper "missing revisions" bits immediately so the
+        // cache only ever holds plain nonce values.
+        let platform_nonce = fetch_from_platform().await? & IDENTITY_NONCE_VALUE_FILTER;
+
+        // Phase 3: Re-acquire lock and update cache.
+        // Re-read the entry since another caller may have updated the cache
+        // while we were fetching. Keep the higher of cached vs Platform
+        // nonce to avoid regression (Platform may not have indexed a recent
+        // successful broadcast yet).
+        let mut cache_guard = cache.lock().await;
+        let base_nonce = match cache_guard.get(&key) {
+            Some(&(current_nonce, _, _)) if current_nonce > platform_nonce => current_nonce,
+            _ => platform_nonce,
+        };
+        let insert_nonce = if bump_first {
+            base_nonce + 1
+        } else {
+            base_nonce
+        };
+        cache_guard.insert(key, (insert_nonce, current_time_s, platform_nonce));
+        Ok(insert_nonce)
     }
 
     /// Marks identity nonce cache entries as stale so they are re-fetched from
