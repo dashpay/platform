@@ -1305,4 +1305,273 @@ mod test {
 
         assert_eq!(result.is_err(), expect_err);
     }
+
+    // ---- Nonce cache edge-case tests for get_or_fetch_nonce ----
+
+    mod nonce_cache {
+        use super::*;
+        use crate::internal_cache::NonceCacheEntry;
+        use crate::platform::transition::put_settings::PutSettings;
+        use dpp::identity::identity_nonce::{
+            IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS,
+        };
+        use std::collections::BTreeMap;
+        use test_case::test_case;
+        use tokio::sync::Mutex;
+
+        /// Helper: shorthand for get_or_fetch_nonce.
+        async fn fetch(
+            cache: &Mutex<BTreeMap<u32, NonceCacheEntry>>,
+            bump: bool,
+            settings: &PutSettings,
+            platform_nonce: u64,
+        ) -> u64 {
+            super::super::Sdk::get_or_fetch_nonce(cache, 1u32, bump, settings, || async move {
+                Ok(platform_nonce)
+            })
+            .await
+            .unwrap()
+        }
+
+        fn now_s() -> u64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        }
+
+        fn empty_cache() -> Mutex<BTreeMap<u32, NonceCacheEntry>> {
+            Mutex::new(BTreeMap::new())
+        }
+
+        fn seeded_cache(
+            key: u32,
+            current_nonce: u64,
+            timestamp: u64,
+            last_platform_nonce: u64,
+        ) -> Mutex<BTreeMap<u32, NonceCacheEntry>> {
+            let mut map = BTreeMap::new();
+            map.insert(key, (current_nonce, timestamp, last_platform_nonce));
+            Mutex::new(map)
+        }
+
+        fn never_stale() -> PutSettings {
+            PutSettings {
+                identity_nonce_stale_time_s: Some(u64::MAX),
+                ..Default::default()
+            }
+        }
+
+        // --- Empty cache: platform fetched, result = platform ± bump ---
+        //                   (platform_nonce, bump,  expected_result, expected_stored_platform)
+        #[test_case(42,  false, 42, 42  ; "basic no bump")]
+        #[test_case(42,  true,  43, 42  ; "basic with bump")]
+        #[test_case(0,   false, 0,  0   ; "zero no bump")]
+        #[test_case(0,   true,  1,  0   ; "zero with bump")]
+        #[test_case(IDENTITY_NONCE_VALUE_FILTER, false, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER ; "filter max no bump")]
+        #[test_case(IDENTITY_NONCE_VALUE_FILTER, true,  IDENTITY_NONCE_VALUE_FILTER + 1, IDENTITY_NONCE_VALUE_FILTER ; "filter max with bump overflows")]
+        #[test_case(42 | (3 << 40), false, 42, 42 ; "upper bits stripped no bump")]
+        #[test_case(42 | (3 << 40), true,  43, 42 ; "upper bits stripped with bump")]
+        #[tokio::test]
+        async fn empty_cache_fetch(
+            platform_nonce: u64,
+            bump: bool,
+            expected: u64,
+            expected_stored_platform: u64,
+        ) {
+            let cache = empty_cache();
+            let result = fetch(&cache, bump, &Default::default(), platform_nonce).await;
+            assert_eq!(result, expected);
+            let guard = cache.lock().await;
+            let &(nonce, _, platform) = guard.get(&1u32).unwrap();
+            assert_eq!(nonce, expected);
+            assert_eq!(platform, expected_stored_platform);
+        }
+
+        // --- Fresh cache hit (no platform fetch) ---
+        //                   (cached, last_platform, bump, expected)
+        #[test_case(10, 10, false, 10 ; "no bump returns cached")]
+        #[test_case(10, 10, true,  11 ; "bump increments cached")]
+        #[test_case(10 + MAX_MISSING_IDENTITY_REVISIONS - 1, 10, false, 10 + MAX_MISSING_IDENTITY_REVISIONS - 1 ; "drift just below max serves from cache")]
+        #[tokio::test]
+        async fn fresh_cache_hit(cached_nonce: u64, last_platform: u64, bump: bool, expected: u64) {
+            let cache = seeded_cache(1, cached_nonce, now_s(), last_platform);
+            let settings = never_stale();
+            let result =
+                super::super::Sdk::get_or_fetch_nonce(&cache, 1u32, bump, &settings, || async {
+                    panic!("should not fetch from platform")
+                })
+                .await
+                .unwrap();
+            assert_eq!(result, expected);
+        }
+
+        // --- Stale or drifted cache triggers re-fetch ---
+        // stale_by_drift=false: timestamp=0, default settings (time-based staleness).
+        // stale_by_drift=true:  timestamp=now, never_stale settings (drift-based staleness).
+        // Result = max(cached, platform) ± bump.
+        //                   (cached, cached_plat, platform_returns, bump, stale_by_drift, expected, expected_stored_plat)
+        #[test_case(10, 10, 15, false, false, 15, 15 ; "stale uses higher platform")]
+        #[test_case(10, 10, 15, true,  false, 16, 15 ; "stale uses higher platform with bump")]
+        #[test_case(20, 10, 15, false, false, 20, 15 ; "preserves higher cached nonce")]
+        #[test_case(20, 10, 15, true,  false, 21, 15 ; "preserves higher cached nonce with bump")]
+        #[test_case(10,  5, 50, false, false, 50, 50 ; "platform much higher replaces cache")]
+        #[test_case(10,  5, 50, true,  false, 51, 50 ; "platform much higher replaces cache with bump")]
+        #[test_case(100, 90, 50 | (5 << 40), false, false, 100, 50 ; "upper bits stripped cache preserved")]
+        #[test_case(10 + MAX_MISSING_IDENTITY_REVISIONS, 10, 10 + MAX_MISSING_IDENTITY_REVISIONS, false, true, 10 + MAX_MISSING_IDENTITY_REVISIONS, 10 + MAX_MISSING_IDENTITY_REVISIONS ; "drift at max triggers refetch")]
+        #[tokio::test]
+        async fn cache_refetch(
+            cached_nonce: u64,
+            cached_platform: u64,
+            platform_returns: u64,
+            bump: bool,
+            stale_by_drift: bool,
+            expected: u64,
+            expected_stored_platform: u64,
+        ) {
+            let (timestamp, settings) = if stale_by_drift {
+                (now_s(), never_stale())
+            } else {
+                (0, PutSettings::default())
+            };
+            let cache = seeded_cache(1, cached_nonce, timestamp, cached_platform);
+            let result = fetch(&cache, bump, &settings, platform_returns).await;
+            assert_eq!(result, expected);
+            let guard = cache.lock().await;
+            let &(_, _, platform) = guard.get(&1u32).unwrap();
+            assert_eq!(platform, expected_stored_platform);
+        }
+
+        // --- Multiple sequential bumps from cache ---
+        #[tokio::test]
+        async fn multiple_bumps_from_fresh_cache() {
+            let cache = seeded_cache(1, 5, now_s(), 5);
+            let settings = never_stale();
+            for expected in 6..=10 {
+                let result = super::super::Sdk::get_or_fetch_nonce(
+                    &cache,
+                    1u32,
+                    true,
+                    &settings,
+                    || async { panic!("should not fetch from platform") },
+                )
+                .await
+                .unwrap();
+                assert_eq!(result, expected);
+            }
+            let guard = cache.lock().await;
+            let &(nonce, _, platform) = guard.get(&1u32).unwrap();
+            assert_eq!(nonce, 10);
+            assert_eq!(platform, 5, "last platform nonce unchanged through bumps");
+        }
+
+        // --- Fetch error propagates, cache untouched ---
+        #[tokio::test]
+        async fn fetch_error_propagates_and_cache_unchanged() {
+            let cache = seeded_cache(1, 10, 0, 10);
+            let result = super::super::Sdk::get_or_fetch_nonce(
+                &cache,
+                1u32,
+                false,
+                &Default::default(),
+                || async { Err(crate::Error::Generic("platform unavailable".to_string())) },
+            )
+            .await;
+            assert!(result.is_err());
+            let guard = cache.lock().await;
+            let &(nonce, ts, platform) = guard.get(&1u32).unwrap();
+            assert_eq!(nonce, 10);
+            assert_eq!(ts, 0, "timestamp should not have changed");
+            assert_eq!(platform, 10);
+        }
+
+        // --- refresh_identity_nonce marks entry stale ---
+        #[tokio::test]
+        async fn refresh_marks_entries_stale_forcing_refetch() {
+            let cache = seeded_cache(1, 10, now_s(), 10);
+            let settings = never_stale();
+
+            // Confirm cache is served.
+            let result =
+                super::super::Sdk::get_or_fetch_nonce(&cache, 1u32, false, &settings, || async {
+                    panic!("should not fetch")
+                })
+                .await
+                .unwrap();
+            assert_eq!(result, 10);
+
+            // Simulate refresh_identity_nonce: set timestamp to 0.
+            cache.lock().await.get_mut(&1u32).unwrap().1 = 0;
+
+            // With default settings (stale_time=1200s), timestamp=0 is stale.
+            let result = fetch(&cache, false, &PutSettings::default(), 20).await;
+            assert_eq!(result, 20, "should re-fetch after refresh");
+        }
+
+        // --- Different keys are isolated ---
+        #[tokio::test]
+        async fn different_keys_are_isolated() {
+            let cache = empty_cache();
+            let settings = never_stale();
+
+            // Seed two keys via fetches.
+            for (key, val) in [(1u32, 100u64), (2u32, 200u64)] {
+                super::super::Sdk::get_or_fetch_nonce(
+                    &cache,
+                    key,
+                    true,
+                    &Default::default(),
+                    || async move { Ok(val) },
+                )
+                .await
+                .unwrap();
+            }
+
+            // Read back: each key has its own value, served from cache.
+            for (key, expected) in [(1u32, 101u64), (2u32, 201u64)] {
+                let result = super::super::Sdk::get_or_fetch_nonce(
+                    &cache,
+                    key,
+                    false,
+                    &settings,
+                    || async { panic!("should serve from cache") },
+                )
+                .await
+                .unwrap();
+                assert_eq!(result, expected);
+            }
+        }
+
+        // --- Concurrent cache update during fetch ---
+        //                   (concurrent_nonce, platform_returns, bump, expected)
+        #[test_case(15, 10, false, 15 ; "concurrent higher wins")]
+        #[test_case(5,  20, true,  21 ; "platform higher wins with bump")]
+        #[tokio::test]
+        async fn concurrent_update(
+            concurrent_nonce: u64,
+            platform_returns: u64,
+            bump: bool,
+            expected: u64,
+        ) {
+            let cache = Arc::new(empty_cache());
+            let cache_clone = Arc::clone(&cache);
+            let result = super::super::Sdk::get_or_fetch_nonce(
+                &cache,
+                1u32,
+                bump,
+                &Default::default(),
+                || async move {
+                    // Simulate another caller updating cache during our fetch.
+                    cache_clone
+                        .lock()
+                        .await
+                        .insert(1u32, (concurrent_nonce, now_s(), concurrent_nonce));
+                    Ok(platform_returns)
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(result, expected);
+        }
+    }
 }
