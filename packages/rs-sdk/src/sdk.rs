@@ -18,7 +18,7 @@ use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
-use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
+use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS};
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
@@ -452,16 +452,28 @@ impl Sdk {
                 }
                 Entry::Occupied(mut e) => {
                     let (current_nonce, _) = e.get();
-                    let insert_nonce = if platform_nonce > *current_nonce {
+                    // If the cached nonce has drifted too far ahead of what
+                    // Platform reports (e.g. due to repeated broadcast failures
+                    // where the TX never actually made it to the mempool), reset
+                    // to the platform value to avoid "nonce too far in future".
+                    let effective_current = if (*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        .saturating_sub(platform_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        > MAX_MISSING_IDENTITY_REVISIONS
+                    {
+                        platform_nonce
+                    } else {
+                        *current_nonce
+                    };
+                    let insert_nonce = if platform_nonce > effective_current {
                         if bump_first {
                             platform_nonce + 1
                         } else {
                             platform_nonce
                         }
                     } else if bump_first {
-                        *current_nonce + 1
+                        effective_current + 1
                     } else {
-                        *current_nonce
+                        effective_current
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
@@ -551,16 +563,28 @@ impl Sdk {
                 }
                 Entry::Occupied(mut e) => {
                     let (current_nonce, _) = e.get();
-                    let insert_nonce = if platform_nonce > *current_nonce {
+                    // If the cached nonce has drifted too far ahead of what
+                    // Platform reports (e.g. due to repeated broadcast failures
+                    // where the TX never actually made it to the mempool), reset
+                    // to the platform value to avoid "nonce too far in future".
+                    let effective_current = if (*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        .saturating_sub(platform_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        > MAX_MISSING_IDENTITY_REVISIONS
+                    {
+                        platform_nonce
+                    } else {
+                        *current_nonce
+                    };
+                    let insert_nonce = if platform_nonce > effective_current {
                         if bump_first {
                             platform_nonce + 1
                         } else {
                             platform_nonce
                         }
                     } else if bump_first {
-                        *current_nonce + 1
+                        effective_current + 1
                     } else {
-                        *current_nonce
+                        effective_current
                     };
                     e.insert((insert_nonce, current_time_s));
                     Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
@@ -585,12 +609,23 @@ impl Sdk {
         }
     }
 
-    /// Forces reload of the identity nonce from Platform on the next call to `get_identity_nonce`.
+    /// Marks identity nonce cache entries as stale so they are re-fetched from
+    /// Platform on the next call to [`get_identity_nonce`] or
+    /// [`get_identity_contract_nonce`].
+    ///
+    /// Unlike removing the entries, marking them as stale preserves the cached
+    /// nonce **value**. When the re-fetch happens the SDK takes the maximum of
+    /// the platform value and the cached value, which prevents nonce regression.
+    /// Nonce regression would otherwise cause the SDK to recreate an identical
+    /// state transition that is already sitting in the Tenderdash mempool,
+    /// resulting in a "tx already exists in cache" error.
     pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
         {
             let mut identity_nonce_counter =
                 self.internal_cache.identity_nonce_counter.lock().await;
-            identity_nonce_counter.remove(identity_id);
+            if let Some((_, timestamp)) = identity_nonce_counter.get_mut(identity_id) {
+                *timestamp = 0;
+            }
         }
         {
             let mut identity_contract_nonce_counter = self
@@ -598,8 +633,13 @@ impl Sdk {
                 .identity_contract_nonce_counter
                 .lock()
                 .await;
-            identity_contract_nonce_counter
-                .retain(|(cached_identity_id, _), _| cached_identity_id != identity_id);
+            for ((cached_identity_id, _), (_, timestamp)) in
+                identity_contract_nonce_counter.iter_mut()
+            {
+                if cached_identity_id == identity_id {
+                    *timestamp = 0;
+                }
+            }
         }
     }
 
