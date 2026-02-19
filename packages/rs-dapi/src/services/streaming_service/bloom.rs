@@ -22,11 +22,9 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
 }
 
 #[inline]
-fn txid_to_be_bytes(txid: &Txid) -> Vec<u8> {
+fn txid_to_internal_bytes(txid: &Txid) -> Vec<u8> {
     use dashcore_rpc::dashcore::hashes::Hash;
-    let mut arr = txid.to_byte_array();
-    arr.reverse();
-    arr.to_vec()
+    txid.to_byte_array().to_vec()
 }
 
 fn is_pubkey_script(script: &ScriptBuf) -> bool {
@@ -62,8 +60,8 @@ pub fn matches_transaction(
     };
 
     let txid = tx.txid();
-    let txid_be = txid_to_be_bytes(&txid);
-    if filter.contains(&txid_be) {
+    let txid_internal = txid_to_internal_bytes(&txid);
+    if filter.contains(&txid_internal) {
         return true;
     }
 
@@ -140,11 +138,15 @@ mod tests {
     }
 
     #[test]
-    fn test_txid_endianness_conversion() {
-        let hex_be = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-        let txid = Txid::from_str(hex_be).expect("valid txid hex");
-        let be_bytes = super::txid_to_be_bytes(&txid);
-        assert_eq!(be_bytes, hex::decode(hex_be).unwrap());
+    fn test_txid_internal_bytes_match_consensus_wire_order() {
+        let hex_display = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let txid = Txid::from_str(hex_display).expect("valid txid hex");
+        let internal_bytes = super::txid_to_internal_bytes(&txid);
+
+        // Txid display is reverse of consensus/wire serialization for hash values.
+        let mut expected_internal = hex::decode(hex_display).unwrap();
+        expected_internal.reverse();
+        assert_eq!(internal_bytes, expected_internal);
     }
 
     #[test]
@@ -156,9 +158,9 @@ mod tests {
             output: vec![],
             special_transaction_payload: None,
         };
-        let txid_be = super::txid_to_be_bytes(&tx.txid());
+        let txid_internal = super::txid_to_internal_bytes(&tx.txid());
         let mut filter = CoreBloomFilter::from_bytes(vec![0; 128], 3, 0, BloomFlags::None).unwrap();
-        filter.insert(&txid_be);
+        filter.insert(&txid_internal);
         assert!(matches_transaction(
             Arc::new(RwLock::new(filter)),
             &tx,
