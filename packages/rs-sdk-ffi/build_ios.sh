@@ -381,9 +381,17 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     # so the XCFramework always uses a consistent library name)
     if [ -f "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
-      libtool -static -o "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" \
+      LIBTOOL_LOG=$(mktemp)
+      if ! libtool -static -o "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
-        "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a"
+        "$SPV_TARGET_DIR/aarch64-apple-ios/release/libdash_spv_ffi.a" 2>"$LIBTOOL_LOG"; then
+        cat "$LIBTOOL_LOG" >&2
+        rm -f "$LIBTOOL_LOG"
+        exit 1
+      fi
+      # Filter out expected duplicate member warnings (shared deps between the two libs)
+      grep -v "duplicate member name" "$LIBTOOL_LOG" >&2 || true
+      rm -f "$LIBTOOL_LOG"
       mv "$OUTPUT_DIR/device/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/device/librs_sdk_ffi.a"
     fi
 fi
@@ -450,9 +458,17 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
-      libtool -static -o "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" \
+      LIBTOOL_LOG=$(mktemp)
+      if ! libtool -static -o "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" \
         "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
-        "$SIM_SPV_LIB"
+        "$SIM_SPV_LIB" 2>"$LIBTOOL_LOG"; then
+        cat "$LIBTOOL_LOG" >&2
+        rm -f "$LIBTOOL_LOG"
+        exit 1
+      fi
+      # Filter out expected duplicate member warnings (shared deps between the two libs)
+      grep -v "duplicate member name" "$LIBTOOL_LOG" >&2 || true
+      rm -f "$LIBTOOL_LOG"
       mv "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/simulator/librs_sdk_ffi.a"
     fi
     XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"

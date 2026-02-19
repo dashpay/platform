@@ -18,10 +18,18 @@ pub type GetGapLimitFn = unsafe extern "C" fn(context: *mut c_void) -> u32;
 /// Function pointer type for checking if there are pending addresses
 pub type HasPendingFn = unsafe extern "C" fn(context: *mut c_void) -> bool;
 
+/// Optional function pointer type for checking if there are pending addresses.
+/// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+pub type OptionalHasPendingFn = Option<unsafe extern "C" fn(context: *mut c_void) -> bool>;
+
 /// Function pointer type for getting the highest found index
 ///
 /// Returns the highest found index, or u32::MAX if none found
 pub type GetHighestFoundIndexFn = unsafe extern "C" fn(context: *mut c_void) -> u32;
+
+/// Optional function pointer type for getting the highest found index.
+/// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+pub type OptionalGetHighestFoundIndexFn = Option<unsafe extern "C" fn(context: *mut c_void) -> u32>;
 
 /// Function pointer type for handling a found address
 ///
@@ -44,6 +52,10 @@ pub type OnAddressAbsentFn =
 /// Optional destructor for cleanup
 pub type DestroyProviderFn = unsafe extern "C" fn(context: *mut c_void);
 
+/// Optional destructor for cleanup.
+/// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+pub type OptionalDestroyProviderFn = Option<unsafe extern "C" fn(context: *mut c_void)>;
+
 /// VTable for address provider callbacks
 #[repr(C)]
 pub struct AddressProviderVTable {
@@ -59,16 +71,16 @@ pub struct AddressProviderVTable {
     /// Called when an address is proven absent
     pub on_address_absent: OnAddressAbsentFn,
 
-    /// Check if there are still pending addresses
-    /// If null, the default implementation (pending_addresses is non-empty) is used
-    pub has_pending: Option<HasPendingFn>,
+    /// Check if there are still pending addresses.
+    /// May be null; if null the default implementation (pending_addresses is non-empty) is used.
+    pub has_pending: OptionalHasPendingFn,
 
-    /// Get the highest found index
-    /// If null, returns None
-    pub highest_found_index: Option<GetHighestFoundIndexFn>,
+    /// Get the highest found index.
+    /// May be null; if null returns None.
+    pub highest_found_index: OptionalGetHighestFoundIndexFn,
 
-    /// Optional destructor for cleanup
-    pub destroy: Option<DestroyProviderFn>,
+    /// Optional destructor for cleanup. May be null.
+    pub destroy: OptionalDestroyProviderFn,
 }
 
 /// FFI-compatible address provider using callbacks
