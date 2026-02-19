@@ -42,6 +42,10 @@ pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
+#[cfg(feature = "state-transition-value-conversion")]
+mod value_conversion;
+#[cfg(feature = "state-transition-json-conversion")]
+mod json_conversion;
 
 // pub mod state_transition_fee;
 

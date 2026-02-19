@@ -147,6 +147,7 @@ dash-sdk-features = [
   "data-contract-json-conversion",
   "identity-value-conversion",
   "state-transition-value-conversion",
+  "state-transition-json-conversion",
   "state-transition-signing",
   "client",
   "platform-value-cbor",
