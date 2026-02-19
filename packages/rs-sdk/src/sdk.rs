@@ -377,13 +377,17 @@ impl Sdk {
         let should_query_platform = match &entry {
             Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
-                let (_, last_query_time) = e.get();
+                let (current_nonce, last_query_time, last_platform_nonce) = e.get();
+                // Re-fetch if the cache is stale by time OR if local bumps
+                // have drifted too far ahead of what Platform last reported.
                 *last_query_time
                     < current_time_s.saturating_sub(
                         settings
                             .identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
+                    || current_nonce.saturating_sub(*last_platform_nonce)
+                        > MAX_MISSING_IDENTITY_REVISIONS
             }
         };
 
@@ -400,54 +404,30 @@ impl Sdk {
             .await?
             .unwrap_or(IdentityNonceFetcher(0))
             .0 & IDENTITY_NONCE_VALUE_FILTER;
+            let insert_nonce = if bump_first {
+                platform_nonce + 1
+            } else {
+                platform_nonce
+            };
             match entry {
                 Entry::Vacant(e) => {
-                    let insert_nonce = if bump_first {
-                        platform_nonce + 1
-                    } else {
-                        platform_nonce
-                    };
-                    e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce)
+                    e.insert((insert_nonce, current_time_s, platform_nonce));
                 }
                 Entry::Occupied(mut e) => {
-                    let (current_nonce, _) = e.get();
-                    // If the cached nonce has drifted too far ahead of what
-                    // Platform reports (e.g. due to repeated broadcast failures
-                    // where the TX never actually made it to the mempool), reset
-                    // to the platform value to avoid "nonce too far in future".
-                    let effective_current = if current_nonce.saturating_sub(platform_nonce)
-                        > MAX_MISSING_IDENTITY_REVISIONS
-                    {
-                        platform_nonce
-                    } else {
-                        *current_nonce
-                    };
-                    let insert_nonce = if platform_nonce > effective_current {
-                        if bump_first {
-                            platform_nonce + 1
-                        } else {
-                            platform_nonce
-                        }
-                    } else if bump_first {
-                        effective_current + 1
-                    } else {
-                        effective_current
-                    };
-                    e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce)
+                    e.insert((insert_nonce, current_time_s, platform_nonce));
                 }
             }
+            Ok(insert_nonce)
         } else {
             match entry {
                 Entry::Vacant(_) => {
                     panic!("this can not happen, vacant entry not possible");
                 }
                 Entry::Occupied(mut e) => {
-                    let (current_nonce, _) = e.get();
+                    let (current_nonce, _, last_platform_nonce) = e.get();
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
-                        e.insert((insert_nonce, current_time_s));
+                        e.insert((insert_nonce, current_time_s, *last_platform_nonce));
                         Ok(insert_nonce)
                     } else {
                         Ok(*current_nonce)
@@ -491,13 +471,17 @@ impl Sdk {
         let should_query_platform = match &entry {
             Entry::Vacant(_) => true,
             Entry::Occupied(e) => {
-                let (_, last_query_time) = e.get();
+                let (current_nonce, last_query_time, last_platform_nonce) = e.get();
+                // Re-fetch if the cache is stale by time OR if local bumps
+                // have drifted too far ahead of what Platform last reported.
                 *last_query_time
                     < current_time_s.saturating_sub(
                         settings
                             .identity_nonce_stale_time_s
                             .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
                     )
+                    || current_nonce.saturating_sub(*last_platform_nonce)
+                        > MAX_MISSING_IDENTITY_REVISIONS
             }
         };
 
@@ -512,54 +496,30 @@ impl Sdk {
             .await?
             .unwrap_or(IdentityContractNonceFetcher(0))
             .0 & IDENTITY_NONCE_VALUE_FILTER;
+            let insert_nonce = if bump_first {
+                platform_nonce + 1
+            } else {
+                platform_nonce
+            };
             match entry {
                 Entry::Vacant(e) => {
-                    let insert_nonce = if bump_first {
-                        platform_nonce + 1
-                    } else {
-                        platform_nonce
-                    };
-                    e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce)
+                    e.insert((insert_nonce, current_time_s, platform_nonce));
                 }
                 Entry::Occupied(mut e) => {
-                    let (current_nonce, _) = e.get();
-                    // If the cached nonce has drifted too far ahead of what
-                    // Platform reports (e.g. due to repeated broadcast failures
-                    // where the TX never actually made it to the mempool), reset
-                    // to the platform value to avoid "nonce too far in future".
-                    let effective_current = if current_nonce.saturating_sub(platform_nonce)
-                        > MAX_MISSING_IDENTITY_REVISIONS
-                    {
-                        platform_nonce
-                    } else {
-                        *current_nonce
-                    };
-                    let insert_nonce = if platform_nonce > effective_current {
-                        if bump_first {
-                            platform_nonce + 1
-                        } else {
-                            platform_nonce
-                        }
-                    } else if bump_first {
-                        effective_current + 1
-                    } else {
-                        effective_current
-                    };
-                    e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce)
+                    e.insert((insert_nonce, current_time_s, platform_nonce));
                 }
             }
+            Ok(insert_nonce)
         } else {
             match entry {
                 Entry::Vacant(_) => {
                     panic!("this can not happen, vacant entry not possible");
                 }
                 Entry::Occupied(mut e) => {
-                    let (current_nonce, _) = e.get();
+                    let (current_nonce, _, last_platform_nonce) = e.get();
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
-                        e.insert((insert_nonce, current_time_s));
+                        e.insert((insert_nonce, current_time_s, *last_platform_nonce));
                         Ok(insert_nonce)
                     } else {
                         Ok(*current_nonce)
@@ -572,18 +532,11 @@ impl Sdk {
     /// Marks identity nonce cache entries as stale so they are re-fetched from
     /// Platform on the next call to [`get_identity_nonce`] or
     /// [`get_identity_contract_nonce`].
-    ///
-    /// Unlike removing the entries, marking them as stale preserves the cached
-    /// nonce **value**. When the re-fetch happens the SDK takes the maximum of
-    /// the platform value and the cached value, which prevents nonce regression.
-    /// Nonce regression would otherwise cause the SDK to recreate an identical
-    /// state transition that is already sitting in the Tenderdash mempool,
-    /// resulting in a "tx already exists in cache" error.
     pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
         {
             let mut identity_nonce_counter =
                 self.internal_cache.identity_nonce_counter.lock().await;
-            if let Some((_, timestamp)) = identity_nonce_counter.get_mut(identity_id) {
+            if let Some((_, timestamp, _)) = identity_nonce_counter.get_mut(identity_id) {
                 *timestamp = 0;
             }
         }
@@ -593,7 +546,7 @@ impl Sdk {
                 .identity_contract_nonce_counter
                 .lock()
                 .await;
-            for ((cached_identity_id, _), (_, timestamp)) in
+            for ((cached_identity_id, _), (_, timestamp, _)) in
                 identity_contract_nonce_counter.iter_mut()
             {
                 if cached_identity_id == identity_id {
