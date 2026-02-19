@@ -9,10 +9,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-pub fn serialize<S, V>(
-    map: &BTreeMap<PlatformAddress, V>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+pub fn serialize<S, V>(map: &BTreeMap<PlatformAddress, V>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
     V: Serialize,
@@ -59,5 +56,3 @@ where
         marker: PhantomData,
     })
 }
-
-

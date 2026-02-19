@@ -80,7 +80,9 @@ mod test_serde_json_serialization {
             }
             Err(e) => {
                 println!("FAILED: serde serialization error: {}", e);
-                println!("This is expected - PlatformAddress as BTreeMap key doesn't work with serde");
+                println!(
+                    "This is expected - PlatformAddress as BTreeMap key doesn't work with serde"
+                );
             }
         }
 
