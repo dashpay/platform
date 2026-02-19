@@ -19,7 +19,7 @@ extension SPVClient {
     @MainActor
     public static func initializeLogging(_ level: SPVLogLevel) {
         level.rawValue.withCString { cstr in
-            _ = dash_spv_ffi_init_logging(cstr)
+            _ = dash_spv_ffi_init_logging(cstr, true, nil, 0)
         }
         LogInitState.manualInitialized = true
     }
@@ -283,7 +283,7 @@ public class SPVClient: ObservableObject {
         if !LogInitState.manualInitialized {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             _ = level.withCString { cstr in
-                dash_spv_ffi_init_logging(cstr)
+                dash_spv_ffi_init_logging(cstr, true, nil, 0)
             }
         }
         if swiftLoggingEnabled {
@@ -487,21 +487,9 @@ public class SPVClient: ObservableObject {
     }
 
     /// Clear only the persisted sync-state snapshot while keeping headers/filters.
+    /// Note: Uses clearStorage() as the granular clear_sync_state FFI was removed.
     public func clearSyncState() throws {
-        guard let client = client else { throw SPVError.notInitialized }
-
-        let rc = dash_spv_ffi_client_clear_sync_state(client)
-        if rc != 0 {
-            if let errorMsg = dash_spv_ffi_get_last_error() {
-                let message = String(cString: errorMsg)
-                throw SPVError.storageOperationFailed(message)
-            } else {
-                throw SPVError.storageOperationFailed("Failed to clear sync state (code \(rc))")
-            }
-        }
-
-        self.syncProgress = nil
-        self.lastError = nil
+        try clearStorage()
     }
 
     private func destroyClient() {
