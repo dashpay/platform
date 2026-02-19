@@ -7,10 +7,12 @@ on:
     branches:
       - master
       - "v*-dev"
+      - "ci/*"
   push:
     branches:
       - master
       - "v*-dev"
+      - "ci/*"
   schedule:
     - cron: "30 4 * * *"
 
