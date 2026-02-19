@@ -214,9 +214,8 @@ class WalletManager: ObservableObject {
     /// Sync wallet data using SwiftDashSDK wrappers (no direct FFI in app)
     private func syncWalletFromManagedInfo(for wallet: HDWallet) async throws {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
-        
+        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
+
         for account in wallet.accounts {
             if let managed = collection.getBIP44Account(at: account.accountNumber) {
                 if let bal = try? managed.getBalance() {
@@ -333,12 +332,9 @@ class WalletManager: ObservableObject {
             throw WalletError.walletError("Wallet ID not available")
         }
 
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-
         // Get managed account
         let managedAccount = try sdkWalletManager.getManagedAccount(
             walletId: walletId,
-            network: network,
             accountIndex: accountIndex,
             accountType: .standardBIP44
         )
@@ -358,8 +354,7 @@ class WalletManager: ObservableObject {
     /// - Returns: Detailed account information
     func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
 
         // Resolve managed account from category and optional index
         var managed: ManagedAccount?
@@ -515,10 +510,9 @@ class WalletManager: ObservableObject {
     /// - Returns: Account information including balances and address counts
     func getAccounts(for wallet: HDWallet, network: Network? = nil) async throws -> [AccountInfo] {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let effectiveNetwork = (network ?? wallet.dashNetwork).toKeyWalletNetwork()
         let collection: ManagedAccountCollection
         do {
-            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: effectiveNetwork)
+            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
         } catch let err as KeyWalletError {
             // If the managed wallet info isn't found (e.g., after fresh start), try restoring from serialized bytes
             if case .notFound = err, let bytes = wallet.serializedWalletBytes {
@@ -526,7 +520,7 @@ class WalletManager: ObservableObject {
                     let restoredId = try sdkWalletManager.importWallet(from: bytes)
                     if wallet.walletId != restoredId { wallet.walletId = restoredId }
                     // Retry once after import
-                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!, network: effectiveNetwork)
+                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!)
                 } catch {
                     throw err
                 }
@@ -687,7 +681,7 @@ class WalletManager: ObservableObject {
 
         // Get balance via SDK wrappers
         do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: wallet.dashNetwork.toKeyWalletNetwork())
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
             if let managed = collection.getBIP44Account(at: account.accountNumber) {
                 if let bal = try? managed.getBalance() {
                     account.confirmedBalance = bal.confirmed
@@ -705,10 +699,8 @@ class WalletManager: ObservableObject {
     func syncWalletStateFromRust(for wallet: HDWallet) async {
         guard let walletId = wallet.walletId else { return }
 
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-
         do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
 
             // Sync all accounts
             for account in wallet.accounts {
