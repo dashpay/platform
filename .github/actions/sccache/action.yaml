@@ -12,19 +12,19 @@ description: |
 inputs:
   bucket:
     description: S3 bucket to use for caching
-    required: false
+    required: true
   region:
     description: S3 bucket region
-    required: false
+    required: true
   endpoint:
     description: S3 endpoint to use for caching
-    required: false
+    required: true
   access_key_id:
     description: S3 endpoint access key ID
-    required: false
+    required: true
   secret_access_key:
     description: S3 endpoint secret access key
-    required: false
+    required: true
   platform:
     description: "Platform and architecture to use when caching; defaults to linux/amd64"
     required: false
@@ -61,19 +61,7 @@ runs:
       with:
         version: "v${{ inputs.version }}"
 
-    - name: Detect remote cache availability
-      id: remote_cache
-      shell: bash
-      run: |
-        set -euo pipefail
-        if [[ -n "${{ inputs.bucket }}" && -n "${{ inputs.region }}" && -n "${{ inputs.endpoint }}" && -n "${{ inputs.access_key_id }}" && -n "${{ inputs.secret_access_key }}" ]]; then
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "enabled=false" >> "$GITHUB_OUTPUT"
-        fi
-
     - name: Configure AWS credentials
-      if: ${{ steps.remote_cache.outputs.enabled == 'true' }}
       uses: ./.github/actions/aws_credentials
       with:
         access_key_id: ${{ inputs.access_key_id }}
@@ -83,14 +71,12 @@ runs:
     - name: Configure sccache
       shell: bash
       run: |
-        if [[ "${{ steps.remote_cache.outputs.enabled }}" == "true" ]]; then
-          echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
-          echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
-          echo "SCCACHE_REGION=${{ inputs.region }}" >> $GITHUB_ENV
-          echo "SCCACHE_ENDPOINT=${{ inputs.endpoint }}" >> $GITHUB_ENV
-        fi
+        echo "AWS_PROFILE=sccache" >> $GITHUB_ENV
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+        echo "SCCACHE_BUCKET=${{ inputs.bucket }}" >> $GITHUB_ENV
+        echo "SCCACHE_REGION=${{ inputs.region }}" >> $GITHUB_ENV
+        echo "SCCACHE_ENDPOINT=${{ inputs.endpoint }}" >> $GITHUB_ENV
         echo "SCCACHE_S3_KEY_PREFIX=sccache/${{ inputs.platform }}/" >> $GITHUB_ENV
         # "SCCACHE_VERSION" is used inside Docker to install the same version of sccache
         echo "SCCACHE_VERSION=${{ inputs.version }}" >> $GITHUB_ENV

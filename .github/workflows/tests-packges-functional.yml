@@ -1,32 +1,37 @@
 on:
   workflow_call:
-    inputs:
-      image_org:
-        type: string
-        description: Registry and namespace for CI images
-        required: false
-        default: ghcr.io/dashpay/platform-ci
-      image_tag:
-        type: string
-        description: Tag for pre-built images
-        required: true
 
 jobs:
   test-functional:
     name: Run functional tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to ECR
+        uses: ./.github/actions/aws_ecr_login
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+
       - name: Start local network
         uses: ./.github/actions/local-network
         with:
-          image_org: ${{ inputs.image_org }}
-          image_tag: ${{ inputs.image_tag }}
+          image_org: ${{ env.ECR_HOST }}
 
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional

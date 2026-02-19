@@ -5,9 +5,6 @@ inputs:
   image_org:
     description: "Docker image organization"
     required: true
-  image_tag:
-    description: "Docker image tag"
-    required: true
 runs:
   using: composite
   steps:
@@ -78,15 +75,15 @@ runs:
     - name: Configure pre-built docker images
       shell: bash
       run: |
-        IMAGE_TAG=${{ inputs.image_tag }}
+        SHA_TAG=sha-${{ github.sha }}
         VERSION=$(cat package.json | jq -r '.version')
 
         # Dashmate helper
-        docker pull ${{ inputs.image_org }}/dashmate-helper:$IMAGE_TAG
-        docker tag ${{ inputs.image_org }}/dashmate-helper:$IMAGE_TAG dashpay/dashmate-helper:$VERSION
+        docker pull ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG
+        docker tag ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
         # Replace Drive and RS-DAPI images with new org and tag in dashmate config
-        sed -i -E "s/dashpay\/(drive|rs-dapi):[^\"]+/${{ inputs.image_org }}\/\1:${IMAGE_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
+        sed -i -E "s/dashpay\/(drive|rs-dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
 
         cat ${{ env.HOME }}/.dashmate/config.json
 
