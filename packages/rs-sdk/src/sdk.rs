@@ -432,6 +432,10 @@ impl Sdk {
         };
 
         let nonce = if should_query_platform {
+            // Strip the upper "missing revisions" bits immediately so the
+            // cache only ever holds plain nonce values.  This makes all
+            // downstream comparisons and increments safe without needing to
+            // mask on every return path.
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
                 self,
                 identity_id,
@@ -439,7 +443,7 @@ impl Sdk {
             )
             .await?
             .unwrap_or(IdentityNonceFetcher(0))
-            .0;
+            .0 & IDENTITY_NONCE_VALUE_FILTER;
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {
@@ -448,7 +452,7 @@ impl Sdk {
                         platform_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce)
                 }
                 Entry::Occupied(mut e) => {
                     let (current_nonce, _) = e.get();
@@ -456,8 +460,7 @@ impl Sdk {
                     // Platform reports (e.g. due to repeated broadcast failures
                     // where the TX never actually made it to the mempool), reset
                     // to the platform value to avoid "nonce too far in future".
-                    let effective_current = if (*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
-                        .saturating_sub(platform_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    let effective_current = if current_nonce.saturating_sub(platform_nonce)
                         > MAX_MISSING_IDENTITY_REVISIONS
                     {
                         platform_nonce
@@ -476,7 +479,7 @@ impl Sdk {
                         effective_current
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce)
                 }
             }
         } else {
@@ -489,9 +492,9 @@ impl Sdk {
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
                         e.insert((insert_nonce, current_time_s));
-                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        Ok(insert_nonce)
                     } else {
-                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        Ok(*current_nonce)
                     }
                 }
             }
@@ -543,6 +546,8 @@ impl Sdk {
         };
 
         if should_query_platform {
+            // Strip the upper "missing revisions" bits immediately so the
+            // cache only ever holds plain nonce values.
             let platform_nonce = IdentityContractNonceFetcher::fetch_with_settings(
                 self,
                 (identity_id, contract_id),
@@ -550,7 +555,7 @@ impl Sdk {
             )
             .await?
             .unwrap_or(IdentityContractNonceFetcher(0))
-            .0;
+            .0 & IDENTITY_NONCE_VALUE_FILTER;
             match entry {
                 Entry::Vacant(e) => {
                     let insert_nonce = if bump_first {
@@ -559,7 +564,7 @@ impl Sdk {
                         platform_nonce
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce)
                 }
                 Entry::Occupied(mut e) => {
                     let (current_nonce, _) = e.get();
@@ -567,8 +572,7 @@ impl Sdk {
                     // Platform reports (e.g. due to repeated broadcast failures
                     // where the TX never actually made it to the mempool), reset
                     // to the platform value to avoid "nonce too far in future".
-                    let effective_current = if (*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
-                        .saturating_sub(platform_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    let effective_current = if current_nonce.saturating_sub(platform_nonce)
                         > MAX_MISSING_IDENTITY_REVISIONS
                     {
                         platform_nonce
@@ -587,7 +591,7 @@ impl Sdk {
                         effective_current
                     };
                     e.insert((insert_nonce, current_time_s));
-                    Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                    Ok(insert_nonce)
                 }
             }
         } else {
@@ -600,9 +604,9 @@ impl Sdk {
                     if bump_first {
                         let insert_nonce = current_nonce + 1;
                         e.insert((insert_nonce, current_time_s));
-                        Ok(insert_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        Ok(insert_nonce)
                     } else {
-                        Ok(*current_nonce & IDENTITY_NONCE_VALUE_FILTER)
+                        Ok(*current_nonce)
                     }
                 }
             }
