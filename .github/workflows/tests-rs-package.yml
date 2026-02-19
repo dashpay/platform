@@ -133,7 +133,7 @@ jobs:
           gh pr view https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --json files --jq "[.files[].path] | map(select(test(\"packages/${{ inputs.package }}/.*.rs$\")))" > files.json
           echo "files=$(cat files.json)" >> $GITHUB_OUTPUT
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Save append_only and immutable structures
         id: base_structures
