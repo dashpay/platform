@@ -128,6 +128,7 @@ struct SendTransactionView: View {
             self.fee = fee
             self.tx = tx
         } catch {
+            self.error = error
             self.fee = 0
             self.tx = nil
         }

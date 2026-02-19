@@ -165,8 +165,9 @@ public class WalletManager {
             }
             throw KeyWalletError(ffiError: error)
         }
-        // Wrap as non-owning wallet; the manager retains ownership
-        let wallet = Wallet(nonOwningHandle: UnsafeRawPointer(ptr))
+        // The FFI function allocates a new Box<FFIWallet> via Box::into_raw —
+        // we own it and must free it via wallet_free() when done.
+        let wallet = Wallet(owningHandle: UnsafeRawPointer(ptr))
         return wallet
     }
     
@@ -397,48 +398,61 @@ public class WalletManager {
         guard !outputs.isEmpty else {
             throw KeyWalletError.invalidInput("Transaction must have at least one output")
         }
-        
-        var error = FFIError()
-        var txBytesPtr: UnsafeMutablePointer<UInt8>?
-        var txLen: size_t = 0
-        
-        var fee: UInt64 = 0;
 
-        let wallet = try self.getWallet(id: wallet.walletId)!
-        
-        let ffiOutputs = outputs.map { $0.toFFI() }
-        
-        let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
-            wallet_build_and_sign_transaction(
-                self.handle,
-                wallet.ffiHandle,
-                accIndex,
-                outputsPtr.baseAddress,
-                outputs.count,
-                feeRate.intoFFI(),
-                &fee,
-                &txBytesPtr,
-                &txLen,
-                &error)
-        }
-        
-        defer {
-            if error.message != nil {8
-                error_message_free(error.message)
+        let ffiWallet = try self.getWallet(id: wallet.walletId)!
+
+        // withExtendedLifetime keeps ffiWallet alive for the entire duration of
+        // the closure.  Without this, Swift's ARC optimizer may release the
+        // Wallet object (and call wallet_free) after extracting the raw
+        // ffiHandle pointer but BEFORE the Rust FFI call finishes — causing a
+        // use-after-free / EXC_BAD_ACCESS in the Rust code.
+        return try withExtendedLifetime(ffiWallet) {
+            var error = FFIError()
+            var txBytesPtr: UnsafeMutablePointer<UInt8>?
+            var txLen: size_t = 0
+            var fee: UInt64 = 0
+
+            let ffiOutputs = outputs.map { $0.toFFI() }
+
+            // Free strdup'd C strings after the FFI call completes
+            defer {
+                for output in ffiOutputs {
+                    free(UnsafeMutablePointer(mutating: output.address))
+                }
             }
-            if let ptr = txBytesPtr {
-                transaction_bytes_free(ptr)
+
+            let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
+                wallet_build_and_sign_transaction(
+                    self.handle,
+                    ffiWallet.ffiHandle,
+                    accIndex,
+                    outputsPtr.baseAddress,
+                    outputs.count,
+                    feeRate.intoFFI(),
+                    &fee,
+                    &txBytesPtr,
+                    &txLen,
+                    &error)
             }
+
+            defer {
+                if error.message != nil {
+                    error_message_free(error.message)
+                }
+                if let ptr = txBytesPtr {
+                    transaction_bytes_free(ptr)
+                }
+            }
+
+            guard success, let ptr = txBytesPtr else {
+                throw KeyWalletError(ffiError: error)
+            }
+
+            // Copy the transaction data before freeing
+            let txData = Data(bytes: ptr, count: txLen)
+
+            return (txData, fee)
         }
-        
-        guard success, let ptr = txBytesPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-        
-        // Copy the transaction data before freeing
-        let txData = Data(bytes: ptr, count: txLen)
-        
-        return (txData, fee)
     }
     
     // MARK: - Block Height Management

@@ -23,7 +23,7 @@ simple-signer = { path = "../simple-signer" }
 
 
 # Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04", optional = true }
+dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi", optional = true }
 
 # Platform Wallet integration for DashPay support
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }

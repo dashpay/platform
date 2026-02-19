@@ -516,6 +516,13 @@ public class Wallet {
         self.ownsHandle = false
     }
 
+    /// Owning initializer for wallets returned by FFI functions that allocate a new Box<FFIWallet>.
+    /// The caller transfers ownership — deinit will call wallet_free().
+    internal init(owningHandle handle: UnsafeRawPointer) {
+        self.handle = UnsafeMutablePointer<FFIWallet>(mutating: handle.bindMemory(to: FFIWallet.self, capacity: 1))
+        self.ownsHandle = true
+    }
+
 
     deinit {
         if ownsHandle {
