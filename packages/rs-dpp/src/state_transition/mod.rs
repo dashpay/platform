@@ -43,6 +43,8 @@ mod json_conversion;
 pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
+#[cfg(test)]
+mod test_json_serde_integration;
 mod traits;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
