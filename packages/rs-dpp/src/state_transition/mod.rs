@@ -38,14 +38,14 @@ pub mod errors;
 use crate::util::hash::ripemd160_sha256;
 use crate::util::hash::{hash_double_to_vec, hash_single};
 
+#[cfg(feature = "state-transition-json-conversion")]
+mod json_conversion;
 pub mod proof_result;
 mod serialization;
 pub mod state_transitions;
 mod traits;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
-#[cfg(feature = "state-transition-json-conversion")]
-mod json_conversion;
 
 // pub mod state_transition_fee;
 

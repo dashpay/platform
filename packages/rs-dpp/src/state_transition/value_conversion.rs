@@ -33,9 +33,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
             StateTransition::Batch(st) => st.to_canonical_object(skip_signature),
             StateTransition::IdentityCreate(st) => st.to_canonical_object(skip_signature),
             StateTransition::IdentityTopUp(st) => st.to_canonical_object(skip_signature),
-            StateTransition::IdentityCreditWithdrawal(st) => {
-                st.to_canonical_object(skip_signature)
-            }
+            StateTransition::IdentityCreditWithdrawal(st) => st.to_canonical_object(skip_signature),
             StateTransition::IdentityUpdate(st) => st.to_canonical_object(skip_signature),
             StateTransition::IdentityCreditTransfer(st) => st.to_canonical_object(skip_signature),
             StateTransition::MasternodeVote(st) => st.to_canonical_object(skip_signature),
@@ -52,9 +50,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
             StateTransition::AddressFundingFromAssetLock(st) => {
                 st.to_canonical_object(skip_signature)
             }
-            StateTransition::AddressCreditWithdrawal(st) => {
-                st.to_canonical_object(skip_signature)
-            }
+            StateTransition::AddressCreditWithdrawal(st) => st.to_canonical_object(skip_signature),
         }
     }
 
@@ -115,9 +111,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
             StateTransition::IdentityCreateFromAddresses(st) => {
                 st.to_cleaned_object(skip_signature)
             }
-            StateTransition::IdentityTopUpFromAddresses(st) => {
-                st.to_cleaned_object(skip_signature)
-            }
+            StateTransition::IdentityTopUpFromAddresses(st) => st.to_cleaned_object(skip_signature),
             StateTransition::AddressFundsTransfer(st) => st.to_cleaned_object(skip_signature),
             StateTransition::AddressFundingFromAssetLock(st) => {
                 st.to_cleaned_object(skip_signature)
