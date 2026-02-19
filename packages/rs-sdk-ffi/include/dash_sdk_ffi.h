@@ -3,7 +3,7 @@
 
 #pragma once
 
-/* Generated with cbindgen:0.29.0 */
+/* Generated with cbindgen:0.29.2 */
 
 /* This file is auto-generated. Do not modify manually. */
 
@@ -15,19 +15,25 @@
 #include <stdbool.h>
 #include "dash_spv_ffi.h"
 
-// Authorized action takers for token operations
-typedef enum DashSDKAuthorizedActionTakers {
-  // No one can perform the action
-  DashSDKAuthorizedActionTakers_NoOne = 0,
-  // Only the contract owner can perform the action
-  DashSDKAuthorizedActionTakers_AuthorizedContractOwner = 1,
-  // Main group can perform the action
-  DashSDKAuthorizedActionTakers_MainGroup = 2,
-  // A specific identity (requires identity_id to be set)
-  DashSDKAuthorizedActionTakers_Identity = 3,
-  // A specific group (requires group_position to be set)
-  DashSDKAuthorizedActionTakers_Group = 4,
-} DashSDKAuthorizedActionTakers;
+// Result data type indicator for iOS
+typedef enum DashSDKResultDataType {
+  // No data (void/null)
+  DashSDKResultDataType_NoData = 0,
+  // C string (char*)
+  DashSDKResultDataType_String = 1,
+  // Binary data with length
+  DashSDKResultDataType_BinaryData = 2,
+  // Identity handle
+  DashSDKResultDataType_ResultIdentityHandle = 3,
+  // Document handle
+  DashSDKResultDataType_ResultDocumentHandle = 4,
+  // Data contract handle
+  DashSDKResultDataType_ResultDataContractHandle = 5,
+  // Map of identity IDs to balances
+  DashSDKResultDataType_IdentityBalanceMap = 6,
+  // Public key handle
+  DashSDKResultDataType_ResultPublicKeyHandle = 7,
+} DashSDKResultDataType;
 
 // Error codes returned by FFI functions
 typedef enum DashSDKErrorCode {
@@ -65,6 +71,29 @@ typedef enum DashSDKGasFeesPaidBy {
   DashSDKGasFeesPaidBy_GasFeesPreferContractOwner = 2,
 } DashSDKGasFeesPaidBy;
 
+// Document field value types
+typedef enum DashSDKDocumentFieldType {
+  DashSDKDocumentFieldType_FieldString = 0,
+  DashSDKDocumentFieldType_FieldInteger = 1,
+  DashSDKDocumentFieldType_FieldFloat = 2,
+  DashSDKDocumentFieldType_FieldBoolean = 3,
+  DashSDKDocumentFieldType_FieldBytes = 4,
+  DashSDKDocumentFieldType_FieldArray = 5,
+  DashSDKDocumentFieldType_FieldObject = 6,
+  DashSDKDocumentFieldType_FieldNull = 7,
+} DashSDKDocumentFieldType;
+
+// State transition type for key selection
+typedef enum StateTransitionType {
+  StateTransitionType_IdentityUpdate = 0,
+  StateTransitionType_IdentityTopUp = 1,
+  StateTransitionType_IdentityCreditTransfer = 2,
+  StateTransitionType_IdentityCreditWithdrawal = 3,
+  StateTransitionType_DocumentsBatch = 4,
+  StateTransitionType_DataContractCreate = 5,
+  StateTransitionType_DataContractUpdate = 6,
+} StateTransitionType;
+
 // Network type for SDK configuration
 typedef enum DashSDKNetwork {
   // Mainnet
@@ -79,25 +108,13 @@ typedef enum DashSDKNetwork {
   DashSDKNetwork_SDKLocal = 4,
 } DashSDKNetwork;
 
-// Result data type indicator for iOS
-typedef enum DashSDKResultDataType {
-  // No data (void/null)
-  DashSDKResultDataType_None = 0,
-  // C string (char*)
-  DashSDKResultDataType_String = 1,
-  // Binary data with length
-  DashSDKResultDataType_BinaryData = 2,
-  // Identity handle
-  DashSDKResultDataType_ResultIdentityHandle = 3,
-  // Document handle
-  DashSDKResultDataType_ResultDocumentHandle = 4,
-  // Data contract handle
-  DashSDKResultDataType_ResultDataContractHandle = 5,
-  // Map of identity IDs to balances
-  DashSDKResultDataType_IdentityBalanceMap = 6,
-  // Public key handle
-  DashSDKResultDataType_ResultPublicKeyHandle = 7,
-} DashSDKResultDataType;
+// Token distribution type for claim operations
+typedef enum DashSDKTokenDistributionType {
+  // Pre-programmed distribution
+  DashSDKTokenDistributionType_PreProgrammed = 0,
+  // Perpetual distribution
+  DashSDKTokenDistributionType_Perpetual = 1,
+} DashSDKTokenDistributionType;
 
 // Token configuration update type
 typedef enum DashSDKTokenConfigUpdateType {
@@ -121,13 +138,19 @@ typedef enum DashSDKTokenConfigUpdateType {
   DashSDKTokenConfigUpdateType_MainControlGroup = 8,
 } DashSDKTokenConfigUpdateType;
 
-// Token distribution type for claim operations
-typedef enum DashSDKTokenDistributionType {
-  // Pre-programmed distribution
-  DashSDKTokenDistributionType_PreProgrammed = 0,
-  // Perpetual distribution
-  DashSDKTokenDistributionType_Perpetual = 1,
-} DashSDKTokenDistributionType;
+// Authorized action takers for token operations
+typedef enum DashSDKAuthorizedActionTakers {
+  // No one can perform the action
+  DashSDKAuthorizedActionTakers_NoOne = 0,
+  // Only the contract owner can perform the action
+  DashSDKAuthorizedActionTakers_AuthorizedContractOwner = 1,
+  // Main group can perform the action
+  DashSDKAuthorizedActionTakers_MainGroup = 2,
+  // A specific identity (requires identity_id to be set)
+  DashSDKAuthorizedActionTakers_Identity = 3,
+  // A specific group (requires group_position to be set)
+  DashSDKAuthorizedActionTakers_Group = 4,
+} DashSDKAuthorizedActionTakers;
 
 // Token emergency action type
 typedef enum DashSDKTokenEmergencyAction {
@@ -145,42 +168,11 @@ typedef enum DashSDKTokenPricingType {
   DashSDKTokenPricingType_SetPrices = 1,
 } DashSDKTokenPricingType;
 
-// FFI-compatible network enum for key wallet operations
-typedef enum FFIKeyNetwork {
-  FFIKeyNetwork_KeyMainnet = 0,
-  FFIKeyNetwork_KeyTestnet = 1,
-  FFIKeyNetwork_KeyRegtest = 2,
-  FFIKeyNetwork_KeyDevnet = 3,
-} FFIKeyNetwork;
-
-// State transition type for key selection
-typedef enum StateTransitionType {
-  StateTransitionType_IdentityUpdate = 0,
-  StateTransitionType_IdentityTopUp = 1,
-  StateTransitionType_IdentityCreditTransfer = 2,
-  StateTransitionType_IdentityCreditWithdrawal = 3,
-  StateTransitionType_DocumentsBatch = 4,
-  StateTransitionType_DataContractCreate = 5,
-  StateTransitionType_DataContractUpdate = 6,
-} StateTransitionType;
-
 // Opaque handle to a DataContract
 typedef struct DataContractHandle DataContractHandle;
 
 // Opaque handle to a Document
 typedef struct DocumentHandle DocumentHandle;
-
-// Opaque handle for an extended private key
-typedef struct FFIExtendedPrivKey FFIExtendedPrivKey;
-
-// Opaque handle for an extended public key
-typedef struct FFIExtendedPubKey FFIExtendedPubKey;
-
-// Opaque handle for a BIP39 mnemonic
-typedef struct FFIMnemonic FFIMnemonic;
-
-// Opaque handle for a transaction
-typedef struct FFITransaction FFITransaction;
 
 // Opaque handle to an Identity
 typedef struct IdentityHandle IdentityHandle;
@@ -193,6 +185,170 @@ typedef struct dash_sdk_handle_t dash_sdk_handle_t;
 
 // Opaque handle to a Signer
 typedef struct SignerHandle SignerHandle;
+
+// A found address with its balance (FFI-compatible)
+typedef struct DashSDKFoundAddress {
+  // The derivation index for this address
+  uint32_t index;
+  // Pointer to the address key bytes
+  uint8_t *key;
+  // Length of the key in bytes
+  uintptr_t key_len;
+  // Nonce associated with this address
+  uint32_t nonce;
+  // Balance in credits at this address
+  uint64_t balance;
+} DashSDKFoundAddress;
+
+// An address proven absent from the tree (FFI-compatible)
+typedef struct DashSDKAbsentAddress {
+  // The derivation index for this address
+  uint32_t index;
+  // Pointer to the address key bytes
+  uint8_t *key;
+  // Length of the key in bytes
+  uintptr_t key_len;
+} DashSDKAbsentAddress;
+
+// Metrics about the synchronization process (FFI-compatible)
+typedef struct DashSDKAddressSyncMetrics {
+  // Number of trunk queries (always 1 for a successful sync)
+  uint32_t trunk_queries;
+  // Number of branch queries
+  uint32_t branch_queries;
+  // Total elements seen across all proofs.
+  //
+  // This gives an indication of the "anonymity set" - how many addresses
+  // were potentially being queried from the server's perspective.
+  uint32_t total_elements_seen;
+  // Total proof bytes received
+  uint32_t total_proof_bytes;
+  // Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds)
+  uint32_t iterations;
+} DashSDKAddressSyncMetrics;
+
+// Result of address synchronization (FFI-compatible)
+typedef struct DashSDKAddressSyncResult {
+  // Array of found addresses with balances
+  struct DashSDKFoundAddress *found;
+  // Number of found addresses
+  uintptr_t found_count;
+  // Array of addresses proven absent
+  struct DashSDKAbsentAddress *absent;
+  // Number of absent addresses
+  uintptr_t absent_count;
+  // Highest found index (for HD wallets)
+  // Only valid if has_highest_found_index is true
+  uint32_t highest_found_index;
+  // Whether highest_found_index is valid
+  bool has_highest_found_index;
+  // Metrics about the sync process
+  struct DashSDKAddressSyncMetrics metrics;
+} DashSDKAddressSyncResult;
+
+// Function pointer type for getting the gap limit
+typedef uint32_t (*GetGapLimitFn)(void *context);
+
+// A pending address entry for the provider callback
+typedef struct DashSDKPendingAddress {
+  // The derivation index for this address
+  uint32_t index;
+  // Pointer to the address key bytes (32 bytes)
+  const uint8_t *key;
+  // Length of the key in bytes
+  uintptr_t key_len;
+} DashSDKPendingAddress;
+
+// List of pending addresses returned by the provider callback
+typedef struct DashSDKPendingAddressList {
+  // Array of pending addresses
+  struct DashSDKPendingAddress *addresses;
+  // Number of addresses
+  uintptr_t count;
+} DashSDKPendingAddressList;
+
+// Function pointer type for getting pending addresses
+//
+// Returns a list of pending addresses that need to be synchronized.
+// The returned list must remain valid until the next call to this function
+// or until the sync operation completes.
+typedef struct DashSDKPendingAddressList (*GetPendingAddressesFn)(void *context);
+
+// Function pointer type for handling a found address
+//
+// Called when an address is found in the tree with a balance and nonce.
+typedef void (*OnAddressFoundFn)(void *context, uint32_t index, const uint8_t *key, uintptr_t key_len, uint32_t nonce, uint64_t balance);
+
+// Function pointer type for handling an absent address
+//
+// Called when an address is proven absent from the tree.
+typedef void (*OnAddressAbsentFn)(void *context, uint32_t index, const uint8_t *key, uintptr_t key_len);
+
+// Optional function pointer type for checking if there are pending addresses.
+// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+typedef bool (*OptionalHasPendingFn)(void *context);
+
+// Optional function pointer type for getting the highest found index.
+// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+typedef uint32_t (*OptionalGetHighestFoundIndexFn)(void *context);
+
+// Optional destructor for cleanup.
+// Nullable — may be null (cbindgen translates this to a nullable C function pointer).
+typedef void (*OptionalDestroyProviderFn)(void *context);
+
+// VTable for address provider callbacks
+typedef struct AddressProviderVTable {
+  // Get the gap limit for this provider
+  GetGapLimitFn gap_limit;
+  // Get currently pending addresses to synchronize
+  GetPendingAddressesFn pending_addresses;
+  // Called when an address is found with a balance
+  OnAddressFoundFn on_address_found;
+  // Called when an address is proven absent
+  OnAddressAbsentFn on_address_absent;
+  // Check if there are still pending addresses.
+  // May be null; if null the default implementation (pending_addresses is non-empty) is used.
+  OptionalHasPendingFn has_pending;
+  // Get the highest found index.
+  // May be null; if null returns None.
+  OptionalGetHighestFoundIndexFn highest_found_index;
+  // Optional destructor for cleanup. May be null.
+  OptionalDestroyProviderFn destroy;
+} AddressProviderVTable;
+
+// FFI-compatible address provider using callbacks
+typedef struct AddressProviderFFI {
+  // Opaque context pointer passed to all callbacks
+  void *context;
+  // Pointer to the vtable containing callback functions
+  const struct AddressProviderVTable *vtable;
+} AddressProviderFFI;
+
+// Configuration for address synchronization (FFI-compatible)
+typedef struct DashSDKAddressSyncConfig {
+  // Minimum privacy count - subtrees smaller than this will be expanded
+  // to include ancestor subtrees for better privacy.
+  //
+  // Higher values provide better privacy but may increase the number of
+  // elements returned per query.
+  //
+  // Default: 32
+  uint64_t min_privacy_count;
+  // Maximum concurrent branch queries.
+  //
+  // Higher values can speed up synchronization but increase memory usage
+  // and network load.
+  //
+  // Default: 10
+  uint32_t max_concurrent_requests;
+  // Maximum number of iterations (safety limit).
+  //
+  // The sync process iterates until all addresses are resolved. This limit
+  // prevents infinite loops in case of unexpected behavior.
+  //
+  // Default: 50
+  uint32_t max_iterations;
+} DashSDKAddressSyncConfig;
 
 // Error structure returned by FFI functions
 typedef struct DashSDKError {
@@ -218,16 +374,6 @@ typedef struct ContextProviderHandle {
   uint8_t private_[0];
 } ContextProviderHandle;
 
-typedef struct FFIDashSpvClient {
-  uint8_t opaque[0];
-} FFIDashSpvClient;
-
-// Handle for Core SDK that can be passed to Platform SDK
-// This matches the definition from dash_spv_ffi.h
-typedef struct CoreSDKHandle {
-  struct FFIDashSpvClient *client;
-} CoreSDKHandle;
-
 // Result type for FFI callbacks
 typedef struct CallbackResult {
   bool success;
@@ -251,17 +397,55 @@ typedef struct ContextProviderCallbacks {
   GetQuorumPublicKeyFn get_quorum_public_key;
 } ContextProviderCallbacks;
 
+// Result structure for data contract fetch with serialization
+typedef struct DashSDKDataContractFetchResult {
+  // Handle to the data contract (null on error or if not requested)
+  struct DataContractHandle *contract_handle;
+  // JSON representation of the contract (null on error or if not requested)
+  char *json_string;
+  // Serialized contract bytes (null on error or if not requested)
+  uint8_t *serialized_data;
+  // Length of serialized data
+  uintptr_t serialized_data_len;
+  // Error information (null on success)
+  struct DashSDKError *error;
+} DashSDKDataContractFetchResult;
+
 // Document creation parameters
 typedef struct DashSDKDocumentCreateParams {
-  // Data contract handle
-  const struct DataContractHandle *data_contract_handle;
+  // Data contract ID (base58 encoded)
+  const char *data_contract_id;
   // Document type name
   const char *document_type;
-  // Owner identity handle
-  const struct IdentityHandle *owner_identity_handle;
+  // Owner identity ID (base58 encoded)
+  const char *owner_identity_id;
   // JSON string of document properties
   const char *properties_json;
 } DashSDKDocumentCreateParams;
+
+// Document creation result containing handle and entropy
+typedef struct DashSDKDocumentCreateResult {
+  // Handle to the created document
+  struct DocumentHandle *document_handle;
+  // Entropy used for document ID generation (32 bytes)
+  uint8_t entropy[32];
+} DashSDKDocumentCreateResult;
+
+// Document handle creation parameters
+typedef struct DashSDKDocumentHandleParams {
+  // Document ID (base58 encoded)
+  const char *id;
+  // Data contract ID (base58 encoded)
+  const char *data_contract_id;
+  // Document type name
+  const char *document_type;
+  // Owner identity ID (base58 encoded)
+  const char *owner_identity_id;
+  // JSON string of document properties
+  const char *properties_json;
+  // Optional revision number (0 means no revision)
+  uint64_t revision;
+} DashSDKDocumentHandleParams;
 
 // Token payment information for transactions
 typedef struct DashSDKTokenPaymentInfo {
@@ -313,6 +497,23 @@ typedef struct DashSDKStateTransitionCreationOptions {
   uint16_t base_feature_version;
 } DashSDKStateTransitionCreationOptions;
 
+// Document field value
+typedef struct DashSDKDocumentField {
+  // Field name (null-terminated)
+  char *name;
+  // Field type
+  enum DashSDKDocumentFieldType field_type;
+  // Field value as string representation (null-terminated)
+  // For complex types, this will be JSON-encoded
+  char *value;
+  // Raw integer value (for Integer type)
+  int64_t int_value;
+  // Raw float value (for Float type)
+  double float_value;
+  // Raw boolean value (for Boolean type)
+  bool bool_value;
+} DashSDKDocumentField;
+
 // Document information
 typedef struct DashSDKDocumentInfo {
   // Document ID as hex string (null-terminated)
@@ -329,6 +530,10 @@ typedef struct DashSDKDocumentInfo {
   int64_t created_at;
   // Updated at timestamp (milliseconds since epoch)
   int64_t updated_at;
+  // Number of data fields
+  uintptr_t data_fields_count;
+  // Array of data fields
+  struct DashSDKDocumentField *data_fields;
 } DashSDKDocumentInfo;
 
 // Document search parameters
@@ -346,6 +551,72 @@ typedef struct DashSDKDocumentSearchParams {
   // Start from index (for pagination)
   uint32_t start_at;
 } DashSDKDocumentSearchParams;
+
+// Represents a simple name to timestamp mapping
+typedef struct DashSDKNameTimestamp {
+  // The name
+  char *name;
+  // End timestamp in milliseconds
+  uint64_t end_time;
+} DashSDKNameTimestamp;
+
+// Represents a list of name-timestamp pairs
+typedef struct DashSDKNameTimestampList {
+  // Array of name-timestamp pairs
+  struct DashSDKNameTimestamp *entries;
+  // Number of entries
+  uintptr_t count;
+} DashSDKNameTimestampList;
+
+// Represents a contender in a contested DPNS name
+typedef struct DashSDKContender {
+  // Identity ID of the contender (base58 string)
+  char *identity_id;
+  // Vote count for this contender
+  uint32_t vote_count;
+} DashSDKContender;
+
+// Represents contest information for a DPNS name
+typedef struct DashSDKContestInfo {
+  // Array of contenders
+  struct DashSDKContender *contenders;
+  // Number of contenders
+  uintptr_t contender_count;
+  // Abstain vote tally (0 if none)
+  uint32_t abstain_votes;
+  // Lock vote tally (0 if none)
+  uint32_t lock_votes;
+  // End time in milliseconds since epoch
+  uint64_t end_time;
+  // Whether there is a winner
+  bool has_winner;
+} DashSDKContestInfo;
+
+// Represents a contested DPNS name entry
+typedef struct DashSDKContestedName {
+  // The contested name
+  char *name;
+  // Contest information
+  struct DashSDKContestInfo contest_info;
+} DashSDKContestedName;
+
+// Represents a list of contested names
+typedef struct DashSDKContestedNamesList {
+  // Array of contested names
+  struct DashSDKContestedName *names;
+  // Number of names
+  uintptr_t count;
+} DashSDKContestedNamesList;
+
+// Result structure for DPNS registration
+typedef struct DpnsRegistrationResult {
+  // JSON representation of the preorder document
+  char *preorder_document_json;
+  // JSON representation of the domain document
+  char *domain_document_json;
+  // The full domain name (e.g., "alice.dash")
+  char *full_domain_name;
+} DpnsRegistrationResult;
 
 // Public key data for creating identity
 typedef struct DashSDKPublicKeyData {
@@ -402,6 +673,12 @@ typedef struct DashSDKConfig {
   uint64_t request_timeout_ms;
 } DashSDKConfig;
 
+// Handle for Core SDK that can be passed to Platform SDK
+// This matches the definition from dash_spv_ffi.h
+typedef struct CoreSDKHandle {
+  void *client;
+} CoreSDKHandle;
+
 // Extended SDK configuration with context provider support
 typedef struct DashSDKConfigExtended {
   // Base SDK configuration
@@ -412,13 +689,17 @@ typedef struct DashSDKConfigExtended {
   struct CoreSDKHandle *core_sdk_handle;
 } DashSDKConfigExtended;
 
-// Function pointer type for iOS signing callback
+// Function pointer type for signing callback from iOS/external code
 // Returns pointer to allocated byte array (caller must free with dash_sdk_bytes_free)
 // Returns null on error
-typedef uint8_t *(*IOSSignCallback)(const uint8_t *identity_public_key_bytes, uintptr_t identity_public_key_len, const uint8_t *data, uintptr_t data_len, uintptr_t *result_len);
+typedef uint8_t *(*SignCallback)(const void *signer, const uint8_t *identity_public_key_bytes, uintptr_t identity_public_key_len, const uint8_t *data, uintptr_t data_len, uintptr_t *result_len);
 
-// Function pointer type for iOS can_sign_with callback
-typedef bool (*IOSCanSignCallback)(const uint8_t *identity_public_key_bytes, uintptr_t identity_public_key_len);
+// Function pointer type for can_sign_with callback from iOS/external code
+typedef bool (*CanSignCallback)(const void *signer, const uint8_t *identity_public_key_bytes, uintptr_t identity_public_key_len);
+
+// Function pointer type for destructor callback
+// This is an Option to allow for NULL pointers from C
+typedef void (*DestroyCallback)(void *signer);
 
 // Signature result structure
 typedef struct DashSDKSignature {
@@ -618,30 +899,6 @@ typedef struct DashSDKTokenSetPriceParams {
   const char *public_note;
 } DashSDKTokenSetPriceParams;
 
-// FFI-compatible transaction input
-typedef struct FFITxIn {
-  // Transaction ID (32 bytes)
-  uint8_t txid[32];
-  // Output index
-  uint32_t vout;
-  // Script signature length
-  uint32_t script_sig_len;
-  // Script signature data pointer
-  const uint8_t *script_sig;
-  // Sequence number
-  uint32_t sequence;
-} FFITxIn;
-
-// FFI-compatible transaction output
-typedef struct FFITxOut {
-  // Amount in satoshis
-  uint64_t amount;
-  // Script pubkey length
-  uint32_t script_pubkey_len;
-  // Script pubkey data pointer
-  const uint8_t *script_pubkey;
-} FFITxOut;
-
 // Binary data container for results
 typedef struct DashSDKBinaryData {
   // Pointer to the data
@@ -668,7 +925,7 @@ typedef struct DashSDKIdentityBalanceMap {
 
 // Unified SDK handle containing both Core and Platform SDKs
 typedef struct UnifiedSDKHandle {
-  struct FFIDashSpvClient *core_client;
+  FFIDashSpvClient *core_client;
   struct dash_sdk_handle_t *platform_sdk;
   bool integration_enabled;
 } UnifiedSDKHandle;
@@ -691,8 +948,87 @@ extern "C" {
 // This should be called once at app startup before using any other functions.
  void dash_sdk_init(void) ;
 
+// Enable logging with the specified level
+// Level values: 0 = Error, 1 = Warn, 2 = Info, 3 = Debug, 4 = Trace
+ void dash_sdk_enable_logging(uint8_t level) ;
+
 // Get the version of the Dash SDK FFI library
  const char *dash_sdk_version(void) ;
+
+// Synchronize address balances using trunk/branch chunk queries.
+//
+// This function discovers address balances for addresses supplied by the provider,
+// using privacy-preserving chunk queries. It supports HD wallet gap limit behavior
+// where finding a used address extends the search range.
+//
+// # Safety
+// - `sdk_handle` must be a valid SDK handle created by this SDK
+// - `provider` must be a valid pointer to an AddressProviderFFI structure
+// - `config` may be null (uses defaults) or a valid pointer to DashSDKAddressSyncConfig
+// - The returned result must be freed with `dash_sdk_address_sync_result_free`
+ struct DashSDKAddressSyncResult *dash_sdk_sync_address_balances(const struct dash_sdk_handle_t *sdk_handle, struct AddressProviderFFI *provider, const struct DashSDKAddressSyncConfig *config) ;
+
+// Synchronize address balances and return result with error information.
+//
+// This is an alternative version that returns a DashSDKResult for better error handling.
+//
+// # Safety
+// - `sdk_handle` must be a valid SDK handle created by this SDK
+// - `provider` must be a valid pointer to an AddressProviderFFI structure
+// - `config` may be null (uses defaults) or a valid pointer to DashSDKAddressSyncConfig
+ struct DashSDKResult dash_sdk_sync_address_balances_with_result(const struct dash_sdk_handle_t *sdk_handle, struct AddressProviderFFI *provider, const struct DashSDKAddressSyncConfig *config) ;
+
+// Free an address sync result
+//
+// # Safety
+// - `result` must be a valid pointer returned by `dash_sdk_sync_address_balances`
+//   or null (no-op)
+// - After this call, the result must not be used again
+ void dash_sdk_address_sync_result_free(struct DashSDKAddressSyncResult *result) ;
+
+// Create an address provider with callbacks
+//
+// This creates an FFI-compatible address provider that uses callbacks
+// for all operations.
+//
+// # Safety
+// - `vtable` must be a valid pointer to an AddressProviderVTable structure
+// - `context` is an opaque pointer that will be passed to all callbacks
+// - The returned provider must be freed with `dash_sdk_address_provider_free`
+ struct AddressProviderFFI *dash_sdk_address_provider_create(const struct AddressProviderVTable *vtable, void *context) ;
+
+// Free an address provider
+//
+// # Safety
+// - `provider` must be a valid pointer returned by `dash_sdk_address_provider_create`
+//   or null (no-op)
+// - After this call, the provider must not be used again
+ void dash_sdk_address_provider_free(struct AddressProviderFFI *provider) ;
+
+// Get the total balance from a sync result
+//
+// # Safety
+// - `result` must be a valid pointer to a DashSDKAddressSyncResult
+ uint64_t dash_sdk_address_sync_result_total_balance(const struct DashSDKAddressSyncResult *result) ;
+
+// Get the count of addresses with non-zero balance
+//
+// # Safety
+// - `result` must be a valid pointer to a DashSDKAddressSyncResult
+ uintptr_t dash_sdk_address_sync_result_non_zero_count(const struct DashSDKAddressSyncResult *result) ;
+
+// Free a pending address list
+//
+// This should be called to clean up memory after the sync operation is complete
+// if the caller allocated the list dynamically.
+//
+// Note: This only frees the list structure, not the key data which should be
+// managed by the caller.
+//
+// # Safety
+// - `list` must be a valid pointer to a DashSDKPendingAddressList
+//   or null (no-op)
+ void dash_sdk_pending_address_list_free(struct DashSDKPendingAddressList *list) ;
 
 // Register Core SDK handle and setup callback bridge with Platform SDK
 //
@@ -732,7 +1068,12 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `identity_id` must be a valid, non-null pointer to a NUL-terminated C string that remains valid during the call.
+// - `limit`, `offset`, and `order_ascending` are passed by value; no references are retained.
+// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must free
+//   it using the SDK's free routine. The result can also contain no data (null pointer).
+// - All pointers provided to this function must be readable and valid.
  struct DashSDKResult dash_sdk_contested_resource_get_identity_votes(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit, uint32_t offset, bool order_ascending) ;
 
 // Fetches contested resources
@@ -752,7 +1093,14 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - All C string pointers (`contract_id`, `document_type_name`, `index_name`,
+//   `start_index_values_json`, `end_index_values_json`) must be either null (when documented as optional)
+//   or valid pointers to NUL-terminated strings that remain valid for the duration of the call.
+// - The function reads the `count` and `order_ascending` by value and does not retain references.
+// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must
+//   free it using the SDK-provided free routine. The result can also contain no data (null pointer).
+// - All pointers passed in must point to readable memory; behavior is undefined if they are dangling.
  struct DashSDKResult dash_sdk_contested_resource_get_resources(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, const char *document_type_name, const char *index_name, const char *start_index_values_json, const char *end_index_values_json, uint32_t count, bool order_ascending) ;
 
 // Fetches contested resource vote state
@@ -772,7 +1120,13 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - All C string pointers (`contract_id`, `document_type_name`, `index_name`, `index_values_json`)
+//   must be valid, non-null pointers to NUL-terminated strings that remain valid for the duration of the call.
+// - `result_type` and `allow_include_locked_and_abstaining_vote_tally` are passed by value.
+// - The returned result may contain a heap-allocated C string which must be freed by the caller using
+//   the SDK's free routine. It may also contain no data (null pointer) on success.
+// - All pointers must point to readable memory; passing invalid or dangling pointers results in undefined behavior.
  struct DashSDKResult dash_sdk_contested_resource_get_vote_state(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, const char *document_type_name, const char *index_name, const char *index_values_json, uint8_t result_type, bool allow_include_locked_and_abstaining_vote_tally, uint32_t count) ;
 
 // Fetches voters for a contested resource identity
@@ -792,17 +1146,14 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - All C string pointers (`contract_id`, `document_type_name`, `index_name`, `index_values_json`, `contestant_id`)
+//   must be valid, non-null pointers to NUL-terminated strings that remain valid for the duration of the call.
+// - The function reads `count` and `order_ascending` by value and does not retain references.
+// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must
+//   free it using the SDK-provided free routine. The result can also contain no data (null pointer).
+// - All pointers must reference readable memory; passing invalid pointers leads to undefined behavior.
  struct DashSDKResult dash_sdk_contested_resource_get_voters_for_identity(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, const char *document_type_name, const char *index_name, const char *index_values_json, const char *contestant_id, uint32_t count, bool order_ascending) ;
-
-// Create a context provider from a Core SDK handle (DEPRECATED)
-//
-// This function is deprecated. Use dash_sdk_context_provider_from_callbacks instead.
-//
-// # Safety
-// - `core_handle` must be a valid Core SDK handle
-// - String parameters must be valid UTF-8 C strings or null
- struct ContextProviderHandle *dash_sdk_context_provider_from_core(struct CoreSDKHandle *core_handle, const char *core_rpc_url, const char *core_rpc_user, const char *core_rpc_password) ;
 
 // Create a context provider from callbacks
 //
@@ -816,148 +1167,89 @@ extern "C" {
 // - `handle` must be a valid context provider handle or null
  void dash_sdk_context_provider_destroy(struct ContextProviderHandle *handle) ;
 
-// Initialize the Core SDK
-// Returns 0 on success, error code on failure
- int32_t dash_core_sdk_init(void) ;
-
-// Create a Core SDK client with testnet config
+// Validate that a private key corresponds to a public key using DPP's public_key_data_from_private_key_data
 //
 // # Safety
-// - Returns null on failure
- struct FFIDashSpvClient *dash_core_sdk_create_client_testnet(void) ;
+// - `private_key_hex` and `public_key_hex` must be valid, non-null pointers to NUL-terminated C strings that
+//   remain valid for the duration of the call.
+// - `key_type` and `is_testnet` are passed by value; no references are retained.
+// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+//   the SDK's free routine. It may also return no data (null pointer) to indicate success without payload.
+// - Passing invalid or dangling pointers results in undefined behavior.
+ struct DashSDKResult dash_sdk_validate_private_key_for_public_key(const char *private_key_hex, const char *public_key_hex, uint8_t key_type, bool is_testnet) ;
 
-// Create a Core SDK client with mainnet config
+// Convert private key to WIF format
 //
 // # Safety
-// - Returns null on failure
- struct FFIDashSpvClient *dash_core_sdk_create_client_mainnet(void) ;
+// - `private_key_hex` must be a valid, non-null pointer to a NUL-terminated C string representing a 32-byte hex key
+//   and remain valid for the duration of the call.
+// - `is_testnet` is passed by value.
+// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+//   the SDK's free routine.
+ struct DashSDKResult dash_sdk_private_key_to_wif(const char *private_key_hex, bool is_testnet) ;
 
-// Create a Core SDK client with custom config
+// Get public key data from private key data
 //
 // # Safety
-// - `config` must be a valid CoreSDKConfig pointer
-// - Returns null on failure
- struct FFIDashSpvClient *dash_core_sdk_create_client(const FFIClientConfig *config) ;
-
-// Destroy a Core SDK client
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle or null
- void dash_core_sdk_destroy_client(struct FFIDashSpvClient *client) ;
-
-// Start the Core SDK client (begin sync)
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
- int32_t dash_core_sdk_start(struct FFIDashSpvClient *client) ;
-
-// Stop the Core SDK client
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
- int32_t dash_core_sdk_stop(struct FFIDashSpvClient *client) ;
-
-// Sync Core SDK client to tip
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
- int32_t dash_core_sdk_sync_to_tip(struct FFIDashSpvClient *client) ;
-
-// Get the current sync progress
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - Returns pointer to FFISyncProgress structure (caller must free it)
- FFISyncProgress *dash_core_sdk_get_sync_progress(struct FFIDashSpvClient *client) ;
-
-// Get Core SDK statistics
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - Returns pointer to FFISpvStats structure (caller must free it)
- FFISpvStats *dash_core_sdk_get_stats(struct FFIDashSpvClient *client) ;
-
-// Get the current block height
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `height` must point to a valid u32
- int32_t dash_core_sdk_get_block_height(struct FFIDashSpvClient *client, uint32_t *height) ;
-
-// Add an address to watch
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `address` must be a valid null-terminated C string
- int32_t dash_core_sdk_watch_address(struct FFIDashSpvClient *client, const char *address) ;
-
-// Remove an address from watching
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `address` must be a valid null-terminated C string
- int32_t dash_core_sdk_unwatch_address(struct FFIDashSpvClient *client, const char *address) ;
-
-// Get balance for all watched addresses
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - Returns pointer to FFIBalance structure (caller must free it)
- FFIBalance *dash_core_sdk_get_total_balance(struct FFIDashSpvClient *client) ;
-
-// Get platform activation height
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `height` must point to a valid u32
- int32_t dash_core_sdk_get_platform_activation_height(struct FFIDashSpvClient *client, uint32_t *height) ;
-
-// Get quorum public key
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `quorum_hash` must point to a valid 32-byte buffer
-// - `public_key` must point to a valid 48-byte buffer
- int32_t dash_core_sdk_get_quorum_public_key(struct FFIDashSpvClient *client, uint32_t quorum_type, const uint8_t *quorum_hash, uint32_t core_chain_locked_height, uint8_t *public_key, uintptr_t public_key_size) ;
-
-// Get Core SDK handle for platform integration
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
- void *dash_core_sdk_get_core_handle(struct FFIDashSpvClient *client) ;
-
-// Broadcast a transaction
-//
-// # Safety
-// - `client` must be a valid Core SDK client handle
-// - `transaction_hex` must be a valid null-terminated C string
- int32_t dash_core_sdk_broadcast_transaction(struct FFIDashSpvClient *client, const char *transaction_hex) ;
-
-// Check if Core SDK feature is enabled at runtime
- bool dash_core_sdk_is_enabled(void) ;
-
-// Get Core SDK version
- const char *dash_core_sdk_version(void) ;
+// - `private_key_hex` must be a valid, non-null pointer to a NUL-terminated C string representing a 32-byte hex key
+//   and remain valid for the duration of the call.
+// - `key_type` and `is_testnet` are passed by value; no references are retained.
+// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+//   the SDK's free routine.
+ struct DashSDKResult dash_sdk_public_key_data_from_private_key_data(const char *private_key_hex, uint8_t key_type, bool is_testnet) ;
 
 // Create a new data contract
+//
+// # Safety
+// - `sdk_handle`, `owner_identity_handle`, and `documents_schema_json` must be valid, non-null pointers.
+// - `documents_schema_json` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
  struct DashSDKResult dash_sdk_data_contract_create(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *owner_identity_handle, const char *documents_schema_json) ;
 
 // Destroy a data contract handle
+//
+// # Safety
+// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `handle` becomes invalid and must not be used again.
  void dash_sdk_data_contract_destroy(struct DataContractHandle *handle) ;
 
 // Put data contract to platform (broadcast state transition)
+//
+// # Safety
+// - `sdk_handle`, `data_contract_handle`, `identity_public_key_handle`, and `signer_handle` must be valid, non-null pointers.
+// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
  struct DashSDKResult dash_sdk_data_contract_put_to_platform(struct dash_sdk_handle_t *sdk_handle, const struct DataContractHandle *data_contract_handle, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle) ;
 
 // Put data contract to platform and wait for confirmation (broadcast state transition and wait for response)
+//
+// # Safety
+// - Same requirements as `dash_sdk_data_contract_put_to_platform`.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
  struct DashSDKResult dash_sdk_data_contract_put_to_platform_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DataContractHandle *data_contract_handle, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle) ;
 
 // Fetch a data contract by ID
+//
+// # Safety
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
  struct DashSDKResult dash_sdk_data_contract_fetch(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id) ;
 
 // Fetch a data contract by ID and return as JSON
+//
+// # Safety
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string that remains valid for the duration of the call.
+// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_data_contract_fetch_json(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id) ;
 
 // Fetch multiple data contracts by their IDs
+//
+// # Safety
+// - `sdk_handle` and `contract_ids` must be valid, non-null pointers.
+// - `contract_ids` must point to a NUL-terminated C string containing either a JSON array of Base58 IDs or a comma-separated list; it must remain valid for the duration of the call.
+// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
@@ -966,6 +1258,22 @@ extern "C" {
 // # Returns
 // JSON string containing contract IDs mapped to their data contracts
  struct DashSDKResult dash_sdk_data_contracts_fetch_many(const struct dash_sdk_handle_t *sdk_handle, const char *contract_ids) ;
+
+// Fetch a data contract by ID with serialization
+//
+// # Safety
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - The returned result contains heap-allocated buffers/handles depending on flags; caller must free them using
+//   `dash_sdk_data_contract_fetch_result_free`.
+ struct DashSDKDataContractFetchResult dash_sdk_data_contract_fetch_with_serialization(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, bool return_json, bool return_serialized) ;
+
+// Free the memory allocated for a data contract fetch result
+//
+// # Safety
+// - `result` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `result` and all contained pointers become invalid and must not be used again.
+ void dash_sdk_data_contract_fetch_result_free(struct DashSDKDataContractFetchResult *result) ;
 
 // Fetch data contract history
 //
@@ -978,52 +1286,169 @@ extern "C" {
 //
 // # Returns
 // JSON string containing the data contract history
+//
+// # Safety
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_data_contract_fetch_history(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, unsigned int limit, unsigned int offset, uint64_t start_at_ms) ;
 
 // Get schema for a specific document type
+//
+// # Safety
+// - `contract_handle` and `document_type` must be valid, non-null pointers.
+// - `document_type` must point to a NUL-terminated C string valid for the duration of the call.
+// - Returns a heap-allocated C string pointer on success; caller must free it using SDK routines.
  char *dash_sdk_data_contract_get_schema(const struct DataContractHandle *contract_handle, const char *document_type) ;
 
 // Create a new document
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `params` must be a valid, non-null pointer to a `DashSDKDocumentCreateParams` structure.
+// - All C string fields inside `params` (`data_contract_id`, `document_type`, `owner_identity_id`, `properties_json`)
+//   must be valid pointers to NUL-terminated strings and remain valid for the duration of the call.
+// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be freed by the caller
+//   using the appropriate SDK destroy function.
+// - Passing dangling or invalid pointers results in undefined behavior.
  struct DashSDKResult dash_sdk_document_create(struct dash_sdk_handle_t *sdk_handle, const struct DashSDKDocumentCreateParams *params) ;
 
+// Free a document creation result
+//
+// # Safety
+// - `result` must be either null (no-op) or a pointer previously returned by this SDK.
+// - After this call, `result` becomes invalid and must not be used again.
+ void dash_sdk_document_create_result_free(struct DashSDKDocumentCreateResult *result) ;
+
+// Create a document handle from parameters
+// This creates a Document object directly without broadcasting to the network
+//
+// # Safety
+// - `params` must be a valid, non-null pointer to a `DashSDKDocumentHandleParams` structure.
+// - All C string fields inside `params` must be valid pointers to NUL-terminated strings and remain valid
+//   for the duration of the call.
+// - On success, the returned `DashSDKResult` contains a heap-allocated `DocumentHandle` which must be freed by the caller
+//   using the appropriate SDK destroy function.
+// - Passing dangling or invalid pointers results in undefined behavior.
+ struct DashSDKResult dash_sdk_document_make_handle(const struct DashSDKDocumentHandleParams *params) ;
+
 // Delete a document from the platform
- struct DashSDKResult dash_sdk_document_delete(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `document_id`, `owner_id`, `data_contract_id`, and `document_type_name` must be valid, non-null pointers to
+//   NUL-terminated C strings that remain valid for the duration of the call.
+// - `identity_public_key_handle` and `signer_handle` must be valid, non-null pointers to initialized structures.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_delete(struct dash_sdk_handle_t *sdk_handle, const char *document_id, const char *owner_id, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Delete a document from the platform and wait for confirmation
- struct DashSDKResult dash_sdk_document_delete_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_delete` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_delete_and_wait(struct dash_sdk_handle_t *sdk_handle, const char *document_id, const char *owner_id, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Update document price (broadcast state transition)
- struct DashSDKResult dash_sdk_document_update_price_of_document(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, uint64_t price, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `document_handle`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle`
+//   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_update_price_of_document(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, uint64_t price, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Update document price and wait for confirmation (broadcast state transition and wait for response)
- struct DashSDKResult dash_sdk_document_update_price_of_document_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, uint64_t price, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_update_price_of_document` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_update_price_of_document_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, uint64_t price, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Purchase document (broadcast state transition)
- struct DashSDKResult dash_sdk_document_purchase(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, uint64_t price, const char *purchaser_id, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `document_handle`, `data_contract_id`, `document_type_name`, `purchaser_id`, `identity_public_key_handle`, and `signer_handle`
+//   must be valid, non-null pointers. All C string pointers must point to NUL-terminated strings.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_purchase(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, uint64_t price, const char *purchaser_id, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Purchase document and wait for confirmation (broadcast state transition and wait for response)
- struct DashSDKResult dash_sdk_document_purchase_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, uint64_t price, const char *purchaser_id, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_purchase` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_purchase_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, uint64_t price, const char *purchaser_id, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Put document to platform (broadcast state transition)
- struct DashSDKResult dash_sdk_document_put_to_platform(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const uint8_t (*entropy)[32], const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `document_handle`, `data_contract_id`, `document_type_name`, `entropy`, `identity_public_key_handle`, and `signer_handle`
+//   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+// - All pointers must reference readable memory for the duration of the call.
+ struct DashSDKResult dash_sdk_document_put_to_platform(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, const uint8_t (*entropy)[32], const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Put document to platform and wait for confirmation (broadcast state transition and wait for response)
- struct DashSDKResult dash_sdk_document_put_to_platform_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const uint8_t (*entropy)[32], const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_put_to_platform` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_put_to_platform_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, const uint8_t (*entropy)[32], const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
-// Fetch a document by ID
+// Fetch a document by ID using contract ID (gets contract from trusted provider)
+ struct DashSDKResult dash_sdk_document_fetch_by_contract_id(struct dash_sdk_handle_t *sdk_handle, const char *contract_id, const char *document_type, const char *document_id) ;
+
+// Fetch a document by ID (legacy - requires data contract handle)
+//
+// # Safety
+// - `sdk_handle`, `data_contract_handle`, `document_type`, and `document_id` must be valid, non-null pointers.
+// - `document_type` and `document_id` must point to NUL-terminated C strings valid for the duration of the call.
+// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
  struct DashSDKResult dash_sdk_document_fetch(const struct dash_sdk_handle_t *sdk_handle, const struct DataContractHandle *data_contract_handle, const char *document_type, const char *document_id) ;
 
 // Get document information
+//
+// # Safety
+// - `document_handle` must be a valid, non-null pointer to a `DocumentHandle` that remains valid for the duration of the call.
+// - Returns a heap-allocated `DashSDKDocumentInfo` pointer on success; caller must free it using the SDK-provided free function.
  struct DashSDKDocumentInfo *dash_sdk_document_get_info(const struct DocumentHandle *document_handle) ;
 
 // Search for documents
+//
+// # Safety
+// - `sdk_handle` and `params` must be valid, non-null pointers.
+// - All C string pointers inside `params` must point to NUL-terminated strings and remain valid for the duration of the call; optional strings may be null.
+// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_document_search(const struct dash_sdk_handle_t *sdk_handle, const struct DashSDKDocumentSearchParams *params) ;
 
 // Replace document on platform (broadcast state transition)
- struct DashSDKResult dash_sdk_document_replace_on_platform(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `document_handle`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle`
+//   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_replace_on_platform(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Replace document on platform and wait for confirmation (broadcast state transition and wait for response)
- struct DashSDKResult dash_sdk_document_replace_on_platform_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_replace_on_platform` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_replace_on_platform_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Transfer document to another identity
 //
@@ -1039,7 +1464,13 @@ extern "C" {
 //
 // # Returns
 // Serialized state transition on success
- struct DashSDKResult dash_sdk_document_transfer_to_identity(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *recipient_id, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - `sdk_handle`, `document_handle`, `recipient_id`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle` must be valid, non-null pointers.
+// - All C string pointers must point to NUL-terminated strings valid for the duration of the call.
+// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - On success, any heap memory in the result must be freed using SDK routines.
+ struct DashSDKResult dash_sdk_document_transfer_to_identity(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *recipient_id, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Transfer document to another identity and wait for confirmation
 //
@@ -1055,13 +1486,199 @@ extern "C" {
 //
 // # Returns
 // Handle to the transferred document on success
- struct DashSDKResult dash_sdk_document_transfer_to_identity_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *recipient_id, const struct DataContractHandle *data_contract_handle, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
+//
+// # Safety
+// - Same requirements as `dash_sdk_document_transfer_to_identity` regarding pointer validity and lifetimes.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+ struct DashSDKResult dash_sdk_document_transfer_to_identity_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct DocumentHandle *document_handle, const char *recipient_id, const char *data_contract_id, const char *document_type_name, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKTokenPaymentInfo *token_payment_info, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Destroy a document
+//
+// # Safety
+// - `sdk_handle` and `document_handle` must be valid, non-null pointers.
+// - Returns a pointer to an error structure on failure; caller must free with `dash_sdk_error_free`.
  struct DashSDKError *dash_sdk_document_destroy(struct dash_sdk_handle_t *sdk_handle, struct DocumentHandle *document_handle) ;
 
 // Destroy a document handle
+//
+// # Safety
+// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `handle` becomes invalid and must not be used again.
  void dash_sdk_document_handle_destroy(struct DocumentHandle *handle) ;
+
+// Free a document handle (alias for destroy)
+//
+// # Safety
+// - Same as `dash_sdk_document_handle_destroy`.
+ void dash_sdk_document_free(struct DocumentHandle *handle) ;
+
+// Set document properties from JSON
+//
+// # Safety
+// - `document_handle` and `properties_json` must be valid, non-null pointers.
+// - `properties_json` must point to a NUL-terminated C string valid for the duration of the call.
+// - Returns an error pointer on failure; caller must free with `dash_sdk_error_free`.
+ struct DashSDKError *dash_sdk_document_set_properties(struct DocumentHandle *document_handle, const char *properties_json) ;
+
+// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l'
+// with '0', '1', and '1' respectively to prevent homograph attacks
+//
+// # Safety
+// - `name` must be a valid null-terminated C string
+ struct DashSDKResult dash_sdk_dpns_normalize_username(const char *name) ;
+
+// Check if a username is valid according to DPNS rules
+//
+// A username is valid if:
+// - It's between 3 and 63 characters long
+// - It starts and ends with alphanumeric characters (a-zA-Z0-9)
+// - It contains only alphanumeric characters and hyphens
+// - It doesn't have consecutive hyphens
+//
+// # Safety
+// - `name` must be a valid null-terminated C string
+//
+// # Returns
+// - 1 if the username is valid
+// - 0 if the username is invalid
+// - -1 if there's an error
+ int32_t dash_sdk_dpns_is_valid_username(const char *name) ;
+
+// Check if a username is contested (requires masternode voting)
+//
+// A username is contested if its normalized label:
+// - Is between 3 and 19 characters long (inclusive)
+// - Contains only lowercase letters a-z, digits 0-1, and hyphens
+//
+// # Safety
+// - `name` must be a valid null-terminated C string
+//
+// # Returns
+// - 1 if the username is contested
+// - 0 if the username is not contested
+// - -1 if there's an error
+ int32_t dash_sdk_dpns_is_contested_username(const char *name) ;
+
+// Get a validation message for a username
+//
+// Returns a descriptive message about why a username is invalid, or "valid" if it's valid.
+//
+// # Safety
+// - `name` must be a valid null-terminated C string
+ struct DashSDKResult dash_sdk_dpns_get_validation_message(const char *name) ;
+
+// Check if a DPNS username is available
+//
+// This function checks if a given username is available for registration.
+// It also validates the username format and checks if it's contested.
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `label` - The username label to check (e.g., "alice")
+//
+// # Returns
+// * On success: A JSON object with availability information
+// * On error: An error result
+//
+// # Safety
+// - `sdk_handle` and `label` must be valid, non-null pointers.
+// - `label` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+ struct DashSDKResult dash_sdk_dpns_check_availability(const struct dash_sdk_handle_t *sdk_handle, const char *label) ;
+
+// Get all contested DPNS usernames where an identity is a contender
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+ struct DashSDKResult dash_sdk_dpns_get_contested_usernames_by_identity(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit) ;
+
+// Get the vote state for a contested DPNS username
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKResult dash_sdk_dpns_get_contested_vote_state(const struct dash_sdk_handle_t *sdk_handle, const char *label, uint32_t limit) ;
+
+// Get all contested DPNS usernames
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKResult dash_sdk_dpns_get_all_contested_usernames(const struct dash_sdk_handle_t *sdk_handle, uint32_t limit, const char *start_after) ;
+
+// Get current DPNS contests (active vote polls)
+//
+// Returns a list of contested DPNS names with their end times.
+// The caller is responsible for freeing the result with `dash_sdk_name_timestamp_list_free`.
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKNameTimestampList *dash_sdk_dpns_get_current_contests(const struct dash_sdk_handle_t *sdk_handle, uint64_t start_time, uint64_t end_time, uint16_t limit) ;
+
+// Get all contested DPNS usernames that an identity has voted on
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKResult dash_sdk_dpns_get_identity_votes(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit, uint16_t offset) ;
+
+// Get non-resolved DPNS contests for a specific identity
+//
+// Returns a list of contested but unresolved DPNS usernames where the identity is a contender.
+// The caller is responsible for freeing the result with `dash_sdk_contested_names_list_free`.
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKContestedNamesList *dash_sdk_dpns_get_non_resolved_contests_for_identity(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit) ;
+
+// Get contested DPNS usernames that are not yet resolved
+//
+// Returns a list of contested but unresolved DPNS usernames with their contest information.
+// The caller is responsible for freeing the result with `dash_sdk_contested_names_list_free`.
+//
+// # Safety
+// This function is unsafe because it operates on raw pointers
+ struct DashSDKContestedNamesList *dash_sdk_dpns_get_contested_non_resolved_usernames(const struct dash_sdk_handle_t *sdk_handle, uint32_t limit) ;
+
+// Resolve a DPNS name to an identity ID
+//
+// This function resolves a DPNS username to its associated identity ID.
+// The name can be either:
+// - A full domain name (e.g., "alice.dash")
+// - Just the label (e.g., "alice")
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `name` - The DPNS name to resolve
+//
+// # Returns
+// * On success: A JSON object with the identity ID, or null if not found
+// * On error: An error result
+//
+// # Safety
+// - `sdk_handle` and `name` must be valid, non-null pointers.
+// - `name` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+ struct DashSDKResult dash_sdk_dpns_resolve(const struct dash_sdk_handle_t *sdk_handle, const char *name) ;
+
+// Search for DPNS names that start with a given prefix
+//
+// This function searches for DPNS usernames that start with the given prefix.
+//
+// # Arguments
+// * `sdk_handle` - Handle to the SDK instance
+// * `prefix` - The prefix to search for (e.g., "ali" to find "alice", "alicia", etc.)
+// * `limit` - Maximum number of results to return (0 for default of 10)
+//
+// # Returns
+// * On success: A JSON array of username objects
+// * On error: An error result
+//
+// # Safety
+// - `sdk_handle` and `prefix` must be valid, non-null pointers.
+// - `prefix` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+ struct DashSDKResult dash_sdk_dpns_search(const struct dash_sdk_handle_t *sdk_handle, const char *prefix, uint32_t limit) ;
 
 // Get DPNS usernames owned by an identity
 //
@@ -1079,53 +1696,38 @@ extern "C" {
 // # Returns
 // * On success: A JSON array of username objects
 // * On error: An error result
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_dpns_get_usernames(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, uint32_t limit) ;
 
-// Check if a DPNS username is available
+// Register a DPNS username in a single operation
 //
-// This function checks if a given username is available for registration.
-// It also validates the username format and checks if it's contested.
+// This method handles both the preorder and domain registration steps automatically.
+// It generates the necessary entropy, creates both documents, and submits them in order.
 //
-// # Arguments
-// * `sdk_handle` - Handle to the SDK instance
-// * `label` - The username label to check (e.g., "alice")
+// # Safety
+// - `handle` must be a valid, non-null SDK handle pointer.
+// - `label` must be a valid pointer to a NUL-terminated C string that remains valid for the duration of the call.
+// - `identity`, `identity_public_key`, and `signer` must be valid handles (as raw pointers) obtained from this SDK and not previously freed; they are not consumed by this call.
 //
 // # Returns
-// * On success: A JSON object with availability information
-// * On error: An error result
- struct DashSDKResult dash_sdk_dpns_check_availability(const struct dash_sdk_handle_t *sdk_handle, const char *label) ;
+// Returns a DpnsRegistrationResult containing both created documents and the full domain name
+ struct DashSDKResult dash_sdk_dpns_register_name(const struct dash_sdk_handle_t *handle, const char *label, const void *identity, const void *identity_public_key, const void *signer) ;
 
-// Search for DPNS names that start with a given prefix
+// Free a DPNS registration result
 //
-// This function searches for DPNS usernames that start with the given prefix.
-//
-// # Arguments
-// * `sdk_handle` - Handle to the SDK instance
-// * `prefix` - The prefix to search for (e.g., "ali" to find "alice", "alicia", etc.)
-// * `limit` - Maximum number of results to return (0 for default of 10)
-//
-// # Returns
-// * On success: A JSON array of username objects
-// * On error: An error result
- struct DashSDKResult dash_sdk_dpns_search(const struct dash_sdk_handle_t *sdk_handle, const char *prefix, uint32_t limit) ;
-
-// Resolve a DPNS name to an identity ID
-//
-// This function resolves a DPNS username to its associated identity ID.
-// The name can be either:
-// - A full domain name (e.g., "alice.dash")
-// - Just the label (e.g., "alice")
-//
-// # Arguments
-// * `sdk_handle` - Handle to the SDK instance
-// * `name` - The DPNS name to resolve
-//
-// # Returns
-// * On success: A JSON object with the identity ID, or null if not found
-// * On error: An error result
- struct DashSDKResult dash_sdk_dpns_resolve(const struct dash_sdk_handle_t *sdk_handle, const char *name) ;
+// # Safety
+// - `result` must be a valid DpnsRegistrationResult pointer created by dash_sdk_dpns_register_name
+ void dash_sdk_dpns_registration_result_free(struct DpnsRegistrationResult *result) ;
 
 // Free an error message
+//
+// # Safety
+// - `error` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `error` becomes invalid and must not be used again.
  void dash_sdk_error_free(struct DashSDKError *error) ;
 
 // Fetches proposed epoch blocks by evonode IDs
@@ -1140,7 +1742,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` and `ids_json` must be valid pointers; `ids_json` must point to a NUL-terminated C string with a JSON array of hex IDs.
+// - Pointers must remain valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(const struct dash_sdk_handle_t *sdk_handle, uint32_t epoch, const char *ids_json) ;
 
 // Fetches proposed epoch blocks by range
@@ -1157,7 +1761,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer.
+// - `start_after` and `start_at` may be null; when non-null they must point to NUL-terminated C strings with hex-encoded 32-byte hashes.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_evonode_get_proposed_epoch_blocks_by_range(const struct dash_sdk_handle_t *sdk_handle, uint32_t epoch, uint32_t limit, const char *start_after, const char *start_at) ;
 
 // Fetches group action signers
@@ -1174,7 +1780,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle`, `contract_id`, and `action_id` must be valid, non-null pointers.
+// - `contract_id` and `action_id` must point to NUL-terminated C strings valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_group_get_action_signers(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, uint16_t group_contract_position, uint8_t status, const char *action_id) ;
 
 // Fetches group actions
@@ -1192,7 +1800,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string; `start_at_action_id` may be null, otherwise must be a valid NUL-terminated C string.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_group_get_actions(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, uint16_t group_contract_position, uint8_t status, const char *start_at_action_id, uint16_t limit) ;
 
 // Fetches information about a group
@@ -1207,7 +1817,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_group_get_info(const struct dash_sdk_handle_t *sdk_handle, const char *contract_id, uint16_t group_contract_position) ;
 
 // Fetches information about multiple groups
@@ -1222,10 +1834,18 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer.
+// - `start_at_position` may be null; when non-null it must point to a NUL-terminated C string representing a number.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_group_get_infos(const struct dash_sdk_handle_t *sdk_handle, const char *start_at_position, uint32_t limit) ;
 
 // Create a new identity
+//
+// # Safety
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - On success, the returned `DashSDKResult` contains a heap-allocated handle that must be freed using the
+//   appropriate SDK destroy function.
+// - Passing a dangling or invalid pointer results in undefined behavior.
  struct DashSDKResult dash_sdk_identity_create(struct dash_sdk_handle_t *sdk_handle) ;
 
 // Create an identity handle from components
@@ -1243,6 +1863,13 @@ extern "C" {
 // # Returns
 // - Handle to the created identity on success
 // - Error if creation fails
+//
+// # Safety
+// - `identity_id` must be a valid pointer to 32 readable bytes.
+// - If `public_keys_count > 0`, `public_keys` must be a valid pointer to an array of `DashSDKPublicKeyData`
+//   structures of length `public_keys_count`; each `data` field in the array must point to at least `data_len` readable bytes.
+// - All pointers must remain valid for the duration of the call.
+// - On success, returns a heap-allocated handle; caller must destroy it using the SDK's destroy function.
  struct DashSDKResult dash_sdk_identity_create_from_components(const uint8_t *identity_id, const struct DashSDKPublicKeyData *public_keys, uintptr_t public_keys_count, uint64_t balance, uint64_t revision) ;
 
 // Get a public key from an identity by its ID
@@ -1254,12 +1881,27 @@ extern "C" {
 // # Returns
 // - Handle to the public key on success
 // - Error if key not found or invalid parameters
+//
+// # Safety
+// - `identity` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be destroyed with the SDK's
+//   corresponding destroy function.
+// - Passing invalid or dangling pointers results in undefined behavior.
  struct DashSDKResult dash_sdk_identity_get_public_key_by_id(const struct IdentityHandle *identity, uint8_t key_id) ;
 
 // Get identity information
+//
+// # Safety
+// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+// - Returns a heap-allocated `DashSDKIdentityInfo` pointer; caller must free it using the SDK-provided destroy function.
+// - Passing invalid or dangling pointers results in undefined behavior.
  struct DashSDKIdentityInfo *dash_sdk_identity_get_info(const struct IdentityHandle *identity_handle) ;
 
 // Destroy an identity handle
+//
+// # Safety
+// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `handle` becomes invalid and must not be used again.
  void dash_sdk_identity_destroy(struct IdentityHandle *handle) ;
 
 // Get the appropriate signing key for a state transition
@@ -1274,6 +1916,12 @@ extern "C" {
 // # Returns
 // - Handle to the identity public key on success
 // - Error if no suitable key is found
+//
+// # Safety
+// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be destroyed with the SDK's
+//   corresponding destroy function.
+// - Passing invalid or dangling pointers results in undefined behavior.
  struct DashSDKResult dash_sdk_identity_get_signing_key_for_transition(const struct IdentityHandle *identity_handle, enum StateTransitionType transition_type) ;
 
 // Get the private key data for a transfer key
@@ -1289,15 +1937,68 @@ extern "C" {
 // # Returns
 // - 32-byte private key data on success
 // - Error if key not found or not accessible
+//
+// # Safety
+// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle`.
+// - This function returns its result inside `DashSDKResult`; any heap pointers within must be freed using SDK routines.
+// - Passing invalid or dangling pointers results in undefined behavior.
  struct DashSDKResult dash_sdk_identity_get_transfer_private_key(const struct IdentityHandle *identity_handle, uint32_t key_index) ;
 
 // Get the key ID from an identity public key
+//
+// # Safety
+// - `key_handle` must be a valid, non-null pointer to an `IdentityPublicKeyHandle`.
+// - Returns 0 if the pointer is null.
  uint32_t dash_sdk_identity_public_key_get_id(const struct IdentityPublicKeyHandle *key_handle) ;
 
+// Create an identity public key handle from key data
+//
+// This function creates an identity public key handle from the raw key data
+// without needing to fetch the identity from the network.
+//
+// # Parameters
+// - `key_id`: The key ID
+// - `key_type`: The key type (0 = ECDSA_SECP256K1, 1 = BLS12_381, 2 = ECDSA_HASH160, 3 = BIP13_SCRIPT_HASH, 4 = ED25519_HASH160)
+// - `purpose`: The key purpose (0 = Authentication, 1 = Encryption, 2 = Decryption, 3 = Transfer, 4 = SystemTransfer, 5 = Voting)
+// - `security_level`: The security level (0 = Master, 1 = Critical, 2 = High, 3 = Medium)
+// - `public_key_data`: The public key data
+// - `public_key_data_len`: Length of the public key data
+// - `read_only`: Whether the key is read-only
+// - `disabled_at`: Optional timestamp when the key was disabled (0 if not disabled)
+//
+// # Returns
+// - Handle to the identity public key on success
+// - Error if parameters are invalid
+//
+// # Safety
+// - `public_key_data` must be a valid, non-null pointer to a buffer of `public_key_data_len` readable bytes.
+// - All scalar parameters are passed by value.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
+// - Passing invalid or dangling pointers results in undefined behavior.
+ struct DashSDKResult dash_sdk_identity_public_key_create_from_data(uint32_t key_id, uint8_t key_type, uint8_t purpose, uint8_t security_level, const uint8_t *public_key_data, uintptr_t public_key_data_len, bool read_only, uint64_t disabled_at) ;
+
+// Serialize an identity public key to bytes
+// Returns the serialized bytes and their length
+//
+// # Safety
+// - `key_handle` must be a valid, non-null pointer to an `IdentityPublicKeyHandle`.
+// - `out_bytes` and `out_len` must be valid, non-null pointers to writable memory.
+// - Caller must free the returned buffer with the appropriate SDK-provided free function.
+ struct DashSDKResult dash_sdk_identity_public_key_to_bytes(const struct IdentityPublicKeyHandle *key_handle, uint8_t **out_bytes, uintptr_t *out_len) ;
+
 // Free an identity public key handle
+//
+// # Safety
+// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `handle` becomes invalid and must not be used again.
  void dash_sdk_identity_public_key_destroy(struct IdentityPublicKeyHandle *handle) ;
 
 // Register a name for an identity
+//
+// # Safety
+// - `_sdk_handle` and `_identity_handle` must be valid pointers when used; currently this stub ignores them.
+// - `_name` must be a valid pointer to a NUL-terminated C string if used in the future.
+// - Returns a heap-allocated error pointer; caller must free it using `dash_sdk_error_free`.
  struct DashSDKError *dash_sdk_identity_register_name(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, const char *name) ;
 
 // Parse an identity from JSON string to handle
@@ -1312,9 +2013,20 @@ extern "C" {
 // # Returns
 // - Handle to the parsed identity on success
 // - Error if JSON parsing fails
+//
+// # Safety
+// - `json_str` must be a valid, non-null pointer to a NUL-terminated C string and remain valid for the duration of the call.
+// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be freed using the
+//   appropriate SDK destroy function to avoid leaks.
  struct DashSDKResult dash_sdk_identity_parse_json(const char *json_str) ;
 
 // Put identity to platform with instant lock proof
+//
+// # Safety
+// - `sdk_handle`, `identity_handle`, `instant_lock_bytes`, `transaction_bytes`, `private_key`, and `signer_handle`
+//   must be valid, non-null pointers. Buffer pointers must reference at least the specified lengths.
+// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
 //
 // # Parameters
 // - `instant_lock_bytes`: Serialized InstantLock data
@@ -1325,6 +2037,11 @@ extern "C" {
  struct DashSDKResult dash_sdk_identity_put_to_platform_with_instant_lock(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, const uint8_t *instant_lock_bytes, uintptr_t instant_lock_len, const uint8_t *transaction_bytes, uintptr_t transaction_len, uint32_t output_index, const uint8_t (*private_key)[32], const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings) ;
 
 // Put identity to platform with instant lock proof and wait for confirmation
+//
+// # Safety
+// - Same requirements as `dash_sdk_identity_put_to_platform_with_instant_lock`.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 //
 // # Parameters
 // - `instant_lock_bytes`: Serialized InstantLock data
@@ -1339,6 +2056,12 @@ extern "C" {
 
 // Put identity to platform with chain lock proof
 //
+// # Safety
+// - `sdk_handle`, `identity_handle`, `out_point`, `private_key`, and `signer_handle` must be valid, non-null pointers.
+// - `out_point` must reference 36 readable bytes; `private_key` must reference 32 readable bytes.
+// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
+//
 // # Parameters
 // - `core_chain_locked_height`: Core height at which the transaction was chain locked
 // - `out_point`: 36-byte OutPoint (32-byte txid + 4-byte vout)
@@ -1347,6 +2070,11 @@ extern "C" {
  struct DashSDKResult dash_sdk_identity_put_to_platform_with_chain_lock(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, uint32_t core_chain_locked_height, const uint8_t (*out_point)[36], const uint8_t (*private_key)[32], const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings) ;
 
 // Put identity to platform with chain lock proof and wait for confirmation
+//
+// # Safety
+// - Same requirements as `dash_sdk_identity_put_to_platform_with_chain_lock`.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 //
 // # Parameters
 // - `core_chain_locked_height`: Core height at which the transaction was chain locked
@@ -1366,6 +2094,11 @@ extern "C" {
 //
 // # Returns
 // The balance of the identity as a string
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch_balance(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
 
 // Fetch identity balance and revision
@@ -1376,6 +2109,11 @@ extern "C" {
 //
 // # Returns
 // JSON string containing the balance and revision information
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch_balance_and_revision(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
 
 // Fetch identity by non-unique public key hash with optional pagination
@@ -1387,9 +2125,20 @@ extern "C" {
 //
 // # Returns
 // JSON string containing the identity information, or null if not found
+//
+// # Safety
+// - `sdk_handle` and `public_key_hash` must be valid, non-null pointers.
+// - `public_key_hash` must point to a NUL-terminated C string. `start_after` may be null; if non-null it must be a valid
+//   pointer to a NUL-terminated C string.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch_by_non_unique_public_key_hash(const struct dash_sdk_handle_t *sdk_handle, const char *public_key_hash, const char *start_after) ;
 
 // Fetch identity by public key hash
+//
+// # Safety
+// - `sdk_handle` and `public_key_hash` must be valid, non-null pointers.
+// - `public_key_hash` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
@@ -1408,9 +2157,19 @@ extern "C" {
 //
 // # Returns
 // The contract nonce of the identity as a string
+//
+// # Safety
+// - `sdk_handle`, `identity_id`, and `contract_id` must be valid, non-null pointers.
+// - `identity_id` and `contract_id` must point to NUL-terminated C strings valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch_contract_nonce(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, const char *contract_id) ;
 
 // Fetch an identity by ID
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string.
+// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
 
 // Fetch an identity by ID and return a handle
@@ -1425,9 +2184,19 @@ extern "C" {
 // # Returns
 // - Handle to the fetched identity on success
 // - Error if fetch fails or identity not found
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
  struct DashSDKResult dash_sdk_identity_fetch_handle(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
 
 // Fetch balances for multiple identities
+//
+// # Safety
+// - `sdk_handle` and `identity_ids` must be valid, non-null pointers.
+// - `identity_ids` must point to an array of `[u8; 32]` of length `identity_ids_len` and remain valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
@@ -1449,6 +2218,11 @@ extern "C" {
 //
 // # Returns
 // JSON string containing identity IDs mapped to their contract keys by purpose
+//
+// # Safety
+// - `sdk_handle`, `identity_ids`, `contract_id`, and `purposes` must be valid, non-null pointers.
+// - `identity_ids`, `contract_id`, `document_type_name` (when non-null), and `purposes` must point to NUL-terminated C strings valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identities_fetch_contract_keys(const struct dash_sdk_handle_t *sdk_handle, const char *identity_ids, const char *contract_id, const char *document_type_name, const char *purposes) ;
 
 // Fetch identity nonce
@@ -1459,9 +2233,19 @@ extern "C" {
 //
 // # Returns
 // The nonce of the identity as a string
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_fetch_nonce(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
 
 // Fetch identity public keys
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
@@ -1483,12 +2267,36 @@ extern "C" {
 // # Returns
 // * On success: A result containing the resolved identity ID
 // * On error: An error result
+//
+// # Safety
+// - `sdk_handle` and `name` must be valid, non-null pointers.
+// - `name` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, any heap memory in the result must be freed using SDK routines.
  struct DashSDKResult dash_sdk_identity_resolve_name(const struct dash_sdk_handle_t *sdk_handle, const char *name) ;
 
+// Test function to diagnose the transfer crash
+//
+// # Safety
+// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - On success, any heap memory in the result must be freed using SDK routines.
+ struct DashSDKResult dash_sdk_test_identity_transfer_crash(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
+
 // Top up an identity with credits using instant lock proof
+//
+// # Safety
+// - `sdk_handle`, `identity_handle`, `instant_lock_bytes`, `transaction_bytes`, and `private_key` must be valid, non-null pointers.
+// - Buffer pointers must reference at least the specified lengths.
+// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
  struct DashSDKResult dash_sdk_identity_topup_with_instant_lock(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, const uint8_t *instant_lock_bytes, uintptr_t instant_lock_len, const uint8_t *transaction_bytes, uintptr_t transaction_len, uint32_t output_index, const uint8_t (*private_key)[32], const struct DashSDKPutSettings *put_settings) ;
 
 // Top up an identity with credits using instant lock proof and wait for confirmation
+//
+// # Safety
+// - Same requirements as `dash_sdk_identity_topup_with_instant_lock`.
+// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
  struct DashSDKResult dash_sdk_identity_topup_with_instant_lock_and_wait(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, const uint8_t *instant_lock_bytes, uintptr_t instant_lock_len, const uint8_t *transaction_bytes, uintptr_t transaction_len, uint32_t output_index, const uint8_t (*private_key)[32], const struct DashSDKPutSettings *put_settings) ;
 
 // Transfer credits from one identity to another
@@ -1503,9 +2311,19 @@ extern "C" {
 //
 // # Returns
 // DashSDKTransferCreditsResult with sender and receiver final balances on success
+//
+// # Safety
+// - `sdk_handle`, `from_identity_handle`, `to_identity_id`, and `signer_handle` must be valid, non-null pointers.
+// - `to_identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+// - On success, any heap memory included in the result must be freed using SDK routines.
  struct DashSDKResult dash_sdk_identity_transfer_credits(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *from_identity_handle, const char *to_identity_id, uint64_t amount, uint32_t public_key_id, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings) ;
 
 // Free a transfer credits result structure
+//
+// # Safety
+// - `result` must be a pointer previously returned by this SDK or null (no-op).
+// - After this call, `result` becomes invalid and must not be used again.
  void dash_sdk_transfer_credits_result_free(struct DashSDKTransferCreditsResult *result) ;
 
 // Withdraw credits from identity to a Dash address
@@ -1521,149 +2339,13 @@ extern "C" {
 //
 // # Returns
 // The new balance of the identity after withdrawal
+//
+// # Safety
+// - `sdk_handle`, `identity_handle`, `address`, and `signer_handle` must be valid, non-null pointers.
+// - `address` must point to a NUL-terminated C string valid for the duration of the call.
+// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_identity_withdraw(struct dash_sdk_handle_t *sdk_handle, const struct IdentityHandle *identity_handle, const char *address, uint64_t amount, uint32_t core_fee_per_byte, uint32_t public_key_id, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings) ;
-
-// Test function to diagnose the transfer crash
- struct DashSDKResult dash_sdk_test_identity_transfer_crash(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id) ;
-
-// Generate a new BIP39 mnemonic
-//
-// # Parameters
-// - `word_count`: Number of words (12, 15, 18, 21, or 24)
-//
-// # Returns
-// - Pointer to FFIMnemonic on success
-// - NULL on error (check dash_get_last_error)
- struct FFIMnemonic *dash_key_mnemonic_generate(uint8_t word_count) ;
-
-// Create a mnemonic from a phrase
-//
-// # Parameters
-// - `phrase`: The mnemonic phrase as a C string
-//
-// # Returns
-// - Pointer to FFIMnemonic on success
-// - NULL on error
- struct FFIMnemonic *dash_key_mnemonic_from_phrase(const char *phrase) ;
-
-// Get the phrase from a mnemonic
-//
-// # Parameters
-// - `mnemonic`: The mnemonic handle
-//
-// # Returns
-// - C string containing the phrase (caller must free with dash_string_free)
-// - NULL on error
- char *dash_key_mnemonic_phrase(const struct FFIMnemonic *mnemonic) ;
-
-// Convert mnemonic to seed
-//
-// # Parameters
-// - `mnemonic`: The mnemonic handle
-// - `passphrase`: Optional passphrase (can be NULL)
-// - `seed_out`: Buffer to write seed (must be 64 bytes)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_key_mnemonic_to_seed(const struct FFIMnemonic *mnemonic, const char *passphrase, uint8_t *seed_out) ;
-
-// Destroy a mnemonic
- void dash_key_mnemonic_destroy(struct FFIMnemonic *mnemonic) ;
-
-// Create an extended private key from seed
-//
-// # Parameters
-// - `seed`: The seed bytes (must be 64 bytes)
-// - `network`: The network type
-//
-// # Returns
-// - Pointer to FFIExtendedPrivKey on success
-// - NULL on error
- struct FFIExtendedPrivKey *dash_key_xprv_from_seed(const uint8_t *seed, enum FFIKeyNetwork network) ;
-
-// Derive a child key from extended private key
-//
-// # Parameters
-// - `xprv`: The parent extended private key
-// - `index`: The child index
-// - `hardened`: Whether to use hardened derivation
-//
-// # Returns
-// - Pointer to derived FFIExtendedPrivKey on success
-// - NULL on error
- struct FFIExtendedPrivKey *dash_key_xprv_derive_child(const struct FFIExtendedPrivKey *xprv, uint32_t index, bool hardened) ;
-
-// Derive key at BIP32 path
-//
-// # Parameters
-// - `xprv`: The root extended private key
-// - `path`: The derivation path (e.g., "m/44'/5'/0'/0/0")
-//
-// # Returns
-// - Pointer to derived FFIExtendedPrivKey on success
-// - NULL on error
- struct FFIExtendedPrivKey *dash_key_xprv_derive_path(const struct FFIExtendedPrivKey *xprv, const char *path) ;
-
-// Get extended public key from extended private key
-//
-// # Parameters
-// - `xprv`: The extended private key
-//
-// # Returns
-// - Pointer to FFIExtendedPubKey on success
-// - NULL on error
- struct FFIExtendedPubKey *dash_key_xprv_to_xpub(const struct FFIExtendedPrivKey *xprv) ;
-
-// Get private key bytes
-//
-// # Parameters
-// - `xprv`: The extended private key
-// - `key_out`: Buffer to write key (must be 32 bytes)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_key_xprv_private_key(const struct FFIExtendedPrivKey *xprv, uint8_t *key_out) ;
-
-// Destroy an extended private key
- void dash_key_xprv_destroy(struct FFIExtendedPrivKey *xprv) ;
-
-// Get public key bytes from extended public key
-//
-// # Parameters
-// - `xpub`: The extended public key
-// - `key_out`: Buffer to write key (must be 33 bytes for compressed)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_key_xpub_public_key(const struct FFIExtendedPubKey *xpub, uint8_t *key_out) ;
-
-// Destroy an extended public key
- void dash_key_xpub_destroy(struct FFIExtendedPubKey *xpub) ;
-
-// Generate a P2PKH address from public key
-//
-// # Parameters
-// - `pubkey`: The public key bytes (33 bytes compressed)
-// - `network`: The network type
-//
-// # Returns
-// - C string containing the address (caller must free)
-// - NULL on error
- char *dash_key_address_from_pubkey(const uint8_t *pubkey, enum FFIKeyNetwork network) ;
-
-// Validate an address string
-//
-// # Parameters
-// - `address`: The address string
-// - `network`: The expected network
-//
-// # Returns
-// - 1 if valid
-// - 0 if invalid
- int32_t dash_key_address_validate(const char *address, enum FFIKeyNetwork network) ;
 
 // Fetches protocol version upgrade state
 //
@@ -1675,7 +2357,11 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - The function does not retain references to the input pointer beyond the duration of the call.
+// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must
+//   free it using the SDK's free routine to avoid leaks. It may also return no data (null pointer).
+// - Passing a dangling or invalid pointer for `sdk_handle` results in undefined behavior.
  struct DashSDKResult dash_sdk_protocol_version_get_upgrade_state(const struct dash_sdk_handle_t *sdk_handle) ;
 
 // Fetches protocol version upgrade vote status
@@ -1690,13 +2376,28 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `start_pro_tx_hash` may be null (meaning no start); when non-null it must be a valid pointer to a
+//   NUL-terminated C string containing a hex-encoded 32-byte hash and remain valid for the duration of the call.
+// - `count` is passed by value; no references are retained.
+// - On success, the returned `DashSDKResult` may contain a heap-allocated C string which the caller must free
+//   using the SDK's free routine. It may also contain no data (null pointer).
+// - All pointers must reference readable memory; invalid pointers result in undefined behavior.
  struct DashSDKResult dash_sdk_protocol_version_get_upgrade_vote_status(const struct dash_sdk_handle_t *sdk_handle, const char *start_pro_tx_hash, uint32_t count) ;
 
 // Create a new SDK instance
+//
+// # Safety
+// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
  struct DashSDKResult dash_sdk_create(const struct DashSDKConfig *config) ;
 
 // Create a new SDK instance with extended configuration including context provider
+//
+// # Safety
+// - `config` must be a valid pointer to a DashSDKConfigExtended structure for the duration of the call.
+// - Any embedded pointers (context_provider/core_sdk_handle) must be valid when non-null.
+// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
  struct DashSDKResult dash_sdk_create_extended(const struct DashSDKConfigExtended *config) ;
 
 // Create a new SDK instance with trusted setup
@@ -1706,9 +2407,15 @@ extern "C" {
 //
 // # Safety
 // - `config` must be a valid pointer to a DashSDKConfig structure
+// # Safety
+// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
  struct DashSDKResult dash_sdk_create_trusted(const struct DashSDKConfig *config) ;
 
 // Destroy an SDK instance
+// # Safety
+// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
+// - It may be null (no-op). After this call the handle must not be used again.
  void dash_sdk_destroy(struct dash_sdk_handle_t *handle) ;
 
 // Register global context provider callbacks
@@ -1730,27 +2437,78 @@ extern "C" {
  struct DashSDKResult dash_sdk_create_with_callbacks(const struct DashSDKConfig *config, const struct ContextProviderCallbacks *callbacks) ;
 
 // Get the current network the SDK is connected to
+//
+// # Safety
+// - `handle` must be a valid pointer to an SDKHandle (or null, in which case a default is returned).
  enum DashSDKNetwork dash_sdk_get_network(const struct dash_sdk_handle_t *handle) ;
 
+// Add known contracts to the SDK's trusted context provider
+//
+// This allows pre-loading data contracts into the trusted provider's cache,
+// avoiding network calls for these contracts.
+//
+// # Safety
+// - `handle` must be a valid SDK handle created with dash_sdk_create_trusted
+// - `contract_ids` must be a valid comma-separated list of contract IDs
+// - `serialized_contracts` must be a valid pointer to an array of serialized contract data
+// - `contract_lengths` must be a valid pointer to an array of contract data lengths
+// - `contract_count` must match the actual number of contracts provided
+ struct DashSDKResult dash_sdk_add_known_contracts(const struct dash_sdk_handle_t *handle, const char *contract_ids, const uint8_t *const *serialized_contracts, const uintptr_t *contract_lengths, uintptr_t contract_count) ;
+
 // Create a mock SDK instance with a dump directory (for offline testing)
+//
+// # Safety
+// - `dump_dir` must be either null (no dumps) or a valid pointer to a NUL-terminated C string readable for the duration of the call.
+// - The returned handle must be destroyed using the SDK destroy function to avoid leaks.
  struct dash_sdk_handle_t *dash_sdk_create_handle_with_mock(const char *dump_dir) ;
 
-// Create a new iOS signer
- struct SignerHandle *dash_sdk_signer_create(IOSSignCallback sign_callback, IOSCanSignCallback can_sign_callback) ;
+// Create a new signer with callbacks from iOS/external code
+//
+// This creates a VTableSigner that can be used for all state transitions.
+// The callbacks should handle the actual signing logic.
+//
+// # Parameters
+// - `sign_callback`: Function to sign data
+// - `can_sign_callback`: Function to check if can sign with a key
+// - `destroy_callback`: Optional destructor (can be NULL)
+// # Safety
+// - Callback function pointers must be valid and follow the required ABI and lifetime for the duration of use.
+// - The returned `SignerHandle` must be destroyed with `dash_sdk_signer_destroy` to avoid leaks.
+ struct SignerHandle *dash_sdk_signer_create(SignCallback sign_callback, CanSignCallback can_sign_callback, DestroyCallback destroy_callback) ;
 
-// Destroy an iOS signer
+// Destroy a signer
+// # Safety
+// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
+// - It may be null (no-op). After this call the handle must not be used again.
  void dash_sdk_signer_destroy(struct SignerHandle *handle) ;
 
-// Free bytes allocated by iOS callbacks
+// Free bytes allocated by callbacks
+// # Safety
+// - `bytes` must be a pointer to a buffer allocated by the corresponding FFI and compatible with `libc::free`.
+// - It may be null (no-op). After this call the pointer must not be used again.
  void dash_sdk_bytes_free(uint8_t *bytes) ;
 
 // Create a signer from a private key
+//
+// # Safety
+// - `private_key` must be a valid pointer to at least 32 readable bytes.
+// - The function reads exactly `private_key_len` bytes; it must be 32.
+// - The returned handle inside DashSDKResult must be freed using the appropriate SDK destroy function.
  struct DashSDKResult dash_sdk_signer_create_from_private_key(const uint8_t *private_key, uintptr_t private_key_len) ;
 
 // Sign data with a signer
+//
+// # Safety
+// - `signer_handle` must be a valid pointer obtained from this SDK and not previously destroyed.
+// - `data` must be a valid pointer to `data_len` readable bytes.
+// - The returned signature pointer inside DashSDKResult must be freed with `dash_sdk_signature_free`.
  struct DashSDKResult dash_sdk_signer_sign(struct SignerHandle *signer_handle, const uint8_t *data, uintptr_t data_len) ;
 
 // Free a signature
+//
+// # Safety
+// - `signature` must be a valid pointer returned by this SDK, or null for no-op.
+// - After this call the pointer must not be used again.
  void dash_sdk_signature_free(struct DashSDKSignature *signature) ;
 
 // Fetches information about current quorums
@@ -1763,7 +2521,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - The function does not retain references to inputs beyond the call.
+// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_system_get_current_quorums_info(const struct dash_sdk_handle_t *sdk_handle) ;
 
 // Fetches information about multiple epochs
@@ -1779,7 +2539,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `start_epoch` may be null (no explicit start); when non-null it must be a valid pointer to a NUL-terminated C string.
+// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_system_get_epochs_info(const struct dash_sdk_handle_t *sdk_handle, const char *start_epoch, uint32_t count, bool ascending) ;
 
 // Fetches path elements
@@ -1794,10 +2556,15 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `path_json` and `keys_json` must be valid, non-null pointers to NUL-terminated C strings that remain valid for the duration of the call.
+// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_system_get_path_elements(const struct dash_sdk_handle_t *sdk_handle, const char *path_json, const char *keys_json) ;
 
 // Get platform status including block heights
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - The returned C string pointer (on success) must be freed by the caller using the SDK's free routine.
  struct DashSDKResult dash_sdk_get_platform_status(const struct dash_sdk_handle_t *sdk_handle) ;
 
 // Fetches a prefunded specialized balance
@@ -1811,7 +2578,9 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - `id` must be a valid, non-null pointer to a NUL-terminated C string that remains valid for the duration of the call.
+// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_system_get_prefunded_specialized_balance(const struct dash_sdk_handle_t *sdk_handle, const char *id) ;
 
 // Fetches the total credits in the platform
@@ -1824,43 +2593,127 @@ extern "C" {
 // * Error message if operation fails
 //
 // # Safety
-// This function is unsafe because it handles raw pointers from C
+// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+// - The function does not retain references to inputs beyond the call.
+// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
  struct DashSDKResult dash_sdk_system_get_total_credits_in_platform(const struct dash_sdk_handle_t *sdk_handle) ;
 
 // Get SDK status including mode and quorum count
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - The returned C string pointer inside DashSDKResult (on success) must be freed by the caller
+//   using the SDK's free routine to avoid memory leaks.
  struct DashSDKResult dash_sdk_get_status(const struct dash_sdk_handle_t *sdk_handle) ;
 
 // Burn tokens from an identity and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory from the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_burn(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenBurnParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Claim tokens from a distribution and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, and `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_claim(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenClaimParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Mint tokens to an identity and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, and `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_mint(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenMintParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Token transfer to another identity and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_transfer(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenTransferParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Update token configuration and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_update_contract_token_configuration(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenConfigUpdateParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Destroy frozen token funds and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - The function may allocate and return heap memory via the DashSDKResult; caller must free it using SDK free routines.
  struct DashSDKResult dash_sdk_token_destroy_frozen_funds(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenDestroyFrozenFundsParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Perform emergency action on token and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid, non-null pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Returned pointers embedded in DashSDKResult must be freed by the caller using SDK free routines.
  struct DashSDKResult dash_sdk_token_emergency_action(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenEmergencyActionParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Freeze a token for an identity and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Any returned heap memory in the result must be freed by the caller using SDK free routines.
  struct DashSDKResult dash_sdk_token_freeze(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenFreezeParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Unfreeze a token for an identity and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, and `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory from the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_unfreeze(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenFreezeParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Purchase tokens directly and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, and `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK-provided free routines.
  struct DashSDKResult dash_sdk_token_purchase(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenPurchaseParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Set token price for direct purchase and wait for confirmation
+//
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `transition_owner_id` must point to at least 32 readable bytes.
+// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+// - Caller must free any returned heap memory in the result using SDK free routines.
  struct DashSDKResult dash_sdk_token_set_price(struct dash_sdk_handle_t *sdk_handle, const uint8_t *transition_owner_id, const struct DashSDKTokenSetPriceParams *params, const struct IdentityPublicKeyHandle *identity_public_key_handle, const struct SignerHandle *signer_handle, const struct DashSDKPutSettings *put_settings, const struct DashSDKStateTransitionCreationOptions *state_transition_creation_options) ;
 
 // Get identity token balances
@@ -1874,6 +2727,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their balances
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_id` and `token_ids` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned pointer (on success) must be freed using the SDK's free routine to avoid memory leaks.
  struct DashSDKResult dash_sdk_token_get_identity_balances(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, const char *token_ids) ;
 
 // Get token contract info
@@ -1884,6 +2741,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing the contract ID and token position, or null if not found
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `token_id` must be a valid pointer to a NUL-terminated C string and readable during the call.
+// - The returned C string pointer (on success) must be freed with the SDK's string-free function by the caller.
  struct DashSDKResult dash_sdk_token_get_contract_info(const struct dash_sdk_handle_t *sdk_handle, const char *token_id) ;
 
 // Get token direct purchase prices
@@ -1894,17 +2755,25 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their pricing information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `token_ids` must be a valid pointer to a NUL-terminated C string and readable during the call.
+// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function.
  struct DashSDKResult dash_sdk_token_get_direct_purchase_prices(const struct dash_sdk_handle_t *sdk_handle, const char *token_ids) ;
 
 // Fetch token balances for multiple identities for a specific token
 //
 // # Parameters
 // - `sdk_handle`: SDK handle
-// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+// - `identity_ids`: Either a comma-separated list OR a JSON array of Base58-encoded identity IDs
 // - `token_id`: Base58-encoded token ID
 //
 // # Returns
 // JSON string containing identity IDs mapped to their token balances
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_ids` and `token_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned C string pointer (on success) must be freed using the SDK's free function.
  struct DashSDKResult dash_sdk_identities_fetch_token_balances(const struct dash_sdk_handle_t *sdk_handle, const char *identity_ids, const char *token_id) ;
 
 // Fetch token information for multiple identities for a specific token
@@ -1916,6 +2785,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing identity IDs mapped to their token information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_ids` and `token_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned C string pointer (on success) must be freed with the SDK's free function.
  struct DashSDKResult dash_sdk_identities_fetch_token_infos(const struct dash_sdk_handle_t *sdk_handle, const char *identity_ids, const char *token_id) ;
 
 // Fetch token balances for a specific identity
@@ -1927,6 +2800,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their balances
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_id` and `token_ids` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned C string pointer (on success) must be freed using the SDK's free function to avoid leaks.
  struct DashSDKResult dash_sdk_identity_fetch_token_balances(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, const char *token_ids) ;
 
 // Fetch token information for a specific identity
@@ -1938,6 +2815,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_id` and `token_ids` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned C string pointer (on success) must be freed using the SDK's free function to avoid leaks.
  struct DashSDKResult dash_sdk_identity_fetch_token_infos(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, const char *token_ids) ;
 
 // Get identity token information
@@ -1951,6 +2832,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `identity_id` and `token_ids` must be valid pointers to NUL-terminated C strings and readable for the call duration.
+// - The returned string pointer (on success) must be freed with the SDK's string free routine to avoid leaks.
  struct DashSDKResult dash_sdk_token_get_identity_infos(const struct dash_sdk_handle_t *sdk_handle, const char *identity_id, const char *token_ids) ;
 
 // Get token perpetual distribution last claim
@@ -1962,6 +2847,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing the last claim information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `token_id` and `identity_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function to avoid memory leaks.
  struct DashSDKResult dash_sdk_token_get_perpetual_distribution_last_claim(const struct dash_sdk_handle_t *sdk_handle, const char *token_id, const char *identity_id) ;
 
 // Get token statuses
@@ -1972,6 +2861,10 @@ extern "C" {
 //
 // # Returns
 // JSON string containing token IDs mapped to their status information
+// # Safety
+// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+// - `token_ids` must be a valid pointer to a NUL-terminated C string containing comma-separated IDs.
+// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function.
  struct DashSDKResult dash_sdk_token_get_statuses(const struct dash_sdk_handle_t *sdk_handle, const char *token_ids) ;
 
 // Fetches the total supply of a token
@@ -1988,140 +2881,97 @@ extern "C" {
 // This function is unsafe because it handles raw pointers from C
  struct DashSDKResult dash_sdk_token_get_total_supply(const struct dash_sdk_handle_t *sdk_handle, const char *token_id) ;
 
-// Create a new empty transaction
-//
-// # Returns
-// - Pointer to FFITransaction on success
-// - NULL on error
- struct FFITransaction *dash_tx_create(void) ;
-
-// Add an input to a transaction
-//
-// # Parameters
-// - `tx`: The transaction
-// - `input`: The input to add
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_add_input(struct FFITransaction *tx, const struct FFITxIn *input) ;
-
-// Add an output to a transaction
-//
-// # Parameters
-// - `tx`: The transaction
-// - `output`: The output to add
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_add_output(struct FFITransaction *tx, const struct FFITxOut *output) ;
-
-// Get the transaction ID
-//
-// # Parameters
-// - `tx`: The transaction
-// - `txid_out`: Buffer to write txid (must be 32 bytes)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_get_txid(const struct FFITransaction *tx, uint8_t *txid_out) ;
-
-// Serialize a transaction
-//
-// # Parameters
-// - `tx`: The transaction
-// - `out_buf`: Buffer to write serialized data (can be NULL to get size)
-// - `out_len`: In/out parameter for buffer size
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_serialize(const struct FFITransaction *tx, uint8_t *out_buf, uint32_t *out_len) ;
-
-// Deserialize a transaction
-//
-// # Parameters
-// - `data`: The serialized transaction data
-// - `len`: Length of the data
-//
-// # Returns
-// - Pointer to FFITransaction on success
-// - NULL on error
- struct FFITransaction *dash_tx_deserialize(const uint8_t *data, uint32_t len) ;
-
-// Destroy a transaction
- void dash_tx_destroy(struct FFITransaction *tx) ;
-
-// Calculate signature hash for an input
-//
-// # Parameters
-// - `tx`: The transaction
-// - `input_index`: Which input to sign
-// - `script_pubkey`: The script pubkey of the output being spent
-// - `script_pubkey_len`: Length of script pubkey
-// - `sighash_type`: Signature hash type (usually 0x01 for SIGHASH_ALL)
-// - `hash_out`: Buffer to write hash (must be 32 bytes)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_sighash(const struct FFITransaction *tx, uint32_t input_index, const uint8_t *script_pubkey, uint32_t script_pubkey_len, uint32_t sighash_type, uint8_t *hash_out) ;
-
-// Sign a transaction input
-//
-// # Parameters
-// - `tx`: The transaction
-// - `input_index`: Which input to sign
-// - `private_key`: The private key (32 bytes)
-// - `script_pubkey`: The script pubkey of the output being spent
-// - `script_pubkey_len`: Length of script pubkey
-// - `sighash_type`: Signature hash type
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_tx_sign_input(struct FFITransaction *tx, uint32_t input_index, const uint8_t *private_key, const uint8_t *script_pubkey, uint32_t script_pubkey_len, uint32_t sighash_type) ;
-
-// Create a P2PKH script pubkey
-//
-// # Parameters
-// - `pubkey_hash`: The public key hash (20 bytes)
-// - `out_buf`: Buffer to write script (can be NULL to get size)
-// - `out_len`: In/out parameter for buffer size
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_script_p2pkh(const uint8_t *pubkey_hash, uint8_t *out_buf, uint32_t *out_len) ;
-
-// Extract public key hash from P2PKH address
-//
-// # Parameters
-// - `address`: The address string
-// - `network`: The expected network
-// - `hash_out`: Buffer to write hash (must be 20 bytes)
-//
-// # Returns
-// - 0 on success
-// - -1 on error
- int32_t dash_address_to_pubkey_hash(const char *address, enum FFIKeyNetwork network, uint8_t *hash_out) ;
-
 // Free a string allocated by the FFI
+//
+// # Safety
+// - `s` must be a pointer returned by this SDK to a heap-allocated NUL-terminated C string.
+// - Passing a pointer not allocated by this SDK, or a pointer already freed, results in undefined behavior.
+// - `s` may be null, in which case this is a no-op.
  void dash_sdk_string_free(char *s) ;
 
 // Free binary data allocated by the FFI
+//
+// # Safety
+// - `binary_data` must be a valid pointer returned by this SDK and not previously freed.
+// - When non-null, the function takes ownership and frees both the struct and its internal buffer.
+// - Do not use `binary_data` after this call.
  void dash_sdk_binary_data_free(struct DashSDKBinaryData *binary_data) ;
 
 // Free an identity info structure
+//
+// # Safety
+// - `info` must be a valid pointer to `DashSDKIdentityInfo` allocated by this SDK.
+// - It may be null (no-op). When non-null, this frees any owned strings and the struct.
+// - Do not access `info` after this call.
  void dash_sdk_identity_info_free(struct DashSDKIdentityInfo *info) ;
 
 // Free a document info structure
+//
+// # Safety
+// - `info` must be a valid pointer to `DashSDKDocumentInfo` allocated by this SDK and not already freed.
+// - It may be null (no-op). When non-null, this frees all owned strings and arrays.
+// - Pointer must not be dereferenced after this call.
  void dash_sdk_document_info_free(struct DashSDKDocumentInfo *info) ;
 
 // Free an identity balance map
+//
+// # Safety
+// - `map` must be a valid, non-dangling pointer returned by this SDK.
+// - It may be null (no-op). When non-null, this frees the entries array and the struct.
+// - Using `map` after this function returns is undefined behavior.
  void dash_sdk_identity_balance_map_free(struct DashSDKIdentityBalanceMap *map) ;
+
+// Free a contender structure
+//
+// # Safety
+// - `contender` must be a valid, non-dangling pointer obtained from this FFI (e.g., via an SDK function).
+// - It must either be null (a no-op) or point to a heap-allocated `DashSDKContender` that has not been freed yet.
+// - After this call, the pointer must not be used again (use-after-free is undefined behavior).
+// - This function will also free any heap-allocated strings owned by the structure.
+// # Safety
+// - `contender` must be a valid, non-null pointer to a `DashSDKContender` allocated by this SDK, or null for no-op.
+// - The pointer must not be used after this call.
+ void dash_sdk_contender_free(struct DashSDKContender *contender) ;
+
+// Free contest info structure
+//
+// # Safety
+// - `info` must be a valid, non-dangling pointer obtained from this FFI and not previously freed.
+// - It may be null (no-op). When non-null, this frees the owned contender array and contained strings.
+// - Do not use `info` after this call; doing so is undefined behavior.
+ void dash_sdk_contest_info_free(struct DashSDKContestInfo *info) ;
+
+// Free a contested name structure
+//
+// # Safety
+// - `name` must be a valid, non-dangling pointer to a `DashSDKContestedName` allocated by this SDK.
+// - It may be null (no-op). When non-null, this frees the embedded strings and contender buffers.
+// - Do not access `name` after freeing.
+ void dash_sdk_contested_name_free(struct DashSDKContestedName *name) ;
+
+// Free a contested names list
+//
+// # Safety
+// - `list` must be a valid pointer returned by this SDK and not previously freed.
+// - It may be null (no-op). When non-null, this frees the array of names and any nested strings/buffers.
+// - Do not use `list` after this call.
+ void dash_sdk_contested_names_list_free(struct DashSDKContestedNamesList *list) ;
+
+// Free a name-timestamp structure
+//
+// # Safety
+// - `entry` must be a valid, non-dangling pointer to a `DashSDKNameTimestamp` allocated by this SDK.
+// - It may be null (no-op). When non-null, this frees the owned string and the struct.
+// - Do not use `entry` after this call.
+ void dash_sdk_name_timestamp_free(struct DashSDKNameTimestamp *entry) ;
+
+// Free a name-timestamp list
+//
+// # Safety
+// - `list` must be a valid pointer to a `DashSDKNameTimestampList` allocated by this SDK.
+// - It may be null (no-op). When non-null, this frees the entries array and contained strings.
+// - Pointer must not be used after this call.
+ void dash_sdk_name_timestamp_list_free(struct DashSDKNameTimestampList *list) ;
 
 // Initialize the unified SDK system
 // This initializes both Core SDK (if enabled) and Platform SDK
@@ -2155,7 +3005,7 @@ extern "C" {
 //
 // # Safety
 // - `handle` must be a valid unified SDK handle
- struct FFIDashSpvClient *dash_unified_sdk_get_core_client(struct UnifiedSDKHandle *handle) ;
+ FFIDashSpvClient *dash_unified_sdk_get_core_client(struct UnifiedSDKHandle *handle) ;
 
 // Get the Platform SDK from a unified handle
 //
@@ -2204,6 +3054,11 @@ extern "C" {
 // # Returns
 // - Base58 encoded string on success
 // - Error if the hex string is invalid
+// # Safety
+// - `hex_string` must be a valid, non-null pointer to a NUL-terminated C string.
+// - The memory pointed to by `hex_string` must be readable for the duration of the call.
+// - The returned pointer (on success) must be freed by calling the appropriate free function
+//   (e.g., `dash_sdk_string_free`) from this SDK to avoid memory leaks.
  struct DashSDKResult dash_sdk_utils_hex_to_base58(const char *hex_string) ;
 
 // Convert a base58 string to hex
@@ -2214,6 +3069,10 @@ extern "C" {
 // # Returns
 // - Hex encoded string on success
 // - Error if the base58 string is invalid
+// # Safety
+// - `base58_string` must be a valid, non-null pointer to a NUL-terminated C string.
+// - The memory pointed to by `base58_string` must be readable for the duration of the call.
+// - The returned C string pointer (on success) must be freed with the SDK's string free routine to avoid leaks.
  struct DashSDKResult dash_sdk_utils_base58_to_hex(const char *base58_string) ;
 
 // Validate if a string is valid base58
@@ -2223,6 +3082,9 @@ extern "C" {
 //
 // # Returns
 // - 1 if valid base58, 0 if invalid
+// # Safety
+// - `string` must be a valid, non-null pointer to a NUL-terminated C string.
+// - The memory pointed to by `string` must be readable for the duration of the call.
  uint8_t dash_sdk_utils_is_valid_base58(const char *string) ;
 
 // Fetches vote polls by end date
