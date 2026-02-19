@@ -387,6 +387,26 @@ impl OptionallyAssetLockProved for StateTransition {
     }
 }
 
+impl StateTransitionFieldTypes for StateTransition {
+    fn signature_property_paths() -> Vec<&'static str> {
+        // The top-level enum doesn't have fixed signature paths
+        // Each variant has its own specific paths
+        vec![]
+    }
+
+    fn identifiers_property_paths() -> Vec<&'static str> {
+        // The top-level enum doesn't have fixed identifier paths
+        // Each variant has its own specific paths
+        vec![]
+    }
+
+    fn binary_property_paths() -> Vec<&'static str> {
+        // The top-level enum doesn't have fixed binary paths
+        // Each variant has its own specific paths
+        vec![]
+    }
+}
+
 /// The state transition signing options
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct StateTransitionSigningOptions {

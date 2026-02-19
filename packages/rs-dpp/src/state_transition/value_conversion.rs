@@ -128,7 +128,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
 
     fn from_object(
         raw_object: Value,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
@@ -140,7 +140,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
 
     fn from_value_map(
         raw_value_map: BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
@@ -154,7 +154,7 @@ impl StateTransitionValueConvert<'_> for StateTransition {
         .map_err(ProtocolError::ValueError)
     }
 
-    fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+    fn clean_value(_value: &mut Value) -> Result<(), ProtocolError> {
         // The clean_value logic is variant-specific and should be dispatched
         // However, since we're working with a Value (not a StateTransition instance),
         // we'd need type information to dispatch correctly.
