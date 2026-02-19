@@ -27,36 +27,37 @@ public class Account {
     ///   - index: The child index to derive (e.g., 0 for the first key)
     /// - Returns: The private key encoded as WIF
     public func derivePrivateKeyWIF(wallet: Wallet, masterPath: String, index: UInt32) throws -> String {
-        var error = FFIError()
+        var deriveError = FFIError()
         // Derive master extended private key for this account root
         let masterPtr = masterPath.withCString { pathCStr in
-            wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &error)
+            wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &deriveError)
         }
-        
+
         defer {
-            if error.message != nil {
-                error_message_free(error.message)
+            if deriveError.message != nil {
+                error_message_free(deriveError.message)
             }
             if let m = masterPtr {
                 extended_private_key_free(m)
             }
         }
-        
+
         guard let master = masterPtr else {
-            throw KeyWalletError(ffiError: error)
+            throw KeyWalletError(ffiError: deriveError)
         }
-        
+
         // Derive child private key as WIF at the given index
-        let wifPtr = account_derive_private_key_as_wif_at(self.handle, master, index, &error)
-        
+        var wifError = FFIError()
+        let wifPtr = account_derive_private_key_as_wif_at(self.handle, master, index, &wifError)
+
         defer {
-            if error.message != nil {
-                error_message_free(error.message)
+            if wifError.message != nil {
+                error_message_free(wifError.message)
             }
         }
-        
+
         guard let ptr = wifPtr else {
-            throw KeyWalletError(ffiError: error)
+            throw KeyWalletError(ffiError: wifError)
         }
         let wif = String(cString: ptr)
         string_free(ptr)

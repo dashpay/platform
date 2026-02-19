@@ -4,13 +4,10 @@ import DashSDKFFI
 /// Swift wrapper for managed wallet with address pool management and transaction checking
 public class ManagedWallet {
     private let handle: UnsafeMutablePointer<FFIManagedWalletInfo>
-    private let network: KeyWalletNetwork
-    
+
     /// Create a managed wallet wrapper from a regular wallet
     /// - Parameter wallet: The wallet to manage
     public init(wallet: Wallet) throws {
-        self.network = wallet.network
-        
         var error = FFIError()
         guard let managedPointer = wallet_create_managed_wallet(wallet.ffiHandle, &error) else {
             defer {

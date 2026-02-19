@@ -486,8 +486,11 @@ public class SPVClient: ObservableObject {
         self.lastError = nil
     }
 
-    /// Clear only the persisted sync-state snapshot while keeping headers/filters.
-    /// Note: Uses clearStorage() as the granular clear_sync_state FFI was removed.
+    /// Clear all persisted SPV data (headers, filters, and sync state).
+    ///
+    /// - Note: The granular `clear_sync_state` FFI was removed; this now delegates
+    ///   to ``clearStorage()`` which clears **everything**, not just the sync-state snapshot.
+    @available(*, deprecated, renamed: "clearStorage()")
     public func clearSyncState() throws {
         try clearStorage()
     }

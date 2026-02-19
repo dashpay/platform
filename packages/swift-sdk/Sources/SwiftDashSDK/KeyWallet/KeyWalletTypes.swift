@@ -22,6 +22,7 @@ public struct NetworkSet {
     /// Since the FFI no longer supports multi-network bitmaps, only the
     /// first network is used.
     public var ffiNetwork: FFINetwork {
+        assert(networks.count <= 1, "FFI only supports a single network; NetworkSet contains \(networks.count)")
         let network = networks.first ?? .mainnet
         return network.ffiValue
     }

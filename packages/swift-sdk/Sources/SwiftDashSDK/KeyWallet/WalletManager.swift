@@ -57,39 +57,61 @@ public class WalletManager {
     ///   - network: The network type (ignored; manager network is used)
     ///   - accountOptions: Account creation options
     /// - Returns: The wallet ID
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
     @discardableResult
     public func addWallet(mnemonic: String, passphrase: String? = nil,
-                          network: KeyWalletNetwork = .mainnet,
+                          network: KeyWalletNetwork,
+                          accountOptions: AccountCreationOption = .default) throws -> Data {
+        try addWallet(mnemonic: mnemonic, passphrase: passphrase, accountOptions: accountOptions)
+    }
+
+    /// Add a wallet from mnemonic
+    /// - Parameters:
+    ///   - mnemonic: The mnemonic phrase
+    ///   - passphrase: Optional BIP39 passphrase
+    ///   - accountOptions: Account creation options
+    /// - Returns: The wallet ID
+    @discardableResult
+    public func addWallet(mnemonic: String, passphrase: String? = nil,
                           accountOptions: AccountCreationOption = .default) throws -> Data {
         var error = FFIError()
+        var walletBytesPtr: UnsafeMutablePointer<UInt8>?
+        var walletBytesLen: size_t = 0
+        var walletId = [UInt8](repeating: 0, count: 32)
 
         let success = mnemonic.withCString { mnemonicCStr in
-            if case .specificAccounts = accountOptions {
-                var options = accountOptions.toFFIOptions()
+            var options = accountOptions.toFFIOptions()
 
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic_with_options(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &options, &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic_with_options(
-                        handle, mnemonicCStr, nil,
-                        &options, &error)
+            if let passphrase = passphrase {
+                return passphrase.withCString { passphraseCStr in
+                    wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                        handle,
+                        mnemonicCStr,
+                        passphraseCStr,
+                        0,
+                        &options,
+                        false,
+                        false,
+                        &walletBytesPtr,
+                        &walletBytesLen,
+                        &walletId,
+                        &error
+                    )
                 }
             } else {
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic(
-                        handle, mnemonicCStr, nil,
-                        &error)
-                }
+                return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                    handle,
+                    mnemonicCStr,
+                    nil,
+                    0,
+                    &options,
+                    false,
+                    false,
+                    &walletBytesPtr,
+                    &walletBytesLen,
+                    &walletId,
+                    &error
+                )
             }
         }
 
@@ -97,14 +119,16 @@ public class WalletManager {
             if error.message != nil {
                 error_message_free(error.message)
             }
+            if let ptr = walletBytesPtr {
+                wallet_manager_free_wallet_bytes(ptr, walletBytesLen)
+            }
         }
 
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
 
-        // Get the wallet IDs to return the newly added wallet ID
-        return try getWalletIds().last ?? Data()
+        return Data(walletId)
     }
 
     /// Add a wallet from mnemonic for multiple networks
@@ -118,9 +142,8 @@ public class WalletManager {
     public func addWallet(mnemonic: String, passphrase: String? = nil,
                           networks: [KeyWalletNetwork],
                           accountOptions: AccountCreationOption = .default) throws -> Data {
-        let network = networks.first ?? .mainnet
         return try addWallet(mnemonic: mnemonic, passphrase: passphrase,
-                            network: network, accountOptions: accountOptions)
+                            accountOptions: accountOptions)
     }
 
     /// Get all wallet IDs
@@ -209,10 +232,21 @@ public class WalletManager {
     /// Get next receive address for a wallet
     /// - Parameters:
     ///   - walletId: The wallet ID
-    ///   - network: The network type
+    ///   - network: The network type (ignored; manager network is used)
     ///   - accountIndex: The account index
     /// - Returns: The next receive address
-    public func getReceiveAddress(walletId: Data, network: KeyWalletNetwork = .mainnet,
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
+    public func getReceiveAddress(walletId: Data, network: KeyWalletNetwork,
+                                 accountIndex: UInt32 = 0) throws -> String {
+        try getReceiveAddress(walletId: walletId, accountIndex: accountIndex)
+    }
+
+    /// Get next receive address for a wallet
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    ///   - accountIndex: The account index
+    /// - Returns: The next receive address
+    public func getReceiveAddress(walletId: Data,
                                  accountIndex: UInt32 = 0) throws -> String {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
@@ -273,10 +307,21 @@ public class WalletManager {
     /// Get next change address for a wallet
     /// - Parameters:
     ///   - walletId: The wallet ID
-    ///   - network: The network type
+    ///   - network: The network type (ignored; manager network is used)
     ///   - accountIndex: The account index
     /// - Returns: The next change address
-    public func getChangeAddress(walletId: Data, network: KeyWalletNetwork = .mainnet,
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
+    public func getChangeAddress(walletId: Data, network: KeyWalletNetwork,
+                                accountIndex: UInt32 = 0) throws -> String {
+        try getChangeAddress(walletId: walletId, accountIndex: accountIndex)
+    }
+
+    /// Get next change address for a wallet
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    ///   - accountIndex: The account index
+    /// - Returns: The next change address
+    public func getChangeAddress(walletId: Data,
                                 accountIndex: UInt32 = 0) throws -> String {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
@@ -377,9 +422,23 @@ public class WalletManager {
     ///   - contextDetails: Transaction context details
     ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
     /// - Returns: True if transaction was relevant to at least one wallet
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
     @discardableResult
     public func processTransaction(_ transactionData: Data,
-                                  network: KeyWalletNetwork = .mainnet,
+                                  network: KeyWalletNetwork,
+                                  contextDetails: TransactionContextDetails,
+                                  updateStateIfFound: Bool = true) throws -> Bool {
+        try processTransaction(transactionData, contextDetails: contextDetails, updateStateIfFound: updateStateIfFound)
+    }
+
+    /// Process a transaction through all wallets
+    /// - Parameters:
+    ///   - transactionData: The transaction bytes
+    ///   - contextDetails: Transaction context details
+    ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
+    /// - Returns: True if transaction was relevant to at least one wallet
+    @discardableResult
+    public func processTransaction(_ transactionData: Data,
                                   contextDetails: TransactionContextDetails,
                                   updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
@@ -438,7 +497,19 @@ public class WalletManager {
     ///   - accountIndex: The account index
     ///   - accountType: The type of account to get
     /// - Returns: The managed account
-    public func getManagedAccount(walletId: Data, network: KeyWalletNetwork = .mainnet,
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
+    public func getManagedAccount(walletId: Data, network: KeyWalletNetwork,
+                                  accountIndex: UInt32, accountType: AccountType) throws -> ManagedAccount {
+        try getManagedAccount(walletId: walletId, accountIndex: accountIndex, accountType: accountType)
+    }
+
+    /// Get a managed account from a wallet
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    ///   - accountIndex: The account index
+    ///   - accountType: The type of account to get
+    /// - Returns: The managed account
+    public func getManagedAccount(walletId: Data,
                                   accountIndex: UInt32, accountType: AccountType) throws -> ManagedAccount {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
@@ -470,7 +541,18 @@ public class WalletManager {
     ///   - network: The network type (ignored; manager network is used)
     ///   - registrationIndex: The registration index
     /// - Returns: The managed account
-    public func getManagedTopUpAccount(walletId: Data, network: KeyWalletNetwork = .mainnet,
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
+    public func getManagedTopUpAccount(walletId: Data, network: KeyWalletNetwork,
+                                       registrationIndex: UInt32) throws -> ManagedAccount {
+        try getManagedTopUpAccount(walletId: walletId, registrationIndex: registrationIndex)
+    }
+
+    /// Get a managed top-up account with a specific registration index
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    ///   - registrationIndex: The registration index
+    /// - Returns: The managed account
+    public func getManagedTopUpAccount(walletId: Data,
                                        registrationIndex: UInt32) throws -> ManagedAccount {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
@@ -501,7 +583,16 @@ public class WalletManager {
     ///   - walletId: The wallet ID
     ///   - network: The network type (ignored; manager network is used)
     /// - Returns: The managed account collection
-    public func getManagedAccountCollection(walletId: Data, network: KeyWalletNetwork = .mainnet) throws -> ManagedAccountCollection {
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
+    public func getManagedAccountCollection(walletId: Data, network: KeyWalletNetwork) throws -> ManagedAccountCollection {
+        try getManagedAccountCollection(walletId: walletId)
+    }
+
+    /// Get a collection of all managed accounts for a wallet
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    /// - Returns: The managed account collection
+    public func getManagedAccountCollection(walletId: Data) throws -> ManagedAccountCollection {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
         }
@@ -540,10 +631,38 @@ public class WalletManager {
     ///   - downgradeToPublicKeyWallet: If true, creates a watch-only or externally signable wallet
     ///   - allowExternalSigning: If true AND downgradeToPublicKeyWallet is true, creates an externally signable wallet
     /// - Returns: Tuple containing (walletId: Data, serializedWallet: Data)
+    @available(*, deprecated, message: "network parameter is ignored; the manager's network is used")
     public func addWalletAndSerialize(
         mnemonic: String,
         passphrase: String? = nil,
-        network: KeyWalletNetwork = .mainnet,
+        network: KeyWalletNetwork,
+        birthHeight: UInt32 = 0,
+        accountOptions: AccountCreationOption = .default,
+        downgradeToPublicKeyWallet: Bool = false,
+        allowExternalSigning: Bool = false
+    ) throws -> (walletId: Data, serializedWallet: Data) {
+        try addWalletAndSerialize(
+            mnemonic: mnemonic,
+            passphrase: passphrase,
+            birthHeight: birthHeight,
+            accountOptions: accountOptions,
+            downgradeToPublicKeyWallet: downgradeToPublicKeyWallet,
+            allowExternalSigning: allowExternalSigning
+        )
+    }
+
+    /// Add a wallet from mnemonic and return serialized wallet bytes
+    /// - Parameters:
+    ///   - mnemonic: The mnemonic phrase
+    ///   - passphrase: Optional BIP39 passphrase
+    ///   - birthHeight: Optional birth height for wallet
+    ///   - accountOptions: Account creation options
+    ///   - downgradeToPublicKeyWallet: If true, creates a watch-only or externally signable wallet
+    ///   - allowExternalSigning: If true AND downgradeToPublicKeyWallet is true, creates an externally signable wallet
+    /// - Returns: Tuple containing (walletId: Data, serializedWallet: Data)
+    public func addWalletAndSerialize(
+        mnemonic: String,
+        passphrase: String? = nil,
         birthHeight: UInt32 = 0,
         accountOptions: AccountCreationOption = .default,
         downgradeToPublicKeyWallet: Bool = false,
@@ -630,11 +749,9 @@ public class WalletManager {
         downgradeToPublicKeyWallet: Bool = false,
         allowExternalSigning: Bool = false
     ) throws -> (walletId: Data, serializedWallet: Data) {
-        let network = networks.first ?? .mainnet
         return try addWalletAndSerialize(
             mnemonic: mnemonic,
             passphrase: passphrase,
-            network: network,
             birthHeight: birthHeight,
             accountOptions: accountOptions,
             downgradeToPublicKeyWallet: downgradeToPublicKeyWallet,

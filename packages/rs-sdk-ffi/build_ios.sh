@@ -344,7 +344,15 @@ if [ -d "$SPV_CRATE_PATH" ]; then
       cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
       cargo build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
     fi
+  elif [ "$BUILD_ARCH" = "x86" ]; then
+    if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
+      echo -e "${GREEN}Using toolchain '+${RUST_DASHCORE_TOOLCHAIN}' for sim build (x86_64)${NC}"
+      cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+    else
+      cargo build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+    fi
   else
+    # arm64-sim only (arm default)
     if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
       echo -e "${GREEN}Using toolchain '+${RUST_DASHCORE_TOOLCHAIN}' for sim build${NC}"
       cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
@@ -449,12 +457,20 @@ if [ "$BUILD_ARCH" != "x86" ] && [ -f "$OUTPUT_DIR/device/librs_sdk_ffi.a" ]; th
 fi
 
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
-    # Try to merge with SPV sim lib if it exists
+    # Try to merge with SPV sim lib if it exists (must match BUILD_ARCH)
     SIM_SPV_LIB=""
-    if [ -f "$SPV_TARGET_DIR/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_TARGET_DIR/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
-    elif [ -f "$SPV_TARGET_DIR/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_TARGET_DIR/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    SPV_SIM_ARM="$SPV_TARGET_DIR/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
+    SPV_SIM_X86="$SPV_TARGET_DIR/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    if [ "$BUILD_ARCH" = "universal" ] && [ -f "$SPV_SIM_ARM" ] && [ -f "$SPV_SIM_X86" ]; then
+      # Universal: lipo both SPV sim slices into a fat library before merging
+      FAT_SPV_SIM="$OUTPUT_DIR/simulator/libdash_spv_ffi_fat.a"
+      lipo -create "$SPV_SIM_ARM" "$SPV_SIM_X86" -output "$FAT_SPV_SIM"
+      SIM_SPV_LIB="$FAT_SPV_SIM"
+    elif [ "$BUILD_ARCH" = "x86" ] && [ -f "$SPV_SIM_X86" ]; then
+      SIM_SPV_LIB="$SPV_SIM_X86"
+    elif [ -f "$SPV_SIM_ARM" ]; then
+      # arm (default)
+      SIM_SPV_LIB="$SPV_SIM_ARM"
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
@@ -470,6 +486,8 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
       grep -v "duplicate member name" "$LIBTOOL_LOG" >&2 || true
       rm -f "$LIBTOOL_LOG"
       mv "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/simulator/librs_sdk_ffi.a"
+      # Clean up temporary fat SPV archive if it was created
+      rm -f "$OUTPUT_DIR/simulator/libdash_spv_ffi_fat.a"
     fi
     XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
 fi

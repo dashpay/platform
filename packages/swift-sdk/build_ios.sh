@@ -45,6 +45,7 @@ echo "   - Verifying required SPV symbols are present in XCFramework libs"
 # match, causing nm to receive SIGPIPE and return exit code 141. With pipefail
 # enabled, this makes the pipeline fail even though the symbol was found.
 NM_SYMBOLS=$(mktemp)
+trap 'rm -f "$NM_SYMBOLS"' EXIT
 nm -gU "$LIB_SIM_MAIN" > "$NM_SYMBOLS" 2>/dev/null || true
 if [[ -f "$LIB_SIM_SPV" ]]; then
   nm -gU "$LIB_SIM_SPV" >> "$NM_SYMBOLS" 2>/dev/null || true

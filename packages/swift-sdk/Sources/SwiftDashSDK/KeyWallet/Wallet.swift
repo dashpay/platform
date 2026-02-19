@@ -525,7 +525,7 @@ public class Wallet {
     internal var ffiHandle: UnsafeMutablePointer<FFIWallet> { handle }
 
     // Non-owning initializer for wallets obtained from WalletManager
-    public init(nonOwningHandle handle: UnsafeRawPointer, network: KeyWalletNetwork) {
+    internal init(nonOwningHandle handle: UnsafeRawPointer, network: KeyWalletNetwork) {
         self.handle = UnsafeMutablePointer<FFIWallet>(mutating: handle.bindMemory(to: FFIWallet.self, capacity: 1))
         self.network = network
         self.ownsHandle = false
