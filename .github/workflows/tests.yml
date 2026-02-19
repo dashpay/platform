@@ -191,6 +191,9 @@ jobs:
     name: Rust packages
     needs:
       - changes
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -228,6 +231,9 @@ jobs:
     needs:
       - changes
       - build-js
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -278,6 +284,11 @@ jobs:
       - build-js
       - image-context
     if: ${{ needs.image-context.outputs.is_external_pr != 'true' }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      id-token: write
     uses: ./.github/workflows/tests-codeql.yml
 
   dashmate-e2e-tests:
