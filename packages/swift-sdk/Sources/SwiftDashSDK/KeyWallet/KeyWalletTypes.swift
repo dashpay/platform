@@ -3,29 +3,27 @@ import DashSDKFFI
 
 // MARK: - Network Types
 
-/// Helper to create FFINetworks bitmap from multiple networks
+/// Helper to get the FFI network value from a KeyWalletNetwork
+///
+/// Note: The old `FFINetworks` bitmap type was removed from rust-dashcore.
+/// The FFI now uses `FFINetwork` (single network enum) everywhere.
 public struct NetworkSet {
     public let networks: Set<KeyWalletNetwork>
-    
+
     public init(_ networks: KeyWalletNetwork...) {
         self.networks = Set(networks)
     }
-    
+
     public init(_ networks: [KeyWalletNetwork]) {
         self.networks = Set(networks)
     }
-    
-    public var ffiNetworks: FFINetworks {
-        var bitmap: UInt32 = 0
-        for network in networks {
-            switch network {
-            case .mainnet: bitmap |= (1 << 0)  // DASH_FLAG
-            case .testnet: bitmap |= (1 << 1)  // TESTNET_FLAG
-            case .regtest: bitmap |= (1 << 2)  // REGTEST_FLAG
-            case .devnet: bitmap |= (1 << 3)   // DEVNET_FLAG
-            }
-        }
-        return FFINetworks(rawValue: bitmap)
+
+    /// Returns the FFI network value for the first network in the set.
+    /// Since the FFI no longer supports multi-network bitmaps, only the
+    /// first network is used.
+    public var ffiNetwork: FFINetwork {
+        let network = networks.first ?? .mainnet
+        return network.ffiValue
     }
 }
 

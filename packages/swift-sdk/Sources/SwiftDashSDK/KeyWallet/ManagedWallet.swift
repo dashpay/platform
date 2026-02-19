@@ -43,7 +43,7 @@ public class ManagedWallet {
         }
         
         let addressPtr = managed_wallet_get_next_bip44_receive_address(
-            infoHandle, wallet.ffiHandle, network.ffiValue, accountIndex, &error)
+            infoHandle, wallet.ffiHandle, accountIndex, &error)
         
         defer {
             if error.message != nil {
@@ -74,7 +74,7 @@ public class ManagedWallet {
         }
         
         let addressPtr = managed_wallet_get_next_bip44_change_address(
-            infoHandle, wallet.ffiHandle, network.ffiValue, accountIndex, &error)
+            infoHandle, wallet.ffiHandle, accountIndex, &error)
         
         defer {
             if error.message != nil {
@@ -114,7 +114,7 @@ public class ManagedWallet {
         }
         
         let success = managed_wallet_get_bip_44_external_address_range(
-            infoHandle, wallet.ffiHandle, network.ffiValue, accountIndex,
+            infoHandle, wallet.ffiHandle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
         
         defer {
@@ -162,7 +162,7 @@ public class ManagedWallet {
         }
         
         let success = managed_wallet_get_bip_44_internal_address_range(
-            infoHandle, wallet.ffiHandle, network.ffiValue, accountIndex,
+            infoHandle, wallet.ffiHandle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
         
         defer {
@@ -202,7 +202,7 @@ public class ManagedWallet {
         var ffiInfo = FFIAddressPoolInfo()
         
         let success = managed_wallet_get_address_pool_info(
-            handle, network.ffiValue, accountType.ffiValue, accountIndex,
+            handle, accountType.ffiValue, accountIndex,
             poolType.ffiValue, &ffiInfo, &error)
         
         defer {
@@ -229,7 +229,7 @@ public class ManagedWallet {
         var error = FFIError()
         
         let success = managed_wallet_set_gap_limit(
-            handle, network.ffiValue, accountType.ffiValue, accountIndex,
+            handle, accountType.ffiValue, accountIndex,
             poolType.ffiValue, gapLimit, &error)
         
         defer {
@@ -257,7 +257,7 @@ public class ManagedWallet {
         var error = FFIError()
         
         let success = managed_wallet_generate_addresses_to_index(
-            handle, wallet.ffiHandle, network.ffiValue, accountType.ffiValue,
+            handle, wallet.ffiHandle, accountType.ffiValue,
             accountIndex, poolType.ffiValue, targetIndex, &error)
         
         defer {
@@ -277,7 +277,7 @@ public class ManagedWallet {
         var error = FFIError()
         
         let success = address.withCString { addressCStr in
-            managed_wallet_mark_address_used(handle, network.ffiValue, addressCStr, &error)
+            managed_wallet_mark_address_used(handle, addressCStr, &error)
         }
         
         defer {
@@ -320,14 +320,14 @@ public class ManagedWallet {
                     let hashPtr = hashBytes.bindMemory(to: UInt8.self).baseAddress
                     
                     return managed_wallet_check_transaction(
-                        handle, wallet.ffiHandle, network.ffiValue,
+                        handle, wallet.ffiHandle,
                         txPtr, transactionData.count,
                         context.ffiValue, blockHeight, hashPtr,
                         UInt64(timestamp), updateState, &result, &error)
                 }
             } else {
                 return managed_wallet_check_transaction(
-                    handle, wallet.ffiHandle, network.ffiValue,
+                    handle, wallet.ffiHandle,
                     txPtr, transactionData.count,
                     context.ffiValue, blockHeight, nil,
                     UInt64(timestamp), updateState, &result, &error)
@@ -396,7 +396,7 @@ public class ManagedWallet {
         var count: size_t = 0
         
         let success = managed_wallet_get_utxos(
-            infoHandle, network.ffiValue, &utxosPtr, &count, &error)
+            infoHandle, &utxosPtr, &count, &error)
         
         defer {
             if error.message != nil {
