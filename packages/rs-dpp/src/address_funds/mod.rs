@@ -1,5 +1,7 @@
 pub mod fee_strategy;
 mod platform_address;
+#[cfg(feature = "state-transition-serde-conversion")]
+pub mod platform_address_map_serde;
 mod witness;
 mod witness_verification_operations;
 

@@ -39,6 +39,10 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output to send remaining credits to an address
     pub output: Option<(PlatformAddress, Credits)>,
@@ -56,6 +60,10 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
 struct IdentityCreateFromAddressesTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     output: Option<(PlatformAddress, Credits)>,
     fee_strategy: AddressFundsFeeStrategy,

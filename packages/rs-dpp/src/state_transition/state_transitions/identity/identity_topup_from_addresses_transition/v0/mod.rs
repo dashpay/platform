@@ -28,6 +28,10 @@ use crate::ProtocolError;
 )]
 #[derive(Default)]
 pub struct IdentityTopUpFromAddressesTransitionV0 {
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output to send remaining credits to an address
     pub output: Option<(PlatformAddress, Credits)>,

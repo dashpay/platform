@@ -27,6 +27,10 @@ use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolErro
 )]
 #[derive(Default)]
 pub struct AddressCreditWithdrawalTransitionV0 {
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output for change
     pub output: Option<(PlatformAddress, Credits)>,

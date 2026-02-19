@@ -37,7 +37,15 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(unversioned)]
 #[derive(Default)]
 pub struct AddressFundsTransferTransitionV0 {
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub outputs: BTreeMap<PlatformAddress, Credits>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,

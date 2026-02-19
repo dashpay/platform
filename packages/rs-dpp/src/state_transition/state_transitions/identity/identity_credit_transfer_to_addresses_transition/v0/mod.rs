@@ -43,6 +43,10 @@ use serde::{Deserialize, Serialize};
 pub struct IdentityCreditTransferToAddressesTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(with = "crate::address_funds::platform_address_map_serde")
+    )]
     pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     pub nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,
