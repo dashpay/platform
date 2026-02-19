@@ -527,11 +527,10 @@ public class WalletService: ObservableObject {
             let service = serviceBox.value
 
             do {
-                if fullReset {
-                    try await client.clearStorage()
-                } else {
-                    try await client.clearSyncState()
-                }
+                // clearSyncState() was deprecated (now delegates to clearStorage()),
+                // so we call clearStorage() unconditionally.
+                // The fullReset flag still controls resetAfterClearingStorage() below.
+                try await client.clearStorage()
 
                 await MainActor.run {
                     service.resetAfterClearingStorage(fullReset: fullReset)
