@@ -28,6 +28,7 @@ jobs:
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws_region: ${{ vars.AWS_REGION }}
           aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
 
       - name: Start local network
         uses: ./.github/actions/local-network
