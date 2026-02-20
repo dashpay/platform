@@ -89,8 +89,11 @@ book/book/
 # gRPC coverage report
 grpc-coverage-report.txt
 
-__pycache__/
+# Git worktrees
+/worktrees/
 .claude/worktrees/
+
+__pycache__/
 
 # Security audit reports (local-only, not committed)
 audits/
