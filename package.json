@@ -121,7 +121,9 @@
     "tmp": "^0.2.4",
     "js-yaml": "^4.1.1",
     "micromatch": "^4.0.8",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "ajv": ">=8.18.0",
+    "minimatch": ">=10.2.1"
   },
   "dependencies": {
     "dompurify": "^3.2.6",
