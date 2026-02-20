@@ -61,6 +61,8 @@ mod tests {
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -74,6 +76,7 @@ mod tests {
     use dpp::document::Document;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+    use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -182,6 +185,37 @@ mod tests {
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_nonexistent_document_returns_error() {
+        let (drive, contract) = setup_dashpay("delete-nonexistent", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract(
+                document_id,
+                &contract,
+                "profile",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected deleting a nonexistent document to fail");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(_))
+        ) || matches!(
+            err,
+            Error::GroveDB(ref grovedb_error)
+                if matches!(grovedb_error.as_ref(), grovedb::Error::PathKeyNotFound(_))
+        ));
     }
 
     #[test]
