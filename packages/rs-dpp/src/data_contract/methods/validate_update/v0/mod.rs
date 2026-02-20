@@ -612,6 +612,182 @@ mod tests {
             assert!(result.is_valid());
         }
 
+        #[test]
+        fn should_return_invalid_result_if_too_many_keywords() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_keywords((0..51).map(|i| format!("keyword{i:03}")).collect());
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::TooManyKeywordsError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_keyword_too_short() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_keywords(vec!["ab".to_string()]);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_keyword_too_long() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_keywords(vec!["a".repeat(51)]);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_keyword_has_invalid_chars() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_keywords(vec!["hello world".to_string()]);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::InvalidKeywordCharacterError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_duplicate_keywords() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract
+                .set_keywords(vec!["keyword".to_string(), "keyword".to_string()]);
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::DuplicateKeywordsError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_description_too_short() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_description(Some("ab".to_string()));
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_))]
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_if_description_too_long() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            let mut new_data_contract = old_data_contract.clone();
+            new_data_contract.set_version(old_data_contract.version() + 1);
+            new_data_contract.set_description(Some("a".repeat(101)));
+
+            let result = old_data_contract
+                .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
+                .expect("failed validate update");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_))]
+            );
+        }
+
         //
         // ──────────────────────────────────────────────────────────────────────────
         //  Group‑related rules
