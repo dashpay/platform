@@ -1006,7 +1006,7 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let result = DocumentTypeV0::try_from_schema(
+            let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 1,
                 config.version(),
