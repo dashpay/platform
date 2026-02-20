@@ -114,458 +114,338 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
     Ok(public_key_compressed)
 }
 
-//
-// #[cfg(test)]
-// mod test {
-//     use chrono::Utc;
-//     use platform_value::{BinaryData, Value};
-//     use rand::rngs::StdRng;
-//     use rand::SeedableRng;
-//     use serde::{Deserialize, Serialize};
-//     use serde_json::json;
-//     use std::convert::TryInto;
-//     use std::vec;
-//
-//     use crate::ProtocolError::InvalidSignaturePublicKeySecurityLevelError;
-//     use crate::{
-//         assert_error_contains,
-//         identity::{KeyID, SecurityLevel},
-//         state_transition::{
-//             StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-//         },
-//         util::hash::ripemd160_sha256,
-//         NativeBlsModule,
-//     };
-//     use platform_value::string_encoding::Encoding;
-//
-//     use super::StateTransitionIdentitySignedV0;
-//     use super::*;
-//     use crate::serialization::PlatformDeserializable;
-//     use crate::serialization::PlatformSerializable;
-//     use crate::serialization::Signable;
-//     use crate::version::FeatureVersion;
-//     use bincode::{config, Decode, Encode};
-//     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-//
-//     #[derive(
-//         Debug,
-//         Clone,
-//         Encode,
-//         Decode,
-//         Serialize,
-//         Deserialize,
-//         PlatformDeserialize,
-//         PlatformSerialize,
-//         PlatformSignable,
-//     )]
-//
-//     #[serde(rename_all = "camelCase")]
-//     struct ExampleStateTransition {
-//         pub protocol_version: u32,
-//         pub transition_type: StateTransitionType,
-//         pub owner_id: Identifier,
-//         #[platform_signable(exclude_from_sig_hash)]
-//         pub signature: BinaryData,
-//         #[platform_signable(exclude_from_sig_hash)]
-//         pub signature_public_key_id: KeyID,
-//     }
-//
-//     impl StateTransitionFieldTypes for ExampleStateTransition {
-//         fn binary_property_paths() -> Vec<&'static str> {
-//             vec!["signature"]
-//         }
-//         fn identifiers_property_paths() -> Vec<&'static str> {
-//             vec![]
-//         }
-//         fn signature_property_paths() -> Vec<&'static str> {
-//             vec!["signature", "signaturePublicKeyId"]
-//         }
-//
-//         fn to_cleaned_object(&self, _skip_signature: bool) -> Result<Value, ProtocolError> {
-//             todo!()
-//         }
-//     }
-//
-//     impl From<ExampleStateTransition> for StateTransition {
-//         fn from(_val: ExampleStateTransition) -> Self {
-//             let st = DocumentsBatchTransition::default();
-//             StateTransition::DocumentsBatch(st)
-//         }
-//     }
-//
-//     impl StateTransitionLike for ExampleStateTransition {
-//         fn state_transition_protocol_version(&self) -> FeatureVersion {
-//             1
-//         }
-//         fn state_transition_type(&self) -> StateTransitionType {
-//             StateTransitionType::DocumentsBatch
-//         }
-//         fn signature(&self) -> &BinaryData {
-//             &self.signature
-//         }
-//         fn set_signature(&mut self, signature: BinaryData) {
-//             self.signature = signature
-//         }
-//
-//         fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-//             self.signature = BinaryData::new(signature)
-//         }
-//
-//         fn modified_data_ids(&self) -> Vec<Identifier> {
-//             vec![]
-//         }
-//     }
-//
-//     impl StateTransitionIdentitySignedV0 for ExampleStateTransition {
-//         fn get_owner_id(&self) -> &Identifier {
-//             &self.owner_id
-//         }
-//         fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
-//             vec![SecurityLevel::HIGH]
-//         }
-//
-//         fn get_signature_public_key_id(&self) -> Option<KeyID> {
-//             self.signature_public_key_id
-//         }
-//
-//         fn set_signature_public_key_id(&mut self, key_id: KeyID) {
-//             self.signature_public_key_id = key_id;
-//         }
-//     }
-//
-//     fn get_mock_state_transition() -> ExampleStateTransition {
-//         let owner_id = Identifier::from_string(
-//             "AX5o22ARWFYZE9JZTA5SSeyvprtetBcvbQLSBZ7cR7Gw",
-//             Encoding::Base58,
-//         )
-//         .unwrap();
-//         ExampleStateTransition {
-//             protocol_version: 1,
-//             transition_type: StateTransitionType::DocumentsBatch,
-//             signature: Default::default(),
-//             signature_public_key_id: 1,
-//             owner_id,
-//         }
-//     }
-//
-//     struct Keys {
-//         pub ec_private: Vec<u8>,
-//         pub ec_public_compressed: Vec<u8>,
-//         pub ec_public_uncompressed: Vec<u8>,
-//         pub bls_private: Vec<u8>,
-//         pub bls_public: Vec<u8>,
-//         pub identity_public_key: IdentityPublicKey,
-//         pub public_key_id: KeyID,
-//     }
-//
-//     fn get_test_keys() -> Keys {
-//         let secp = dashcore::secp256k1::Secp256k1::new();
-//         let mut rng = dashcore::secp256k1::rand::thread_rng();
-//         let mut std_rng = StdRng::seed_from_u64(99999);
-//         let (private_key, public_key) = secp.generate_keypair(&mut rng);
-//
-//         let public_key_id = 1;
-//         let ec_private_key_bytes = private_key.secret_bytes();
-//         let ec_public_compressed_bytes = public_key.serialize();
-//         let ec_public_uncompressed_bytes = public_key.serialize_uncompressed();
-//
-//         let bls_private =
-//             bls_signatures::PrivateKey::generate_dash(&mut std_rng).expect("expected private key");
-//         let bls_public = bls_private
-//             .g1_element()
-//             .expect("expected to make public key");
-//         let bls_private_bytes = bls_private.to_bytes().to_vec();
-//         let bls_public_bytes = bls_public.to_bytes().to_vec();
-//
-//         let identity_public_key = IdentityPublicKey {
-//             id: public_key_id,
-//             key_type: KeyType::ECDSA_SECP256K1,
-//             purpose: Purpose::AUTHENTICATION,
-//             security_level: SecurityLevel::HIGH,
-//             data: BinaryData::new(ec_public_compressed_bytes.try_into().unwrap()),
-//             read_only: false,
-//             disabled_at: None,
-//         };
-//
-//         Keys {
-//             ec_private: ec_private_key_bytes.to_vec(),
-//             ec_public_compressed: ec_public_compressed_bytes.to_vec(),
-//             ec_public_uncompressed: ec_public_uncompressed_bytes.to_vec(),
-//             bls_private: bls_private_bytes,
-//             bls_public: bls_public_bytes,
-//             identity_public_key,
-//             public_key_id,
-//         }
-//     }
-//
-//     #[test]
-//     fn to_object_with_signature() {
-//         let st = get_mock_state_transition();
-//         let st_object = st.to_object(false).unwrap();
-//
-//         assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
-//         assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
-//         assert_eq!(
-//             st_object["signaturePublicKeyId"]
-//                 .to_integer::<u32>()
-//                 .unwrap(),
-//             1
-//         );
-//         assert!(st_object["signature"].as_bytes().unwrap().is_empty());
-//     }
-//
-//     #[test]
-//     fn to_object_without_signature() {
-//         let st = get_mock_state_transition();
-//         let st_object = st.to_object(true).unwrap();
-//
-//         assert_eq!(st_object["protocolVersion"].to_integer::<u32>().unwrap(), 1);
-//         assert_eq!(st_object["transitionType"].to_integer::<u8>().unwrap(), 1);
-//         assert!(!st_object.has("signaturePublicKeyId").unwrap());
-//         assert!(!st_object.has("signature").unwrap());
-//     }
-//
-//     #[test]
-//     fn to_json() {
-//         let st = get_mock_state_transition();
-//         let st_json = st.to_json(false).unwrap();
-//         assert_eq!(
-//             st_json,
-//             json!({
-//                 "protocolVersion" : 1,
-//                 "signature": "",
-//                 "signaturePublicKeyId": 1,
-//                 "transitionType" : 1,
-//                 "ownerId" : "AX5o22ARWFYZE9JZTA5SSeyvprtetBcvbQLSBZ7cR7Gw"
-//             })
-//         );
-//     }
-//
-//     #[test]
-//     fn to_hash() {
-//         let st = get_mock_state_transition();
-//         let hash = st.hash(false).unwrap();
-//         assert_eq!(
-//             "39b9c5951e5d83668f98909bb73d390d49867c47bbfe043a42ac83de898142c0",
-//             hex::encode(hash)
-//         )
-//     }
-//
-//     #[test]
-//     fn to_buffer() {
-//         let st = get_mock_state_transition();
-//         let hash = st.to_cbor_buffer(false).unwrap();
-//         let result = hex::encode(hash);
-//
-//         assert_eq!("01a4676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc2524697369676e617475726540747369676e61747572655075626c69634b65794964016e7472616e736974696f6e5479706501", result.as_str());
-//     }
-//
-//     #[test]
-//     fn to_buffer_no_signature() {
-//         let st = get_mock_state_transition();
-//         let hash = st.to_cbor_buffer(true).unwrap();
-//         let result = hex::encode(hash);
-//
-//         assert_eq!("01a2676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc25246e7472616e736974696f6e5479706501", result);
-//     }
-//
-//     #[test]
-//     fn get_signature_public_key_id() {
-//         let st = get_mock_state_transition();
-//         let keys = get_test_keys();
-//         assert_eq!(Some(keys.public_key_id), st.get_signature_public_key_id())
-//     }
-//
-//     #[test]
-//     fn sign_validate_with_private_key() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let keys = get_test_keys();
-//
-//         st.sign(&keys.identity_public_key, &keys.ec_private, &bls)
-//             .unwrap();
-//         st.verify_signature(&keys.identity_public_key, &bls)
-//             .expect("the verification shouldn't fail");
-//     }
-//
-//     #[test]
-//     fn sign_validate_signature_ecdsa_hash160() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key.key_type = KeyType::ECDSA_HASH160;
-//         keys.identity_public_key.data =
-//             BinaryData::new(ripemd160_sha256(keys.identity_public_key.data.as_slice()).to_vec());
-//
-//         st.sign(&keys.identity_public_key, &keys.ec_private, &bls)
-//             .unwrap();
-//         st.verify_signature(&keys.identity_public_key, &bls)
-//             .expect("the verification shouldn't fail");
-//     }
-//
-//     #[test]
-//     fn error_when_sign_with_wrong_public_key() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//
-//         let secp = dashcore::secp256k1::Secp256k1::new();
-//         let mut rng = dashcore::secp256k1::rand::thread_rng();
-//         let (_, public_key) = secp.generate_keypair(&mut rng);
-//
-//         keys.identity_public_key.data = BinaryData::new(public_key.serialize().to_vec());
-//
-//         let sign_result = st.sign(&keys.identity_public_key, &keys.ec_private, &bls);
-//         assert_error_contains!(sign_result, "Invalid signature public key");
-//     }
-//
-//     #[test]
-//     fn error_if_security_level_is_not_met() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key.security_level = SecurityLevel::MEDIUM;
-//
-//         let sign_error = st
-//             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
-//             .unwrap_err();
-//         match sign_error {
-//             InvalidSignaturePublicKeySecurityLevelError(err) => {
-//                 assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
-//                 assert_eq!(vec![SecurityLevel::HIGH], err.allowed_key_security_levels());
-//             }
-//             error => {
-//                 panic!("invalid error type: {}", error)
-//             }
-//         };
-//     }
-//
-//     #[test]
-//     fn error_if_key_purpose_not_authenticated() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key.purpose = Purpose::ENCRYPTION;
-//
-//         let sign_error = st
-//             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
-//             .unwrap_err();
-//         match sign_error {
-//             ProtocolError::WrongPublicKeyPurposeError(err) => {
-//                 assert_eq!(Purpose::ENCRYPTION, err.public_key_purpose());
-//                 assert_eq!(Purpose::AUTHENTICATION, err.key_purpose_requirement());
-//             }
-//             error => {
-//                 panic!("invalid error type: {}", error)
-//             }
-//         };
-//     }
-//
-//     #[test]
-//     fn should_sign_validate_with_bls_signature() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key.key_type = KeyType::BLS12_381;
-//         keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
-//
-//         st.sign(&keys.identity_public_key, &keys.bls_private, &bls)
-//             .expect("validation should be successful");
-//     }
-//
-//     #[test]
-//     fn error_if_transition_is_not_signed_ecdsa() {
-//         let bls = NativeBlsModule::default();
-//         let st = get_mock_state_transition();
-//         let keys = get_test_keys();
-//
-//         let verify_error = st
-//             .verify_signature(&keys.identity_public_key, &bls)
-//             .unwrap_err();
-//         match verify_error {
-//             ProtocolError::StateTransitionIsNotSignedError { .. } => {}
-//             error => {
-//                 panic!("invalid error type: {}", error)
-//             }
-//         };
-//     }
-//
-//     #[test]
-//     fn error_if_transition_is_not_signed_bls() {
-//         let bls = NativeBlsModule::default();
-//         let st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key.key_type = KeyType::BLS12_381;
-//         keys.identity_public_key.data = BinaryData::new(keys.bls_public.clone());
-//
-//         let verify_error = st
-//             .verify_signature(&keys.identity_public_key, &bls)
-//             .unwrap_err();
-//         match verify_error {
-//             ProtocolError::StateTransitionIsNotSignedError { .. } => {}
-//             error => {
-//                 panic!("invalid error type: {}", error)
-//             }
-//         };
-//     }
-//
-//     #[test]
-//     fn set_signature() {
-//         let mut st = get_mock_state_transition();
-//         let signature = "some_signature";
-//         st.set_signature(BinaryData::new(signature.as_bytes().to_owned()));
-//         assert_eq!(signature.as_bytes(), st.signature().as_slice());
-//     }
-//
-//     #[test]
-//     fn set_signature_public_key_id() {
-//         let mut st = get_mock_state_transition();
-//         let public_key_id = 2;
-//         st.set_signature_public_key_id(public_key_id);
-//         assert_eq!(Some(public_key_id), st.get_signature_public_key_id());
-//     }
-//
-//     #[test]
-//     fn should_throw_public_key_is_disabled_error_if_public_key_is_disabled() {
-//         let bls = NativeBlsModule::default();
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//         keys.identity_public_key
-//             .set_disabled_at(Utc::now().timestamp_millis() as u64);
-//
-//         let result = st
-//             .sign(&keys.identity_public_key, &keys.bls_private, &bls)
-//             .expect_err("the protocol error should be returned");
-//
-//         assert!(matches!(
-//             result,
-//             ProtocolError::PublicKeyIsDisabledError { .. }
-//         ))
-//     }
-//
-//     #[test]
-//     fn should_throw_invalid_signature_public_key_security_level_error() {
-//         let bls = NativeBlsModule::default();
-//         // should throw InvalidSignaturePublicKeySecurityLevel Error if public key with master level is used to sign non update state transition
-//         let mut st = get_mock_state_transition();
-//         let mut keys = get_test_keys();
-//
-//         st.transition_type = StateTransitionType::DataContractCreate;
-//         keys.identity_public_key.security_level = SecurityLevel::MASTER;
-//
-//         let result = st
-//             .sign(&keys.identity_public_key, &keys.bls_private, &bls)
-//             .expect_err("the protocol error should be returned");
-//
-//         match result {
-//             ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
-//                 assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
-//                 assert_eq!(err.allowed_key_security_levels(), vec![SecurityLevel::HIGH]);
-//             }
-//             error => panic!(
-//                 "expected InvalidSignaturePublicKeySecurityLevelError, got {}",
-//                 error
-//             ),
-//         }
-//     }
-// }
+#[cfg(all(
+    test,
+    any(
+        feature = "state-transition-signing",
+        feature = "state-transition-validation"
+    )
+))]
+mod test {
+    use super::*;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{IdentityPublicKey, KeyType};
+    use crate::prelude::UserFeeIncrease;
+    use crate::state_transition::batch_transition::BatchTransition;
+    use crate::state_transition::{
+        StateTransition, StateTransitionFieldTypes, StateTransitionSigningOptions,
+        StateTransitionType,
+    };
+    use platform_value::BinaryData;
+
+    #[derive(Clone, Debug)]
+    struct MockSignedTransition {
+        signature_public_key_id: KeyID,
+        required_levels: Vec<SecurityLevel>,
+        required_purposes: Vec<Purpose>,
+        user_fee_increase: UserFeeIncrease,
+    }
+
+    impl Default for MockSignedTransition {
+        fn default() -> Self {
+            Self {
+                signature_public_key_id: 1,
+                required_levels: vec![SecurityLevel::HIGH],
+                required_purposes: vec![Purpose::AUTHENTICATION],
+                user_fee_increase: 0,
+            }
+        }
+    }
+
+    impl StateTransitionFieldTypes for MockSignedTransition {
+        fn signature_property_paths() -> Vec<&'static str> {
+            vec![]
+        }
+
+        fn identifiers_property_paths() -> Vec<&'static str> {
+            vec![]
+        }
+
+        fn binary_property_paths() -> Vec<&'static str> {
+            vec![]
+        }
+    }
+
+    impl From<MockSignedTransition> for StateTransition {
+        fn from(_: MockSignedTransition) -> Self {
+            StateTransition::Batch(BatchTransition::default())
+        }
+    }
+
+    impl StateTransitionLike for MockSignedTransition {
+        fn state_transition_protocol_version(&self) -> u32 {
+            1
+        }
+
+        fn state_transition_type(&self) -> StateTransitionType {
+            StateTransitionType::Batch
+        }
+
+        fn user_fee_increase(&self) -> UserFeeIncrease {
+            self.user_fee_increase
+        }
+
+        fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+            self.user_fee_increase = user_fee_increase;
+        }
+
+        fn modified_data_ids(&self) -> Vec<Identifier> {
+            vec![]
+        }
+
+        fn unique_identifiers(&self) -> Vec<String> {
+            vec![]
+        }
+    }
+
+    impl StateTransitionIdentitySigned for MockSignedTransition {
+        fn signature_public_key_id(&self) -> KeyID {
+            self.signature_public_key_id
+        }
+
+        fn set_signature_public_key_id(&mut self, key_id: KeyID) {
+            self.signature_public_key_id = key_id;
+        }
+
+        fn security_level_requirement(&self, _purpose: Purpose) -> Vec<SecurityLevel> {
+            self.required_levels.clone()
+        }
+
+        fn purpose_requirement(&self) -> Vec<Purpose> {
+            self.required_purposes.clone()
+        }
+    }
+
+    fn identity_public_key(
+        id: KeyID,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        disabled_at: Option<u64>,
+    ) -> IdentityPublicKey {
+        let compressed = get_compressed_public_ec_key(&[1; 32]).expect("expected valid key");
+
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(compressed.to_vec()),
+            disabled_at,
+        })
+    }
+
+    fn strict_options() -> StateTransitionSigningOptions {
+        StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+        }
+    }
+
+    #[test]
+    fn should_accept_matching_purpose_and_security_level() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH, None);
+
+        assert!(transition
+            .verify_public_key_level_and_purpose(&key, strict_options())
+            .is_ok());
+    }
+
+    #[test]
+    fn should_reject_wrong_purpose() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::TRANSFER, SecurityLevel::HIGH, None);
+
+        assert!(matches!(
+            transition.verify_public_key_level_and_purpose(&key, strict_options()),
+            Err(ProtocolError::WrongPublicKeyPurposeError(_))
+        ));
+    }
+
+    #[test]
+    fn should_reject_wrong_security_level() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::MEDIUM, None);
+
+        assert!(matches!(
+            transition.verify_public_key_level_and_purpose(&key, strict_options()),
+            Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                _
+            ))
+        ));
+    }
+
+    #[test]
+    fn should_allow_any_purpose_when_option_enabled() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::TRANSFER, SecurityLevel::HIGH, None);
+
+        assert!(transition
+            .verify_public_key_level_and_purpose(
+                &key,
+                StateTransitionSigningOptions {
+                    allow_signing_with_any_security_level: false,
+                    allow_signing_with_any_purpose: true,
+                },
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn should_allow_any_security_level_when_option_enabled() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::MEDIUM, None);
+
+        assert!(transition
+            .verify_public_key_level_and_purpose(
+                &key,
+                StateTransitionSigningOptions {
+                    allow_signing_with_any_security_level: true,
+                    allow_signing_with_any_purpose: false,
+                },
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn should_verify_enabled_public_key() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH, None);
+
+        assert!(transition.verify_public_key_is_enabled(&key).is_ok());
+    }
+
+    #[test]
+    fn should_reject_disabled_public_key() {
+        let transition = MockSignedTransition::default();
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH, Some(42));
+
+        assert!(matches!(
+            transition.verify_public_key_is_enabled(&key),
+            Err(ProtocolError::PublicKeyIsDisabledError(_))
+        ));
+    }
+
+    #[test]
+    fn should_default_purpose_to_authentication() {
+        let transition = MockSignedTransition::default();
+
+        assert_eq!(
+            vec![Purpose::AUTHENTICATION],
+            transition.purpose_requirement()
+        );
+    }
+
+    #[test]
+    fn should_support_transfer_purpose_requirement() {
+        let transition = MockSignedTransition {
+            required_purposes: vec![Purpose::TRANSFER],
+            ..Default::default()
+        };
+        let key = identity_public_key(1, Purpose::TRANSFER, SecurityLevel::HIGH, None);
+
+        assert!(transition
+            .verify_public_key_level_and_purpose(&key, strict_options())
+            .is_ok());
+    }
+
+    #[test]
+    fn should_reject_authentication_key_for_transfer_requirement() {
+        let transition = MockSignedTransition {
+            required_purposes: vec![Purpose::TRANSFER],
+            ..Default::default()
+        };
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH, None);
+
+        assert!(matches!(
+            transition.verify_public_key_level_and_purpose(&key, strict_options()),
+            Err(ProtocolError::WrongPublicKeyPurposeError(_))
+        ));
+    }
+
+    #[test]
+    fn should_set_signature_public_key_id() {
+        let mut transition = MockSignedTransition::default();
+
+        transition.set_signature_public_key_id(9);
+
+        assert_eq!(9, transition.signature_public_key_id());
+    }
+
+    #[test]
+    fn should_return_signature_public_key_id() {
+        let transition = MockSignedTransition {
+            signature_public_key_id: 7,
+            ..Default::default()
+        };
+
+        assert_eq!(7, transition.signature_public_key_id());
+    }
+
+    #[test]
+    fn should_return_configured_security_level_requirement() {
+        let transition = MockSignedTransition {
+            required_levels: vec![SecurityLevel::MASTER, SecurityLevel::HIGH],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            vec![SecurityLevel::MASTER, SecurityLevel::HIGH],
+            transition.security_level_requirement(Purpose::AUTHENTICATION)
+        );
+    }
+
+    #[test]
+    fn should_validate_master_security_level_when_required() {
+        let transition = MockSignedTransition {
+            required_levels: vec![SecurityLevel::MASTER],
+            ..Default::default()
+        };
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::MASTER, None);
+
+        assert!(transition
+            .verify_public_key_level_and_purpose(&key, strict_options())
+            .is_ok());
+    }
+
+    #[test]
+    fn should_reject_high_security_when_master_required() {
+        let transition = MockSignedTransition {
+            required_levels: vec![SecurityLevel::MASTER],
+            ..Default::default()
+        };
+        let key = identity_public_key(1, Purpose::AUTHENTICATION, SecurityLevel::HIGH, None);
+
+        assert!(matches!(
+            transition.verify_public_key_level_and_purpose(&key, strict_options()),
+            Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                _
+            ))
+        ));
+    }
+
+    #[test]
+    fn should_get_compressed_public_key_for_valid_private_key() {
+        let compressed = get_compressed_public_ec_key(&[1; 32]).expect("expected key");
+
+        assert_eq!(33, compressed.len());
+        assert_ne!([0; 33], compressed);
+    }
+
+    #[test]
+    fn should_return_error_for_invalid_private_key_size() {
+        let result = get_compressed_public_ec_key(&[1; 31]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn should_return_deterministic_compressed_public_key() {
+        let first = get_compressed_public_ec_key(&[2; 32]).expect("expected first key");
+        let second = get_compressed_public_ec_key(&[2; 32]).expect("expected second key");
+
+        assert_eq!(first, second);
+    }
+}
