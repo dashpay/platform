@@ -16,6 +16,7 @@ wasm-bindgen = { version = "=0.2.108", default-features = false, features = [
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-signing",
     "state-transition-value-conversion",
+    "state-transition-json-conversion",
     "document-json-conversion",
     "identity-serialization",
     "identity-value-conversion",
