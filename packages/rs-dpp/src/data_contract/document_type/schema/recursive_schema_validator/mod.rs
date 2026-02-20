@@ -17,7 +17,6 @@ mod test {
             .try_init();
     }
 
-    #[ignore]
     #[test]
     fn should_return_error_if_bytes_array_parent_contains_items_or_prefix_items() {
         let schema: Value = platform_value!(
@@ -52,7 +51,6 @@ mod test {
         );
     }
 
-    #[ignore]
     #[test]
     fn should_return_valid_result() {
         let schema: Value = platform_value!(
@@ -74,7 +72,6 @@ mod test {
             .is_valid());
     }
 
-    #[ignore]
     #[test]
     fn should_return_invalid_result() {
         let schema: Value = platform_value!({
@@ -107,7 +104,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn should_be_valid_complex_for_complex_schema() {
         let schema = get_document_schema();
@@ -117,7 +113,6 @@ mod test {
             .is_valid())
     }
 
-    #[ignore]
     #[test]
     fn invalid_result_for_array_of_object() {
         let mut schema = get_document_schema();
@@ -144,7 +139,6 @@ mod test {
         }
     }
 
-    #[ignore]
     #[test]
     fn invalid_result_for_array_of_objects() {
         let mut schema = get_document_schema();
