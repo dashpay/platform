@@ -1013,6 +1013,7 @@ mod tests {
                 "invalid name",
                 schema.clone(),
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],

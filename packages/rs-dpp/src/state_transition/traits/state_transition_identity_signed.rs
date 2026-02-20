@@ -126,7 +126,7 @@ mod test {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{IdentityPublicKey, KeyType};
     use crate::prelude::UserFeeIncrease;
-    use crate::state_transition::batch_transition::BatchTransition;
+    use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
     use crate::state_transition::{
         StateTransition, StateTransitionFieldTypes, StateTransitionSigningOptions,
         StateTransitionType,
@@ -168,12 +168,12 @@ mod test {
 
     impl From<MockSignedTransition> for StateTransition {
         fn from(_: MockSignedTransition) -> Self {
-            StateTransition::Batch(BatchTransition::default())
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()))
         }
     }
 
     impl StateTransitionLike for MockSignedTransition {
-        fn state_transition_protocol_version(&self) -> u32 {
+        fn state_transition_protocol_version(&self) -> u16 {
             1
         }
 
