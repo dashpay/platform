@@ -78,6 +78,77 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn should_return_invalid_result_if_no_recipients() {
+        let platform_version = PlatformVersion::latest();
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses: BTreeMap::new(),
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionNoOutputsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_over_max_recipients() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version.dpp.state_transitions.max_address_outputs as usize;
+        let mut recipient_addresses = BTreeMap::new();
+        for i in 0..=max {
+            let mut addr = [0u8; 20];
+            addr[0..2].copy_from_slice(&(i as u16).to_le_bytes());
+            recipient_addresses.insert(PlatformAddress::P2pkh(addr), 1_000_000_000);
+        }
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses,
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionOverMaxOutputsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_amount_below_minimum() {
+        let platform_version = PlatformVersion::latest();
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses: [(PlatformAddress::P2pkh([1u8; 20]), 1)].into(),
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OutputBelowMinimumError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_valid_result_for_valid_transition() {
+        let platform_version = PlatformVersion::latest();
+        let min_output = platform_version.dpp.state_transitions.address_funds.min_output_amount;
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses: [(PlatformAddress::P2pkh([1u8; 20]), min_output)].into(),
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert!(
+            result.errors.is_empty(),
+            "expected valid result, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
     fn should_return_invalid_result_if_recipient_sum_overflows() {
         let platform_version = PlatformVersion::latest();
 
