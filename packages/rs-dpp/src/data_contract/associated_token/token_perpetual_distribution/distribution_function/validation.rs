@@ -1127,6 +1127,168 @@ mod tests {
                 .first_error()
                 .is_some());
         }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_zero_distribution_start() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 0,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_invalid_zero_distribution_start")
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_max_distribution_start() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: MAX_DISTRIBUTION_PARAM + 1,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_invalid_max_distribution_start")
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_trailing_exceeds_start() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 101,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect(
+                    "no error on test_step_decreasing_amount_invalid_trailing_exceeds_start"
+                )
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_max_interval_count_too_low() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: Some(1),
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect(
+                    "no error on test_step_decreasing_amount_invalid_max_interval_count_too_low"
+                )
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_max_interval_count_too_high() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: Some(1025),
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect(
+                    "no error on test_step_decreasing_amount_invalid_max_interval_count_too_high"
+                )
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_zero_numerator() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 0,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect("no error on test_step_decreasing_amount_invalid_zero_numerator")
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_numerator_gte_denominator() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 5,
+                decrease_per_interval_denominator: 5,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 100,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(10),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect(
+                    "no error on test_step_decreasing_amount_invalid_numerator_gte_denominator"
+                )
+                .first_error()
+                .is_some());
+        }
+
+        #[test]
+        fn test_step_decreasing_amount_invalid_min_value_exceeds_start() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(0),
+                max_interval_count: None,
+                distribution_start_amount: 50,
+                trailing_distribution_interval_amount: 0,
+                min_value: Some(100),
+            };
+            let result = dist.validate(START_MOMENT, PlatformVersion::latest());
+            assert!(result
+                .expect(
+                    "no error on test_step_decreasing_amount_invalid_min_value_exceeds_start"
+                )
+                .first_error()
+                .is_some());
+        }
     }
     mod stepwise {
         use super::*;
