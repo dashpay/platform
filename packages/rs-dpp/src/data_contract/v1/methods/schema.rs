@@ -175,6 +175,17 @@ mod test {
         });
 
         let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false
+        });
 
         let schema = platform_value!({
             "type": "object",

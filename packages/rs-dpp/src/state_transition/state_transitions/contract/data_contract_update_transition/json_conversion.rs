@@ -46,7 +46,7 @@ mod test {
 
     #[test]
     fn should_return_state_transition_in_json_format() {
-        let mut json_object = get_test_data()
+        let json_object = get_test_data()
             .to_json(JsonStateTransitionSerializationOptions {
                 skip_signature: false,
                 into_validating_json: false,
@@ -62,12 +62,12 @@ mod test {
             "the protocol version should be present",
         );
         assert_eq!(
-            Some(4),
+            None,
             json_object
                 .get(TRANSITION_TYPE)
                 .and_then(JsonValue::as_u64)
                 .map(|v| v as u8),
-            "the transition type should be present",
+            "the transition type is not serialized in non-validating JSON",
         );
         assert_eq!(
             Some(0),

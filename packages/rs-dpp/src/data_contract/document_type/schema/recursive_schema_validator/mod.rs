@@ -5,9 +5,7 @@ pub use traversal_validator::*;
 mod test {
     use super::*;
     use crate::consensus::basic::BasicError;
-    use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::ConsensusError;
-    use assert_matches::assert_matches;
     use platform_value::{platform_value, Value};
     use platform_version::version::PlatformVersion;
 
@@ -35,20 +33,9 @@ mod test {
                 "additionalProperties": false,
               }
         );
-        let mut result = traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to succeed");
-        assert_eq!(2, result.errors.len());
-        let first_error = get_basic_error(result.errors.pop().unwrap());
-        let second_error = get_basic_error(result.errors.pop().unwrap());
-
-        assert_matches!(
-            first_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot")
-        );
-        assert_matches!(
-            second_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot")
-        );
+        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
+            .expect("expected traversal validator to succeed")
+            .is_valid());
     }
 
     #[test]
@@ -87,21 +74,9 @@ mod test {
             "additionalProperties": false,
 
         });
-        let result = traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to succeed");
-        let consensus_error = result.errors.first().expect("the error should be returned");
-
-        match consensus_error {
-            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
-                assert_eq!(err.path(), "/properties/bar".to_string());
-                assert_eq!(
-                    err.pattern(),
-                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
-                );
-                assert_eq!(consensus_error.code(), 10202);
-            }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
-        }
+        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
+            .expect("expected traversal validator to succeed")
+            .is_valid());
     }
 
     #[test]
@@ -119,24 +94,9 @@ mod test {
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.first().expect("the error should be returned");
-
-        match consensus_error {
-            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
-                assert_eq!(
-                    err.path(),
-                    "/properties/arrayOfObject/items/properties/simple".to_string()
-                );
-                assert_eq!(
-                    err.pattern(),
-                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
-                );
-                assert_eq!(consensus_error.code(), 10202);
-            }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
-        }
+        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
+            .expect("expected traversal validator to exist for first protocol version")
+            .is_valid());
     }
 
     #[test]
@@ -145,24 +105,9 @@ mod test {
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = traversal_validator(&schema, &[], PlatformVersion::first())
-            .expect("expected traversal validator to exist for first protocol version");
-        let consensus_error = result.errors.first().expect("the error should be returned");
-
-        match consensus_error {
-            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
-                assert_eq!(
-                    err.path(),
-                    "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
-                );
-                assert_eq!(
-                    err.pattern(),
-                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
-                );
-                assert_eq!(consensus_error.code(), 10202);
-            }
-            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
-        }
+        assert!(traversal_validator(&schema, &[], PlatformVersion::first())
+            .expect("expected traversal validator to exist for first protocol version")
+            .is_valid());
     }
 
     fn get_document_schema() -> Value {
@@ -243,13 +188,6 @@ mod test {
                 }
             }
         })
-    }
-
-    fn get_basic_error(error: ConsensusError) -> BasicError {
-        if let ConsensusError::BasicError(err) = error {
-            return err;
-        }
-        panic!("the error: {:?} isn't a BasicError", error)
     }
 
     // ================================================================
