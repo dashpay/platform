@@ -254,6 +254,286 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::BTreeMap;
 
+    fn valid_withdrawal_transition() -> AddressCreditWithdrawalTransitionV0 {
+        use rand::SeedableRng;
+
+        let input_amount = 1_000_000_000u64;
+        AddressCreditWithdrawalTransitionV0 {
+            inputs: [(PlatformAddress::P2pkh([1u8; 20]), (0, input_amount))].into(),
+            input_witnesses: vec![AddressWitness::P2pkh {
+                signature: vec![0u8; 65].into(),
+            }],
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            core_fee_per_byte: 1,
+            output_script: CoreScript::random_p2pkh(&mut rand::rngs::StdRng::seed_from_u64(42)),
+            pooling: Pooling::Never,
+            output: None,
+            user_fee_increase: 0,
+        }
+    }
+
+    fn p2pkh_address(index: usize) -> PlatformAddress {
+        let mut bytes = [0u8; 20];
+        bytes[0] = (index & 0xff) as u8;
+        bytes[1] = ((index >> 8) & 0xff) as u8;
+        bytes[2] = ((index >> 16) & 0xff) as u8;
+        bytes[3] = ((index >> 24) & 0xff) as u8;
+        PlatformAddress::P2pkh(bytes)
+    }
+
+    fn make_inputs_and_witnesses(
+        count: usize,
+        amount: u64,
+    ) -> (BTreeMap<PlatformAddress, (u32, u64)>, Vec<AddressWitness>) {
+        let inputs = (0..count)
+            .map(|i| (p2pkh_address(i), (i as u32, amount)))
+            .collect();
+        let witnesses = (0..count)
+            .map(|_| AddressWitness::P2pkh {
+                signature: vec![0u8; 65].into(),
+            })
+            .collect();
+        (inputs, witnesses)
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_no_inputs() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.inputs = BTreeMap::new();
+        transition.input_witnesses = vec![];
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(BasicError::TransitionNoInputsError(_))]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_over_max_inputs() {
+        let platform_version = PlatformVersion::latest();
+        let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+
+        let mut transition = valid_withdrawal_transition();
+        let (inputs, witnesses) = make_inputs_and_witnesses(max_inputs + 1, 1_000_000_000);
+        transition.inputs = inputs;
+        transition.input_witnesses = witnesses;
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionOverMaxInputsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_witness_count_mismatch() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.input_witnesses.push(AddressWitness::P2pkh {
+            signature: vec![0u8; 65].into(),
+        });
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::InputWitnessCountMismatchError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_output_address_also_input() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        let input_address = transition
+            .inputs
+            .keys()
+            .next()
+            .expect("valid transition has one input")
+            .clone();
+        transition.output = Some((input_address, 1000));
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OutputAddressAlsoInputError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_fee_strategy_empty() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.fee_strategy = vec![];
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(BasicError::FeeStrategyEmptyError(_))]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_fee_strategy_too_many_steps() {
+        let platform_version = PlatformVersion::latest();
+        let max_fee_strategies = platform_version
+            .dpp
+            .state_transitions
+            .max_address_fee_strategies as usize;
+        let step_count = max_fee_strategies + 1;
+
+        let mut transition = valid_withdrawal_transition();
+        let (inputs, witnesses) = make_inputs_and_witnesses(step_count, 1_000_000_000);
+        transition.inputs = inputs;
+        transition.input_witnesses = witnesses;
+        transition.fee_strategy = (0..step_count)
+            .map(|i| AddressFundsFeeStrategyStep::DeductFromInput(i as u16))
+            .collect();
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::FeeStrategyTooManyStepsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_fee_strategy_duplicate() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.fee_strategy = vec![
+            AddressFundsFeeStrategyStep::DeductFromInput(0),
+            AddressFundsFeeStrategyStep::DeductFromInput(0),
+        ];
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::FeeStrategyDuplicateError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_fee_strategy_index_out_of_bounds() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(999)];
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::FeeStrategyIndexOutOfBoundsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_input_below_minimum() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.inputs = [(PlatformAddress::P2pkh([1u8; 20]), (0, 1))].into();
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(BasicError::InputBelowMinimumError(_))]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_output_below_minimum() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.output = Some((PlatformAddress::P2pkh([2u8; 20]), 1));
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(BasicError::OutputBelowMinimumError(_))]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_pooling_not_never() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.pooling = Pooling::IfAvailable;
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_core_fee_not_fibonacci() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.core_fee_per_byte = 4;
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_output_script_invalid() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut transition = valid_withdrawal_transition();
+        transition.output_script = CoreScript::from_bytes(vec![0x51]);
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(_)
+            )]
+        );
+    }
+
     #[test]
     fn should_return_invalid_result_if_input_sum_overflows() {
         let platform_version = PlatformVersion::latest();
@@ -286,5 +566,39 @@ mod tests {
                 BasicError::OverflowError(_)
             )]
         );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_withdrawal_below_min() {
+        let platform_version = PlatformVersion::latest();
+        let min_input_amount = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        assert!(min_input_amount < MIN_WITHDRAWAL_AMOUNT);
+
+        let mut transition = valid_withdrawal_transition();
+        transition.inputs = [(PlatformAddress::P2pkh([1u8; 20]), (0, min_input_amount))].into();
+        transition.output = None;
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::WithdrawalBelowMinAmountError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_valid_result_for_valid_transition() {
+        let platform_version = PlatformVersion::latest();
+        let transition = valid_withdrawal_transition();
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(result.errors.as_slice(), []);
     }
 }
