@@ -165,8 +165,7 @@ impl TokenDirectPurchaseTransitionBuilder {
                 )));
             }
         };
-        if !validation_result.is_valid() {
-            let first_error = validation_result.errors.into_iter().next().unwrap();
+        if let Some(first_error) = validation_result.errors.into_iter().next() {
             return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(first_error))));
         }
 
