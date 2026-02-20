@@ -417,6 +417,81 @@ mod tests {
         ));
     }
 
+    /// Simulates client-server bloom filter workflow with correct byte order.
+    ///
+    /// Both the client SDK and the server use `Txid::to_byte_array()` (consensus
+    /// wire format) when inserting into / checking against the bloom filter.
+    /// This is the correct, consistent path.
+    #[test]
+    fn test_client_filter_with_consensus_byte_order_matches_server_side() {
+        use dashcore_rpc::dashcore::hashes::Hash as _;
+        use dashcore_rpc::dashcore::{ScriptBuf, TxOut};
+
+        // 1. A transaction that the server will see on the network.
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 5000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAA; 20])),
+            }],
+            special_transaction_payload: None,
+        };
+
+        // 2. Client SDK serialises the txid the same way any conforming implementation
+        //    would: consensus wire byte order via `to_byte_array()`.
+        let client_txid_bytes = tx.txid().to_byte_array();
+
+        let mut filter =
+            CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        filter.insert(&client_txid_bytes);
+
+        // 3. Server checks the incoming transaction against the client's filter.
+        assert!(
+            matches_transaction(Arc::new(RwLock::new(filter)), &tx, BloomFlags::None),
+            "filter with txid in consensus byte order must match on the server side"
+        );
+    }
+
+    /// Simulates a buggy client that inserts the txid in display hex byte order
+    /// (human-readable, reversed from wire format) into the bloom filter.
+    ///
+    /// Display hex is what block explorers show. It is the reverse of the consensus
+    /// bytes that the protocol uses on the wire. A client that naively decodes the
+    /// display hex string into bytes and inserts those into the filter will NOT match
+    /// on the server side.
+    #[test]
+    fn test_client_filter_with_display_byte_order_does_not_match_server_side() {
+        use dashcore_rpc::dashcore::{ScriptBuf, TxOut};
+
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 5000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAA; 20])),
+            }],
+            special_transaction_payload: None,
+        };
+
+        // Buggy client: decodes the display-hex string directly into bytes.
+        // Display hex is reversed compared to consensus wire order.
+        let display_hex = tx.txid().to_string();
+        let display_order_bytes = hex::decode(&display_hex).unwrap();
+
+        let mut filter =
+            CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        filter.insert(&display_order_bytes);
+
+        // Server must NOT match — the byte order is inconsistent.
+        assert!(
+            !matches_transaction(Arc::new(RwLock::new(filter)), &tx, BloomFlags::None),
+            "filter with txid in display byte order must NOT match on the server side"
+        );
+    }
+
     #[test]
     fn test_bloom_flags_from_int_mapping() {
         assert!(matches!(bloom_flags_from_int(0u32), BloomFlags::None));
