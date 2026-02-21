@@ -135,6 +135,7 @@ class IdentityTests: XCTestCase {
         }
         
         let result = swift_dash_identity_resolve_name(sdk, "dash")
+        XCTAssertNotNil(result, "Should resolve existing alias")
         
         if let jsonString = result {
             let jsonStr = String(cString: jsonString)
@@ -157,9 +158,6 @@ class IdentityTests: XCTestCase {
             
             // Clean up
             swift_dash_string_free(jsonString)
-        } else {
-            // Name not found is also valid for test vectors
-            XCTAssertTrue(true, "Name resolution may return nil if not found in test vectors")
         }
     }
     

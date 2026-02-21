@@ -26,7 +26,6 @@ class MemoryManagementTests: XCTestCase {
     func testStringFreeWithNullPointer() {
         // Should not crash
         swift_dash_string_free(nil)
-        XCTAssertTrue(true, "String free with null pointer should not crash")
     }
     
     func testStringFreeWithValidPointer() {
@@ -44,7 +43,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_string_free(version)
         }
         
-        XCTAssertTrue(true, "String free with valid pointer should not crash")
     }
     
     // MARK: - Error Memory Management Tests
@@ -52,7 +50,6 @@ class MemoryManagementTests: XCTestCase {
     func testErrorFreeWithNullPointer() {
         // Should not crash
         swift_dash_error_free(nil)
-        XCTAssertTrue(true, "Error free with null pointer should not crash")
     }
     
     func testErrorFreeWithValidPointer() {
@@ -71,7 +68,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_error_free(error)
         }
         
-        XCTAssertTrue(true, "Error free with valid pointer should not crash")
     }
     
     // MARK: - Binary Data Memory Management Tests
@@ -79,7 +75,6 @@ class MemoryManagementTests: XCTestCase {
     func testBinaryDataFreeWithNullPointer() {
         // Should not crash
         swift_dash_binary_data_free(nil)
-        XCTAssertTrue(true, "Binary data free with null pointer should not crash")
     }
     
     // MARK: - Info Structure Memory Management Tests
@@ -87,31 +82,26 @@ class MemoryManagementTests: XCTestCase {
     func testIdentityInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_identity_info_free(nil)
-        XCTAssertTrue(true, "Identity info free with null pointer should not crash")
     }
     
     func testDataContractInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_data_contract_info_free(nil)
-        XCTAssertTrue(true, "Data contract info free with null pointer should not crash")
     }
     
     func testDocumentInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_document_info_free(nil)
-        XCTAssertTrue(true, "Document info free with null pointer should not crash")
     }
     
     func testTransferCreditsResultFreeWithNullPointer() {
         // Should not crash
         swift_dash_transfer_credits_result_free(nil)
-        XCTAssertTrue(true, "Transfer credits result free with null pointer should not crash")
     }
     
     func testTokenInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_token_info_free(nil)
-        XCTAssertTrue(true, "Token info free with null pointer should not crash")
     }
     
     // MARK: - Signer Memory Management Tests
@@ -119,7 +109,6 @@ class MemoryManagementTests: XCTestCase {
     func testSignerFreeWithNullPointer() {
         // Should not crash
         swift_dash_signer_free(nil)
-        XCTAssertTrue(true, "Signer free with null pointer should not crash")
     }
     
     func testSignerCreateAndFree() {
@@ -142,7 +131,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_signer_free(signer)
         }
         
-        XCTAssertTrue(true, "Signer create and free should not crash")
     }
     
     // MARK: - Bytes Memory Management Tests
@@ -150,7 +138,6 @@ class MemoryManagementTests: XCTestCase {
     func testBytesFreeWithNullPointer() {
         // Should not crash
         swift_dash_bytes_free(nil, 0)
-        XCTAssertTrue(true, "Bytes free with null pointer should not crash")
     }
     
     func testBytesFreeWithValidPointer() {
@@ -169,7 +156,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_bytes_free(bytes, size)
         }
         
-        XCTAssertTrue(true, "Bytes free with valid pointer should not crash")
     }
     
     // MARK: - SDK Handle Memory Management Tests
@@ -177,7 +163,6 @@ class MemoryManagementTests: XCTestCase {
     func testSDKDestroyWithNullHandle() {
         // Should not crash
         swift_dash_sdk_destroy(nil)
-        XCTAssertTrue(true, "SDK destroy with null handle should not crash")
     }
     
     func testMultipleSDKCreateAndDestroy() {
@@ -199,7 +184,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_sdk_destroy(sdk)
         }
         
-        XCTAssertTrue(true, "Multiple SDK create and destroy should not crash")
     }
     
     // MARK: - Memory Leak Prevention Tests
@@ -236,7 +220,6 @@ class MemoryManagementTests: XCTestCase {
             }
         }
         
-        XCTAssertTrue(true, "Memory leak prevention tests completed")
     }
     
     // MARK: - Double Free Protection Tests
@@ -252,6 +235,5 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_string_free(version)
         }
         
-        XCTAssertTrue(true, "Double free protection test completed")
     }
 }
