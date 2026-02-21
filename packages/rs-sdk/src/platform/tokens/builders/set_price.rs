@@ -252,3 +252,11 @@ impl TokenChangeDirectPurchasePriceTransitionBuilder {
         Ok(state_transition)
     }
 }
+
+#[cfg(test)]
+mod validation_tests {
+    #[test]
+    fn validate_base_structure_error_case() {
+        super::super::tests::assert_token_set_price_validate_base_structure_error();
+    }
+}

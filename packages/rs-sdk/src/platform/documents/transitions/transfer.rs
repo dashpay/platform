@@ -305,3 +305,11 @@ impl Sdk {
         }
     }
 }
+
+#[cfg(test)]
+mod validation_tests {
+    #[test]
+    fn validate_base_structure_error_case() {
+        super::super::tests::assert_document_transfer_validate_base_structure_error();
+    }
+}

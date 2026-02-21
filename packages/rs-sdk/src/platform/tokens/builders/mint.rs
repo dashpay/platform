@@ -228,3 +228,11 @@ impl TokenMintTransitionBuilder {
         Ok(state_transition)
     }
 }
+
+#[cfg(test)]
+mod validation_tests {
+    #[test]
+    fn validate_base_structure_error_case() {
+        super::super::tests::assert_token_mint_validate_base_structure_error();
+    }
+}
