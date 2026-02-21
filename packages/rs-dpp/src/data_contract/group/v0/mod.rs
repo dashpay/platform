@@ -296,9 +296,8 @@ mod tests {
                 .validate(None, PlatformVersion::latest())
                 .expect("should not error");
 
-            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(
-                _,
-            ))) = result.errors.first()
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
             else {
                 panic!("expected GroupMemberHasPowerOverLimitError");
             };
@@ -315,9 +314,8 @@ mod tests {
                 .validate(None, PlatformVersion::latest())
                 .expect("should not error");
 
-            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(
-                _,
-            ))) = result.errors.first()
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
             else {
                 panic!("expected GroupMemberHasPowerOverLimitError");
             };
@@ -334,9 +332,9 @@ mod tests {
                 .validate(None, PlatformVersion::latest())
                 .expect("should not error");
 
-            let Some(ConsensusError::BasicError(
-                BasicError::GroupTotalPowerLessThanRequiredError(_),
-            )) = result.errors.first()
+            let Some(ConsensusError::BasicError(BasicError::GroupTotalPowerLessThanRequiredError(
+                _,
+            ))) = result.errors.first()
             else {
                 panic!("expected GroupTotalPowerLessThanRequiredError");
             };
@@ -374,9 +372,8 @@ mod tests {
 
             // Required power of zero is currently intercepted by the per-member `power > required_power`
             // check before `GroupRequiredPowerIsInvalidError` is evaluated.
-            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(
-                _,
-            ))) = result.errors.first()
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
             else {
                 panic!("expected GroupMemberHasPowerOverLimitError");
             };
@@ -398,9 +395,8 @@ mod tests {
                 .validate(None, PlatformVersion::latest())
                 .expect("should not error");
 
-            let Some(ConsensusError::BasicError(
-                BasicError::GroupRequiredPowerIsInvalidError(_),
-            )) = result.errors.first()
+            let Some(ConsensusError::BasicError(BasicError::GroupRequiredPowerIsInvalidError(_))) =
+                result.errors.first()
             else {
                 panic!("expected GroupRequiredPowerIsInvalidError");
             };
