@@ -18,14 +18,14 @@ pub type GetGapLimitFn = unsafe extern "C" fn(context: *mut c_void) -> u32;
 /// Function pointer type for checking if there are pending addresses
 pub type HasPendingFn = unsafe extern "C" fn(context: *mut c_void) -> bool;
 /// Nullable function pointer for checking if there are pending addresses
-pub type NullableHasPendingFn = Option<HasPendingFn>;
+pub type NullableHasPendingFn = Option<unsafe extern "C" fn(context: *mut c_void) -> bool>;
 
 /// Function pointer type for getting the highest found index
 ///
 /// Returns the highest found index, or u32::MAX if none found
 pub type GetHighestFoundIndexFn = unsafe extern "C" fn(context: *mut c_void) -> u32;
 /// Nullable function pointer for getting the highest found index
-pub type NullableGetHighestFoundIndexFn = Option<GetHighestFoundIndexFn>;
+pub type NullableGetHighestFoundIndexFn = Option<unsafe extern "C" fn(context: *mut c_void) -> u32>;
 
 /// Function pointer type for handling a found address
 ///
@@ -48,7 +48,7 @@ pub type OnAddressAbsentFn =
 /// Optional destructor for cleanup
 pub type DestroyProviderFn = unsafe extern "C" fn(context: *mut c_void);
 /// Nullable function pointer for provider cleanup
-pub type NullableDestroyProviderFn = Option<DestroyProviderFn>;
+pub type NullableDestroyProviderFn = Option<unsafe extern "C" fn(context: *mut c_void)>;
 
 /// VTable for address provider callbacks
 #[repr(C)]
