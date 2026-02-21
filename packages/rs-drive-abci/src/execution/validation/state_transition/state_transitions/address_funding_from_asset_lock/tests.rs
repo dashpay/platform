@@ -5103,6 +5103,8 @@ mod tests {
 
         #[tokio::test]
         async fn test_self_transfer_same_input_output_address() {
+            use dpp::identity::signer::Signer;
+
             // Input and output have the same address (though this should be blocked by structure validation)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5132,15 +5134,20 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(address, None); // Same address as input (remainder recipient)
 
-            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+            let signable_bytes =
+                get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
+            let witness = signer
+                .sign_create_witness(&address, &signable_bytes)
+                .expect("should create witness");
+
+            let state_transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &asset_lock_pk,
-                &signer,
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            )
-            .await;
+                vec![witness],
+            );
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -9390,15 +9397,14 @@ mod tests {
             // Fee strategy targets ReduceOutput(2) — originally the remainder position.
             // After remainder is removed (outputs shrink from 3 to 2), index 2 is OOB.
             // Fee deduction may silently skip, giving a free transaction.
-            let transition = create_signed_address_funding_from_asset_lock_transition(
+            let transition = create_transition_with_custom_witnesses(
                 asset_lock_proof,
                 &asset_lock_pk,
-                &signer,
                 BTreeMap::new(), // No address inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(2)],
-            )
-            .await;
+                vec![],
+            );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
