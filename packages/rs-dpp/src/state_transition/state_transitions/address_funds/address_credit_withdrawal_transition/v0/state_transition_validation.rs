@@ -308,7 +308,9 @@ mod tests {
 
         assert_matches!(
             result.errors.as_slice(),
-            [crate::consensus::ConsensusError::BasicError(BasicError::TransitionNoInputsError(_))]
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionNoInputsError(_)
+            )]
         );
     }
 
@@ -385,7 +387,9 @@ mod tests {
 
         assert_matches!(
             result.errors.as_slice(),
-            [crate::consensus::ConsensusError::BasicError(BasicError::FeeStrategyEmptyError(_))]
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::FeeStrategyEmptyError(_)
+            )]
         );
     }
 
@@ -464,7 +468,9 @@ mod tests {
 
         assert_matches!(
             result.errors.as_slice(),
-            [crate::consensus::ConsensusError::BasicError(BasicError::InputBelowMinimumError(_))]
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::InputBelowMinimumError(_)
+            )]
         );
     }
 
@@ -479,7 +485,9 @@ mod tests {
 
         assert_matches!(
             result.errors.as_slice(),
-            [crate::consensus::ConsensusError::BasicError(BasicError::OutputBelowMinimumError(_))]
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OutputBelowMinimumError(_)
+            )]
         );
     }
 

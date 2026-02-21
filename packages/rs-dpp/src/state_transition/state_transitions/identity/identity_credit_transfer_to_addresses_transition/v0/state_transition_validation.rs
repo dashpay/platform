@@ -135,7 +135,11 @@ mod tests {
     #[test]
     fn should_return_valid_result_for_valid_transition() {
         let platform_version = PlatformVersion::latest();
-        let min_output = platform_version.dpp.state_transitions.address_funds.min_output_amount;
+        let min_output = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
         let transition = IdentityCreditTransferToAddressesTransitionV0 {
             recipient_addresses: [(PlatformAddress::P2pkh([1u8; 20]), min_output)].into(),
             ..Default::default()
