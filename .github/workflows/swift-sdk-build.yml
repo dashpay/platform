@@ -46,7 +46,7 @@ jobs:
 
       - name: Install cbindgen (for header generation)
         run: |
-          brew install cbindgen || true
+          cargo install --locked --version 0.27.0 cbindgen
 
       - name: Restore cached Protobuf (protoc)
         id: cache-protoc
