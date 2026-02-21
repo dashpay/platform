@@ -52,6 +52,7 @@ const contract = {
         rarity: {
           type: 'string',
           description: 'Rarity level of the card',
+          maxLength: 9,
           enum: [
             'common',
             'uncommon',
