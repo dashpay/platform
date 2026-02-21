@@ -386,6 +386,18 @@ impl AddressesWithBalance {
         range: &AmountRange,
         rng: &mut R,
     ) -> Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+        self.take_random_amounts_with_range_and_min_per_input(range, 1, rng)
+    }
+
+    /// Like `take_random_amounts_with_range`, but enforces a minimum amount per
+    /// individual input. This is needed when client-side validation rejects
+    /// inputs below `min_input_amount`.
+    pub fn take_random_amounts_with_range_and_min_per_input<R: Rng + ?Sized>(
+        &mut self,
+        range: &AmountRange,
+        min_per_input: Credits,
+        rng: &mut R,
+    ) -> Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
         let range_min = *range.start();
         let range_max = *range.end();
         if range_min == 0 {
@@ -431,10 +443,10 @@ impl AddressesWithBalance {
             let remaining_to_min = range_min.saturating_sub(taken_total);
 
             // Per-step min:
-            //   - at least 1
+            //   - at least min_per_input (enforces per-input validation minimums)
             //   - at least enough so we can eventually reach range_min
             //   - but not more than remaining_max
-            let step_min = remaining_to_min.max(1).min(remaining_max);
+            let step_min = remaining_to_min.max(min_per_input).min(remaining_max);
 
             // Per-step max is whatever room is left
             let step_max = remaining_max;

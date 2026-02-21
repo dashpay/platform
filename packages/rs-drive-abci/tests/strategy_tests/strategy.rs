@@ -2308,8 +2308,13 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
         tracing::trace!(
             ?inputs,
             "Preparing identity top-up transition with addresses"
@@ -2347,8 +2352,13 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<(Identity, StateTransition)> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
         tracing::debug!(
             ?inputs,
             "Preparing identity create from addresses transition"
@@ -2433,16 +2443,29 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let min_per_output = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
 
         tracing::debug!(?inputs, "Preparing address funds transfer transition");
 
         // Calculate total input amount (we'll distribute this among outputs)
         let total_input: Credits = inputs.values().map(|(_, credits)| credits).sum();
 
-        // Generate random number of outputs within the specified range
-        let output_count = rng.gen_range(output_count_range.clone()).max(1) as usize;
+        // Generate random number of outputs within the specified range,
+        // but cap so each output gets at least min_output_amount
+        let max_outputs_by_amount = (total_input / min_per_output).max(1) as usize;
+        let output_count = (rng.gen_range(output_count_range.clone()).max(1) as usize)
+            .min(max_outputs_by_amount);
 
         // Generate fee strategy: if not provided, reduce from outputs sequentially
         // Limited to 4 steps due to max_address_fee_strategies platform constraint
@@ -2455,7 +2478,9 @@ impl NetworkStrategy {
 
         // Create output addresses and distribute funds evenly
         let amount_per_output = total_input / output_count as Credits;
+        let remainder = total_input - (amount_per_output * output_count as Credits);
         let mut outputs = BTreeMap::new();
+        let mut first_output_address = None;
 
         // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
         let input_addresses: std::collections::HashSet<_> = inputs.keys().cloned().collect();
@@ -2498,7 +2523,26 @@ impl NetworkStrategy {
                 new_address
             };
 
+            if first_output_address.is_none() {
+                first_output_address = Some(address.clone());
+            }
             outputs.insert(address, amount_per_output);
+        }
+
+        // Add remainder to the first output so input_sum == output_sum
+        if remainder > 0 {
+            if let Some(first_addr) = &first_output_address {
+                if let Some(amount) = outputs.get_mut(first_addr) {
+                    *amount += remainder;
+                }
+                // Also update the balance tracking
+                if let Some((nonce, balance)) = current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .get_mut(first_addr)
+                {
+                    *balance += remainder;
+                }
+            }
         }
 
         let transfer_transition = AddressFundsTransferTransition::try_from_inputs_with_signer(
@@ -2530,8 +2574,13 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Option<StateTransition> {
-        let inputs =
-            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+        let min_per_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let inputs = current_addresses_with_balance
+            .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
 
         let fee_strategy = fee_strategy
             .clone()
