@@ -51,6 +51,8 @@ mod tests {
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
@@ -62,8 +64,6 @@ mod tests {
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
-    use crate::error::drive::DriveError;
-    use crate::error::Error;
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));

@@ -174,7 +174,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info.contract.id().to_buffer();
 
             data_contract_cache.insert(Arc::clone(&fetch_info), false);
@@ -188,7 +190,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info.contract.id().to_buffer();
 
             data_contract_cache.insert(Arc::clone(&fetch_info), true);
@@ -206,7 +210,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info.contract.id().to_buffer();
 
             data_contract_cache.insert(fetch_info, false);
@@ -220,8 +226,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info_global =
-                Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info_global.contract.id().to_buffer();
             let fetch_info_block = Arc::clone(&fetch_info_global);
 
@@ -242,7 +249,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info.contract.id().to_buffer();
 
             data_contract_cache.insert(fetch_info, true);
@@ -256,7 +265,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info.contract.id().to_buffer();
 
             data_contract_cache.insert(fetch_info, true);
@@ -274,8 +285,9 @@ mod tests {
             let data_contract_cache = DataContractCache::new(10, 10);
 
             let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info_global =
-                Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version));
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
             let contract_id = fetch_info_global.contract.id().to_buffer();
             let fetch_info_block = Arc::clone(&fetch_info_global);
 

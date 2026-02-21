@@ -208,14 +208,16 @@ mod tests {
             )
             .expect_err("expected deleting a nonexistent document to fail");
 
-        assert!(matches!(
-            err,
-            Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(_))
-        ) || matches!(
-            err,
-            Error::GroveDB(ref grovedb_error)
-                if matches!(grovedb_error.as_ref(), grovedb::Error::PathKeyNotFound(_))
-        ));
+        assert!(
+            matches!(
+                err,
+                Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(_))
+            ) || matches!(
+                err,
+                Error::GroveDB(ref grovedb_error)
+                    if matches!(grovedb_error.as_ref(), grovedb::Error::PathKeyNotFound(_))
+            )
+        );
     }
 
     #[test]
