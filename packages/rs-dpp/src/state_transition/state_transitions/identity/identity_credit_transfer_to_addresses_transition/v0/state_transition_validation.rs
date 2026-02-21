@@ -100,7 +100,7 @@ mod tests {
         let mut recipient_addresses = BTreeMap::new();
         for i in 0..=max {
             let mut addr = [0u8; 20];
-            addr[0..2].copy_from_slice(&(i as u16).to_le_bytes());
+            addr[0..4].copy_from_slice(&(i as u32).to_le_bytes());
             recipient_addresses.insert(PlatformAddress::P2pkh(addr), 1_000_000_000);
         }
         let transition = IdentityCreditTransferToAddressesTransitionV0 {
@@ -145,11 +145,7 @@ mod tests {
             ..Default::default()
         };
         let result = transition.validate_structure(platform_version);
-        assert!(
-            result.errors.is_empty(),
-            "expected valid result, got: {:?}",
-            result.errors
-        );
+        assert_matches!(result.errors.as_slice(), []);
     }
 
     #[test]

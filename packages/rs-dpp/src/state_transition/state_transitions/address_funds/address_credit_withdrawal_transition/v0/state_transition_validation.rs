@@ -255,8 +255,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn valid_withdrawal_transition() -> AddressCreditWithdrawalTransitionV0 {
-        use rand::SeedableRng;
-
         let input_amount = 1_000_000_000u64;
         AddressCreditWithdrawalTransitionV0 {
             inputs: [(PlatformAddress::P2pkh([1u8; 20]), (0, input_amount))].into(),
@@ -400,6 +398,15 @@ mod tests {
             .dpp
             .state_transitions
             .max_address_fee_strategies as usize;
+        let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+        // Invariant: fee-strategy limit must be less than input limit,
+        // otherwise validation order would make this test assert the wrong error.
+        assert!(
+            max_fee_strategies < max_inputs,
+            "max_address_fee_strategies ({}) must be < max_address_inputs ({})",
+            max_fee_strategies,
+            max_inputs
+        );
         let step_count = max_fee_strategies + 1;
 
         let mut transition = valid_withdrawal_transition();
@@ -596,6 +603,24 @@ mod tests {
             result.errors.as_slice(),
             [crate::consensus::ConsensusError::BasicError(
                 BasicError::WithdrawalBelowMinAmountError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_output_equals_input_sum() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_withdrawal_transition();
+        // output_amount == input_sum → withdrawal would be zero → balance mismatch
+        let input_amount = transition.inputs.values().next().unwrap().1;
+        transition.output = Some((PlatformAddress::P2pkh([2u8; 20]), input_amount));
+
+        let result = transition.validate_structure(platform_version);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::WithdrawalBalanceMismatchError(_)
             )]
         );
     }
