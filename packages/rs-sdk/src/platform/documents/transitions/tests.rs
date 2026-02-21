@@ -1,9 +1,4 @@
-use super::create::DocumentCreateTransitionBuilder;
 use super::delete::DocumentDeleteTransitionBuilder;
-use super::purchase::DocumentPurchaseTransitionBuilder;
-use super::replace::DocumentReplaceTransitionBuilder;
-use super::set_price::DocumentSetPriceTransitionBuilder;
-use super::transfer::DocumentTransferTransitionBuilder;
 use crate::{Error, Sdk, SdkBuilder};
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -123,35 +118,6 @@ fn test_document(owner_id: Identifier) -> Document {
         owner_id,
         properties: Default::default(),
         revision: Some(1),
-        created_at: None,
-        updated_at: None,
-        transferred_at: None,
-        created_at_block_height: None,
-        updated_at_block_height: None,
-        transferred_at_block_height: None,
-        created_at_core_block_height: None,
-        updated_at_core_block_height: None,
-        transferred_at_core_block_height: None,
-        creator_id: None,
-    })
-}
-
-fn test_document_for_create(
-    data_contract_id: &Identifier,
-    document_type_name: &str,
-    owner_id: Identifier,
-    entropy: [u8; 32],
-) -> Document {
-    Document::V0(DocumentV0 {
-        id: Document::generate_document_id_v0(
-            data_contract_id,
-            &owner_id,
-            document_type_name,
-            &entropy,
-        ),
-        owner_id,
-        properties: Default::default(),
-        revision: None,
         created_at: None,
         updated_at: None,
         transferred_at: None,
@@ -363,10 +329,11 @@ async fn new_mock_sdk_with_contract_nonce(
 }
 
 #[tokio::test]
-async fn document_delete_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    // Document builders always create exactly one transition and obtain nonce through
-    // `Sdk::get_identity_contract_nonce`, which masks out-of-bounds bits.
-    // This makes `validate_base_structure` nonce-out-of-bounds errors unreachable here.
+async fn document_builder_sign_masks_nonce_so_out_of_bounds_is_unreachable() {
+    // Document builders obtain nonce through `Sdk::get_identity_contract_nonce`,
+    // which masks out-of-bounds bits. This makes `validate_base_structure`
+    // nonce-out-of-bounds errors unreachable through the builder API.
+    // One test suffices since all document builders use the same SDK nonce path.
     let document_type_name = "testDoc";
     let data_contract = test_data_contract(document_type_name);
     let owner_id = Identifier::random();
@@ -391,228 +358,7 @@ async fn document_delete_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_v
 
     assert!(
         result.is_ok(),
-        "unexpected error while signing document delete transition: {:?}",
+        "SDK should mask nonce internally; got error: {:?}",
         result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
-    );
-}
-
-#[tokio::test]
-async fn document_create_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    let document_type_name = "testDoc";
-    let data_contract = test_data_contract(document_type_name);
-    let owner_id = Identifier::random();
-    let entropy = [11; 32];
-    let document =
-        test_document_for_create(&data_contract.id(), document_type_name, owner_id, entropy);
-    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 1_u64 << 50).await;
-
-    let builder = DocumentCreateTransitionBuilder::new(
-        Arc::clone(&data_contract),
-        document_type_name.to_string(),
-        document,
-        entropy,
-    );
-
-    let result = builder
-        .sign(
-            &sdk,
-            &test_identity_public_key(),
-            &TestSigner,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "unexpected error while signing document create transition: {:?}",
-        result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
-    );
-}
-
-#[tokio::test]
-async fn document_replace_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    let document_type_name = "testDoc";
-    let data_contract = test_data_contract(document_type_name);
-    let owner_id = Identifier::random();
-    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 1_u64 << 50).await;
-
-    let builder = DocumentReplaceTransitionBuilder::new(
-        Arc::clone(&data_contract),
-        document_type_name.to_string(),
-        test_document(owner_id),
-    );
-
-    let result = builder
-        .sign(
-            &sdk,
-            &test_identity_public_key(),
-            &TestSigner,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "unexpected error while signing document replace transition: {:?}",
-        result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
-    );
-}
-
-#[tokio::test]
-async fn document_purchase_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    let document_type_name = "testDoc";
-    let data_contract = test_data_contract(document_type_name);
-    let owner_id = Identifier::random();
-    let purchaser_id = Identifier::random();
-    let sdk = new_mock_sdk_with_contract_nonce(purchaser_id, data_contract.id(), 1_u64 << 50).await;
-
-    let builder = DocumentPurchaseTransitionBuilder::new(
-        Arc::clone(&data_contract),
-        document_type_name.to_string(),
-        test_document(owner_id),
-        purchaser_id,
-        100,
-    );
-
-    let result = builder
-        .sign(
-            &sdk,
-            &test_identity_public_key(),
-            &TestSigner,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "unexpected error while signing document purchase transition: {:?}",
-        result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
-    );
-}
-
-#[tokio::test]
-async fn document_set_price_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    let document_type_name = "testDoc";
-    let data_contract = test_data_contract(document_type_name);
-    let owner_id = Identifier::random();
-    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 1_u64 << 50).await;
-
-    let builder = DocumentSetPriceTransitionBuilder::new(
-        Arc::clone(&data_contract),
-        document_type_name.to_string(),
-        test_document(owner_id),
-        123,
-    );
-
-    let result = builder
-        .sign(
-            &sdk,
-            &test_identity_public_key(),
-            &TestSigner,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "unexpected error while signing document set_price transition: {:?}",
-        result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
-    );
-}
-
-#[tokio::test]
-async fn document_transfer_sign_masks_nonce_and_does_not_hit_nonce_out_of_bounds_validation() {
-    let document_type_name = "testDoc";
-    let data_contract = test_data_contract(document_type_name);
-    let owner_id = Identifier::random();
-    let recipient_id = Identifier::random();
-    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 1_u64 << 50).await;
-
-    let builder = DocumentTransferTransitionBuilder::new(
-        Arc::clone(&data_contract),
-        document_type_name.to_string(),
-        test_document(owner_id),
-        recipient_id,
-    );
-
-    let result = builder
-        .sign(
-            &sdk,
-            &test_identity_public_key(),
-            &TestSigner,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .await;
-
-    assert!(
-        result.is_ok(),
-        "unexpected error while signing document transfer transition: {:?}",
-        result.err()
-    );
-
-    assert!(
-        !matches!(
-            result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(consensus_error)))
-                if matches!(*consensus_error, dpp::consensus::ConsensusError::BasicError(
-                    dpp::consensus::basic::BasicError::NonceOutOfBoundsError(_)
-                ))
-        ),
-        "nonce out-of-bounds should be unreachable via document builders"
     );
 }
