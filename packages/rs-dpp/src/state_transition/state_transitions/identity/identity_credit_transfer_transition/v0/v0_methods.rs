@@ -35,15 +35,18 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
         platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let _ = platform_version;
+        let min_transfer_amount = platform_version
+            .fee_version
+            .state_transition_min_fees
+            .credit_transfer;
 
         if identity.id() == to_identity_with_identifier {
             let error = IdentityCreditTransferToSelfError::default();
             return Err(ProtocolError::ConsensusError(Box::new(error.into())));
         }
 
-        if amount < 100000 {
-            let error = InvalidIdentityCreditTransferAmountError::new(amount, 100000);
+        if amount < min_transfer_amount {
+            let error = InvalidIdentityCreditTransferAmountError::new(amount, min_transfer_amount);
             return Err(ProtocolError::ConsensusError(Box::new(error.into())));
         }
 
