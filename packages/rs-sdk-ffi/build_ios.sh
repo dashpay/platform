@@ -129,7 +129,8 @@ mkdir -p "$OUTPUT_DIR"
 # Generate C headers
 echo -ne "${GREEN}Generating C headers...${NC}"
 cd "$PROJECT_ROOT"
-if GENERATE_BINDINGS=1 cargo build --lib --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_headers.log 2>&1; then
+rm -f "$PROJECT_ROOT"/target/release/build/*/out/dash_sdk_ffi.h 2>/dev/null || true
+if cargo build --lib --release --package rs-sdk-ffi $CARGO_FEATURES > /tmp/cargo_build_headers.log 2>&1; then
     if cp "$PROJECT_ROOT/target/release/build/"*"/out/dash_sdk_ffi.h" "$OUTPUT_DIR/" 2>/dev/null; then
         echo -e "\r${GREEN}✓ Headers generated successfully${NC}              "
     else
