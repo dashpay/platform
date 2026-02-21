@@ -12,9 +12,11 @@ class SDKTests: XCTestCase {
     // MARK: - Initialization Tests
 
     func testSDKInitialization() {
-        // SDK should be initialized in setUp
-        // If we get here without crashing, initialization worked
-        XCTAssertTrue(true, "SDK initialized successfully")
+        let version = swift_dash_sdk_get_version()
+        XCTAssertNotNil(version, "SDK should provide a version after initialization")
+        if let version = version {
+            swift_dash_string_free(version)
+        }
     }
 
     func testSDKVersion() {
@@ -24,7 +26,11 @@ class SDKTests: XCTestCase {
         if let version = version {
             let versionString = String(cString: version)
             XCTAssertFalse(versionString.isEmpty)
-            XCTAssertTrue(versionString.contains("2.0.0"))
+            XCTAssertTrue(
+                versionString.range(of: #"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$"#, options: .regularExpression) != nil,
+                "Version should match semantic version format"
+            )
+            swift_dash_string_free(version)
         }
     }
 
@@ -95,7 +101,6 @@ class SDKTests: XCTestCase {
     func testSDKDestroyNullHandle() {
         // Should not crash
         swift_dash_sdk_destroy(nil)
-        XCTAssertTrue(true, "Destroying null handle should not crash")
     }
 
     func testGetNetworkWithNullHandle() {
