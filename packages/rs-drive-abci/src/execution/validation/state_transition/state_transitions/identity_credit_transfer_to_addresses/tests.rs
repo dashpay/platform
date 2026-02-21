@@ -4989,12 +4989,11 @@ mod tests {
                 signature_public_key_id: 1,
                 signature: BinaryData::new(vec![]),
             };
-            let signable_bytes: Vec<u8> =
-                StateTransition::from(IdentityCreditTransferToAddressesTransition::V0(
-                    transition_v0.clone(),
-                ))
-                .signable_bytes()
-                .expect("should get signable bytes");
+            let signable_bytes: Vec<u8> = StateTransition::from(
+                IdentityCreditTransferToAddressesTransition::V0(transition_v0.clone()),
+            )
+            .signable_bytes()
+            .expect("should get signable bytes");
             let transfer_key = identity
                 .public_keys()
                 .get(&1)
