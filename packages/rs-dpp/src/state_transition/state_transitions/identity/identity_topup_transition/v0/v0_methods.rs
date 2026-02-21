@@ -31,9 +31,20 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         user_fee_increase: UserFeeIncrease,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
+        #[cfg(feature = "validation")]
+        {
+            let validation_result = asset_lock_proof.validate_structure(platform_version)?;
+            if !validation_result.is_valid() {
+                let first_error = validation_result.errors.into_iter().next().unwrap();
+                return Err(ProtocolError::ConsensusError(Box::new(first_error)));
+            }
+        }
+
+        let _ = platform_version;
+
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
