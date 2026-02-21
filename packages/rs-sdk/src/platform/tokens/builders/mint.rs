@@ -212,13 +212,17 @@ impl TokenMintTransitionBuilder {
                 batch_transition.validate_base_structure(platform_version)?
             }
             _ => {
-                return Err(Error::Protocol(dpp::ProtocolError::InvalidStateTransitionType(
-                    "expected Batch transition".to_string(),
-                )));
+                return Err(Error::Protocol(
+                    dpp::ProtocolError::InvalidStateTransitionType(
+                        "expected Batch transition".to_string(),
+                    ),
+                ));
             }
         };
         if let Some(first_error) = validation_result.errors.into_iter().next() {
-            return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(first_error))));
+            return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(
+                Box::new(first_error),
+            )));
         }
 
         Ok(state_transition)
