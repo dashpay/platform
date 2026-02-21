@@ -49,18 +49,26 @@ else
 fi
 
 CHECK_OK=1
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
+NM_MAIN_OUTPUT="$(mktemp)"
+NM_SPV_OUTPUT="$(mktemp)"
+trap 'rm -f "$NM_MAIN_OUTPUT" "$NM_SPV_OUTPUT"' EXIT
+nm -gU "$LIB_SIM_MAIN" >"$NM_MAIN_OUTPUT" 2>/dev/null || true
+if [[ -f "$LIB_SIM_SPV" ]]; then
+  nm -gU "$LIB_SIM_SPV" >"$NM_SPV_OUTPUT" 2>/dev/null || true
+fi
+
+if "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" "$NM_MAIN_OUTPUT" >/dev/null; then
   :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" >/dev/null; then
+elif [[ -f "$LIB_SIM_SPV" ]] && "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_add_peer" "$NM_SPV_OUTPUT" >/dev/null; then
   :
 else
   echo "❌ Missing symbol: dash_spv_ffi_config_add_peer (in both main and spv libs)"
   CHECK_OK=0
 fi
 
-if nm -gU "$LIB_SIM_MAIN" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
+if "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" "$NM_MAIN_OUTPUT" >/dev/null; then
   :
-elif [[ -f "$LIB_SIM_SPV" ]] && nm -gU "$LIB_SIM_SPV" 2>/dev/null | "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" >/dev/null; then
+elif [[ -f "$LIB_SIM_SPV" ]] && "${SEARCH_CMD[@]}" "_dash_spv_ffi_config_set_restrict_to_configured_peers" "$NM_SPV_OUTPUT" >/dev/null; then
   :
 else
   echo "❌ Missing symbol: dash_spv_ffi_config_set_restrict_to_configured_peers (in both main and spv libs)"
