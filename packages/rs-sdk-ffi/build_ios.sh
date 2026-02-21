@@ -458,6 +458,8 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
           "$X86_SIM_SPV_LIB" \
           -output "$OUTPUT_DIR/simulator/libdash_spv_ffi.a"
         SIM_SPV_LIB="$OUTPUT_DIR/simulator/libdash_spv_ffi.a"
+      elif [ -f "$ARM_SIM_SPV_LIB" ] || [ -f "$X86_SIM_SPV_LIB" ]; then
+        echo -e "${YELLOW}⚠ Universal build: missing one SPV sim lib (arm64: $([ -f \"$ARM_SIM_SPV_LIB\" ] && echo found || echo missing), x86_64: $([ -f \"$X86_SIM_SPV_LIB\" ] && echo found || echo missing))${NC}" >&2
       fi
     elif [ "$BUILD_ARCH" = "x86" ] && [ -f "$SPV_TARGET_DIR/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
       SIM_SPV_LIB="$SPV_TARGET_DIR/x86_64-apple-ios/release/libdash_spv_ffi.a"
