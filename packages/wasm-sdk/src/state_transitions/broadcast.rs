@@ -69,7 +69,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        convert_proof_result(result.into_inner()).map_err(WasmSdkError::from)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -96,6 +96,6 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        convert_proof_result(result).map_err(WasmSdkError::from)
+        convert_proof_result(result.into_inner()).map_err(WasmSdkError::from)
     }
 }

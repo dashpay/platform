@@ -21,6 +21,7 @@ pub mod shield_from_asset_lock;
 pub mod shielded_transfer;
 #[cfg(feature = "shielded")]
 pub mod shielded_withdrawal;
+pub mod state_transition_result;
 pub mod top_up_address;
 pub mod top_up_identity;
 pub mod top_up_identity_from_addresses;
@@ -28,7 +29,6 @@ pub mod transfer;
 pub mod transfer_address_funds;
 pub mod transfer_document;
 pub mod transfer_to_addresses;
-pub mod state_transition_result;
 mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
