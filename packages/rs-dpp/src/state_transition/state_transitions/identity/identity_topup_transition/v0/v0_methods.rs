@@ -37,8 +37,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         #[cfg(feature = "validation")]
         {
             let validation_result = asset_lock_proof.validate_structure(platform_version)?;
-            if !validation_result.is_valid() {
-                let first_error = validation_result.errors.into_iter().next().unwrap();
+            if let Some(first_error) = validation_result.errors.into_iter().next() {
                 return Err(ProtocolError::ConsensusError(Box::new(first_error)));
             }
         }
