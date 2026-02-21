@@ -9,5 +9,7 @@ pub mod freeze;
 pub mod mint;
 pub mod purchase;
 pub mod set_price;
+#[cfg(test)]
+mod tests;
 pub mod transfer;
 pub mod unfreeze;

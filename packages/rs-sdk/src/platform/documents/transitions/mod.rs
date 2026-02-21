@@ -3,6 +3,8 @@ pub mod delete;
 pub mod purchase;
 pub mod replace;
 pub mod set_price;
+#[cfg(test)]
+mod tests;
 pub mod transfer;
 
 pub use create::{DocumentCreateResult, DocumentCreateTransitionBuilder};
