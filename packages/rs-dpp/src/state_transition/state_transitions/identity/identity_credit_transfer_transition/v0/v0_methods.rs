@@ -1,5 +1,8 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
+    consensus::basic::identity::{
+        IdentityCreditTransferToSelfError, InvalidIdentityCreditTransferAmountError,
+    },
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
@@ -29,9 +32,21 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
         signer: S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
+        let _ = platform_version;
+
+        if identity.id() == to_identity_with_identifier {
+            let error = IdentityCreditTransferToSelfError::default();
+            return Err(ProtocolError::ConsensusError(Box::new(error.into())));
+        }
+
+        if amount < 100000 {
+            let error = InvalidIdentityCreditTransferAmountError::new(amount, 100000);
+            return Err(ProtocolError::ConsensusError(Box::new(error.into())));
+        }
+
         let mut transition: StateTransition = IdentityCreditTransferTransitionV0 {
             identity_id: identity.id(),
             recipient_id: to_identity_with_identifier,
