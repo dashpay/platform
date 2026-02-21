@@ -42,6 +42,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
             }
         }
 
+        #[cfg(not(feature = "validation"))]
         let _ = platform_version;
 
         let identity_top_up_transition = IdentityTopUpTransitionV0 {
