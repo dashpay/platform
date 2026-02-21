@@ -240,27 +240,6 @@ impl Sdk {
             .expect("mock should be created")
     }
 
-    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
-    ///
-    /// This method is used to retrieve objects from proofs returned by Dash Platform.
-    ///
-    /// ## Generic Parameters
-    ///
-    /// - `R`: Type of the request that was used to fetch the proof.
-    /// - `O`: Type of the object to be retrieved from the proof.
-    pub(crate) async fn parse_proof<R, O: FromProof<R> + MockResponse>(
-        &self,
-        request: O::Request,
-        response: O::Response,
-    ) -> Result<Option<O>, Error>
-    where
-        O::Request: Mockable + TransportRequest,
-    {
-        self.parse_proof_with_metadata(request, response)
-            .await
-            .map(|result| result.0)
-    }
-
     /// Return freshness criteria (height tolerance and time tolerance) for given request method.
     ///
     /// Note that if self.metadata_height_tolerance or self.metadata_time_tolerance_ms is None,
@@ -277,29 +256,6 @@ impl Sdk {
                 self.metadata_time_tolerance_ms,
             ),
         }
-    }
-
-    /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
-    ///
-    /// This method is used to retrieve objects from proofs returned by Dash Platform.
-    ///
-    /// ## Generic Parameters
-    ///
-    /// - `R`: Type of the request that was used to fetch the proof.
-    /// - `O`: Type of the object to be retrieved from the proof.
-    pub(crate) async fn parse_proof_with_metadata<R, O: FromProof<R> + MockResponse>(
-        &self,
-        request: O::Request,
-        response: O::Response,
-    ) -> Result<(Option<O>, ResponseMetadata), Error>
-    where
-        O::Request: Mockable + TransportRequest,
-    {
-        let (object, metadata, _proof) = self
-            .parse_proof_with_metadata_and_proof(request, response)
-            .await?;
-
-        Ok((object, metadata))
     }
 
     /// Verify response metadata against the current state of the SDK.
