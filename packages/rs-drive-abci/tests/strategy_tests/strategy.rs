@@ -2464,8 +2464,8 @@ impl NetworkStrategy {
         // Generate random number of outputs within the specified range,
         // but cap so each output gets at least min_output_amount
         let max_outputs_by_amount = (total_input / min_per_output).max(1) as usize;
-        let output_count = (rng.gen_range(output_count_range.clone()).max(1) as usize)
-            .min(max_outputs_by_amount);
+        let output_count =
+            (rng.gen_range(output_count_range.clone()).max(1) as usize).min(max_outputs_by_amount);
 
         // Generate fee strategy: if not provided, reduce from outputs sequentially
         // Limited to 4 steps due to max_address_fee_strategies platform constraint
