@@ -633,7 +633,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::TooManyKeywordsError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::TooManyKeywordsError(_)
+                )]
             );
         }
 
@@ -658,7 +660,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeywordLengthError(_)
+                )]
             );
         }
 
@@ -683,7 +687,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidKeywordLengthError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeywordLengthError(_)
+                )]
             );
         }
 
@@ -708,7 +714,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidKeywordCharacterError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeywordCharacterError(_)
+                )]
             );
         }
 
@@ -725,8 +733,7 @@ mod tests {
 
             let mut new_data_contract = old_data_contract.clone();
             new_data_contract.set_version(old_data_contract.version() + 1);
-            new_data_contract
-                .set_keywords(vec!["keyword".to_string(), "keyword".to_string()]);
+            new_data_contract.set_keywords(vec!["keyword".to_string(), "keyword".to_string()]);
 
             let result = old_data_contract
                 .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
@@ -734,7 +741,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::DuplicateKeywordsError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::DuplicateKeywordsError(_)
+                )]
             );
         }
 
@@ -759,7 +768,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::InvalidDescriptionLengthError(_)
+                )]
             );
         }
 
@@ -784,7 +795,9 @@ mod tests {
 
             assert_matches!(
                 result.errors.as_slice(),
-                [ConsensusError::BasicError(BasicError::InvalidDescriptionLengthError(_))]
+                [ConsensusError::BasicError(
+                    BasicError::InvalidDescriptionLengthError(_)
+                )]
             );
         }
 

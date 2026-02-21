@@ -1180,9 +1180,7 @@ mod tests {
             };
             let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
-                .expect(
-                    "no error on test_step_decreasing_amount_invalid_trailing_exceeds_start"
-                )
+                .expect("no error on test_step_decreasing_amount_invalid_trailing_exceeds_start")
                 .first_error()
                 .is_some());
         }
@@ -1262,9 +1260,7 @@ mod tests {
             };
             let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
-                .expect(
-                    "no error on test_step_decreasing_amount_invalid_numerator_gte_denominator"
-                )
+                .expect("no error on test_step_decreasing_amount_invalid_numerator_gte_denominator")
                 .first_error()
                 .is_some());
         }
@@ -1283,9 +1279,7 @@ mod tests {
             };
             let result = dist.validate(START_MOMENT, PlatformVersion::latest());
             assert!(result
-                .expect(
-                    "no error on test_step_decreasing_amount_invalid_min_value_exceeds_start"
-                )
+                .expect("no error on test_step_decreasing_amount_invalid_min_value_exceeds_start")
                 .first_error()
                 .is_some());
         }
