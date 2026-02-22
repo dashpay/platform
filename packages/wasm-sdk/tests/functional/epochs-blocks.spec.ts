@@ -100,7 +100,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
       // Get a proTxHash from the results (or use node's proTxHash if available)
       let testProTxHash = evonodeProTxHash;
       if (!testProTxHash && byRange.size > 0) {
-        // The keys in the map are base58 strings (Identifier.toBase58())
+        // The keys in the map are hex strings (ProTxHash.toHex())
         const firstKey = byRange.keys().next().value;
         if (firstKey) {
           testProTxHash = firstKey;

@@ -13,7 +13,6 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
-use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::utils::try_from_options_optional;
 use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::utils::JsMapExt;
@@ -334,7 +333,7 @@ impl WasmSdk {
 
         Ok(Map::from_entries(counts.0.into_iter().map(
             |(identifier, count)| {
-                let key: JsValue = IdentifierWasm::from(identifier).to_hex().into();
+                let key: JsValue = ProTxHashWasm::from(identifier).to_hex().into();
                 let value = JsValue::from(BigInt::from(count));
                 (key, value)
             },
@@ -367,7 +366,7 @@ impl WasmSdk {
 
         Ok(Map::from_entries(counts_result.0.into_iter().map(
             |(identifier, count)| {
-                let key: JsValue = IdentifierWasm::from(identifier).to_hex().into();
+                let key: JsValue = ProTxHashWasm::from(identifier).to_hex().into();
                 let value = JsValue::from(BigInt::from(count));
                 (key, value)
             },
@@ -519,7 +518,7 @@ impl WasmSdk {
         .await?;
 
         let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
-            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
+            let key: JsValue = ProTxHashWasm::from(identifier).to_hex().into();
             let value = JsValue::from(BigInt::from(count));
             (key, value)
         }));
@@ -561,7 +560,7 @@ impl WasmSdk {
             .await?;
 
         let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
-            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
+            let key: JsValue = ProTxHashWasm::from(identifier).to_hex().into();
             let value = JsValue::from(BigInt::from(count));
             (key, value)
         }));

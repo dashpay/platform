@@ -33,7 +33,7 @@ use wasm_dpp2::{
 /// Converts address infos from SDK response to a JavaScript Map.
 ///
 /// This helper handles the common pattern of converting IndexMap<PlatformAddress, Option<AddressInfo>>
-/// to Map<PlatformAddress, PlatformAddressInfo> for WASM bindings.
+/// to Map<string(hex), PlatformAddressInfo> for WASM bindings.
 fn address_infos_to_js_map(
     address_infos: IndexMap<PlatformAddress, Option<AddressInfo>>,
     operation_name: &str,

@@ -246,7 +246,7 @@ impl_wasm_conversions!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
 #[wasm_bindgen(js_name = "VerifiedTokenIdentitiesBalances")]
 #[derive(Clone)]
 pub struct VerifiedTokenIdentitiesBalancesWasm {
-    balances: Map, // Map<IdentifierWasm, BigInt>
+    balances: Map, // Map<string(base58), BigInt>
 }
 
 #[wasm_bindgen(js_class = VerifiedTokenIdentitiesBalances)]
@@ -319,7 +319,7 @@ impl_wasm_conversions!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
 #[wasm_bindgen(js_name = "VerifiedDocuments")]
 #[derive(Clone)]
 pub struct VerifiedDocumentsWasm {
-    documents: Map, // Map<IdentifierWasm, DocumentWasm | undefined>
+    documents: Map, // Map<string(base58), DocumentWasm | undefined>
 }
 
 #[wasm_bindgen(js_class = VerifiedDocuments)]
