@@ -169,7 +169,7 @@ describe('Identities', function describeIdentities() {
 
   describe('getIdentitiesBalances()', () => {
     it('should get batch identity balances', async () => {
-      // getIdentitiesBalances returns Map<Identifier, bigint | null>
+      // getIdentitiesBalances returns Map<string, bigint | null> where keys are base58-encoded identifiers
       const balances = await client.getIdentitiesBalances([TEST_IDENTITY]);
       expect(balances).to.be.instanceOf(Map);
       expect(balances.size).to.equal(1);

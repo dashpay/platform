@@ -47,7 +47,7 @@ fn address_infos_to_js_map(
                 address, operation_name
             ))
         })?;
-        let key = JsValue::from(PlatformAddressWasm::from(address));
+        let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
         let value = JsValue::from(PlatformAddressInfoWasm::from(info));
         map.set(&key, &value);
     }
@@ -149,7 +149,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundsTransfer",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funds_transfer(
         &self,
@@ -419,7 +419,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundsWithdraw",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funds_withdraw(
         &self,
@@ -713,7 +713,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundingFromAssetLock",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funding_from_asset_lock(
         &self,

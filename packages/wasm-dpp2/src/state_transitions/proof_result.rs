@@ -786,7 +786,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedTokenIdentitiesBalances(balances) => {
             let map = Map::from_entries(balances.into_iter().map(|(id, amount)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = BigInt::from(amount).into();
                 (key, val)
             }));
@@ -808,7 +808,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedDocuments(docs) => {
             let map = Map::from_entries(docs.into_iter().map(|(id, maybe_doc)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = match maybe_doc {
                     Some(doc) => doc_to_wasm(doc).into(),
                     None => JsValue::undefined(),

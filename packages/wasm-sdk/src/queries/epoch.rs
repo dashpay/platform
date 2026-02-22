@@ -315,7 +315,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getEvonodesProposedEpochBlocksByIds",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
@@ -334,7 +334,7 @@ impl WasmSdk {
 
         Ok(Map::from_entries(counts.0.into_iter().map(
             |(identifier, count)| {
-                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let key: JsValue = IdentifierWasm::from(identifier).to_hex().into();
                 let value = JsValue::from(BigInt::from(count));
                 (key, value)
             },
@@ -343,7 +343,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getEvonodesProposedEpochBlocksByRange",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         &self,
@@ -367,7 +367,7 @@ impl WasmSdk {
 
         Ok(Map::from_entries(counts_result.0.into_iter().map(
             |(identifier, count)| {
-                let key = JsValue::from(IdentifierWasm::from(identifier));
+                let key: JsValue = IdentifierWasm::from(identifier).to_hex().into();
                 let value = JsValue::from(BigInt::from(count));
                 (key, value)
             },
@@ -497,7 +497,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
@@ -519,7 +519,7 @@ impl WasmSdk {
         .await?;
 
         let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
+            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
             let value = JsValue::from(BigInt::from(count));
             (key, value)
         }));
@@ -531,7 +531,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getEvonodesProposedEpochBlocksByRangeWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range_with_proof_info(
         &self,
@@ -561,7 +561,7 @@ impl WasmSdk {
             .await?;
 
         let map = Map::from_entries(counts.0.into_iter().map(|(identifier, count)| {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
+            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
             let value = JsValue::from(BigInt::from(count));
             (key, value)
         }));

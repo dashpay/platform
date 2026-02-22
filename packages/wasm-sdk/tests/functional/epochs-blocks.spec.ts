@@ -100,14 +100,10 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
       // Get a proTxHash from the results (or use node's proTxHash if available)
       let testProTxHash = evonodeProTxHash;
       if (!testProTxHash && byRange.size > 0) {
-        // The keys in the map are Identifier objects
-        // Need to convert to hex for the API (ProTxHash requires 64 hex chars)
+        // The keys in the map are base58 strings (Identifier.toBase58())
         const firstKey = byRange.keys().next().value;
         if (firstKey) {
-          // Convert Identifier bytes to hex string using toBytes()
-          testProTxHash = Array.from(firstKey.toBytes() as Uint8Array)
-            .map((b: number) => b.toString(16).padStart(2, '0'))
-            .join('');
+          testProTxHash = firstKey;
         }
       }
 
