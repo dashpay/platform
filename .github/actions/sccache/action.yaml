@@ -1,10 +1,13 @@
 ---
 name: "sccache"
 description: |
-  Configure sccache caching. 
+  Configure sccache caching.
 
   This action installs sccache and configures it to use an S3 bucket for caching.
   It also sets environment variables to use when building Rust projects.
+
+  When S3 credentials are not available (e.g., forked PRs), the action skips
+  sccache setup entirely and Rust compiles directly with rustc.
 
   It can conflict with other actions that define AWS credentials or set AWS_PROFILE env variable.
   Manually set AWS_PROFILE=sccache and unset AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in case
@@ -12,19 +15,24 @@ description: |
 inputs:
   bucket:
     description: S3 bucket to use for caching
-    required: true
+    required: false
+    default: ""
   region:
     description: S3 bucket region
-    required: true
+    required: false
+    default: ""
   endpoint:
     description: S3 endpoint to use for caching
-    required: true
+    required: false
+    default: ""
   access_key_id:
     description: S3 endpoint access key ID
-    required: true
+    required: false
+    default: ""
   secret_access_key:
     description: S3 endpoint secret access key
-    required: true
+    required: false
+    default: ""
   platform:
     description: "Platform and architecture to use when caching; defaults to linux/amd64"
     required: false
@@ -55,13 +63,26 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check if S3 credentials are available
+      id: check
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.bucket }}" ] && [ -n "${{ inputs.endpoint }}" ] && \
+           [ -n "${{ inputs.access_key_id }}" ] && [ -n "${{ inputs.secret_access_key }}" ]; then
+          echo "available=true" >> $GITHUB_OUTPUT
+        else
+          echo "::warning::sccache S3 credentials not available, builds will not be cached"
+          echo "available=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Install sccache binary
-      if: ${{ inputs.install == 'true' }}
+      if: steps.check.outputs.available == 'true' && inputs.install == 'true'
       uses: mozilla-actions/sccache-action@v0.0.6
       with:
         version: "v${{ inputs.version }}"
 
     - name: Configure AWS credentials
+      if: steps.check.outputs.available == 'true'
       uses: ./.github/actions/aws_credentials
       with:
         access_key_id: ${{ inputs.access_key_id }}
@@ -69,6 +90,7 @@ runs:
         profile: "sccache"
 
     - name: Configure sccache
+      if: steps.check.outputs.available == 'true'
       shell: bash
       run: |
         echo "AWS_PROFILE=sccache" >> $GITHUB_ENV

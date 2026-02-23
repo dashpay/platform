@@ -443,8 +443,7 @@ mod tests {
         //    would: consensus wire byte order via `to_byte_array()`.
         let client_txid_bytes = tx.txid().to_byte_array();
 
-        let mut filter =
-            CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
         filter.insert(&client_txid_bytes);
 
         // 3. Server checks the incoming transaction against the client's filter.
@@ -481,8 +480,7 @@ mod tests {
         let display_hex = tx.txid().to_string();
         let display_order_bytes = hex::decode(&display_hex).unwrap();
 
-        let mut filter =
-            CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
         filter.insert(&display_order_bytes);
 
         // Server must NOT match — the byte order is inconsistent.
