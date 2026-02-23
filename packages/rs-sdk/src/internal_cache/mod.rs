@@ -20,6 +20,12 @@ const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200;
 const DEFAULT_NONCE_CACHE_SIZE: NonZeroUsize =
     NonZeroUsize::new(1000).expect("DEFAULT_NONCE_CACHE_SIZE must be > 0");
 
+/// Sentinel timestamp used by [`NonceCache::refresh`] to mark cache entries
+/// as stale without removing them.  Any real `SystemTime` timestamp will be
+/// greater than this value, so the staleness check in [`NonceCache::get_or_fetch_nonce`]
+/// will always trigger a re-fetch for entries with this timestamp.
+const STALE_TIMESTAMP: u64 = 0;
+
 /// Cached nonce state for a single identity or identity-contract pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NonceCacheEntry {
@@ -177,11 +183,19 @@ impl NonceCache {
     /// Phase 3 `max(cached, platform)` merge in [`get_or_fetch_nonce`]
     /// can advance past the nonce that was already used, preventing
     /// "tx already exists in cache" errors on retry.
+    ///
+    /// # LRU promotion
+    ///
+    /// We intentionally use `get_mut()` (which promotes entries to
+    /// most-recently-used) rather than `peek_mut()`.  A refreshed entry
+    /// is one whose nonce is actively in use — it was just bumped for a
+    /// broadcast attempt — so it should be preserved over idle entries
+    /// under LRU eviction pressure.
     pub(crate) async fn refresh(&self, identity_id: &Identifier) {
         {
             let mut guard = self.identity_nonces.lock().await;
             if let Some(entry) = guard.get_mut(identity_id) {
-                entry.last_fetch_timestamp = 0;
+                entry.last_fetch_timestamp = STALE_TIMESTAMP;
             }
         }
         {
@@ -195,7 +209,7 @@ impl NonceCache {
                 .collect();
             for key in keys {
                 if let Some(entry) = guard.get_mut(&key) {
-                    entry.last_fetch_timestamp = 0;
+                    entry.last_fetch_timestamp = STALE_TIMESTAMP;
                 }
             }
         }
@@ -549,12 +563,16 @@ mod nonce_cache_tests {
         assert_eq!(entry.last_fetched_platform_nonce, 10);
     }
 
-    // --- refresh removes entries entirely, forcing a refetch ---
+    // --- refresh marks entries stale, preserving cached nonce value ---
     #[tokio::test]
     async fn refresh_marks_stale_but_preserves_cached_nonce() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
         let nonce_cache = NonceCache::default();
         let identity_id = Identifier::default();
-        let settings = never_stale();
+        // Use default stale time so that STALE_TIMESTAMP (0) is detected
+        // as stale, exercising the full Phase 2 + Phase 3 re-fetch path.
+        let settings = PutSettings::default();
 
         // Seed via initial fetch (platform returns 10, bump to 11).
         let nonce = nonce_cache
@@ -582,10 +600,18 @@ mod nonce_cache_tests {
         // This is the fix for dashpay/dash-evo-tool#588: without
         // preserving the cached nonce, we'd get 11 (same as the first
         // broadcast), causing "tx already exists in cache".
+        let fetched = AtomicBool::new(false);
         let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
+            .get_identity_nonce(identity_id, true, &settings, || async {
+                fetched.store(true, Ordering::Relaxed);
+                Ok(10u64)
+            })
             .await
             .unwrap();
+        assert!(
+            fetched.load(Ordering::Relaxed),
+            "platform fetch must be triggered after refresh"
+        );
         assert_eq!(nonce, 13);
     }
 
