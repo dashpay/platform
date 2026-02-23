@@ -1,7 +1,7 @@
 //! [Sdk] entrypoint to Dash Platform.
 
 use crate::error::{Error, StaleNodeError};
-use crate::internal_cache::{InternalSdkCache, NonceCacheEntry};
+use crate::internal_cache::NonceCache;
 use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
@@ -18,7 +18,6 @@ use dash_context_provider::MockContextProvider;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
-use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS};
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
@@ -32,7 +31,6 @@ pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
 };
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
@@ -41,11 +39,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
 #[cfg(feature = "mocks")]
-use tokio::sync::MutexGuard;
+use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
@@ -55,8 +50,6 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// The default identity nonce stale time in seconds
-pub const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200; //20 minutes
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
@@ -70,12 +63,6 @@ const DEFAULT_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     connect_timeout: None,
     max_decoding_message_size: None,
 };
-
-/// a type to represent staleness in seconds
-pub type StalenessInSeconds = u64;
-
-/// The last query timestamp
-pub type LastQueryTimestamp = u64;
 
 /// Dash Platform SDK
 ///
@@ -111,8 +98,8 @@ pub struct Sdk {
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
 
-    /// An internal SDK cache managed exclusively by the SDK
-    internal_cache: Arc<InternalSdkCache>,
+    /// Nonce cache managed exclusively by the SDK.
+    nonce_cache: Arc<NonceCache>,
 
     /// Context provider used by the SDK.
     ///
@@ -151,7 +138,7 @@ impl Clone for Sdk {
             network: self.network,
             inner: self.inner.clone(),
             proofs: self.proofs,
-            internal_cache: Arc::clone(&self.internal_cache),
+            nonce_cache: Arc::clone(&self.nonce_cache),
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -209,24 +196,6 @@ enum SdkInstance {
         /// Platform version configured for this Sdk
         version: &'static PlatformVersion,
     },
-}
-
-/// Helper function to get current timestamp in seconds
-/// Works in both native and WASM environments
-fn get_current_time_seconds() -> u64 {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(n) => n.as_secs(),
-            Err(_) => panic!("SystemTime before UNIX EPOCH!"),
-        }
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        // In WASM, we use JavaScript's Date.now() which returns milliseconds
-        // We need to convert to seconds
-        (js_sys::Date::now() / 1000.0) as u64
-    }
 }
 
 impl Sdk {
@@ -369,12 +338,9 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        let nonce = Self::get_or_fetch_nonce(
-            &self.internal_cache.identity_nonce_counter,
-            identity_id,
-            bump_first,
-            &settings,
-            || async {
+        let nonce = self
+            .nonce_cache
+            .get_identity_nonce(identity_id, bump_first, &settings, || async {
                 Ok(IdentityNonceFetcher::fetch_with_settings(
                     self,
                     identity_id,
@@ -383,9 +349,8 @@ impl Sdk {
                 .await?
                 .unwrap_or(IdentityNonceFetcher(0))
                 .0)
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         tracing::trace!(
             identity_id = %identity_id,
@@ -409,124 +374,31 @@ impl Sdk {
         settings: Option<PutSettings>,
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
-        Self::get_or_fetch_nonce(
-            &self.internal_cache.identity_contract_nonce_counter,
-            (identity_id, contract_id),
-            bump_first,
-            &settings,
-            || async {
-                Ok(IdentityContractNonceFetcher::fetch_with_settings(
-                    self,
-                    (identity_id, contract_id),
-                    settings.request_settings,
-                )
-                .await?
-                .unwrap_or(IdentityContractNonceFetcher(0))
-                .0)
-            },
-        )
-        .await
-    }
-
-    /// Shared nonce cache logic. Checks staleness and drift, fetches from
-    /// Platform when needed, and maintains the cache entry.
-    ///
-    /// The cache lock is held only briefly to read/write the entry; it is
-    /// **not** held across the async `fetch_from_platform` call so that other
-    /// callers are not blocked during the network round-trip.
-    async fn get_or_fetch_nonce<K: Ord + Copy, F, Fut>(
-        cache: &Mutex<BTreeMap<K, NonceCacheEntry>>,
-        key: K,
-        bump_first: bool,
-        settings: &PutSettings,
-        fetch_from_platform: F,
-    ) -> Result<IdentityNonce, Error>
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Result<u64, Error>>,
-    {
-        let current_time_s = get_current_time_seconds();
-
-        // Phase 1: Try to serve from cache without a network fetch.
-        {
-            let mut cache_guard = cache.lock().await;
-            if let Some(&(current_nonce, last_query_time, last_platform_nonce)) =
-                cache_guard.get(&key)
-            {
-                let stale_by_time = last_query_time
-                    < current_time_s.saturating_sub(
-                        settings
-                            .identity_nonce_stale_time_s
-                            .unwrap_or(DEFAULT_IDENTITY_NONCE_STALE_TIME_S),
-                    );
-                // Precautionary: use >= so we stay within Platform's own
-                // MAX_MISSING_IDENTITY_REVISIONS limit.
-                let drifted = current_nonce.saturating_sub(last_platform_nonce)
-                    >= MAX_MISSING_IDENTITY_REVISIONS;
-
-                if !stale_by_time && !drifted {
-                    // Cache is fresh — serve from it.
-                    if bump_first {
-                        let insert_nonce = current_nonce + 1;
-                        cache_guard
-                            .insert(key, (insert_nonce, current_time_s, last_platform_nonce));
-                        return Ok(insert_nonce);
-                    } else {
-                        return Ok(current_nonce);
-                    }
-                }
-            }
-        } // lock released — entry was absent or stale
-
-        // Phase 2: Fetch from Platform without holding the cache lock.
-        // Strip the upper "missing revisions" bits immediately so the
-        // cache only ever holds plain nonce values.
-        let platform_nonce = fetch_from_platform().await? & IDENTITY_NONCE_VALUE_FILTER;
-
-        // Phase 3: Re-acquire lock and update cache.
-        // Re-read the entry since another caller may have updated the cache
-        // while we were fetching. Keep the higher of cached vs Platform
-        // nonce to avoid regression (Platform may not have indexed a recent
-        // successful broadcast yet).
-        let mut cache_guard = cache.lock().await;
-        let base_nonce = match cache_guard.get(&key) {
-            Some(&(current_nonce, _, _)) if current_nonce > platform_nonce => current_nonce,
-            _ => platform_nonce,
-        };
-        let insert_nonce = if bump_first {
-            base_nonce + 1
-        } else {
-            base_nonce
-        };
-        cache_guard.insert(key, (insert_nonce, current_time_s, platform_nonce));
-        Ok(insert_nonce)
+        self.nonce_cache
+            .get_identity_contract_nonce(
+                identity_id,
+                contract_id,
+                bump_first,
+                &settings,
+                || async {
+                    Ok(IdentityContractNonceFetcher::fetch_with_settings(
+                        self,
+                        (identity_id, contract_id),
+                        settings.request_settings,
+                    )
+                    .await?
+                    .unwrap_or(IdentityContractNonceFetcher(0))
+                    .0)
+                },
+            )
+            .await
     }
 
     /// Marks identity nonce cache entries as stale so they are re-fetched from
     /// Platform on the next call to [`get_identity_nonce`] or
     /// [`get_identity_contract_nonce`].
     pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
-        {
-            let mut identity_nonce_counter =
-                self.internal_cache.identity_nonce_counter.lock().await;
-            if let Some((_, timestamp, _)) = identity_nonce_counter.get_mut(identity_id) {
-                *timestamp = 0;
-            }
-        }
-        {
-            let mut identity_contract_nonce_counter = self
-                .internal_cache
-                .identity_contract_nonce_counter
-                .lock()
-                .await;
-            for ((cached_identity_id, _), (_, timestamp, _)) in
-                identity_contract_nonce_counter.iter_mut()
-            {
-                if cached_identity_id == identity_id {
-                    *timestamp = 0;
-                }
-            }
-        }
+        self.nonce_cache.refresh(identity_id).await;
     }
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
@@ -1043,7 +915,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
-                    internal_cache: Default::default(),
+                    nonce_cache: Default::default(),
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1110,7 +982,7 @@ impl SdkBuilder {
                     },
                     dump_dir: self.dump_dir.clone(),
                     proofs:self.proofs,
-                    internal_cache: Default::default(),
+                    nonce_cache: Default::default(),
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
@@ -1304,274 +1176,5 @@ mod test {
         let result = super::verify_metadata_time(&metadata, now_time, tolerance);
 
         assert_eq!(result.is_err(), expect_err);
-    }
-
-    // ---- Nonce cache edge-case tests for get_or_fetch_nonce ----
-
-    mod nonce_cache {
-        use super::*;
-        use crate::internal_cache::NonceCacheEntry;
-        use crate::platform::transition::put_settings::PutSettings;
-        use dpp::identity::identity_nonce::{
-            IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS,
-        };
-        use std::collections::BTreeMap;
-        use test_case::test_case;
-        use tokio::sync::Mutex;
-
-        /// Helper: shorthand for get_or_fetch_nonce.
-        async fn fetch(
-            cache: &Mutex<BTreeMap<u32, NonceCacheEntry>>,
-            bump: bool,
-            settings: &PutSettings,
-            platform_nonce: u64,
-        ) -> u64 {
-            super::super::Sdk::get_or_fetch_nonce(cache, 1u32, bump, settings, || async move {
-                Ok(platform_nonce)
-            })
-            .await
-            .unwrap()
-        }
-
-        fn now_s() -> u64 {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-        }
-
-        fn empty_cache() -> Mutex<BTreeMap<u32, NonceCacheEntry>> {
-            Mutex::new(BTreeMap::new())
-        }
-
-        fn seeded_cache(
-            key: u32,
-            current_nonce: u64,
-            timestamp: u64,
-            last_platform_nonce: u64,
-        ) -> Mutex<BTreeMap<u32, NonceCacheEntry>> {
-            let mut map = BTreeMap::new();
-            map.insert(key, (current_nonce, timestamp, last_platform_nonce));
-            Mutex::new(map)
-        }
-
-        fn never_stale() -> PutSettings {
-            PutSettings {
-                identity_nonce_stale_time_s: Some(u64::MAX),
-                ..Default::default()
-            }
-        }
-
-        // --- Empty cache: platform fetched, result = platform ± bump ---
-        //                   (platform_nonce, bump,  expected_result, expected_stored_platform)
-        #[test_case(42,  false, 42, 42  ; "basic no bump")]
-        #[test_case(42,  true,  43, 42  ; "basic with bump")]
-        #[test_case(0,   false, 0,  0   ; "zero no bump")]
-        #[test_case(0,   true,  1,  0   ; "zero with bump")]
-        #[test_case(IDENTITY_NONCE_VALUE_FILTER, false, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER ; "filter max no bump")]
-        #[test_case(IDENTITY_NONCE_VALUE_FILTER, true,  IDENTITY_NONCE_VALUE_FILTER + 1, IDENTITY_NONCE_VALUE_FILTER ; "filter max with bump overflows")]
-        #[test_case(42 | (3 << 40), false, 42, 42 ; "upper bits stripped no bump")]
-        #[test_case(42 | (3 << 40), true,  43, 42 ; "upper bits stripped with bump")]
-        #[tokio::test]
-        async fn empty_cache_fetch(
-            platform_nonce: u64,
-            bump: bool,
-            expected: u64,
-            expected_stored_platform: u64,
-        ) {
-            let cache = empty_cache();
-            let result = fetch(&cache, bump, &Default::default(), platform_nonce).await;
-            assert_eq!(result, expected);
-            let guard = cache.lock().await;
-            let &(nonce, _, platform) = guard.get(&1u32).unwrap();
-            assert_eq!(nonce, expected);
-            assert_eq!(platform, expected_stored_platform);
-        }
-
-        // --- Fresh cache hit (no platform fetch) ---
-        //                   (cached, last_platform, bump, expected)
-        #[test_case(10, 10, false, 10 ; "no bump returns cached")]
-        #[test_case(10, 10, true,  11 ; "bump increments cached")]
-        #[test_case(10 + MAX_MISSING_IDENTITY_REVISIONS - 1, 10, false, 10 + MAX_MISSING_IDENTITY_REVISIONS - 1 ; "drift just below max serves from cache")]
-        #[tokio::test]
-        async fn fresh_cache_hit(cached_nonce: u64, last_platform: u64, bump: bool, expected: u64) {
-            let cache = seeded_cache(1, cached_nonce, now_s(), last_platform);
-            let settings = never_stale();
-            let result =
-                super::super::Sdk::get_or_fetch_nonce(&cache, 1u32, bump, &settings, || async {
-                    panic!("should not fetch from platform")
-                })
-                .await
-                .unwrap();
-            assert_eq!(result, expected);
-        }
-
-        // --- Stale or drifted cache triggers re-fetch ---
-        // stale_by_drift=false: timestamp=0, default settings (time-based staleness).
-        // stale_by_drift=true:  timestamp=now, never_stale settings (drift-based staleness).
-        // Result = max(cached, platform) ± bump.
-        //                   (cached, cached_plat, platform_returns, bump, stale_by_drift, expected, expected_stored_plat)
-        #[test_case(10, 10, 15, false, false, 15, 15 ; "stale uses higher platform")]
-        #[test_case(10, 10, 15, true,  false, 16, 15 ; "stale uses higher platform with bump")]
-        #[test_case(20, 10, 15, false, false, 20, 15 ; "preserves higher cached nonce")]
-        #[test_case(20, 10, 15, true,  false, 21, 15 ; "preserves higher cached nonce with bump")]
-        #[test_case(10,  5, 50, false, false, 50, 50 ; "platform much higher replaces cache")]
-        #[test_case(10,  5, 50, true,  false, 51, 50 ; "platform much higher replaces cache with bump")]
-        #[test_case(100, 90, 50 | (5 << 40), false, false, 100, 50 ; "upper bits stripped cache preserved")]
-        #[test_case(10 + MAX_MISSING_IDENTITY_REVISIONS, 10, 10 + MAX_MISSING_IDENTITY_REVISIONS, false, true, 10 + MAX_MISSING_IDENTITY_REVISIONS, 10 + MAX_MISSING_IDENTITY_REVISIONS ; "drift at max triggers refetch")]
-        #[tokio::test]
-        async fn cache_refetch(
-            cached_nonce: u64,
-            cached_platform: u64,
-            platform_returns: u64,
-            bump: bool,
-            stale_by_drift: bool,
-            expected: u64,
-            expected_stored_platform: u64,
-        ) {
-            let (timestamp, settings) = if stale_by_drift {
-                (now_s(), never_stale())
-            } else {
-                (0, PutSettings::default())
-            };
-            let cache = seeded_cache(1, cached_nonce, timestamp, cached_platform);
-            let result = fetch(&cache, bump, &settings, platform_returns).await;
-            assert_eq!(result, expected);
-            let guard = cache.lock().await;
-            let &(_, _, platform) = guard.get(&1u32).unwrap();
-            assert_eq!(platform, expected_stored_platform);
-        }
-
-        // --- Multiple sequential bumps from cache ---
-        #[tokio::test]
-        async fn multiple_bumps_from_fresh_cache() {
-            let cache = seeded_cache(1, 5, now_s(), 5);
-            let settings = never_stale();
-            for expected in 6..=10 {
-                let result = super::super::Sdk::get_or_fetch_nonce(
-                    &cache,
-                    1u32,
-                    true,
-                    &settings,
-                    || async { panic!("should not fetch from platform") },
-                )
-                .await
-                .unwrap();
-                assert_eq!(result, expected);
-            }
-            let guard = cache.lock().await;
-            let &(nonce, _, platform) = guard.get(&1u32).unwrap();
-            assert_eq!(nonce, 10);
-            assert_eq!(platform, 5, "last platform nonce unchanged through bumps");
-        }
-
-        // --- Fetch error propagates, cache untouched ---
-        #[tokio::test]
-        async fn fetch_error_propagates_and_cache_unchanged() {
-            let cache = seeded_cache(1, 10, 0, 10);
-            let result = super::super::Sdk::get_or_fetch_nonce(
-                &cache,
-                1u32,
-                false,
-                &Default::default(),
-                || async { Err(crate::Error::Generic("platform unavailable".to_string())) },
-            )
-            .await;
-            assert!(result.is_err());
-            let guard = cache.lock().await;
-            let &(nonce, ts, platform) = guard.get(&1u32).unwrap();
-            assert_eq!(nonce, 10);
-            assert_eq!(ts, 0, "timestamp should not have changed");
-            assert_eq!(platform, 10);
-        }
-
-        // --- refresh_identity_nonce marks entry stale ---
-        #[tokio::test]
-        async fn refresh_marks_entries_stale_forcing_refetch() {
-            let cache = seeded_cache(1, 10, now_s(), 10);
-            let settings = never_stale();
-
-            // Confirm cache is served.
-            let result =
-                super::super::Sdk::get_or_fetch_nonce(&cache, 1u32, false, &settings, || async {
-                    panic!("should not fetch")
-                })
-                .await
-                .unwrap();
-            assert_eq!(result, 10);
-
-            // Simulate refresh_identity_nonce: set timestamp to 0.
-            cache.lock().await.get_mut(&1u32).unwrap().1 = 0;
-
-            // With default settings (stale_time=1200s), timestamp=0 is stale.
-            let result = fetch(&cache, false, &PutSettings::default(), 20).await;
-            assert_eq!(result, 20, "should re-fetch after refresh");
-        }
-
-        // --- Different keys are isolated ---
-        #[tokio::test]
-        async fn different_keys_are_isolated() {
-            let cache = empty_cache();
-            let settings = never_stale();
-
-            // Seed two keys via fetches.
-            for (key, val) in [(1u32, 100u64), (2u32, 200u64)] {
-                super::super::Sdk::get_or_fetch_nonce(
-                    &cache,
-                    key,
-                    true,
-                    &Default::default(),
-                    || async move { Ok(val) },
-                )
-                .await
-                .unwrap();
-            }
-
-            // Read back: each key has its own value, served from cache.
-            for (key, expected) in [(1u32, 101u64), (2u32, 201u64)] {
-                let result = super::super::Sdk::get_or_fetch_nonce(
-                    &cache,
-                    key,
-                    false,
-                    &settings,
-                    || async { panic!("should serve from cache") },
-                )
-                .await
-                .unwrap();
-                assert_eq!(result, expected);
-            }
-        }
-
-        // --- Concurrent cache update during fetch ---
-        //                   (concurrent_nonce, platform_returns, bump, expected)
-        #[test_case(15, 10, false, 15 ; "concurrent higher wins")]
-        #[test_case(5,  20, true,  21 ; "platform higher wins with bump")]
-        #[tokio::test]
-        async fn concurrent_update(
-            concurrent_nonce: u64,
-            platform_returns: u64,
-            bump: bool,
-            expected: u64,
-        ) {
-            let cache = Arc::new(empty_cache());
-            let cache_clone = Arc::clone(&cache);
-            let result = super::super::Sdk::get_or_fetch_nonce(
-                &cache,
-                1u32,
-                bump,
-                &Default::default(),
-                || async move {
-                    // Simulate another caller updating cache during our fetch.
-                    cache_clone
-                        .lock()
-                        .await
-                        .insert(1u32, (concurrent_nonce, now_s(), concurrent_nonce));
-                    Ok(platform_returns)
-                },
-            )
-            .await
-            .unwrap();
-            assert_eq!(result, expected);
-        }
     }
 }
