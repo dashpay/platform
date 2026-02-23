@@ -171,14 +171,9 @@ public class Wallet {
         self.handle = handle
         self.ownsHandle = true
 
-        // Now add the watch-only account with the provided xpub
-        do {
-            _ = try addAccount(type: .standardBIP44, index: 0, xpub: xpub)
-        } catch {
-            // Clean up the wallet if adding account failed
-            wallet_free(handle)
-            throw error
-        }
+        // Now add the watch-only account with the provided xpub.
+        // If this throws, deinit will free the handle (ownsHandle is true).
+        _ = try addAccount(type: .standardBIP44, index: 0, xpub: xpub)
     }
 
     /// Create a new random wallet
