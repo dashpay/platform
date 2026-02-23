@@ -4,6 +4,7 @@ use crate::platform::Identifier;
 use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS};
 use dpp::prelude::IdentityNonce;
 use lru::LruCache;
+use std::fmt::Debug;
 use std::future::Future;
 use std::hash::Hash;
 use std::num::NonZeroUsize;
@@ -32,15 +33,6 @@ pub(crate) struct NonceCacheEntry {
 pub(crate) struct IdentityContractPair {
     pub(crate) identity_id: Identifier,
     pub(crate) contract_id: Identifier,
-}
-
-impl From<(Identifier, Identifier)> for IdentityContractPair {
-    fn from((identity_id, contract_id): (Identifier, Identifier)) -> Self {
-        Self {
-            identity_id,
-            contract_id,
-        }
-    }
 }
 
 /// Nonce cache for identity and identity-contract nonces.
@@ -78,6 +70,14 @@ pub(crate) struct NonceCache {
     identity_nonces: Mutex<LruCache<Identifier, NonceCacheEntry>>,
     contract_nonces: Mutex<LruCache<IdentityContractPair, NonceCacheEntry>>,
     default_stale_time_s: u64,
+}
+
+impl Debug for NonceCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NonceCache")
+            .field("default_stale_time_s", &self.default_stale_time_s)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for NonceCache {
@@ -208,7 +208,7 @@ impl NonceCache {
     ///   different node will likely have the data.
     /// - Returns [`Error::NonceOverflow`] if bumping would wrap past the
     ///   40-bit nonce value filter.
-    async fn get_or_fetch_nonce<K: Hash + Eq + Copy, F, Fut>(
+    async fn get_or_fetch_nonce<K: Hash + Eq + Copy + Debug, F, Fut>(
         cache: &Mutex<LruCache<K, NonceCacheEntry>>,
         key: K,
         bump_first: bool,
@@ -226,8 +226,7 @@ impl NonceCache {
         {
             let mut cache_guard = cache.lock().await;
 
-            // Use peek so we don't promote the entry just for a staleness check.
-            if let Some(entry) = cache_guard.peek(&key) {
+            if let Some(entry) = cache_guard.get_mut(&key) {
                 let stale_by_time = entry.last_fetch_timestamp
                     < current_time_s.saturating_sub(
                         settings
@@ -240,28 +239,24 @@ impl NonceCache {
                     >= MAX_MISSING_IDENTITY_REVISIONS;
 
                 if !stale_by_time && !drifted {
-                    // Fresh hit — serve from cache. Promote in LRU via get_mut
-                    // and mutate in place. Safe because we just confirmed the
-                    // entry exists via peek above.
-                    if let Some(entry) = cache_guard.get_mut(&key) {
-                        if bump_first {
-                            let insert_nonce = bump_nonce(entry.current_nonce)?;
-                            entry.current_nonce = insert_nonce;
-                            // Do NOT update last_fetch_timestamp on cache-only bumps
-                            return Ok(insert_nonce);
-                        } else {
-                            return Ok(entry.current_nonce);
-                        }
+                    // Fresh hit — serve from cache, mutate in place.
+                    if bump_first {
+                        let insert_nonce = bump_nonce(entry.current_nonce)?;
+                        entry.current_nonce = insert_nonce;
+                        // Do NOT update last_fetch_timestamp on cache-only bumps
+                        return Ok(insert_nonce);
+                    } else {
+                        return Ok(entry.current_nonce);
                     }
                 }
 
                 if stale_by_time {
-                    tracing::trace!("nonce cache stale, re-fetching from platform");
+                    tracing::trace!(key = ?key, "nonce cache stale, re-fetching from platform");
                 } else {
-                    tracing::trace!("nonce cache drifted, re-fetching from platform");
+                    tracing::trace!(key = ?key, "nonce cache drifted, re-fetching from platform");
                 }
             } else {
-                tracing::trace!("nonce cache miss, fetching from platform");
+                tracing::trace!(key = ?key, "nonce cache miss, fetching from platform");
             }
         } // lock released
 
@@ -282,7 +277,7 @@ impl NonceCache {
         // (Platform may not have indexed a recent successful broadcast yet).
         let base_nonce = match cache_guard.peek(&key) {
             Some(entry) if entry.current_nonce > platform_nonce => {
-                tracing::trace!("nonce cache: preserved higher cached nonce over platform");
+                tracing::trace!(key = ?key, "nonce cache: preserved higher cached nonce over platform");
                 entry.current_nonce
             }
             _ => platform_nonce,
@@ -308,13 +303,7 @@ impl NonceCache {
 mod nonce_cache_tests {
     use super::*;
     use crate::platform::transition::put_settings::PutSettings;
-    use dpp::identity::identity_nonce::{
-        IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS,
-    };
-    use lru::LruCache;
-    use std::num::NonZeroUsize;
     use test_case::test_case;
-    use tokio::sync::Mutex;
 
     /// Helper: shorthand for get_or_fetch_nonce that expects success.
     async fn fetch(
@@ -692,5 +681,38 @@ mod nonce_cache_tests {
             entry.last_fetch_timestamp, original_ts,
             "timestamp should not be updated on cache-only bump"
         );
+    }
+
+    // --- Reading after bump returns the bumped nonce without incrementing ---
+    #[tokio::test]
+    async fn read_after_bump_returns_bumped_nonce() {
+        let cache = seeded_cache(1, 5, now_s(), 5);
+        let settings = never_stale();
+
+        // bump_first=true → 6
+        let nonce = NonceCache::get_or_fetch_nonce(
+            &cache,
+            1u32,
+            true,
+            &settings,
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { panic!("should not fetch from platform") },
+        )
+        .await
+        .unwrap();
+        assert_eq!(nonce, 6);
+
+        // bump_first=false → still 6
+        let nonce = NonceCache::get_or_fetch_nonce(
+            &cache,
+            1u32,
+            false,
+            &settings,
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { panic!("should not fetch from platform") },
+        )
+        .await
+        .unwrap();
+        assert_eq!(nonce, 6);
     }
 }
