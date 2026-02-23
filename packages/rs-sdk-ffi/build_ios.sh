@@ -323,7 +323,7 @@ fi
 # Build dash-spv-ffi from local rust-dashcore for device and simulator
 RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 SPV_CRATE_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi"
-SPV_TARGET_DIR="$RUST_DASHCORE_PATH/target"  # workspace root target dir
+SPV_TARGET_DIR="${CARGO_TARGET_DIR:-$RUST_DASHCORE_PATH/target}"  # honour override; default to workspace root
 if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
