@@ -104,7 +104,7 @@ class UnifiedAppState: ObservableObject {
     }
     
     // Handle network switching - called when platformState.currentNetwork changes
-    func handleNetworkSwitch(to network: Network) async {
+    func handleNetworkSwitch(to network: AppNetwork) async {
         // Switch wallet service to new network (convert to DashNetwork)
         await walletService.switchNetwork(to: network)
         

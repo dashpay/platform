@@ -1,47 +1,9 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
 
-// MARK: - Account Detail Info
-public struct AccountDetailInfo {
-    public let account: AccountInfo
-    public let accountType: FFIAccountType
-    public let xpub: String?
-    public let derivationPath: String
-    public let gapLimit: UInt32
-    public let usedAddresses: Int
-    public let unusedAddresses: Int
-    public let externalAddresses: [AddressDetail]
-    public let internalAddresses: [AddressDetail]
-    
-    public init(account: AccountInfo, accountType: FFIAccountType, xpub: String?, derivationPath: String, gapLimit: UInt32, usedAddresses: Int, unusedAddresses: Int, externalAddresses: [AddressDetail], internalAddresses: [AddressDetail]) {
-        self.account = account
-        self.accountType = accountType
-        self.xpub = xpub
-        self.derivationPath = derivationPath
-        self.gapLimit = gapLimit
-        self.usedAddresses = usedAddresses
-        self.unusedAddresses = unusedAddresses
-        self.externalAddresses = externalAddresses
-        self.internalAddresses = internalAddresses
-    }
-}
-
-public struct AddressDetail {
-    public let address: String
-    public let index: UInt32
-    public let path: String
-    public let isUsed: Bool
-    public let publicKey: String
-    
-    public init(address: String, index: UInt32, path: String, isUsed: Bool, publicKey: String) {
-        self.address = address
-        self.index = index
-        self.path = path
-        self.isUsed = isUsed
-        self.publicKey = publicKey
-    }
-}
+// AccountDetailInfo and AddressDetail are imported from SwiftDashSDK
 
 // MARK: - Account Detail View
 struct AccountDetailView: View {

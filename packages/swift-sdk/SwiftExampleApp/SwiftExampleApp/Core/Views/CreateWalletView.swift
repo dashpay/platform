@@ -24,6 +24,7 @@ struct CreateWalletView: View {
     // Network selection states
     @State private var createForMainnet: Bool = false
     @State private var createForTestnet: Bool = false
+    @State private var createForRegtest: Bool = false
     @State private var createForDevnet: Bool = false
     
     enum Field: Hashable {
@@ -33,7 +34,7 @@ struct CreateWalletView: View {
         case mnemonic
     }
     
-    var currentNetwork: Network {
+    var currentNetwork: AppNetwork {
         unifiedAppState.platformState.currentNetwork
     }
     
@@ -230,6 +231,8 @@ struct CreateWalletView: View {
             createForMainnet = true
         case .testnet:
             createForTestnet = true
+        case .regtest:
+            createForRegtest = true
         case .devnet:
             createForDevnet = true
         }
@@ -273,10 +276,10 @@ struct CreateWalletView: View {
                 print("Import option enabled: \(showImportOption)")
                 
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [Network] = [
-                    createForMainnet ? Network.mainnet : nil,
-                    createForTestnet ? Network.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                let selectedNetworks: [AppNetwork] = [
+                    createForMainnet ? AppNetwork.mainnet : nil,
+                    createForTestnet ? AppNetwork.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {
@@ -284,21 +287,14 @@ struct CreateWalletView: View {
                 }
 
                 // Create exactly one wallet in the SDK; do not append network to label
-                let wallet = try await walletService.createWallet(
+                let _ = try await walletService.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,
-                    network: primaryNetwork,
-                    networks: selectedNetworks,
                     isImport: showImportOption
                 )
 
                 // Update wallet.networks bitfield to reflect all user selections
-                var networksBitfield: UInt32 = 0
-                if createForMainnet { networksBitfield |= 1 }
-                if createForTestnet { networksBitfield |= 2 }
-                if createForDevnet && shouldShowDevnet { networksBitfield |= 8 }
-                wallet.networks = networksBitfield
                 try? modelContext.save()
 
                 print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
