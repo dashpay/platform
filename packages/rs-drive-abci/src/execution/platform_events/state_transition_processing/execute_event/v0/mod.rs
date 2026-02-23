@@ -488,6 +488,7 @@ where
             ExecutionEvent::PaidFixedCost {
                 operations,
                 fees_to_add_to_pool,
+                ..
             } => {
                 if consensus_errors.is_empty() {
                     self.drive

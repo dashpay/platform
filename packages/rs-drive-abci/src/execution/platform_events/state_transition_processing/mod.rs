@@ -1,6 +1,8 @@
 mod cleanup_recent_block_storage_address_balances;
+mod cleanup_recent_block_storage_nullifiers;
 mod decode_raw_state_transitions;
 mod execute_event;
 mod process_raw_state_transitions;
 mod store_address_balances_to_recent_block_storage;
+mod store_nullifiers_to_recent_block_storage;
 mod validate_fees_of_event;

@@ -87,3 +87,28 @@ pub fn shielded_credit_pool_anchors_path_vec() -> Vec<Vec<u8>> {
         vec![SHIELDED_ANCHORS_IN_POOL_KEY],
     ]
 }
+
+/// Resolves the nullifiers path based on pool type.
+///
+/// Pool types:
+/// - 0: Main credit shielded pool → `[AddressBalances, "s", [2]]`
+/// - 1: Main token shielded pool (not yet implemented)
+/// - 2: Individual token shielded pool (not yet implemented, requires pool_identifier)
+pub fn nullifiers_path_for_pool(
+    pool_type: u32,
+    _pool_identifier: Option<&[u8]>,
+) -> Result<Vec<Vec<u8>>, crate::error::Error> {
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+
+    match pool_type {
+        0 => Ok(shielded_credit_pool_nullifiers_path_vec()),
+        1 | 2 => Err(Error::Drive(DriveError::NotSupported(
+            "Token shielded pools not yet implemented",
+        ))),
+        _ => Err(Error::Drive(DriveError::InvalidInput(format!(
+            "Unknown pool type: {}",
+            pool_type
+        )))),
+    }
+}

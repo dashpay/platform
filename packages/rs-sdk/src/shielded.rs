@@ -8,11 +8,9 @@
 use crate::error::Error;
 use crate::platform::Fetch;
 use crate::Sdk;
-use drive_proof_verifier::types::{ShieldedEncryptedNote, ShieldedEncryptedNotes};
 use drive_proof_verifier::types::ShieldedEncryptedNotesQuery;
+use drive_proof_verifier::types::{ShieldedEncryptedNote, ShieldedEncryptedNotes};
 use futures::stream::{FuturesUnordered, StreamExt};
-use std::pin::Pin;
-use std::future::Future;
 use grovedb_commitment_tree::{
     try_compact_note_decryption, CompactAction, DashMemo, EphemeralKeyBytes,
     ExtractedNoteCommitment, Note, Nullifier, OrchardDomain, PaymentAddress,
@@ -20,6 +18,8 @@ use grovedb_commitment_tree::{
 };
 use rs_dapi_client::RequestSettings;
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 use tracing::debug;
 
 /// Minimum length of the `encrypted_note` field for compact trial decryption.
@@ -176,9 +176,8 @@ pub async fn sync_shielded_notes(
     let max_concurrent = config.max_concurrent.max(1);
     let settings = config.request_settings;
 
-    type ChunkFuture = Pin<
-        Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>), Error>> + Send>,
-    >;
+    type ChunkFuture =
+        Pin<Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>), Error>> + Send>>;
 
     // Sliding-window parallel fetch using FuturesUnordered.
     // Each future fetches one chunk and returns (chunk_start_index, notes).
@@ -191,9 +190,9 @@ pub async fn sync_shielded_notes(
         let chunk_idx = next_chunk_index;
         next_chunk_index += chunk_size;
         let sdk = sdk.clone();
-        futures.push(Box::pin(
-            async move { fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await },
-        ));
+        futures.push(Box::pin(async move {
+            fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
+        }));
     }
 
     // Collect results keyed by chunk start_index for ordered reassembly
@@ -213,9 +212,9 @@ pub async fn sync_shielded_notes(
             let chunk_idx = next_chunk_index;
             next_chunk_index += chunk_size;
             let sdk = sdk.clone();
-            futures.push(Box::pin(
-                async move { fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await },
-            ));
+            futures.push(Box::pin(async move {
+                fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
+            }));
         }
     }
 
@@ -228,16 +227,8 @@ pub async fn sync_shielded_notes(
             let position = chunk_start + i as u64;
 
             if let Some((decrypted, address)) = try_decrypt_note(ivk, note) {
-                let nf: [u8; 32] = note
-                    .nullifier
-                    .as_slice()
-                    .try_into()
-                    .unwrap_or([0u8; 32]);
-                let cmx: [u8; 32] = note
-                    .cmx
-                    .as_slice()
-                    .try_into()
-                    .unwrap_or([0u8; 32]);
+                let nf: [u8; 32] = note.nullifier.as_slice().try_into().unwrap_or([0u8; 32]);
+                let cmx: [u8; 32] = note.cmx.as_slice().try_into().unwrap_or([0u8; 32]);
 
                 decrypted_notes.push(DecryptedNote {
                     position,
@@ -297,8 +288,7 @@ async fn fetch_chunk(
 
     debug!(chunk_start, chunk_size, "fetching shielded notes chunk");
 
-    let result =
-        ShieldedEncryptedNotes::fetch_with_settings(sdk, query, settings).await?;
+    let result = ShieldedEncryptedNotes::fetch_with_settings(sdk, query, settings).await?;
 
     let notes = match result {
         Some(ShieldedEncryptedNotes(notes)) => notes,

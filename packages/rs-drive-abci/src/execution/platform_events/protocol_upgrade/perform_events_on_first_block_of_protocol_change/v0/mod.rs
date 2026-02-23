@@ -637,11 +637,11 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Nullifiers tree (NormalTree): [AddressBalances, "s"] / [2]
+        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NULLIFIERS_KEY],
-            Element::empty_tree(),
+            Element::empty_provable_count_tree(),
             Some(transaction),
             None,
             &platform_version.drive,

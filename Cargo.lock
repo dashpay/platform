@@ -993,15 +993,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ckb-merkle-mountain-range"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "327c468ff2702c0a2b7ad26728a180611da22244882959b8b2e85c79bf56bcea"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "clang-sys"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2608,21 +2599,21 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "axum 0.8.8",
  "bincode",
  "bincode_derive",
  "blake3",
- "ckb-merkle-mountain-range",
  "grovedb-bulk-append-tree",
  "grovedb-commitment-tree",
  "grovedb-costs",
  "grovedb-dense-fixed-sized-merkle-tree",
  "grovedb-element",
  "grovedb-merk",
- "grovedb-mmr",
+ "grovedb-merkle-mountain-range",
  "grovedb-path",
+ "grovedb-query",
  "grovedb-storage",
  "grovedb-version",
  "grovedb-visualize",
@@ -2646,12 +2637,15 @@ dependencies = [
 [[package]]
 name = "grovedb-bulk-append-tree"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "bincode",
  "blake3",
+ "grovedb-costs",
  "grovedb-dense-fixed-sized-merkle-tree",
- "grovedb-mmr",
+ "grovedb-merkle-mountain-range",
+ "grovedb-query",
+ "grovedb-storage",
  "hex",
  "thiserror 2.0.17",
 ]
@@ -2659,7 +2653,7 @@ dependencies = [
 [[package]]
 name = "grovedb-commitment-tree"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "incrementalmerkletree",
  "orchard",
@@ -2671,7 +2665,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -2681,17 +2675,20 @@ dependencies = [
 [[package]]
 name = "grovedb-dense-fixed-sized-merkle-tree"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "bincode",
  "blake3",
+ "grovedb-costs",
+ "grovedb-query",
+ "grovedb-storage",
  "thiserror 2.0.17",
 ]
 
 [[package]]
 name = "grovedb-element"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -2706,7 +2703,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -2718,7 +2715,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -2729,6 +2726,7 @@ dependencies = [
  "grovedb-costs",
  "grovedb-element",
  "grovedb-path",
+ "grovedb-query",
  "grovedb-storage",
  "grovedb-version",
  "grovedb-visualize",
@@ -2741,28 +2739,44 @@ dependencies = [
 ]
 
 [[package]]
-name = "grovedb-mmr"
+name = "grovedb-merkle-mountain-range"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "bincode",
  "blake3",
- "ckb-merkle-mountain-range",
- "thiserror 2.0.17",
+ "grovedb-costs",
+ "grovedb-storage",
 ]
 
 [[package]]
 name = "grovedb-path"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "hex",
 ]
 
 [[package]]
+name = "grovedb-query"
+version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
+dependencies = [
+ "bincode",
+ "byteorder",
+ "ed",
+ "grovedb-costs",
+ "grovedb-storage",
+ "hex",
+ "indexmap 2.12.1",
+ "integer-encoding",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "grovedb-storage"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -2781,7 +2795,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "thiserror 2.0.17",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2790,7 +2804,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -2799,7 +2813,7 @@ dependencies = [
 [[package]]
 name = "grovedbg-types"
 version = "4.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=dc8c25023c5116374087b2c73008ae9167c567d8#dc8c25023c5116374087b2c73008ae9167c567d8"
+source = "git+https://github.com/dashpay/grovedb?rev=679ea5a230a9d2e584ac2949ecac179a179a0444#679ea5a230a9d2e584ac2949ecac179a179a0444"
 dependencies = [
  "serde",
  "serde_with 3.16.1",

@@ -760,6 +760,34 @@ impl std::ops::DerefMut for PlatformAddressTrunkState {
     }
 }
 
+/// Nullifiers trunk state for nullifier tree synchronization.
+///
+/// This is a newtype wrapper around [`GroveTrunkQueryResult`](drive::grovedb::GroveTrunkQueryResult)
+/// that represents the result of querying the trunk (top levels) of the nullifiers tree.
+#[derive(Debug)]
+pub struct NullifiersTrunkState(pub drive::grovedb::GroveTrunkQueryResult);
+
+impl NullifiersTrunkState {
+    /// Get the inner `GroveTrunkQueryResult`.
+    pub fn into_inner(self) -> drive::grovedb::GroveTrunkQueryResult {
+        self.0
+    }
+}
+
+impl std::ops::Deref for NullifiersTrunkState {
+    type Target = drive::grovedb::GroveTrunkQueryResult;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for NullifiersTrunkState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Shielded pool total balance
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
@@ -848,3 +876,65 @@ pub struct ShieldedEncryptedNotesQuery {
     platform_serialize(unversioned)
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<Vec<u8>>);
+
+/// Nullifier changes for a single block.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct BlockNullifierChanges {
+    /// The block height
+    pub block_height: u64,
+    /// Nullifiers inserted in this block (each 32 bytes)
+    pub nullifiers: Vec<[u8; 32]>,
+}
+
+/// Recent nullifier changes across multiple blocks.
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct RecentNullifierChanges(pub Vec<BlockNullifierChanges>);
+
+impl RecentNullifierChanges {
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<BlockNullifierChanges> {
+        self.0
+    }
+}
+
+/// Compacted nullifier changes for a range of blocks.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct CompactedBlockNullifierChanges {
+    /// The start block height of the compacted range
+    pub start_block_height: u64,
+    /// The end block height of the compacted range
+    pub end_block_height: u64,
+    /// Nullifiers from this block range (each 32 bytes)
+    pub nullifiers: Vec<[u8; 32]>,
+}
+
+/// Compacted nullifier changes across multiple ranges.
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct RecentCompactedNullifierChanges(pub Vec<CompactedBlockNullifierChanges>);
+
+impl RecentCompactedNullifierChanges {
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<CompactedBlockNullifierChanges> {
+        self.0
+    }
+}

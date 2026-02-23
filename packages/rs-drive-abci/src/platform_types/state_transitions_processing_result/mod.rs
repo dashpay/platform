@@ -42,6 +42,8 @@ pub enum StateTransitionExecutionResult {
         fee_result: FeeResult,
         /// Address balance changes from this state transition
         address_balance_changes: BTreeMap<PlatformAddress, CreditOperation>,
+        /// Nullifiers inserted by shielded spend actions
+        nullifiers_inserted: Vec<[u8; 32]>,
     },
     /// State Transition was not executed at all.
     /// The only current reason for this is that the proposer reached the maximum time limit
@@ -55,6 +57,7 @@ pub enum StateTransitionExecutionResult {
 pub struct StateTransitionsProcessingResult {
     execution_results: Vec<StateTransitionExecutionResult>,
     pub(crate) address_balances_updated: BTreeMap<PlatformAddress, CreditOperation>,
+    pub(crate) nullifiers_inserted: Vec<[u8; 32]>,
     invalid_paid_count: usize,
     invalid_unpaid_count: usize,
     valid_count: usize,
@@ -117,6 +120,7 @@ impl StateTransitionsProcessingResult {
             StateTransitionExecutionResult::SuccessfulExecution {
                 fee_result: actual_fees,
                 address_balance_changes,
+                nullifiers_inserted,
                 ..
             } => {
                 self.valid_count += 1;
@@ -125,6 +129,11 @@ impl StateTransitionsProcessingResult {
 
                 // Merge address balance changes
                 self.add_address_balances_in_update(address_balance_changes.clone());
+
+                // Collect nullifiers from shielded spend actions
+                if !nullifiers_inserted.is_empty() {
+                    self.nullifiers_inserted.extend(nullifiers_inserted);
+                }
             }
             StateTransitionExecutionResult::NotExecuted(_) => {
                 self.failed_count += 1;
@@ -169,5 +178,10 @@ impl StateTransitionsProcessingResult {
     /// State Transition execution results
     pub fn execution_results(&self) -> &Vec<StateTransitionExecutionResult> {
         &self.execution_results
+    }
+
+    /// Add nullifiers that were inserted during state transition processing
+    pub fn add_nullifiers_inserted(&mut self, nullifiers: Vec<[u8; 32]>) {
+        self.nullifiers_inserted.extend(nullifiers);
     }
 }

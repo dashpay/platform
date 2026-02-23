@@ -23,6 +23,10 @@ pub struct DriveVerifyShieldedMethodVersions {
     pub verify_shielded_anchors: FeatureVersion,
     pub verify_shielded_encrypted_notes: FeatureVersion,
     pub verify_shielded_nullifiers: FeatureVersion,
+    pub verify_nullifiers_trunk_query: FeatureVersion,
+    pub verify_nullifiers_branch_query: FeatureVersion,
+    pub verify_recent_nullifier_changes: FeatureVersion,
+    pub verify_compacted_nullifier_changes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

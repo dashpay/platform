@@ -1087,15 +1087,84 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for PlatformAddressTrunk
     where
         PlatformAddressTrunkState: 'a,
     {
-        let (result, metadata, proof) = GroveTrunkQueryResult::maybe_from_proof_with_metadata(
-            request,
-            response,
-            network,
-            platform_version,
-            provider,
+        let (result, metadata, proof) = <GroveTrunkQueryResult as FromProof<
+            platform::GetAddressesTrunkStateRequest,
+        >>::maybe_from_proof_with_metadata(
+            request, response, network, platform_version, provider
         )?;
 
         Ok((result.map(PlatformAddressTrunkState), metadata, proof))
+    }
+}
+
+impl FromProof<platform::GetNullifiersTrunkStateRequest> for GroveTrunkQueryResult {
+    type Request = platform::GetNullifiersTrunkStateRequest;
+    type Response = platform::GetNullifiersTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        GroveTrunkQueryResult: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        // Extract pool_type and pool_identifier from request
+        let (pool_type, pool_identifier) = match &request.version {
+            Some(platform::get_nullifiers_trunk_state_request::Version::V0(v0)) => {
+                let pool_id = if v0.pool_identifier.is_empty() {
+                    None
+                } else {
+                    Some(v0.pool_identifier.as_slice())
+                };
+                (v0.pool_type, pool_id)
+            }
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let (root_hash, trunk_result) = Drive::verify_nullifiers_trunk_query(
+            &proof.grovedb_proof,
+            pool_type,
+            pool_identifier,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(trunk_result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetNullifiersTrunkStateRequest> for NullifiersTrunkState {
+    type Request = platform::GetNullifiersTrunkStateRequest;
+    type Response = platform::GetNullifiersTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        NullifiersTrunkState: 'a,
+    {
+        let (result, metadata, proof) = <GroveTrunkQueryResult as FromProof<
+            platform::GetNullifiersTrunkStateRequest,
+        >>::maybe_from_proof_with_metadata(
+            request, response, network, platform_version, provider
+        )?;
+
+        Ok((result.map(NullifiersTrunkState), metadata, proof))
     }
 }
 
@@ -2459,6 +2528,118 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
         };
 
         Ok((result, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentNullifierChangesRequest> for RecentNullifierChanges {
+    type Request = platform::GetRecentNullifierChangesRequest;
+    type Response = platform::GetRecentNullifierChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentNullifierChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_nullifier_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_nullifier_changes_request::Version::V0(v0) => v0.start_height,
+        };
+
+        let limit = Some(100u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_recent_nullifier_changes(
+            &proof.grovedb_proof,
+            start_height,
+            limit,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentNullifierChanges(
+            verified_changes
+                .into_iter()
+                .map(|(block_height, nullifiers)| BlockNullifierChanges {
+                    block_height,
+                    nullifiers,
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentCompactedNullifierChangesRequest>
+    for RecentCompactedNullifierChanges
+{
+    type Request = platform::GetRecentCompactedNullifierChangesRequest;
+    type Response = platform::GetRecentCompactedNullifierChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentCompactedNullifierChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_compacted_nullifier_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_block_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_compacted_nullifier_changes_request::Version::V0(v0) => {
+                v0.start_block_height
+            }
+        };
+
+        let limit = Some(25u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_compacted_nullifier_changes(
+            &proof.grovedb_proof,
+            start_block_height,
+            limit,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentCompactedNullifierChanges(
+            verified_changes
+                .into_iter()
+                .map(|(start_block_height, end_block_height, nullifiers)| {
+                    CompactedBlockNullifierChanges {
+                        start_block_height,
+                        end_block_height,
+                        nullifiers,
+                    }
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
     }
 }
 

@@ -67,6 +67,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// fees to add
         fees_to_add_to_pool: Credits,
+        /// Nullifiers inserted by this action (for shielded spends)
+        nullifiers: Vec<[u8; 32]>,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLock {
@@ -108,6 +110,16 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
 }
 
 impl ExecutionEvent<'_> {
+    /// Extract nullifiers from this execution event, if any.
+    /// Shielded spend actions (ShieldedTransfer, Unshield, ShieldedWithdrawal)
+    /// carry nullifiers that were consumed.
+    pub(crate) fn nullifiers(&self) -> &[[u8; 32]] {
+        match self {
+            ExecutionEvent::PaidFixedCost { nullifiers, .. } => nullifiers.as_slice(),
+            _ => &[],
+        }
+    }
+
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
@@ -233,6 +245,7 @@ impl ExecutionEvent<'_> {
                         .fee_version
                         .vote_resolution_fund_fees
                         .contested_document_single_vote_cost,
+                    nullifiers: vec![],
                 })
             }
             StateTransitionAction::DataContractCreateAction(data_contract_create_action) => {
@@ -471,22 +484,26 @@ impl ExecutionEvent<'_> {
                     user_fee_increase,
                 })
             }
-            StateTransitionAction::ShieldedTransferAction(shielded_transfer_action) => {
+            StateTransitionAction::ShieldedTransferAction(ref shielded_transfer_action) => {
                 let fee_amount = shielded_transfer_action.fee_amount();
+                let nullifiers = shielded_transfer_action.nullifiers().to_vec();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    nullifiers,
                 })
             }
             StateTransitionAction::UnshieldAction(ref unshield_action) => {
                 let fee_amount = unshield_action.fee_amount();
+                let nullifiers = unshield_action.nullifiers().to_vec();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    nullifiers,
                 })
             }
             StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
@@ -506,11 +523,13 @@ impl ExecutionEvent<'_> {
             }
             StateTransitionAction::ShieldedWithdrawalAction(ref shielded_withdrawal_action) => {
                 let fee_amount = shielded_withdrawal_action.fee_amount();
+                let nullifiers = shielded_withdrawal_action.nullifiers().to_vec();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    nullifiers,
                 })
             }
             StateTransitionAction::PenalizeShieldedPoolAction(ref penalize_action) => {
@@ -520,6 +539,7 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: penalty_amount,
+                    nullifiers: vec![],
                 })
             }
             _ => {

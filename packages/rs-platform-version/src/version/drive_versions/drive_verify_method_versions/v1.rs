@@ -96,5 +96,9 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_shielded_anchors: 0,
         verify_shielded_encrypted_notes: 0,
         verify_shielded_nullifiers: 0,
+        verify_nullifiers_trunk_query: 0,
+        verify_nullifiers_branch_query: 0,
+        verify_recent_nullifier_changes: 0,
+        verify_compacted_nullifier_changes: 0,
     },
 };
