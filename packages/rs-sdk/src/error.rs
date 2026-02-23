@@ -75,6 +75,11 @@ pub enum Error {
     /// Invalid credit transfer configuration
     #[error("Invalid credit transfer: {0}")]
     InvalidCreditTransfer(String),
+    /// Identity nonce overflow: the nonce has reached its maximum value and
+    /// cannot be incremented further without wrapping to zero.
+    #[error("Identity nonce overflow: nonce has reached the maximum value ({0})")]
+    NonceOverflow(u64),
+
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]

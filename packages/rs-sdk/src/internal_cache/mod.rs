@@ -16,7 +16,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const DEFAULT_IDENTITY_NONCE_STALE_TIME_S: u64 = 1200;
 
 /// Maximum number of entries in each nonce LRU cache.
-const DEFAULT_NONCE_CACHE_SIZE: usize = 100;
+const DEFAULT_NONCE_CACHE_SIZE: NonZeroUsize =
+    NonZeroUsize::new(1000).expect("DEFAULT_NONCE_CACHE_SIZE must be > 0");
 
 /// Cached nonce state for a single identity or identity-contract pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +59,9 @@ pub(crate) struct NonceCache {
 
 impl Default for NonceCache {
     fn default() -> Self {
-        let cap = NonZeroUsize::new(DEFAULT_NONCE_CACHE_SIZE)
-            .expect("DEFAULT_NONCE_CACHE_SIZE must be > 0");
         Self {
-            identity_nonces: Mutex::new(LruCache::new(cap)),
-            contract_nonces: Mutex::new(LruCache::new(cap)),
+            identity_nonces: Mutex::new(LruCache::new(DEFAULT_NONCE_CACHE_SIZE)),
+            contract_nonces: Mutex::new(LruCache::new(DEFAULT_NONCE_CACHE_SIZE)),
             default_stale_time_s: DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
         }
     }
@@ -84,6 +83,15 @@ fn get_current_time_seconds() -> Result<u64, Error> {
         // We need to convert to seconds
         Ok((js_sys::Date::now() / 1000.0) as u64)
     }
+}
+
+/// Increment `nonce` with masking and return an error on overflow (wrap to zero).
+fn bump_nonce(nonce: u64) -> Result<u64, Error> {
+    let bumped = (nonce + 1) & IDENTITY_NONCE_VALUE_FILTER;
+    if bumped < nonce {
+        return Err(Error::NonceOverflow(nonce));
+    }
+    Ok(bumped)
 }
 
 impl NonceCache {
@@ -160,9 +168,14 @@ impl NonceCache {
     /// Shared nonce cache logic. Checks staleness and drift, fetches from
     /// Platform when needed, and maintains the cache entry.
     ///
-    /// The cache lock is held **end-to-end** including across the async
-    /// `fetch_from_platform` call. This eliminates the TOCTOU race window
-    /// that previously existed when the lock was released before the fetch.
+    /// Uses a three-phase approach:
+    ///   1. Check cache under lock — return immediately if fresh.
+    ///   2. Fetch from Platform **without** holding the lock.
+    ///   3. Re-acquire lock and merge using `max(cached, platform)`.
+    ///
+    /// This accepts a narrow TOCTOU race where two concurrent callers for the
+    /// same key may both fetch from Platform, but the `max()` merge ensures no
+    /// nonce regression.
     async fn get_or_fetch_nonce<K: Hash + Eq + Copy, F, Fut>(
         cache: &Mutex<LruCache<K, NonceCacheEntry>>,
         key: K,
@@ -177,12 +190,12 @@ impl NonceCache {
     {
         let current_time_s = get_current_time_seconds()?;
 
-        let mut cache_guard = cache.lock().await;
+        // Phase 1: Check cache under lock
+        {
+            let mut cache_guard = cache.lock().await;
 
-        // Check if we have a fresh cache hit (use peek so we don't
-        // promote the entry just for a staleness check).
-        let needs_fetch = match cache_guard.peek(&key) {
-            Some(entry) => {
+            // Use peek so we don't promote the entry just for a staleness check.
+            if let Some(entry) = cache_guard.peek(&key) {
                 let stale_by_time = entry.last_fetch_timestamp
                     < current_time_s.saturating_sub(
                         settings
@@ -193,45 +206,57 @@ impl NonceCache {
                     .current_nonce
                     .saturating_sub(entry.last_fetched_platform_nonce)
                     >= MAX_MISSING_IDENTITY_REVISIONS;
-                stale_by_time || drifted
-            }
-            None => true,
-        };
 
-        if !needs_fetch {
-            // Cache is fresh — serve from it. Use get_mut() to promote
-            // in LRU order and mutate in place.
-            let entry = cache_guard
-                .get_mut(&key)
-                .expect("entry must exist; we just peeked it");
-            if bump_first {
-                let insert_nonce = (entry.current_nonce + 1) & IDENTITY_NONCE_VALUE_FILTER;
-                entry.current_nonce = insert_nonce;
-                // Do NOT update last_fetch_timestamp on cache-only bumps
-                return Ok(insert_nonce);
+                if !stale_by_time && !drifted {
+                    // Fresh hit — serve from cache. Promote in LRU via get_mut
+                    // and mutate in place. Safe because we just confirmed the
+                    // entry exists via peek above.
+                    if let Some(entry) = cache_guard.get_mut(&key) {
+                        if bump_first {
+                            let insert_nonce = bump_nonce(entry.current_nonce)?;
+                            entry.current_nonce = insert_nonce;
+                            // Do NOT update last_fetch_timestamp on cache-only bumps
+                            return Ok(insert_nonce);
+                        } else {
+                            return Ok(entry.current_nonce);
+                        }
+                    }
+                }
+
+                if stale_by_time {
+                    tracing::trace!("nonce cache stale, re-fetching from platform");
+                } else {
+                    tracing::trace!("nonce cache drifted, re-fetching from platform");
+                }
             } else {
-                return Ok(entry.current_nonce);
+                tracing::trace!("nonce cache miss, fetching from platform");
             }
-        }
+        } // lock released
 
-        // Fetch from Platform while holding the lock — eliminates
-        // TOCTOU race at the cost of serializing concurrent fetches
-        // for the same cache map. This is acceptable because:
-        //   1. Nonce fetches are infrequent (only on stale/missing).
-        //   2. Correctness > throughput for nonce management.
+        // Phase 2: Fetch from Platform without holding the lock
         //
         // Strip the upper "missing revisions" bits immediately so the
         // cache only ever holds plain nonce values.
         let platform_nonce = fetch_from_platform().await? & IDENTITY_NONCE_VALUE_FILTER;
 
+        // Phase 3: Re-acquire lock, use max(cached, platform)
+        //
+        // Capture a fresh timestamp so last_fetch_timestamp reflects when
+        // the data was actually received, not when the function was entered.
+        let current_time_s = get_current_time_seconds()?;
+        let mut cache_guard = cache.lock().await;
+
         // Keep the higher of cached vs Platform nonce to avoid regression
         // (Platform may not have indexed a recent successful broadcast yet).
         let base_nonce = match cache_guard.peek(&key) {
-            Some(entry) if entry.current_nonce > platform_nonce => entry.current_nonce,
+            Some(entry) if entry.current_nonce > platform_nonce => {
+                tracing::trace!("nonce cache: preserved higher cached nonce over platform");
+                entry.current_nonce
+            }
             _ => platform_nonce,
         };
         let insert_nonce = if bump_first {
-            (base_nonce + 1) & IDENTITY_NONCE_VALUE_FILTER
+            bump_nonce(base_nonce)?
         } else {
             base_nonce
         };
@@ -259,7 +284,7 @@ mod nonce_cache_tests {
     use test_case::test_case;
     use tokio::sync::Mutex;
 
-    /// Helper: shorthand for get_or_fetch_nonce.
+    /// Helper: shorthand for get_or_fetch_nonce that expects success.
     async fn fetch(
         cache: &Mutex<LruCache<u32, NonceCacheEntry>>,
         bump: bool,
@@ -276,6 +301,24 @@ mod nonce_cache_tests {
         )
         .await
         .unwrap()
+    }
+
+    /// Helper: shorthand for get_or_fetch_nonce that returns the Result.
+    async fn try_fetch(
+        cache: &Mutex<LruCache<u32, NonceCacheEntry>>,
+        bump: bool,
+        settings: &PutSettings,
+        platform_nonce: u64,
+    ) -> Result<u64, Error> {
+        NonceCache::get_or_fetch_nonce(
+            cache,
+            1u32,
+            bump,
+            settings,
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async move { Ok(platform_nonce) },
+        )
+        .await
     }
 
     fn now_s() -> u64 {
@@ -325,7 +368,6 @@ mod nonce_cache_tests {
     #[test_case(0,   false, 0,  0   ; "zero no bump")]
     #[test_case(0,   true,  1,  0   ; "zero with bump")]
     #[test_case(IDENTITY_NONCE_VALUE_FILTER, false, IDENTITY_NONCE_VALUE_FILTER, IDENTITY_NONCE_VALUE_FILTER ; "filter max no bump")]
-    #[test_case(IDENTITY_NONCE_VALUE_FILTER, true,  0, IDENTITY_NONCE_VALUE_FILTER ; "filter max with bump wraps via mask")]
     #[test_case(42 | (3 << 40), false, 42, 42 ; "upper bits stripped no bump")]
     #[test_case(42 | (3 << 40), true,  43, 42 ; "upper bits stripped with bump")]
     #[tokio::test]
@@ -342,6 +384,23 @@ mod nonce_cache_tests {
         let entry = guard.get(&1u32).unwrap();
         assert_eq!(entry.current_nonce, expected);
         assert_eq!(entry.last_fetched_platform_nonce, expected_stored_platform);
+    }
+
+    // --- SEC-001: Bumping at filter max returns overflow error ---
+    #[tokio::test]
+    async fn filter_max_with_bump_returns_overflow_error() {
+        let cache = empty_cache();
+        let result = try_fetch(
+            &cache,
+            true,
+            &Default::default(),
+            IDENTITY_NONCE_VALUE_FILTER,
+        )
+        .await;
+        assert!(
+            matches!(result, Err(Error::NonceOverflow(_))),
+            "expected NonceOverflow error, got: {result:?}"
+        );
     }
 
     // --- Fresh cache hit (no platform fetch) ---
@@ -540,16 +599,16 @@ mod nonce_cache_tests {
             .unwrap();
         }
 
-        let mut guard = cache.lock().await;
+        let guard = cache.lock().await;
         // Key 1 should have been evicted (LRU).
         assert!(guard.peek(&1u32).is_none(), "key 1 should be evicted");
         assert!(guard.peek(&2u32).is_some(), "key 2 should still exist");
         assert!(guard.peek(&3u32).is_some(), "key 3 should still exist");
     }
 
-    // --- Nonce filter mask is applied on every bump ---
+    // --- SEC-001: Nonce overflow returns error on cache-hit bump ---
     #[tokio::test]
-    async fn nonce_filter_applied_on_bump_near_boundary() {
+    async fn nonce_overflow_returns_error_on_cache_hit() {
         // Seed cache with nonce at the filter boundary.
         // last_fetched_platform_nonce must be close enough to avoid drift-triggered refetch.
         let cache = seeded_cache(
@@ -568,13 +627,11 @@ mod nonce_cache_tests {
             DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
             || async { panic!("should not fetch from platform") },
         )
-        .await
-        .unwrap();
+        .await;
 
-        // (IDENTITY_NONCE_VALUE_FILTER + 1) & IDENTITY_NONCE_VALUE_FILTER == 0
-        assert_eq!(
-            result, 0,
-            "bump past filter boundary should wrap to 0 via mask"
+        assert!(
+            matches!(result, Err(Error::NonceOverflow(n)) if n == IDENTITY_NONCE_VALUE_FILTER),
+            "expected NonceOverflow error at filter max, got: {result:?}"
         );
     }
 
