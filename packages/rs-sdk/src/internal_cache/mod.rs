@@ -108,13 +108,13 @@ fn get_current_time_seconds() -> Result<u64, Error> {
     }
 }
 
-/// Increment `nonce` with masking and return an error on overflow (wrap to zero).
+/// Increment `nonce` by one, returning an error if it is already at the
+/// 40-bit maximum ([`IDENTITY_NONCE_VALUE_FILTER`]).
 fn bump_nonce(nonce: u64) -> Result<u64, Error> {
-    let bumped = (nonce + 1) & IDENTITY_NONCE_VALUE_FILTER;
-    if bumped < nonce {
+    if nonce >= IDENTITY_NONCE_VALUE_FILTER {
         return Err(Error::NonceOverflow(nonce));
     }
-    Ok(bumped)
+    Ok(nonce + 1)
 }
 
 impl NonceCache {
@@ -275,12 +275,18 @@ impl NonceCache {
 
         // Keep the higher of cached vs Platform nonce to avoid regression
         // (Platform may not have indexed a recent successful broadcast yet).
-        let base_nonce = match cache_guard.peek(&key) {
+        // Also preserve the higher last_fetched_platform_nonce so the drift
+        // calculation doesn't inflate when Platform temporarily returns a
+        // lower value than previously seen.
+        let (base_nonce, effective_platform_nonce) = match cache_guard.peek(&key) {
             Some(entry) if entry.current_nonce > platform_nonce => {
                 tracing::trace!(key = ?key, "nonce cache: preserved higher cached nonce over platform");
-                entry.current_nonce
+                (
+                    entry.current_nonce,
+                    entry.last_fetched_platform_nonce.max(platform_nonce),
+                )
             }
-            _ => platform_nonce,
+            _ => (platform_nonce, platform_nonce),
         };
         let insert_nonce = if bump_first {
             bump_nonce(base_nonce)?
@@ -292,7 +298,7 @@ impl NonceCache {
             NonceCacheEntry {
                 current_nonce: insert_nonce,
                 last_fetch_timestamp: current_time_s,
-                last_fetched_platform_nonce: platform_nonce,
+                last_fetched_platform_nonce: effective_platform_nonce,
             },
         );
         Ok(insert_nonce)
@@ -454,7 +460,7 @@ mod nonce_cache_tests {
     #[test_case(20, 10, 15, true,  false, 21, 15 ; "preserves higher cached nonce with bump")]
     #[test_case(10,  5, 50, false, false, 50, 50 ; "platform much higher replaces cache")]
     #[test_case(10,  5, 50, true,  false, 51, 50 ; "platform much higher replaces cache with bump")]
-    #[test_case(100, 90, 50 | (5 << 40), false, false, 100, 50 ; "upper bits stripped cache preserved")]
+    #[test_case(100, 90, 50 | (5 << 40), false, false, 100, 90 ; "upper bits stripped cache preserved")]
     #[test_case(10 + MAX_MISSING_IDENTITY_REVISIONS, 10, 10 + MAX_MISSING_IDENTITY_REVISIONS, false, true, 10 + MAX_MISSING_IDENTITY_REVISIONS, 10 + MAX_MISSING_IDENTITY_REVISIONS ; "drift at max triggers refetch")]
     #[tokio::test]
     async fn cache_refetch(
@@ -681,6 +687,102 @@ mod nonce_cache_tests {
             entry.last_fetch_timestamp, original_ts,
             "timestamp should not be updated on cache-only bump"
         );
+    }
+
+    // --- Concurrent bumps from fresh cache all produce unique nonces ---
+    #[tokio::test]
+    async fn concurrent_bumps_produce_unique_nonces() {
+        use std::sync::Arc;
+
+        // Keep under MAX_MISSING_IDENTITY_REVISIONS (24) so the drift
+        // threshold is not hit and all tasks stay on the cache-hit path.
+        let num_tasks: u64 = 20;
+        let cache = Arc::new(seeded_cache(1, 0, now_s(), 0));
+        let barrier = Arc::new(tokio::sync::Barrier::new(num_tasks as usize));
+
+        let mut handles = Vec::with_capacity(num_tasks as usize);
+        for _ in 0..num_tasks {
+            let cache = Arc::clone(&cache);
+            let barrier = Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                NonceCache::get_or_fetch_nonce(
+                    &cache,
+                    1u32,
+                    true,
+                    &PutSettings {
+                        identity_nonce_stale_time_s: Some(u64::MAX),
+                        ..Default::default()
+                    },
+                    DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+                    || async { panic!("should not fetch from platform") },
+                )
+                .await
+                .unwrap()
+            }));
+        }
+
+        let mut nonces = Vec::with_capacity(num_tasks as usize);
+        for handle in handles {
+            nonces.push(handle.await.unwrap());
+        }
+
+        nonces.sort();
+        let before = nonces.len();
+        nonces.dedup();
+        assert_eq!(
+            nonces.len(),
+            before,
+            "duplicate nonces detected under concurrent access"
+        );
+        // Should be a contiguous range 1..=num_tasks (bumped from 0).
+        assert_eq!(nonces, (1..=num_tasks).collect::<Vec<_>>());
+    }
+
+    // --- Concurrent stale fetches all produce unique nonces ---
+    #[tokio::test]
+    async fn concurrent_stale_fetches_produce_unique_nonces() {
+        use std::sync::Arc;
+
+        let num_tasks: u64 = 50;
+        // Stale timestamp forces all tasks into Phase 2 (platform fetch).
+        let cache = Arc::new(seeded_cache(1, 0, 0, 0));
+        let barrier = Arc::new(tokio::sync::Barrier::new(num_tasks as usize));
+
+        let mut handles = Vec::with_capacity(num_tasks as usize);
+        for _ in 0..num_tasks {
+            let cache = Arc::clone(&cache);
+            let barrier = Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                NonceCache::get_or_fetch_nonce(
+                    &cache,
+                    1u32,
+                    true,
+                    &PutSettings::default(),
+                    DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+                    || async { Ok(100u64) },
+                )
+                .await
+                .unwrap()
+            }));
+        }
+
+        let mut nonces = Vec::with_capacity(num_tasks as usize);
+        for handle in handles {
+            nonces.push(handle.await.unwrap());
+        }
+
+        nonces.sort();
+        let before = nonces.len();
+        nonces.dedup();
+        assert_eq!(
+            nonces.len(),
+            before,
+            "duplicate nonces detected under concurrent stale fetches"
+        );
+        // All should be > 100 (bumped from platform nonce).
+        assert!(nonces.iter().all(|&n| n > 100));
     }
 
     // --- Reading after bump returns the bumped nonce without incrementing ---
