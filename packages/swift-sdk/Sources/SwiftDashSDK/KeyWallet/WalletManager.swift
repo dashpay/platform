@@ -271,7 +271,8 @@ public class WalletManager {
             managed_wallet_info_free(managedInfo)
         }
 
-        // Get the wallet
+        // Get the wallet — reinitialise error to avoid leaking a prior message
+        error = FFIError()
         guard let wallet = walletId.withUnsafeBytes({ idBytes in
             let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
@@ -284,7 +285,8 @@ public class WalletManager {
             throw KeyWalletError(ffiError: error)
         }
 
-        // Now get the receive address
+        // Now get the receive address — reinitialise error for the same reason
+        error = FFIError()
         let addressPtr = managed_wallet_get_next_bip44_receive_address(
             managedInfo, wallet, accountIndex, &error)
 
@@ -346,7 +348,8 @@ public class WalletManager {
             managed_wallet_info_free(managedInfo)
         }
 
-        // Get the wallet
+        // Get the wallet — reinitialise error to avoid leaking a prior message
+        error = FFIError()
         guard let wallet = walletId.withUnsafeBytes({ idBytes in
             let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
@@ -359,7 +362,8 @@ public class WalletManager {
             throw KeyWalletError(ffiError: error)
         }
 
-        // Now get the change address
+        // Now get the change address — reinitialise error for the same reason
+        error = FFIError()
         let addressPtr = managed_wallet_get_next_bip44_change_address(
             managedInfo, wallet, accountIndex, &error)
 
