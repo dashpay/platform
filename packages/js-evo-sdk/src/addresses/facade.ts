@@ -40,7 +40,7 @@ export class AddressesFacade {
    */
   async getMany(
     addresses: wasm.PlatformAddressLikeArray,
-  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>> {
+  ): Promise<Map<string, wasm.PlatformAddressInfo | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfos(addresses);
   }
@@ -53,7 +53,7 @@ export class AddressesFacade {
    */
   async getManyWithProof(
     addresses: wasm.PlatformAddressLikeArray,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, wasm.PlatformAddressInfo | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfosWithProofInfo(addresses);
   }
@@ -84,7 +84,7 @@ export class AddressesFacade {
    */
   async transfer(
     options: wasm.AddressFundsTransferOptions,
-  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundsTransfer(options);
   }
@@ -148,7 +148,7 @@ export class AddressesFacade {
    */
   async withdraw(
     options: wasm.AddressFundsWithdrawOptions,
-  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundsWithdraw(options);
   }
@@ -221,7 +221,7 @@ export class AddressesFacade {
    */
   async fundFromAssetLock(
     options: wasm.AddressFundingFromAssetLockOptions,
-  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundingFromAssetLock(options);
   }
