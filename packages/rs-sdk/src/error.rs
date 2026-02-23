@@ -79,6 +79,17 @@ pub enum Error {
     /// cannot be incremented further without wrapping to zero.
     #[error("Identity nonce overflow: nonce has reached the maximum value ({0})")]
     NonceOverflow(u64),
+    /// Identity nonce not found on Platform.
+    ///
+    /// Platform returned no nonce for the requested identity (or identity–
+    /// contract pair).  This usually means the queried DAPI node has not yet
+    /// indexed the identity — for example right after identity creation or
+    /// when the node is lagging behind the chain tip.
+    ///
+    /// **Recovery**: retry the state transition; the SDK will re-fetch the
+    /// nonce from a (potentially different) DAPI node on the next attempt.
+    #[error("Identity nonce not found on platform: {0}")]
+    IdentityNonceNotFound(String),
 
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones

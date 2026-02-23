@@ -331,6 +331,14 @@ impl Sdk {
     /// Updates or fetches the nonce for a given identity from the cache,
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IdentityNonceNotFound`] if the queried DAPI node
+    /// does not know the identity (e.g. the node is stale or the identity
+    /// was just created). The worst-case impact is that the caller must
+    /// retry the state transition; the next attempt will re-fetch from
+    /// Platform and likely reach an up-to-date node.
     pub async fn get_identity_nonce(
         &self,
         identity_id: Identifier,
@@ -341,14 +349,23 @@ impl Sdk {
         let nonce = self
             .nonce_cache
             .get_identity_nonce(identity_id, bump_first, &settings, || async {
-                Ok(IdentityNonceFetcher::fetch_with_settings(
+                let fetcher = IdentityNonceFetcher::fetch_with_settings(
                     self,
                     identity_id,
                     settings.request_settings,
                 )
                 .await?
-                .unwrap_or(IdentityNonceFetcher(0))
-                .0)
+                .ok_or_else(|| {
+                    tracing::warn!(
+                        identity_id = %identity_id,
+                        "Platform returned no nonce for identity; \
+                         node may be stale or identity may not exist yet"
+                    );
+                    Error::IdentityNonceNotFound(format!(
+                        "identity {identity_id}: platform returned no nonce"
+                    ))
+                })?;
+                Ok(fetcher.0)
             })
             .await?;
 
@@ -366,6 +383,12 @@ impl Sdk {
     /// the cache, querying Platform if the cached value is stale or absent.
     /// Optionally increments the nonce before storing it, based on the provided
     /// settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IdentityNonceNotFound`] if the queried DAPI node
+    /// does not know the identity–contract pair. See
+    /// [`get_identity_nonce`](Self::get_identity_nonce) for details.
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,
@@ -381,14 +404,25 @@ impl Sdk {
                 bump_first,
                 &settings,
                 || async {
-                    Ok(IdentityContractNonceFetcher::fetch_with_settings(
+                    let fetcher = IdentityContractNonceFetcher::fetch_with_settings(
                         self,
                         (identity_id, contract_id),
                         settings.request_settings,
                     )
                     .await?
-                    .unwrap_or(IdentityContractNonceFetcher(0))
-                    .0)
+                    .ok_or_else(|| {
+                        tracing::warn!(
+                            identity_id = %identity_id,
+                            contract_id = %contract_id,
+                            "Platform returned no nonce for identity-contract pair; \
+                             node may be stale or identity may not exist yet"
+                        );
+                        Error::IdentityNonceNotFound(format!(
+                            "identity {identity_id} contract {contract_id}: \
+                             platform returned no nonce"
+                        ))
+                    })?;
+                    Ok(fetcher.0)
                 },
             )
             .await

@@ -51,6 +51,29 @@ impl From<(Identifier, Identifier)> for IdentityContractPair {
 ///
 /// Backed by [`LruCache`] to bound memory usage and automatically
 /// evict least-recently-used entries.
+///
+/// # LRU eviction
+///
+/// Each map is capped at [`DEFAULT_NONCE_CACHE_SIZE`] (1000) entries.
+/// Evicting an entry with unconfirmed local bumps may cause a nonce
+/// collision on re-fetch.  Unlikely in practice (requires >1000
+/// concurrent identities); the rejection is transient and resolves
+/// on retry once the pending transaction confirms.
+///
+/// # Drift threshold
+///
+/// Up to 23 nonces can be bumped from cache before a Platform re-fetch
+/// is forced (drift limit [`MAX_MISSING_IDENTITY_REVISIONS`] = 24).
+/// The 20-minute stale timer provides an additional backstop.  If
+/// transactions fail silently, the cache may advance past the on-chain
+/// nonce until the next re-fetch realigns it.
+///
+/// # DAPI node staleness
+///
+/// A stale DAPI node may report an identity as unknown.  The fetch
+/// closure surfaces this as [`Error::IdentityNonceNotFound`] rather
+/// than defaulting to nonce 0.  Worst case: one state transition
+/// attempt fails and must be retried against a different node.
 pub(crate) struct NonceCache {
     identity_nonces: Mutex<LruCache<Identifier, NonceCacheEntry>>,
     contract_nonces: Mutex<LruCache<IdentityContractPair, NonceCacheEntry>>,
@@ -176,6 +199,15 @@ impl NonceCache {
     /// This accepts a narrow TOCTOU race where two concurrent callers for the
     /// same key may both fetch from Platform, but the `max()` merge ensures no
     /// nonce regression.
+    ///
+    /// # Errors
+    ///
+    /// - Returns whatever error `fetch_from_platform` produces, including
+    ///   [`Error::IdentityNonceNotFound`] when the queried DAPI node does
+    ///   not know the identity. Callers should retry in that case; a
+    ///   different node will likely have the data.
+    /// - Returns [`Error::NonceOverflow`] if bumping would wrap past the
+    ///   40-bit nonce value filter.
     async fn get_or_fetch_nonce<K: Hash + Eq + Copy, F, Fut>(
         cache: &Mutex<LruCache<K, NonceCacheEntry>>,
         key: K,
