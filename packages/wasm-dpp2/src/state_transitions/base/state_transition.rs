@@ -714,3 +714,59 @@ impl StateTransitionWasm {
 }
 
 impl_wasm_type_info!(StateTransitionWasm, StateTransition);
+
+#[cfg(test)]
+mod tests {
+    use dpp::address_funds::PlatformAddress;
+    use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::{
+        JsonStateTransitionSerializationOptions, StateTransition, StateTransitionJsonConvert,
+    };
+    use std::collections::BTreeMap;
+
+    /// Given a StateTransition::AddressFundsTransfer with BTreeMap<PlatformAddress, _> fields
+    ///   built using features enabled by wasm-dpp2 (state-transition-json-conversion,
+    ///   state-transition-serde-conversion),
+    /// When calling to_json() on the top-level StateTransition enum,
+    /// Then serialization succeeds and PlatformAddress map keys are human-readable strings.
+    #[test]
+    fn state_transition_to_json_works_with_wasm_dpp2_features() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (1u32, 5000u64));
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert(PlatformAddress::P2pkh([0xBB; 20]), 4500u64);
+
+        let st = StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+            AddressFundsTransferTransitionV0 {
+                inputs,
+                outputs,
+                user_fee_increase: 0,
+                fee_strategy: Default::default(),
+                input_witnesses: vec![],
+            },
+        ));
+
+        // to_json() via StateTransitionJsonConvert must work.
+        let json = st
+            .to_json(JsonStateTransitionSerializationOptions::default())
+            .expect("StateTransition::to_json must succeed in wasm-dpp2 context");
+
+        let inputs_obj = json
+            .get("inputs")
+            .and_then(|v| v.as_object())
+            .expect("JSON inputs must be an object with string keys");
+
+        for key in inputs_obj.keys() {
+            assert!(
+                key.starts_with("P2PKH(") || key.starts_with("P2SH("),
+                "expected PlatformAddress Display string key, got: {key}"
+            );
+        }
+
+        // serde_json direct serialization must also work.
+        serde_json::to_string(&st)
+            .expect("serde_json::to_string must succeed for StateTransition in wasm-dpp2");
+    }
+}
