@@ -564,8 +564,8 @@ public class WalletService: ObservableObject {
         detailedSyncProgress = nil
         lastSyncError = nil
 
-        let modeDescription = fullReset ? "full storage" : "sync-state"
-        print("[SPV][Clear] Completed \(modeDescription) reset for \(currentNetwork.rawValue)")
+        let resetDescription = fullReset ? "full" : "partial"
+        print("[SPV][Clear] Completed storage clear + \(resetDescription) UI reset for \(currentNetwork.rawValue)")
     }
     
     // MARK: - Network Management
