@@ -7,10 +7,12 @@ on:
     branches:
       - master
       - "v*-dev"
+      - "ci/*"
   push:
     branches:
       - master
       - "v*-dev"
+      - "ci/*"
   schedule:
     - cron: "30 4 * * *"
 
@@ -19,6 +21,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-secrets:
+    name: Check secret availability
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    outputs:
+      has_ecr: ${{ steps.check.outputs.has_ecr }}
+    steps:
+      - name: Check if ECR credentials are available
+        id: check
+        run: |
+          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" && -n "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+            echo "has_ecr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_ecr=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ECR credentials not available — Docker image builds and dependent tests will be skipped (expected for fork PRs)"
+          fi
+
   changes:
     name: Determine changed packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
@@ -69,7 +88,9 @@ jobs:
 
   build-images:
     name: Build Docker images
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    needs:
+      - check-secrets
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -193,6 +214,7 @@ jobs:
       - changes
       - build-js
       - build-images
+      - check-secrets
     strategy:
       fail-fast: false
       matrix:
@@ -211,7 +233,7 @@ jobs:
       name: ${{ matrix.name }}
       test-pattern: ${{ matrix.test-pattern }}
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
-    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && contains(needs.changes.outputs.js-packages, 'dashmate') }}
 
   test-suite:
     name: Test Suite
@@ -219,8 +241,9 @@ jobs:
       - build-js
       - build-images
       - changes
+      - check-secrets
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -250,6 +273,7 @@ jobs:
       - build-js
       - build-images
       - changes
+      - check-secrets
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
     uses: ./.github/workflows/tests-packges-functional.yml

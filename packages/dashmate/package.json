@@ -63,7 +63,7 @@
     "@dashevo/withdrawals-contract": "workspace:*",
     "@oclif/core": "^3.10.8",
     "@oclif/plugin-help": "^6.0.5",
-    "ajv": "^8.6.0",
+    "ajv": "^8.18.0",
     "ajv-formats": "^2.1.1",
     "awilix": "^4.2.6",
     "begoo": "^2.0.2",
@@ -91,7 +91,7 @@
     "qs": "^6.14.2",
     "rxjs": "^6.6.7",
     "semver": "^7.5.3",
-    "systeminformation": "^5.27.14",
+    "systeminformation": "^5.31.1",
     "table": "^6.8.1",
     "tar": "7.5.9",
     "wrap-ansi": "^7.0.0"
