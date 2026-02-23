@@ -1,8 +1,10 @@
 use crate::error::Error;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::Identifier;
+use crate::platform::{Fetch, Identifier};
+use crate::Sdk;
 use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS};
 use dpp::prelude::IdentityNonce;
+use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 use lru::LruCache;
 use std::fmt::Debug;
 use std::future::Future;
@@ -124,42 +126,53 @@ fn bump_nonce(nonce: u64) -> Result<u64, Error> {
 }
 
 impl NonceCache {
-    /// Get or fetch identity nonce from cache.
-    pub(crate) async fn get_identity_nonce<F, Fut>(
+    /// Get or fetch identity nonce from cache, querying Platform via the SDK
+    /// when the cached value is stale or absent.
+    pub(crate) async fn get_identity_nonce(
         &self,
+        sdk: &Sdk,
         identity_id: Identifier,
         bump_first: bool,
         settings: &PutSettings,
-        fetch_from_platform: F,
-    ) -> Result<IdentityNonce, Error>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<u64, Error>>,
-    {
+    ) -> Result<IdentityNonce, Error> {
+        let request_settings = settings.request_settings;
         Self::get_or_fetch_nonce(
             &self.identity_nonces,
             identity_id,
             bump_first,
             settings,
             self.default_stale_time_s,
-            fetch_from_platform,
+            || async move {
+                let fetcher =
+                    IdentityNonceFetcher::fetch_with_settings(sdk, identity_id, request_settings)
+                        .await?
+                        .ok_or_else(|| {
+                            tracing::warn!(
+                                identity_id = %identity_id,
+                                "Platform returned no nonce for identity; \
+                                 node may be stale or identity may not exist yet"
+                            );
+                            Error::IdentityNonceNotFound(format!(
+                                "identity {identity_id}: platform returned no nonce"
+                            ))
+                        })?;
+                Ok(fetcher.0)
+            },
         )
         .await
     }
 
-    /// Get or fetch identity-contract nonce from cache.
-    pub(crate) async fn get_identity_contract_nonce<F, Fut>(
+    /// Get or fetch identity-contract nonce from cache, querying Platform via
+    /// the SDK when the cached value is stale or absent.
+    pub(crate) async fn get_identity_contract_nonce(
         &self,
+        sdk: &Sdk,
         identity_id: Identifier,
         contract_id: Identifier,
         bump_first: bool,
         settings: &PutSettings,
-        fetch_from_platform: F,
-    ) -> Result<IdentityNonce, Error>
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = Result<u64, Error>>,
-    {
+    ) -> Result<IdentityNonce, Error> {
+        let request_settings = settings.request_settings;
         Self::get_or_fetch_nonce(
             &self.contract_nonces,
             IdentityContractPair {
@@ -169,7 +182,27 @@ impl NonceCache {
             bump_first,
             settings,
             self.default_stale_time_s,
-            fetch_from_platform,
+            || async move {
+                let fetcher = IdentityContractNonceFetcher::fetch_with_settings(
+                    sdk,
+                    (identity_id, contract_id),
+                    request_settings,
+                )
+                .await?
+                .ok_or_else(|| {
+                    tracing::warn!(
+                        identity_id = %identity_id,
+                        contract_id = %contract_id,
+                        "Platform returned no nonce for identity-contract pair; \
+                         node may be stale or identity may not exist yet"
+                    );
+                    Error::IdentityNonceNotFound(format!(
+                        "identity {identity_id} contract {contract_id}: \
+                         platform returned no nonce"
+                    ))
+                })?;
+                Ok(fetcher.0)
+            },
         )
         .await
     }
@@ -566,33 +599,37 @@ mod nonce_cache_tests {
     // --- refresh marks entries stale, preserving cached nonce value ---
     #[tokio::test]
     async fn refresh_marks_stale_but_preserves_cached_nonce() {
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use drive_proof_verifier::types::IdentityNonceFetcher;
 
-        let nonce_cache = NonceCache::default();
+        let mut sdk = crate::Sdk::new_mock();
         let identity_id = Identifier::default();
         // Use default stale time so that STALE_TIMESTAMP (0) is detected
         // as stale, exercising the full Phase 2 + Phase 3 re-fetch path.
         let settings = PutSettings::default();
 
+        // Mock: platform always returns nonce 10.
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, Some(IdentityNonceFetcher(10u64)))
+            .await
+            .expect("set mock expectation");
+
         // Seed via initial fetch (platform returns 10, bump to 11).
-        let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
             .await
             .unwrap();
         assert_eq!(nonce, 11);
 
         // Bump again from cache (11 → 12).
-        let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async {
-                panic!("should not fetch")
-            })
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
             .await
             .unwrap();
         assert_eq!(nonce, 12);
 
         // Simulate broadcast failure: refresh marks the entry stale
         // but preserves the cached nonce value (12).
-        nonce_cache.refresh(&identity_id).await;
+        sdk.refresh_identity_nonce(&identity_id).await;
 
         // Next call re-fetches from Platform (returns 10, the old value
         // because the tx hasn't confirmed yet).  Phase 3 should see
@@ -600,18 +637,10 @@ mod nonce_cache_tests {
         // This is the fix for dashpay/dash-evo-tool#588: without
         // preserving the cached nonce, we'd get 11 (same as the first
         // broadcast), causing "tx already exists in cache".
-        let fetched = AtomicBool::new(false);
-        let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async {
-                fetched.store(true, Ordering::Relaxed);
-                Ok(10u64)
-            })
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
             .await
             .unwrap();
-        assert!(
-            fetched.load(Ordering::Relaxed),
-            "platform fetch must be triggered after refresh"
-        );
         assert_eq!(nonce, 13);
     }
 
@@ -619,24 +648,40 @@ mod nonce_cache_tests {
     /// (the pending tx was confirmed) should use the Platform value.
     #[tokio::test]
     async fn refresh_uses_platform_nonce_when_higher() {
-        let nonce_cache = NonceCache::default();
+        use drive_proof_verifier::types::IdentityNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
         let identity_id = Identifier::default();
         // Use default stale time so that timestamp=0 is detected as stale.
         let settings = PutSettings::default();
 
+        // First expectation: platform returns 10.
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, Some(IdentityNonceFetcher(10u64)))
+            .await
+            .expect("set mock expectation");
+
         // Seed: platform=10, bump to 11.
-        let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
             .await
             .unwrap();
         assert_eq!(nonce, 11);
 
-        nonce_cache.refresh(&identity_id).await;
+        sdk.refresh_identity_nonce(&identity_id).await;
 
-        // Platform has advanced to 20 (tx confirmed + others).
+        // Update expectation: platform now returns 20.
+        sdk.mock()
+            .remove_fetch_expectation::<IdentityNonceFetcher, _>(identity_id)
+            .await;
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, Some(IdentityNonceFetcher(20u64)))
+            .await
+            .expect("set mock expectation");
+
         // Phase 3: max(cached=11, platform=20) = 20, bump to 21.
-        let nonce = nonce_cache
-            .get_identity_nonce(identity_id, true, &settings, || async { Ok(20u64) })
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
             .await
             .unwrap();
         assert_eq!(nonce, 21);

@@ -6,7 +6,7 @@ use crate::mock::MockResponse;
 #[cfg(feature = "mocks")]
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::{Fetch, Identifier};
+use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
@@ -21,7 +21,6 @@ use dpp::dashcore::Network;
 use dpp::prelude::IdentityNonce;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
-use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
 use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
@@ -348,25 +347,7 @@ impl Sdk {
         let settings = settings.unwrap_or_default();
         let nonce = self
             .nonce_cache
-            .get_identity_nonce(identity_id, bump_first, &settings, || async {
-                let fetcher = IdentityNonceFetcher::fetch_with_settings(
-                    self,
-                    identity_id,
-                    settings.request_settings,
-                )
-                .await?
-                .ok_or_else(|| {
-                    tracing::warn!(
-                        identity_id = %identity_id,
-                        "Platform returned no nonce for identity; \
-                         node may be stale or identity may not exist yet"
-                    );
-                    Error::IdentityNonceNotFound(format!(
-                        "identity {identity_id}: platform returned no nonce"
-                    ))
-                })?;
-                Ok(fetcher.0)
-            })
+            .get_identity_nonce(self, identity_id, bump_first, &settings)
             .await?;
 
         tracing::trace!(
@@ -398,33 +379,7 @@ impl Sdk {
     ) -> Result<IdentityNonce, Error> {
         let settings = settings.unwrap_or_default();
         self.nonce_cache
-            .get_identity_contract_nonce(
-                identity_id,
-                contract_id,
-                bump_first,
-                &settings,
-                || async {
-                    let fetcher = IdentityContractNonceFetcher::fetch_with_settings(
-                        self,
-                        (identity_id, contract_id),
-                        settings.request_settings,
-                    )
-                    .await?
-                    .ok_or_else(|| {
-                        tracing::warn!(
-                            identity_id = %identity_id,
-                            contract_id = %contract_id,
-                            "Platform returned no nonce for identity-contract pair; \
-                             node may be stale or identity may not exist yet"
-                        );
-                        Error::IdentityNonceNotFound(format!(
-                            "identity {identity_id} contract {contract_id}: \
-                             platform returned no nonce"
-                        ))
-                    })?;
-                    Ok(fetcher.0)
-                },
-            )
+            .get_identity_contract_nonce(self, identity_id, contract_id, bump_first, &settings)
             .await
     }
 
