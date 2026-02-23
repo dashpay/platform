@@ -142,6 +142,9 @@ public class WalletManager {
     public func addWallet(mnemonic: String, passphrase: String? = nil,
                           networks: [KeyWalletNetwork],
                           accountOptions: AccountCreationOption = .default) throws -> Data {
+        if networks.count > 1 {
+            print("[WalletManager] Warning: addWallet(networks:) received \(networks.count) networks \(networks), but only the manager's network is used. Extra networks are ignored.")
+        }
         return try addWallet(mnemonic: mnemonic, passphrase: passphrase,
                             accountOptions: accountOptions)
     }
@@ -753,6 +756,9 @@ public class WalletManager {
         downgradeToPublicKeyWallet: Bool = false,
         allowExternalSigning: Bool = false
     ) throws -> (walletId: Data, serializedWallet: Data) {
+        if networks.count > 1 {
+            print("[WalletManager] Warning: addWalletAndSerialize(networks:) received \(networks.count) networks \(networks), but only the manager's network is used. Extra networks are ignored.")
+        }
         return try addWalletAndSerialize(
             mnemonic: mnemonic,
             passphrase: passphrase,
