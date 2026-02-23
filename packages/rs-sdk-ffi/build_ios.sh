@@ -480,7 +480,7 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
         "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
         "$SIM_SPV_LIB" 2>"$LIBTOOL_LOG"; then
         cat "$LIBTOOL_LOG" >&2
-        rm -f "$LIBTOOL_LOG"
+        rm -f "$LIBTOOL_LOG" "${FAT_SPV_SIM:-}"
         exit 1
       fi
       # Filter out expected duplicate member warnings (shared deps between the two libs)
@@ -488,7 +488,7 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
       rm -f "$LIBTOOL_LOG"
       mv "$OUTPUT_DIR/simulator/librs_sdk_ffi_merged.a" "$OUTPUT_DIR/simulator/librs_sdk_ffi.a"
       # Clean up temporary fat SPV archive if it was created
-      rm -f "$OUTPUT_DIR/simulator/libdash_spv_ffi_fat.a"
+      rm -f "${FAT_SPV_SIM:-}"
     fi
     XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
 fi
