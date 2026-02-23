@@ -718,8 +718,8 @@ impl_wasm_type_info!(StateTransitionWasm, StateTransition);
 #[cfg(test)]
 mod tests {
     use dpp::address_funds::PlatformAddress;
-    use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::{
         JsonStateTransitionSerializationOptions, StateTransition, StateTransitionJsonConvert,
     };
