@@ -1,6 +1,7 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
-use crate::error::WasmDppResult;
-use crate::utils::try_to_u64;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
+use crate::utils::{try_to_u64, IntoWasm};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -21,6 +22,8 @@ pub struct PlatformAddressInputWasm {
     nonce: AddressNonce,
     amount: Credits,
 }
+
+impl_wasm_type_info!(PlatformAddressInputWasm, PlatformAddressInput);
 
 #[wasm_bindgen(js_class = PlatformAddressInput)]
 impl PlatformAddressInputWasm {
@@ -65,6 +68,14 @@ impl PlatformAddressInputWasm {
 }
 
 impl PlatformAddressInputWasm {
+    pub fn new(address: PlatformAddress, nonce: AddressNonce, amount: Credits) -> Self {
+        Self {
+            address: address.into(),
+            nonce,
+            amount,
+        }
+    }
+
     /// Returns the inner values as a tuple suitable for BTreeMap insertion.
     pub fn into_inner(self) -> (PlatformAddress, (AddressNonce, Credits)) {
         (self.address.into(), (self.nonce, self.amount))
@@ -85,6 +96,8 @@ pub struct PlatformAddressOutputWasm {
     #[serde(default)]
     amount: Option<Credits>,
 }
+
+impl_wasm_type_info!(PlatformAddressOutputWasm, PlatformAddressOutput);
 
 #[wasm_bindgen(js_class = PlatformAddressOutput)]
 impl PlatformAddressOutputWasm {
@@ -122,6 +135,20 @@ impl PlatformAddressOutputWasm {
 }
 
 impl PlatformAddressOutputWasm {
+    pub fn new(address: PlatformAddress, amount: Credits) -> Self {
+        Self {
+            address: address.into(),
+            amount: Some(amount),
+        }
+    }
+
+    pub fn new_optional(address: PlatformAddress, amount: Option<Credits>) -> Self {
+        Self {
+            address: address.into(),
+            amount,
+        }
+    }
+
     /// Returns the inner values as a tuple suitable for BTreeMap insertion.
     /// Panics if amount is None - use `into_inner_optional` for optional amounts.
     pub fn into_inner(self) -> (PlatformAddress, Credits) {
@@ -155,4 +182,108 @@ pub fn outputs_to_optional_btree_map(
         .into_iter()
         .map(|o| o.into_inner_optional())
         .collect()
+}
+
+/// Extract a Vec<PlatformAddressInputWasm> from a JS options object property.
+///
+/// Reads the named property as a JS array, then extracts each element
+/// as a PlatformAddressInput wasm-bindgen object via its __wbg_ptr.
+pub fn inputs_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Vec<PlatformAddressInputWasm>> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
+    })?;
+    if value.is_undefined() || value.is_null() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' is required",
+            field_name
+        )));
+    }
+    if !js_sys::Array::is_array(&value) {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an array",
+            field_name
+        )));
+    }
+    let array = js_sys::Array::from(&value);
+    array
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.to_wasm::<PlatformAddressInputWasm>("PlatformAddressInput")
+                .map(|r| (*r).clone())
+                .map_err(|_| {
+                    WasmDppError::invalid_argument(format!(
+                        "{}[{}] is not a PlatformAddressInput",
+                        field_name, i
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// Extract a Vec<PlatformAddressOutputWasm> from a JS options object property.
+///
+/// Reads the named property as a JS array, then extracts each element
+/// as a PlatformAddressOutput wasm-bindgen object via its __wbg_ptr.
+pub fn outputs_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Vec<PlatformAddressOutputWasm>> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
+    })?;
+    if value.is_undefined() || value.is_null() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' is required",
+            field_name
+        )));
+    }
+    if !js_sys::Array::is_array(&value) {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' must be an array",
+            field_name
+        )));
+    }
+    let array = js_sys::Array::from(&value);
+    array
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
+                .map(|r| (*r).clone())
+                .map_err(|_| {
+                    WasmDppError::invalid_argument(format!(
+                        "{}[{}] is not a PlatformAddressOutput",
+                        field_name, i
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// Extract an optional PlatformAddressOutputWasm from a JS options object property.
+///
+/// Returns None if the property is undefined or null.
+pub fn optional_output_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Option<PlatformAddressOutputWasm>> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
+        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
+    })?;
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+    value
+        .to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
+        .map(|r| Some((*r).clone()))
+        .map_err(|_| {
+            WasmDppError::invalid_argument(format!(
+                "'{}' is not a PlatformAddressOutput",
+                field_name
+            ))
+        })
 }

@@ -39,8 +39,10 @@ describe('FeeStrategyStep', () => {
   });
 });
 
-// TODO: Implement AddressFundsTransferTransition in wasm-dpp2
-describe.skip('AddressFundsTransferTransition', () => {
+// NOTE: AddressFundsTransferTransition constructor-based tests are in
+// AddressFundsTransferTransition.spec.ts. The .build() API below requires
+// signing which is a higher-level feature not yet available.
+describe.skip('AddressFundsTransferTransition (.build API)', () => {
   // Valid test private key
   const testPrivateKeyHex = 'c9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
   const testPrivateKeyHex2 = 'a9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
