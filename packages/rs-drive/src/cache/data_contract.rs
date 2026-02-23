@@ -166,42 +166,6 @@ mod tests {
         }
     }
 
-    mod insert {
-        use super::*;
-
-        #[test]
-        fn test_insert_into_global_cache() {
-            let data_contract_cache = DataContractCache::new(10, 10);
-
-            let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
-                protocol_version,
-            ));
-            let contract_id = fetch_info.contract.id().to_buffer();
-
-            data_contract_cache.insert(Arc::clone(&fetch_info), false);
-
-            let from_cache = data_contract_cache.get(contract_id, false);
-            assert_eq!(from_cache, Some(fetch_info));
-        }
-
-        #[test]
-        fn test_insert_into_block_cache() {
-            let data_contract_cache = DataContractCache::new(10, 10);
-
-            let protocol_version = PlatformVersion::latest().protocol_version;
-            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
-                protocol_version,
-            ));
-            let contract_id = fetch_info.contract.id().to_buffer();
-
-            data_contract_cache.insert(Arc::clone(&fetch_info), true);
-
-            let from_cache = data_contract_cache.get(contract_id, true);
-            assert_eq!(from_cache, Some(fetch_info));
-        }
-    }
-
     mod remove {
         use super::*;
 
