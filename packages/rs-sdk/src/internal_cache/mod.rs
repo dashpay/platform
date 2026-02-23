@@ -168,22 +168,35 @@ impl NonceCache {
         .await
     }
 
-    /// Removes all nonce cache entries for the given identity, forcing
-    /// a fresh Platform fetch on the next access.
+    /// Marks all nonce cache entries for the given identity as stale,
+    /// forcing a fresh Platform fetch on the next access while
+    /// **preserving** the cached nonce value.
+    ///
+    /// This is critical for correctness: after a broadcast failure the
+    /// cached nonce (already bumped) must be preserved so that the
+    /// Phase 3 `max(cached, platform)` merge in [`get_or_fetch_nonce`]
+    /// can advance past the nonce that was already used, preventing
+    /// "tx already exists in cache" errors on retry.
     pub(crate) async fn refresh(&self, identity_id: &Identifier) {
         {
             let mut guard = self.identity_nonces.lock().await;
-            guard.pop(identity_id);
+            if let Some(entry) = guard.get_mut(identity_id) {
+                entry.last_fetch_timestamp = 0;
+            }
         }
         {
             let mut guard = self.contract_nonces.lock().await;
-            let keys_to_remove: Vec<IdentityContractPair> = guard
+            // LruCache doesn't support iter_mut, so collect keys first
+            // then mark each entry stale via get_mut.
+            let keys: Vec<IdentityContractPair> = guard
                 .iter()
                 .filter(|(pair, _)| pair.identity_id == *identity_id)
                 .map(|(pair, _)| *pair)
                 .collect();
-            for key in keys_to_remove {
-                guard.pop(&key);
+            for key in keys {
+                if let Some(entry) = guard.get_mut(&key) {
+                    entry.last_fetch_timestamp = 0;
+                }
             }
         }
     }
@@ -538,19 +551,19 @@ mod nonce_cache_tests {
 
     // --- refresh removes entries entirely, forcing a refetch ---
     #[tokio::test]
-    async fn refresh_removes_entries_forcing_refetch() {
+    async fn refresh_marks_stale_but_preserves_cached_nonce() {
         let nonce_cache = NonceCache::default();
         let identity_id = Identifier::default();
         let settings = never_stale();
 
-        // Seed via initial fetch.
+        // Seed via initial fetch (platform returns 10, bump to 11).
         let nonce = nonce_cache
             .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
             .await
             .unwrap();
         assert_eq!(nonce, 11);
 
-        // Confirm cache is served (no platform call).
+        // Bump again from cache (11 → 12).
         let nonce = nonce_cache
             .get_identity_nonce(identity_id, true, &settings, || async {
                 panic!("should not fetch")
@@ -559,10 +572,43 @@ mod nonce_cache_tests {
             .unwrap();
         assert_eq!(nonce, 12);
 
-        // Refresh should remove the entry.
+        // Simulate broadcast failure: refresh marks the entry stale
+        // but preserves the cached nonce value (12).
         nonce_cache.refresh(&identity_id).await;
 
-        // Next call must fetch from platform again.
+        // Next call re-fetches from Platform (returns 10, the old value
+        // because the tx hasn't confirmed yet).  Phase 3 should see
+        // max(cached=12, platform=10) = 12, then bump to 13.
+        // This is the fix for dashpay/dash-evo-tool#588: without
+        // preserving the cached nonce, we'd get 11 (same as the first
+        // broadcast), causing "tx already exists in cache".
+        let nonce = nonce_cache
+            .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
+            .await
+            .unwrap();
+        assert_eq!(nonce, 13);
+    }
+
+    /// Refresh followed by a Platform fetch returning a HIGHER nonce
+    /// (the pending tx was confirmed) should use the Platform value.
+    #[tokio::test]
+    async fn refresh_uses_platform_nonce_when_higher() {
+        let nonce_cache = NonceCache::default();
+        let identity_id = Identifier::default();
+        // Use default stale time so that timestamp=0 is detected as stale.
+        let settings = PutSettings::default();
+
+        // Seed: platform=10, bump to 11.
+        let nonce = nonce_cache
+            .get_identity_nonce(identity_id, true, &settings, || async { Ok(10u64) })
+            .await
+            .unwrap();
+        assert_eq!(nonce, 11);
+
+        nonce_cache.refresh(&identity_id).await;
+
+        // Platform has advanced to 20 (tx confirmed + others).
+        // Phase 3: max(cached=11, platform=20) = 20, bump to 21.
         let nonce = nonce_cache
             .get_identity_nonce(identity_id, true, &settings, || async { Ok(20u64) })
             .await
