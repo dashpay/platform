@@ -468,8 +468,9 @@ if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
       SIM_SPV_LIB="$FAT_SPV_SIM"
     elif [ "$BUILD_ARCH" = "x86" ] && [ -f "$SPV_SIM_X86" ]; then
       SIM_SPV_LIB="$SPV_SIM_X86"
-    elif [ -f "$SPV_SIM_ARM" ]; then
-      # arm (default)
+    elif [ "$BUILD_ARCH" != "x86" ] && [ -f "$SPV_SIM_ARM" ]; then
+      # arm64 (default) — only pick the arm64 SPV lib when NOT building for x86,
+      # to prevent merging a mismatched architecture from a stale build.
       SIM_SPV_LIB="$SPV_SIM_ARM"
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
