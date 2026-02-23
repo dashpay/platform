@@ -1,4 +1,5 @@
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
 use dpp::voting::votes::resource_vote::ResourceVote;
@@ -6,8 +7,39 @@ use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone)]
-#[wasm_bindgen(js_name = ResourceVote)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ResourceVote serialized as a plain object.
+ */
+export interface ResourceVoteObject {
+    $version: string;
+    votePoll: VotePollObject;
+    resourceVoteChoice: ResourceVoteChoiceObject;
+}
+
+/**
+ * ResourceVote serialized as JSON.
+ */
+export interface ResourceVoteJSON {
+    $version: string;
+    votePoll: VotePollJSON;
+    resourceVoteChoice: ResourceVoteChoiceJSON;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ResourceVoteObject")]
+    pub type ResourceVoteObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ResourceVoteJSON")]
+    pub type ResourceVoteJSONJs;
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[wasm_bindgen(js_name = "ResourceVote")]
 pub struct ResourceVoteWasm(ResourceVote);
 
 impl From<ResourceVote> for ResourceVoteWasm {
@@ -24,26 +56,16 @@ impl From<ResourceVoteWasm> for ResourceVote {
 
 #[wasm_bindgen(js_class = ResourceVote)]
 impl ResourceVoteWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ResourceVote".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ResourceVote".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(vote_poll: &VotePollWasm, choice: &ResourceVoteChoiceWasm) -> Self {
+    pub fn constructor(poll: &VotePollWasm, choice: &ResourceVoteChoiceWasm) -> Self {
         ResourceVoteWasm(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: vote_poll.clone().into(),
+            vote_poll: poll.clone().into(),
             resource_vote_choice: choice.clone().into(),
         }))
     }
 
-    #[wasm_bindgen(getter = votePoll)]
-    pub fn vote_poll(&self) -> VotePollWasm {
+    #[wasm_bindgen(getter = poll)]
+    pub fn poll(&self) -> VotePollWasm {
         self.0.vote_poll().clone().into()
     }
 
@@ -52,15 +74,15 @@ impl ResourceVoteWasm {
         self.0.resource_vote_choice().into()
     }
 
-    #[wasm_bindgen(setter = votePoll)]
-    pub fn set_vote_poll(&mut self, vote_poll: &VotePollWasm) {
+    #[wasm_bindgen(setter = poll)]
+    pub fn set_poll(&mut self, poll: &VotePollWasm) {
         let ResourceVote::V0(ResourceVoteV0 {
             resource_vote_choice,
             ..
         }) = self.0.clone();
 
         self.0 = ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: vote_poll.clone().into(),
+            vote_poll: poll.clone().into(),
             resource_vote_choice,
         });
     }
@@ -76,4 +98,10 @@ impl ResourceVoteWasm {
     }
 }
 
-impl_wasm_conversions!(ResourceVoteWasm, ResourceVote);
+impl_wasm_conversions!(
+    ResourceVoteWasm,
+    ResourceVote,
+    ResourceVoteObjectJs,
+    ResourceVoteJSONJs
+);
+impl_wasm_type_info!(ResourceVoteWasm, ResourceVote);

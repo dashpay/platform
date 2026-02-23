@@ -103,9 +103,9 @@ Tenderdash is the consensus engine that provides Byzantine Fault Tolerant (BFT) 
 | -------------------- | ------------------ | ------------- | ---------------------------------------------- | -------------------- | -------------------------------------------- |
 | **Drive ABCI**       | ABCI               | 26658         | (fixed internal)                               | (internal)           | -                                            |
 |                      | gRPC               | 26670         | (fixed internal)                               | (internal)           | -                                            |
-|                      | Metrics            | 29090         | (exposed via PLATFORM_DRIVE_ABCI_METRICS_PORT) | 127.0.0.1 (local)    | PLATFORM_DRIVE_ABCI_METRICS_HOST             |
-|                      | Tokio Console      | 6669          | `platform.drive.abci.tokioConsole.port`        | 127.0.0.1 (local)    | `platform.drive.abci.tokioConsole.host`      |
-|                      | GroveDB Visualizer | 8083          | `platform.drive.abci.grovedbVisualizer.port`   | 127.0.0.1 (local)    | `platform.drive.abci.grovedbVisualizer.host` |
+|                      | Metrics            | 29090 (mainnet), 39090 (testnet), 49090 (local) | `platform.drive.abci.metrics.port` | 127.0.0.1 (local)    | `platform.drive.abci.metrics.host`             |
+|                      | Tokio Console      | 6669 (mainnet), 16669 (testnet), 26669 (local) | `platform.drive.abci.tokioConsole.port`        | 127.0.0.1 (local)    | `platform.drive.abci.tokioConsole.host`      |
+|                      | GroveDB Visualizer | 8083 (mainnet), 18083 (testnet), 28083 (local) | `platform.drive.abci.grovedbVisualizer.port`   | 127.0.0.1 (local)    | `platform.drive.abci.grovedbVisualizer.host` |
 | **Drive Tenderdash** | P2P                | 26656         | `platform.drive.tenderdash.p2p.port`           | 0.0.0.0 (all)        | `platform.drive.tenderdash.p2p.host`         |
 |                      | RPC                | 26657         | `platform.drive.tenderdash.rpc.port`           | 127.0.0.1 (local)    | `platform.drive.tenderdash.rpc.host`         |
 |                      | Metrics            | 26660         | `platform.drive.tenderdash.metrics.port`       | 127.0.0.1 (local)    | `platform.drive.tenderdash.metrics.host`     |

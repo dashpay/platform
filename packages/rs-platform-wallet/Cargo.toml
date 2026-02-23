@@ -13,11 +13,11 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-
 platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04", optional = true }
+key-wallet = { workspace = true }
+key-wallet-manager = { workspace = true, optional = true }
 
 # Core dependencies
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+dashcore = { workspace = true }
 
 # Standard dependencies
 thiserror = "1.0"

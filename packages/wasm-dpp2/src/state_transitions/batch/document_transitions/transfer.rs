@@ -1,18 +1,34 @@
+use crate::data_contract::document::DocumentWasm;
+use crate::error::WasmDppResult;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_transfer_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64};
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::DocumentTransferTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_TRANSFER_OPTIONS_TS: &str = r#"
+export interface DocumentTransferTransitionOptions {
+    document: Document;
+    identityContractNonce: bigint;
+    recipientOwnerId: IdentifierLike;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentTransferTransitionOptions")]
+    pub type DocumentTransferTransitionOptionsJs;
+}
 
 #[wasm_bindgen(js_name = "DocumentTransferTransition")]
 pub struct DocumentTransferTransitionWasm(DocumentTransferTransition);
@@ -31,39 +47,27 @@ impl From<DocumentTransferTransitionWasm> for DocumentTransferTransition {
 
 #[wasm_bindgen(js_class = DocumentTransferTransition)]
 impl DocumentTransferTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentTransferTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentTransferTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient_owner_id: &JsValue,
-        js_token_payment_info: &JsValue,
+    pub fn constructor(
+        options: DocumentTransferTransitionOptionsJs,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
-        let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
-                    js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone(),
-                ),
-            };
+        let document: DocumentWasm = try_from_options(&options, "document")?;
+
+        let identity_contract_nonce: IdentityNonce =
+            try_from_options_with(&options, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
+
+        let recipient_owner_id: IdentifierWasm = try_from_options(&options, "recipientOwnerId")?;
+
+        let token_payment_info: Option<TokenPaymentInfoWasm> =
+            try_from_options_optional(&options, "tokenPaymentInfo")?;
 
         let rs_transfer_transition = generate_transfer_transition(
-            document,
+            &document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
-            IdentifierWasm::try_from(js_recipient_owner_id)?.into(),
+            document.document_type_name().to_string(),
+            recipient_owner_id.into(),
             token_payment_info,
         );
 
@@ -71,12 +75,12 @@ impl DocumentTransferTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
-    #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_owner_id(&self) -> IdentifierWasm {
+    #[wasm_bindgen(getter = "recipientOwnerId")]
+    pub fn recipient_owner_id(&self) -> IdentifierWasm {
         self.0.recipient_owner_id().into()
     }
 
@@ -85,14 +89,13 @@ impl DocumentTransferTransitionWasm {
         self.0.set_base(base.clone().into())
     }
 
-    #[wasm_bindgen(setter = "recipientId")]
+    #[wasm_bindgen(setter = "recipientOwnerId")]
     pub fn set_recipient_owner_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient_owner_id: &JsValue,
+        #[wasm_bindgen(js_name = "recipientOwnerId")] recipient_owner_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         self.0
-            .set_recipient_owner_id(IdentifierWasm::try_from(js_recipient_owner_id)?.into());
+            .set_recipient_owner_id(recipient_owner_id.try_into()?);
         Ok(())
     }
 
@@ -105,8 +108,10 @@ impl DocumentTransferTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: &DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
-        js_transition.get_transfer_transition()
+        transition.transfer_transition()
     }
 }
+
+impl_wasm_type_info!(DocumentTransferTransitionWasm, DocumentTransferTransition);

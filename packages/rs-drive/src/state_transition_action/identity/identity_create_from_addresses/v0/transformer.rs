@@ -1,5 +1,6 @@
 use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
@@ -35,12 +36,35 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all balances from inputs
-        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
+        // Sum all balances from inputs (checked to prevent overflow)
+        let total_inputs: Credits = match inputs
+            .values()
+            .try_fold(0u64, |acc, (_, balance)| acc.checked_add(*balance))
+        {
+            Some(sum) => sum,
+            None => {
+                return ConsensusValidationResult::new_with_error(
+                    OverflowError::new(
+                        "Input sum overflow in identity create transformer".to_string(),
+                    )
+                    .into(),
+                )
+            }
+        };
 
         // Subtract the output amount if present
         let fund_identity_amount = match output {
-            Some((_, output_amount)) => total_inputs - output_amount,
+            Some((_, output_amount)) => match total_inputs.checked_sub(*output_amount) {
+                Some(diff) => diff,
+                None => {
+                    return ConsensusValidationResult::new_with_error(
+                        OverflowError::new(
+                            "Output exceeds input sum in identity create transformer".to_string(),
+                        )
+                        .into(),
+                    )
+                }
+            },
             None => total_inputs,
         };
 

@@ -30,6 +30,7 @@ These settings control the peer-to-peer network for Tenderdash nodes:
 | `platform.drive.tenderdash.p2p.host` | Host binding for P2P | `0.0.0.0` | `127.0.0.1` |
 | `platform.drive.tenderdash.p2p.persistentPeers` | Array of peers to maintain persistent connections with | `[]` | See example below |
 | `platform.drive.tenderdash.p2p.seeds` | Array of seed nodes for peer discovery | `[]` | See example below |
+| `platform.drive.tenderdash.p2p.allowlistOnly` | Only allow peers from `persistentPeers` and `seeds` | `false` | `true` |
 | `platform.drive.tenderdash.p2p.flushThrottleTimeout` | Throttle timeout for P2P data | `100ms` | `200ms` |
 | `platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize` | Maximum P2P message size | `10240` | `20480` |
 | `platform.drive.tenderdash.p2p.sendRate` | P2P send rate limit | `5120000` | `10240000` |

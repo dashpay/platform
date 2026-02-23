@@ -117,7 +117,7 @@ describe('Dash - Client', function suite() {
       });
 
       expect.fail('should throw an error');
-    } catch (e) {
+    } catch (e: any) {
       expect(e.message).to.equal('Wallet and Client networks are different');
     }
   });

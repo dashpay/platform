@@ -40,7 +40,7 @@ pub struct ResponseMetadataWasm {
 #[wasm_bindgen(js_class = ResponseMetadata)]
 impl ResponseMetadataWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         height: u64,
         #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
         epoch: u32,
@@ -128,7 +128,7 @@ pub struct ProofInfoWasm {
 #[wasm_bindgen(js_class = ProofInfo)]
 impl ProofInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         #[wasm_bindgen(js_name = "grovedbProof")] grovedb_proof: Uint8Array,
         #[wasm_bindgen(js_name = "quorumHash")] quorum_hash: Uint8Array,
         signature: Uint8Array,
@@ -253,7 +253,11 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
+    pub fn constructor(
+        data: JsValue,
+        metadata: ResponseMetadataWasm,
+        proof: ProofInfoWasm,
+    ) -> Self {
         // Store data as-is. Conversion to JSON happens in to_serde()/toJSON().
         // This allows WASM objects (like DataContractWasm) to be stored directly
         // and their toJSON() method will be called when serializing.
@@ -301,9 +305,9 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js: JsValue) -> Result<Self, WasmSdkError> {
+    pub fn from_json(js: js_sys::Object) -> Result<Self, WasmSdkError> {
         let serde_struct: ProofMetadataResponseSerde =
-            serialization::from_json(js).map_err(WasmSdkError::from)?;
+            serialization::from_json(js.into()).map_err(WasmSdkError::from)?;
         ProofMetadataResponseWasm::from_serde(serde_struct)
     }
 
@@ -314,9 +318,9 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(obj: JsValue) -> Result<Self, WasmSdkError> {
+    pub fn from_object(obj: js_sys::Object) -> Result<Self, WasmSdkError> {
         let serde_struct: ProofMetadataResponseSerde =
-            serialization::from_object(obj).map_err(WasmSdkError::from)?;
+            serialization::from_object(obj.into()).map_err(WasmSdkError::from)?;
         ProofMetadataResponseWasm::from_serde(serde_struct)
     }
 }
@@ -335,7 +339,7 @@ impl ProofMetadataResponseWasm {
         metadata: dash_sdk::platform::proto::ResponseMetadata,
         proof: dash_sdk::platform::proto::Proof,
     ) -> Self {
-        ProofMetadataResponseWasm::new(data.into(), metadata.into(), proof.into())
+        ProofMetadataResponseWasm::constructor(data.into(), metadata.into(), proof.into())
     }
 }
 

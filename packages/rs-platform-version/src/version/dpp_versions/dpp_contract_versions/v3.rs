@@ -16,7 +16,8 @@ pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
     contract_structure_version: 1,
     created_data_contract_structure: 0,
     config: FeatureVersionBounds {
-        min_version: 0,
+        min_version: 1, // changed: V0 config no longer accepted for registration or update.
+        // V0 config lacks sized_integer_types; require V1 for all new and updated contracts.
         max_version: 1,
         default_current_version: 1,
     },

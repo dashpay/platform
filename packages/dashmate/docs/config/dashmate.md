@@ -7,7 +7,7 @@ The `dashmate` section configures the Dashmate helper service that assists with 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `dashmate.helper.api.enable` | Enable helper API | `false` | `true` |
-| `dashmate.helper.api.port` | Helper API port | `9100` | `9101` |
+| `dashmate.helper.api.port` | Helper API port | `9100` (mainnet), `19100` (testnet), `29100` (local) | `9101` |
 
 The helper JSON RPC API provides auxiliary endpoints for monitoring and management.
 When enabled, it will listen on the specified port for API requests.

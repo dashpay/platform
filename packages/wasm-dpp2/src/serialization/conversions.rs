@@ -44,7 +44,7 @@ fn try_call_to_json(value: &JsValue) -> Option<JsValue> {
         return None;
     }
 
-    let func: js_sys::Function = to_json_fn.unchecked_into();
+    let func: js_sys::Function = to_json_fn.into();
     func.call0(value).ok()
 }
 
@@ -100,7 +100,7 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
     // Convert BigInt to string (JSON doesn't support BigInt)
     if value.is_bigint() {
-        let bigint: js_sys::BigInt = value.clone().unchecked_into();
+        let bigint: js_sys::BigInt = value.clone().into();
         let bigint_str = bigint
             .to_string(10)
             .map(|s| s.into())
@@ -110,7 +110,7 @@ fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
     // Convert Uint8Array to plain array for JSON compatibility
     if value.is_instance_of::<js_sys::Uint8Array>() {
-        let uint8_array: js_sys::Uint8Array = value.clone().unchecked_into();
+        let uint8_array: js_sys::Uint8Array = value.clone().into();
         let plain_array = js_sys::Array::from(&uint8_array);
         return Ok(plain_array.into());
     }
@@ -181,7 +181,7 @@ fn map_key_to_string(key: &JsValue) -> String {
 
     // BigInt keys - convert to string
     if key.is_bigint() {
-        let bigint: js_sys::BigInt = key.clone().unchecked_into();
+        let bigint: js_sys::BigInt = key.clone().into();
         return bigint
             .to_string(10)
             .map(|s| s.into())
@@ -192,7 +192,7 @@ fn map_key_to_string(key: &JsValue) -> String {
     if let Ok(to_string_fn) = js_sys::Reflect::get(key, &JsValue::from_str("toString"))
         && to_string_fn.is_function()
     {
-        let func: js_sys::Function = to_string_fn.unchecked_into();
+        let func: js_sys::Function = to_string_fn.into();
         if let Ok(str_result) = func.call0(key)
             && let Some(s) = str_result.as_string()
         {
@@ -206,7 +206,7 @@ fn map_key_to_string(key: &JsValue) -> String {
 
 /// Convert a JavaScript Map to a plain object for JSON serialization.
 fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
-    let map: js_sys::Map = value.clone().unchecked_into();
+    let map: js_sys::Map = value.clone().into();
     let new_obj = Object::new();
 
     // We need to collect errors from the closure since for_each doesn't support Result
@@ -354,8 +354,10 @@ fn convert_value_for_json(value: &platform_value::Value) -> platform_value::Valu
 ///
 /// serde-wasm-bindgen's deserialize_any handles Uint8Array via visit_byte_buf, which creates
 /// Value::Bytes. BigInt is handled via visit_i64/visit_u64.
-pub fn platform_value_from_object(value: JsValue) -> WasmDppResult<platform_value::Value> {
-    serde_wasm_bindgen::from_value(value)
+///
+/// Takes `&JsValue` to allow Deref coercion from js_sys types.
+pub fn platform_value_from_object(value: &JsValue) -> WasmDppResult<platform_value::Value> {
+    serde_wasm_bindgen::from_value(value.clone())
         .map_err(|e| WasmDppError::serialization(format!("platform_value_from_object: {}", e)))
 }
 
@@ -386,7 +388,7 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // BigInt - convert to appropriate integer type
     if value.is_bigint() {
-        let bigint: js_sys::BigInt = value.clone().unchecked_into();
+        let bigint: js_sys::BigInt = value.clone().into();
         // Get string representation and parse
         let bigint_str: String = bigint
             .to_string(10)
@@ -419,7 +421,7 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // Uint8Array - convert to bytes
     if value.is_instance_of::<js_sys::Uint8Array>() {
-        let uint8_array: js_sys::Uint8Array = value.clone().unchecked_into();
+        let uint8_array: js_sys::Uint8Array = value.clone().into();
         let bytes = uint8_array.to_vec();
         // Check for identifier (32 bytes)
         if bytes.len() == 32 {
@@ -443,8 +445,8 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 
     // Object (Map)
     if value.is_object() {
-        let obj = js_sys::Object::from(value.clone());
-        let keys = js_sys::Object::keys(&obj);
+        let obj = Object::from(value.clone());
+        let keys = Object::keys(&obj);
         let mut map = Vec::new();
         for i in 0..keys.length() {
             let key = keys.get(i);
@@ -477,53 +479,81 @@ pub fn js_value_to_platform_value(value: &JsValue) -> WasmDppResult<platform_val
 /// const json = testJsValueToJson(map);
 /// console.log(json); // { key: 'value' }
 /// ```
-#[wasm_bindgen(js_name = testJsValueToJson)]
+#[wasm_bindgen(js_name = "testJsValueToJson")]
 pub fn test_js_value_to_json(value: &JsValue) -> Result<JsValue, WasmDppError> {
     let json_value = js_value_to_json(value)?;
     json_to_js_value(&json_value)
 }
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
-/// for a wasm_bindgen newtype wrapper using the serialization::conversions module.
+/// for a wasm_bindgen type that implements `Serialize` and `DeserializeOwned`.
+///
+/// For newtype wrappers (e.g., `struct FooWasm(Foo)`), add `#[serde(transparent)]`
+/// so serde serializes through the inner type automatically.
 ///
 /// # Usage
 ///
 /// ```ignore
-/// // For newtype wrappers: WrapperType(InnerType)
-/// // JS class name defaults to Rust type name without "Wasm" suffix
+/// // Basic form: returns JsValue for all methods
 /// impl_wasm_conversions!(MyTypeWasm, MyType);
-/// ```
 ///
-/// The inner type must implement `Serialize` and `DeserializeOwned`.
-/// The wrapper type must implement `From<InnerType>` and have a `.0` field.
+/// // With typed return types for better TypeScript support:
+/// impl_wasm_conversions!(MyTypeWasm, MyType, MyTypeObjectJs, MyTypeJSONJs);
+/// ```
 #[macro_export]
 macro_rules! impl_wasm_conversions {
-    // Two-argument form: wrapper type and JS class name
-    ($wrapper:ty, $js_class:ident) => {
+    // Two-argument form: returns JsValue
+    ($ty:ty, $js_class:ident) => {
         #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
-        impl $wrapper {
-            #[wasm_bindgen::prelude::wasm_bindgen(js_name = toObject)]
+        impl $ty {
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
             pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
-                $crate::serialization::conversions::to_object(&self.0)
+                $crate::serialization::conversions::to_object(self)
             }
 
-            #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromObject)]
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromObject")]
             pub fn from_object(
                 obj: wasm_bindgen::JsValue,
-            ) -> Result<$wrapper, $crate::error::WasmDppError> {
-                $crate::serialization::conversions::from_object(obj).map(Self)
+            ) -> Result<$ty, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_object(obj)
             }
 
-            #[wasm_bindgen::prelude::wasm_bindgen(js_name = toJSON)]
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
             pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
-                $crate::serialization::conversions::to_json(&self.0)
+                $crate::serialization::conversions::to_json(self)
             }
 
-            #[wasm_bindgen::prelude::wasm_bindgen(js_name = fromJSON)]
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromJSON")]
             pub fn from_json(
                 js: wasm_bindgen::JsValue,
-            ) -> Result<$wrapper, $crate::error::WasmDppError> {
-                $crate::serialization::conversions::from_json(js).map(Self)
+            ) -> Result<$ty, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_json(js)
+            }
+        }
+    };
+
+    // Four-argument form: with typed Object and JSON return types
+    ($ty:ty, $js_class:ident, $object_type:ty, $json_type:ty) => {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
+        impl $ty {
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
+            pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::to_object(self).map(Into::into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromObject")]
+            pub fn from_object(obj: $object_type) -> Result<$ty, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_object(obj.into())
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
+            pub fn to_json(&self) -> Result<$json_type, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::to_json(self).map(Into::into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromJSON")]
+            pub fn from_json(js: $json_type) -> Result<$ty, $crate::error::WasmDppError> {
+                $crate::serialization::conversions::from_json(js.into())
             }
         }
     };

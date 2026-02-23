@@ -3,7 +3,7 @@ mod fee_strategy;
 mod input_output;
 mod signer;
 
-pub use address::PlatformAddressWasm;
+pub use address::{PlatformAddressLikeArrayJs, PlatformAddressLikeJs, PlatformAddressWasm};
 pub use fee_strategy::{
     FeeStrategyStepWasm, default_fee_strategy, fee_strategy_from_steps,
     fee_strategy_from_steps_or_default,

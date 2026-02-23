@@ -1,4 +1,5 @@
 use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -20,3 +21,5 @@ impl ConsensusErrorWasm {
         self.0.to_string()
     }
 }
+
+impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);

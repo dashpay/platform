@@ -37,11 +37,19 @@ describe('Search Contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      keywordSearchContractDocumentsSchema,
+    );
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema))
+    expect(() => dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      keywordSearchContractDocumentsSchema,
+    ))
       .to
       .not
       .throw();

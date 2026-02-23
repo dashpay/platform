@@ -14,17 +14,26 @@ export class DocumentsFacade {
     return w.getDocuments(query);
   }
 
-  async queryWithProof(query: wasm.DocumentsQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.Document | undefined>>> {
+  async queryWithProof(
+    query: wasm.DocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.Document | undefined>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentsWithProofInfo(query);
   }
 
-  async get(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike): Promise<wasm.Document | undefined> {
+  async get(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike):
+    Promise<wasm.Document | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocument(contractId, type, documentId);
   }
 
-  async getWithProof(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.Document | undefined>> {
+  async getWithProof(
+    contractId: wasm.IdentifierLike,
+    type: string,
+    documentId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.Document | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }

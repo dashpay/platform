@@ -1,12 +1,14 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
+use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
+use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::prelude::{Identifier, UserFeeIncrease};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use dpp::prelude::UserFeeIncrease;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
@@ -14,45 +16,95 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
     StateTransitionSingleSigned,
 };
-use wasm_bindgen::JsValue;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = IdentityCreditTransfer)]
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const CREDIT_TRANSFER_OPTIONS_TS: &str = r#"
+export interface IdentityCreditTransferOptions {
+    amount: bigint;
+    senderId: IdentifierLike;
+    recipientId: IdentifierLike;
+    nonce: bigint;
+    userFeeIncrease?: number;
+}
+
+/**
+ * IdentityCreditTransfer serialized as a plain object.
+ */
+export interface IdentityCreditTransferObject {
+    amount: bigint;
+    senderId: Uint8Array;
+    recipientId: Uint8Array;
+    nonce: bigint;
+    userFeeIncrease: number;
+    signature?: Uint8Array;
+    signaturePublicKeyId?: number;
+}
+
+/**
+ * IdentityCreditTransfer serialized as JSON.
+ */
+export interface IdentityCreditTransferJSON {
+    amount: string;
+    senderId: string;
+    recipientId: string;
+    nonce: string;
+    userFeeIncrease: number;
+    signature?: string;
+    signaturePublicKeyId?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferOptions")]
+    pub type IdentityCreditTransferOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferObject")]
+    pub type IdentityCreditTransferObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityCreditTransferJSON")]
+    pub type IdentityCreditTransferJSONJs;
+}
+
+/// Serde struct for IdentityCreditTransferOptions (primitives only)
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreditTransferOptionsInput {
+    amount: u64,
+    nonce: u64,
+    #[serde(default)]
+    user_fee_increase: UserFeeIncrease,
+}
+
+#[wasm_bindgen(js_name = "IdentityCreditTransfer")]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
 impl IdentityCreditTransferWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentityCreditTransfer".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentityCreditTransfer".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        amount: u64,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_sender: &JsValue,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient: &JsValue,
-        nonce: u64,
-        user_fee_increase: Option<UserFeeIncrease>,
+    pub fn constructor(
+        options: IdentityCreditTransferOptionsJs,
     ) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
-        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
+        // Extract complex types first (borrows &options)
+        let sender_id: IdentifierWasm = try_from_options(&options, "senderId")?;
+        let recipient_id: IdentifierWasm = try_from_options(&options, "recipientId")?;
+
+        // Deserialize primitive fields via serde last (consumes options)
+        let input: IdentityCreditTransferOptionsInput =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
-                identity_id: sender,
-                recipient_id: recipient,
-                amount,
-                nonce,
-                user_fee_increase: user_fee_increase.unwrap_or(0),
+                identity_id: sender_id.into(),
+                recipient_id: recipient_id.into(),
+                amount: input.amount,
+                nonce: input.nonce,
+                user_fee_increase: input.user_fee_increase,
                 signature_public_key_id: 0,
                 signature: Default::default(),
             }),
@@ -99,37 +151,27 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_recipient: &JsValue,
-    ) -> WasmDppResult<()> {
-        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
-
-        self.0.set_recipient_id(recipient);
+    pub fn set_recipient_id(&mut self, recipient: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_recipient_id(recipient.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "senderId")]
-    pub fn set_sender_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_sender: &JsValue,
-    ) -> WasmDppResult<()> {
-        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
-
-        self.0.set_identity_id(sender);
+    pub fn set_sender_id(&mut self, sender: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_identity_id(sender.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "amount")]
-    pub fn set_amount(&mut self, amount: u64) {
-        self.0.set_amount(amount)
+    pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(amount, "amount")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: u64) {
-        self.0.set_nonce(nonce)
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(nonce, "nonce")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "signature")]
@@ -138,52 +180,54 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, public_key_id: u32) {
-        self.0.set_signature_public_key_id(public_key_id)
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: &js_sys::Number,
+    ) -> WasmDppResult<()> {
+        self.0
+            .set_signature_public_key_id(try_to_u32(public_key_id, "signaturePublicKeyId")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: u16) {
-        self.0.set_user_fee_increase(amount)
+    pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
+        self.0
+            .set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Vec<u8> {
+    pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
     }
 
-    #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
-        Ok(self.0.signable_bytes()?)
-    }
-
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> u32 {
+    pub fn signature_public_key_id(&self) -> u32 {
         self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> u16 {
+    pub fn user_fee_increase(&self) -> u16 {
         self.0.user_fee_increase()
     }
 
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_id(&self) -> IdentifierWasm {
+    pub fn recipient_id(&self) -> IdentifierWasm {
         self.0.recipient_id().into()
     }
 
     #[wasm_bindgen(getter = "senderId")]
-    pub fn get_identity_id(&self) -> IdentifierWasm {
+    pub fn sender_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
     #[wasm_bindgen(getter = "amount")]
-    pub fn get_amount(&self) -> u64 {
+    pub fn amount(&self) -> u64 {
         self.0.amount()
     }
 
     #[wasm_bindgen(getter = "nonce")]
-    pub fn get_nonce(&self) -> u64 {
+    pub fn nonce(&self) -> u64 {
         self.0.nonce()
     }
 
@@ -213,4 +257,11 @@ impl IdentityCreditTransferWasm {
     }
 }
 
-impl_wasm_conversions!(IdentityCreditTransferWasm, IdentityCreditTransferTransition);
+impl_wasm_conversions!(
+    IdentityCreditTransferWasm,
+    IdentityCreditTransferTransition,
+    IdentityCreditTransferObjectJs,
+    IdentityCreditTransferJSONJs
+);
+
+impl_wasm_type_info!(IdentityCreditTransferWasm, IdentityCreditTransfer);
