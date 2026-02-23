@@ -1782,6 +1782,130 @@ public final class PlatformGrpc {
     return getGetShieldedNullifiersMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> getGetNullifiersTrunkStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getNullifiersTrunkState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> getGetNullifiersTrunkStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> getGetNullifiersTrunkStateMethod;
+    if ((getGetNullifiersTrunkStateMethod = PlatformGrpc.getGetNullifiersTrunkStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetNullifiersTrunkStateMethod = PlatformGrpc.getGetNullifiersTrunkStateMethod) == null) {
+          PlatformGrpc.getGetNullifiersTrunkStateMethod = getGetNullifiersTrunkStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getNullifiersTrunkState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getNullifiersTrunkState"))
+              .build();
+        }
+      }
+    }
+    return getGetNullifiersTrunkStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> getGetNullifiersBranchStateMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getNullifiersBranchState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> getGetNullifiersBranchStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> getGetNullifiersBranchStateMethod;
+    if ((getGetNullifiersBranchStateMethod = PlatformGrpc.getGetNullifiersBranchStateMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetNullifiersBranchStateMethod = PlatformGrpc.getGetNullifiersBranchStateMethod) == null) {
+          PlatformGrpc.getGetNullifiersBranchStateMethod = getGetNullifiersBranchStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getNullifiersBranchState"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getNullifiersBranchState"))
+              .build();
+        }
+      }
+    }
+    return getGetNullifiersBranchStateMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> getGetRecentNullifierChangesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentNullifierChanges",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> getGetRecentNullifierChangesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> getGetRecentNullifierChangesMethod;
+    if ((getGetRecentNullifierChangesMethod = PlatformGrpc.getGetRecentNullifierChangesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentNullifierChangesMethod = PlatformGrpc.getGetRecentNullifierChangesMethod) == null) {
+          PlatformGrpc.getGetRecentNullifierChangesMethod = getGetRecentNullifierChangesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentNullifierChanges"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentNullifierChanges"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentNullifierChangesMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> getGetRecentCompactedNullifierChangesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getRecentCompactedNullifierChanges",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> getGetRecentCompactedNullifierChangesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> getGetRecentCompactedNullifierChangesMethod;
+    if ((getGetRecentCompactedNullifierChangesMethod = PlatformGrpc.getGetRecentCompactedNullifierChangesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetRecentCompactedNullifierChangesMethod = PlatformGrpc.getGetRecentCompactedNullifierChangesMethod) == null) {
+          PlatformGrpc.getGetRecentCompactedNullifierChangesMethod = getGetRecentCompactedNullifierChangesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getRecentCompactedNullifierChanges"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getRecentCompactedNullifierChanges"))
+              .build();
+        }
+      }
+    }
+    return getGetRecentCompactedNullifierChangesMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -2244,6 +2368,34 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNullifiersMethod(), responseObserver);
     }
 
+    /**
+     */
+    public void getNullifiersTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetNullifiersTrunkStateMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getNullifiersBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetNullifiersBranchStateMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentNullifierChangesMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentCompactedNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetRecentCompactedNullifierChangesMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -2645,6 +2797,34 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>(
                   this, METHODID_GET_SHIELDED_NULLIFIERS)))
+          .addMethod(
+            getGetNullifiersTrunkStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse>(
+                  this, METHODID_GET_NULLIFIERS_TRUNK_STATE)))
+          .addMethod(
+            getGetNullifiersBranchStateMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse>(
+                  this, METHODID_GET_NULLIFIERS_BRANCH_STATE)))
+          .addMethod(
+            getGetRecentNullifierChangesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse>(
+                  this, METHODID_GET_RECENT_NULLIFIER_CHANGES)))
+          .addMethod(
+            getGetRecentCompactedNullifierChangesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse>(
+                  this, METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES)))
           .build();
     }
   }
@@ -3133,6 +3313,38 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     */
+    public void getNullifiersTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetNullifiersTrunkStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getNullifiersBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetNullifiersBranchStateMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentNullifierChangesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getRecentCompactedNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetRecentCompactedNullifierChangesMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -3561,6 +3773,34 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedNullifiersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse getNullifiersTrunkState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetNullifiersTrunkStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse getNullifiersBranchState(org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetNullifiersBranchStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse getRecentNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentNullifierChangesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse getRecentCompactedNullifierChanges(org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetRecentCompactedNullifierChangesMethod(), getCallOptions(), request);
     }
   }
 
@@ -4048,6 +4288,38 @@ public final class PlatformGrpc {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetShieldedNullifiersMethod(), getCallOptions()), request);
     }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse> getNullifiersTrunkState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetNullifiersTrunkStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse> getNullifiersBranchState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetNullifiersBranchStateMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse> getRecentNullifierChanges(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentNullifierChangesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse> getRecentCompactedNullifierChanges(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetRecentCompactedNullifierChangesMethod(), getCallOptions()), request);
+    }
   }
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
@@ -4107,6 +4379,10 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_SHIELDED_ANCHORS = 54;
   private static final int METHODID_GET_SHIELDED_POOL_STATE = 55;
   private static final int METHODID_GET_SHIELDED_NULLIFIERS = 56;
+  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 57;
+  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 58;
+  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 59;
+  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 60;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4353,6 +4629,22 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedNullifiers((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>) responseObserver);
           break;
+        case METHODID_GET_NULLIFIERS_TRUNK_STATE:
+          serviceImpl.getNullifiersTrunkState((org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersTrunkStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_NULLIFIERS_BRANCH_STATE:
+          serviceImpl.getNullifiersBranchState((org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetNullifiersBranchStateResponse>) responseObserver);
+          break;
+        case METHODID_GET_RECENT_NULLIFIER_CHANGES:
+          serviceImpl.getRecentNullifierChanges((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentNullifierChangesResponse>) responseObserver);
+          break;
+        case METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES:
+          serviceImpl.getRecentCompactedNullifierChanges((org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetRecentCompactedNullifierChangesResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -4471,6 +4763,10 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedAnchorsMethod())
               .addMethod(getGetShieldedPoolStateMethod())
               .addMethod(getGetShieldedNullifiersMethod())
+              .addMethod(getGetNullifiersTrunkStateMethod())
+              .addMethod(getGetNullifiersBranchStateMethod())
+              .addMethod(getGetRecentNullifierChangesMethod())
+              .addMethod(getGetRecentCompactedNullifierChangesMethod())
               .build();
         }
       }

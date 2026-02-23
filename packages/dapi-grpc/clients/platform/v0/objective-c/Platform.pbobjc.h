@@ -36,9 +36,12 @@ CF_EXTERN_C_BEGIN
 @class BalanceAndNonce;
 @class BlockAddressBalanceChanges;
 @class BlockHeightCreditEntry;
+@class BlockNullifierChanges;
 @class CompactedAddressBalanceChange;
 @class CompactedAddressBalanceUpdateEntries;
 @class CompactedBlockAddressBalanceChanges;
+@class CompactedBlockNullifierChanges;
+@class CompactedNullifierUpdateEntries;
 @class GPBBytesValue;
 @class GPBUInt32Value;
 @class GetAddressInfoRequest_GetAddressInfoRequestV0;
@@ -187,6 +190,10 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenIdentityInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfoEntry;
 @class GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfos;
+@class GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0;
+@class GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0;
+@class GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0;
+@class GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0;
 @class GetPathElementsRequest_GetPathElementsRequestV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0;
 @class GetPathElementsResponse_GetPathElementsResponseV0_Elements;
@@ -204,6 +211,10 @@ CF_EXTERN_C_BEGIN
 @class GetRecentAddressBalanceChangesResponse_GetRecentAddressBalanceChangesResponseV0;
 @class GetRecentCompactedAddressBalanceChangesRequest_GetRecentCompactedAddressBalanceChangesRequestV0;
 @class GetRecentCompactedAddressBalanceChangesResponse_GetRecentCompactedAddressBalanceChangesResponseV0;
+@class GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0;
+@class GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0;
+@class GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0;
+@class GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0;
 @class GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0;
 @class GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors;
@@ -264,6 +275,7 @@ CF_EXTERN_C_BEGIN
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp;
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps;
 @class KeyRequestType;
+@class NullifierUpdateEntries;
 @class Proof;
 @class ResponseMetadata;
 @class SearchKey;
@@ -9021,6 +9033,433 @@ GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponse
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
 @end
+
+#pragma mark - GetNullifiersTrunkStateRequest
+
+typedef GPB_ENUM(GetNullifiersTrunkStateRequest_FieldNumber) {
+  GetNullifiersTrunkStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetNullifiersTrunkStateRequest_Version_OneOfCase) {
+  GetNullifiersTrunkStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetNullifiersTrunkStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetNullifiersTrunkStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetNullifiersTrunkStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetNullifiersTrunkStateRequest_ClearVersionOneOfCase(GetNullifiersTrunkStateRequest *message);
+
+#pragma mark - GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0
+
+typedef GPB_ENUM(GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber) {
+  GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber_PoolType = 1,
+  GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0_FieldNumber_PoolIdentifier = 2,
+};
+
+GPB_FINAL @interface GetNullifiersTrunkStateRequest_GetNullifiersTrunkStateRequestV0 : GPBMessage
+
+/** ShieldedPoolType enum value (0=credit, 1=main token, 2=individual token) */
+@property(nonatomic, readwrite) uint32_t poolType;
+
+/** 32-byte Identifier, required for pool_type=2 */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *poolIdentifier;
+
+@end
+
+#pragma mark - GetNullifiersTrunkStateResponse
+
+typedef GPB_ENUM(GetNullifiersTrunkStateResponse_FieldNumber) {
+  GetNullifiersTrunkStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetNullifiersTrunkStateResponse_Version_OneOfCase) {
+  GetNullifiersTrunkStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetNullifiersTrunkStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetNullifiersTrunkStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetNullifiersTrunkStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetNullifiersTrunkStateResponse_ClearVersionOneOfCase(GetNullifiersTrunkStateResponse *message);
+
+#pragma mark - GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0
+
+typedef GPB_ENUM(GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber) {
+  GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber_Proof = 2,
+  GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0_FieldNumber_Metadata = 3,
+};
+
+GPB_FINAL @interface GetNullifiersTrunkStateResponse_GetNullifiersTrunkStateResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+#pragma mark - GetNullifiersBranchStateRequest
+
+typedef GPB_ENUM(GetNullifiersBranchStateRequest_FieldNumber) {
+  GetNullifiersBranchStateRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetNullifiersBranchStateRequest_Version_OneOfCase) {
+  GetNullifiersBranchStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetNullifiersBranchStateRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetNullifiersBranchStateRequest : GPBMessage
+
+@property(nonatomic, readonly) GetNullifiersBranchStateRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetNullifiersBranchStateRequest_ClearVersionOneOfCase(GetNullifiersBranchStateRequest *message);
+
+#pragma mark - GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0
+
+typedef GPB_ENUM(GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber) {
+  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_PoolType = 1,
+  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_PoolIdentifier = 2,
+  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_Key = 3,
+  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_Depth = 4,
+  GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0_FieldNumber_CheckpointHeight = 5,
+};
+
+GPB_FINAL @interface GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint32_t poolType;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *poolIdentifier;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readwrite) uint32_t depth;
+
+@property(nonatomic, readwrite) uint64_t checkpointHeight;
+
+@end
+
+#pragma mark - GetNullifiersBranchStateResponse
+
+typedef GPB_ENUM(GetNullifiersBranchStateResponse_FieldNumber) {
+  GetNullifiersBranchStateResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetNullifiersBranchStateResponse_Version_OneOfCase) {
+  GetNullifiersBranchStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetNullifiersBranchStateResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetNullifiersBranchStateResponse : GPBMessage
+
+@property(nonatomic, readonly) GetNullifiersBranchStateResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetNullifiersBranchStateResponse_ClearVersionOneOfCase(GetNullifiersBranchStateResponse *message);
+
+#pragma mark - GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0
+
+typedef GPB_ENUM(GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0_FieldNumber) {
+  GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0_FieldNumber_MerkProof = 2,
+};
+
+GPB_FINAL @interface GetNullifiersBranchStateResponse_GetNullifiersBranchStateResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *merkProof;
+
+@end
+
+#pragma mark - BlockNullifierChanges
+
+typedef GPB_ENUM(BlockNullifierChanges_FieldNumber) {
+  BlockNullifierChanges_FieldNumber_BlockHeight = 1,
+  BlockNullifierChanges_FieldNumber_NullifiersArray = 2,
+};
+
+GPB_FINAL @interface BlockNullifierChanges : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+/** Each is 32 bytes */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *nullifiersArray;
+/** The number of items in @c nullifiersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
+
+@end
+
+#pragma mark - NullifierUpdateEntries
+
+typedef GPB_ENUM(NullifierUpdateEntries_FieldNumber) {
+  NullifierUpdateEntries_FieldNumber_BlockChangesArray = 1,
+};
+
+GPB_FINAL @interface NullifierUpdateEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<BlockNullifierChanges*> *blockChangesArray;
+/** The number of items in @c blockChangesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger blockChangesArray_Count;
+
+@end
+
+#pragma mark - GetRecentNullifierChangesRequest
+
+typedef GPB_ENUM(GetRecentNullifierChangesRequest_FieldNumber) {
+  GetRecentNullifierChangesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentNullifierChangesRequest_Version_OneOfCase) {
+  GetRecentNullifierChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentNullifierChangesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentNullifierChangesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentNullifierChangesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentNullifierChangesRequest_ClearVersionOneOfCase(GetRecentNullifierChangesRequest *message);
+
+#pragma mark - GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0
+
+typedef GPB_ENUM(GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber) {
+  GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber_StartHeight = 1,
+  GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetRecentNullifierChangesRequest_GetRecentNullifierChangesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startHeight;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetRecentNullifierChangesResponse
+
+typedef GPB_ENUM(GetRecentNullifierChangesResponse_FieldNumber) {
+  GetRecentNullifierChangesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentNullifierChangesResponse_Version_OneOfCase) {
+  GetRecentNullifierChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentNullifierChangesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentNullifierChangesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentNullifierChangesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentNullifierChangesResponse_ClearVersionOneOfCase(GetRecentNullifierChangesResponse *message);
+
+#pragma mark - GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0
+
+typedef GPB_ENUM(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber) {
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_NullifierUpdateEntries = 1,
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_Proof = 2,
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase) {
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_NullifierUpdateEntries = 1,
+  GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) NullifierUpdateEntries *nullifierUpdateEntries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0_ClearResultOneOfCase(GetRecentNullifierChangesResponse_GetRecentNullifierChangesResponseV0 *message);
+
+#pragma mark - CompactedBlockNullifierChanges
+
+typedef GPB_ENUM(CompactedBlockNullifierChanges_FieldNumber) {
+  CompactedBlockNullifierChanges_FieldNumber_StartBlockHeight = 1,
+  CompactedBlockNullifierChanges_FieldNumber_EndBlockHeight = 2,
+  CompactedBlockNullifierChanges_FieldNumber_NullifiersArray = 3,
+};
+
+GPB_FINAL @interface CompactedBlockNullifierChanges : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startBlockHeight;
+
+@property(nonatomic, readwrite) uint64_t endBlockHeight;
+
+/** Each is 32 bytes */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *nullifiersArray;
+/** The number of items in @c nullifiersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger nullifiersArray_Count;
+
+@end
+
+#pragma mark - CompactedNullifierUpdateEntries
+
+typedef GPB_ENUM(CompactedNullifierUpdateEntries_FieldNumber) {
+  CompactedNullifierUpdateEntries_FieldNumber_CompactedBlockChangesArray = 1,
+};
+
+GPB_FINAL @interface CompactedNullifierUpdateEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<CompactedBlockNullifierChanges*> *compactedBlockChangesArray;
+/** The number of items in @c compactedBlockChangesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger compactedBlockChangesArray_Count;
+
+@end
+
+#pragma mark - GetRecentCompactedNullifierChangesRequest
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_FieldNumber) {
+  GetRecentCompactedNullifierChangesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_Version_OneOfCase) {
+  GetRecentCompactedNullifierChangesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedNullifierChangesRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentCompactedNullifierChangesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedNullifierChangesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentCompactedNullifierChangesRequest_ClearVersionOneOfCase(GetRecentCompactedNullifierChangesRequest *message);
+
+#pragma mark - GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber) {
+  GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber_StartBlockHeight = 1,
+  GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetRecentCompactedNullifierChangesRequest_GetRecentCompactedNullifierChangesRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t startBlockHeight;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetRecentCompactedNullifierChangesResponse
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_FieldNumber) {
+  GetRecentCompactedNullifierChangesResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_Version_OneOfCase) {
+  GetRecentCompactedNullifierChangesResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedNullifierChangesResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetRecentCompactedNullifierChangesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedNullifierChangesResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetRecentCompactedNullifierChangesResponse_ClearVersionOneOfCase(GetRecentCompactedNullifierChangesResponse *message);
+
+#pragma mark - GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber) {
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_CompactedNullifierUpdateEntries = 1,
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_Proof = 2,
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase) {
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_CompactedNullifierUpdateEntries = 1,
+  GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) CompactedNullifierUpdateEntries *compactedNullifierUpdateEntries;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0_ClearResultOneOfCase(GetRecentCompactedNullifierChangesResponse_GetRecentCompactedNullifierChangesResponseV0 *message);
 
 NS_ASSUME_NONNULL_END
 

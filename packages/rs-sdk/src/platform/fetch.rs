@@ -385,6 +385,14 @@ impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Request = platform_proto::GetShieldedNullifiersRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::RecentNullifierChanges {
+    type Request = platform_proto::GetRecentNullifierChangesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::RecentCompactedNullifierChanges {
+    type Request = platform_proto::GetRecentCompactedNullifierChangesRequest;
+}
+
 /// Refetch the data contract from the network, update the context provider
 /// cache, and return a new [DocumentQuery] with the fresh contract.
 ///

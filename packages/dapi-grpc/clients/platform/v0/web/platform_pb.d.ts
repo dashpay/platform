@@ -11114,6 +11114,580 @@ export namespace GetShieldedNullifiersResponse {
   }
 }
 
+export class GetNullifiersTrunkStateRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0 | undefined;
+  setV0(value?: GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0): void;
+
+  getVersionCase(): GetNullifiersTrunkStateRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetNullifiersTrunkStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetNullifiersTrunkStateRequest): GetNullifiersTrunkStateRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetNullifiersTrunkStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetNullifiersTrunkStateRequest;
+  static deserializeBinaryFromReader(message: GetNullifiersTrunkStateRequest, reader: jspb.BinaryReader): GetNullifiersTrunkStateRequest;
+}
+
+export namespace GetNullifiersTrunkStateRequest {
+  export type AsObject = {
+    v0?: GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.AsObject,
+  }
+
+  export class GetNullifiersTrunkStateRequestV0 extends jspb.Message {
+    getPoolType(): number;
+    setPoolType(value: number): void;
+
+    getPoolIdentifier(): Uint8Array | string;
+    getPoolIdentifier_asU8(): Uint8Array;
+    getPoolIdentifier_asB64(): string;
+    setPoolIdentifier(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetNullifiersTrunkStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetNullifiersTrunkStateRequestV0): GetNullifiersTrunkStateRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetNullifiersTrunkStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetNullifiersTrunkStateRequestV0;
+    static deserializeBinaryFromReader(message: GetNullifiersTrunkStateRequestV0, reader: jspb.BinaryReader): GetNullifiersTrunkStateRequestV0;
+  }
+
+  export namespace GetNullifiersTrunkStateRequestV0 {
+    export type AsObject = {
+      poolType: number,
+      poolIdentifier: Uint8Array | string,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetNullifiersTrunkStateResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0 | undefined;
+  setV0(value?: GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0): void;
+
+  getVersionCase(): GetNullifiersTrunkStateResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetNullifiersTrunkStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetNullifiersTrunkStateResponse): GetNullifiersTrunkStateResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetNullifiersTrunkStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetNullifiersTrunkStateResponse;
+  static deserializeBinaryFromReader(message: GetNullifiersTrunkStateResponse, reader: jspb.BinaryReader): GetNullifiersTrunkStateResponse;
+}
+
+export namespace GetNullifiersTrunkStateResponse {
+  export type AsObject = {
+    v0?: GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.AsObject,
+  }
+
+  export class GetNullifiersTrunkStateResponseV0 extends jspb.Message {
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetNullifiersTrunkStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetNullifiersTrunkStateResponseV0): GetNullifiersTrunkStateResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetNullifiersTrunkStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetNullifiersTrunkStateResponseV0;
+    static deserializeBinaryFromReader(message: GetNullifiersTrunkStateResponseV0, reader: jspb.BinaryReader): GetNullifiersTrunkStateResponseV0;
+  }
+
+  export namespace GetNullifiersTrunkStateResponseV0 {
+    export type AsObject = {
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetNullifiersBranchStateRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0 | undefined;
+  setV0(value?: GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0): void;
+
+  getVersionCase(): GetNullifiersBranchStateRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetNullifiersBranchStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetNullifiersBranchStateRequest): GetNullifiersBranchStateRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetNullifiersBranchStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetNullifiersBranchStateRequest;
+  static deserializeBinaryFromReader(message: GetNullifiersBranchStateRequest, reader: jspb.BinaryReader): GetNullifiersBranchStateRequest;
+}
+
+export namespace GetNullifiersBranchStateRequest {
+  export type AsObject = {
+    v0?: GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.AsObject,
+  }
+
+  export class GetNullifiersBranchStateRequestV0 extends jspb.Message {
+    getPoolType(): number;
+    setPoolType(value: number): void;
+
+    getPoolIdentifier(): Uint8Array | string;
+    getPoolIdentifier_asU8(): Uint8Array;
+    getPoolIdentifier_asB64(): string;
+    setPoolIdentifier(value: Uint8Array | string): void;
+
+    getKey(): Uint8Array | string;
+    getKey_asU8(): Uint8Array;
+    getKey_asB64(): string;
+    setKey(value: Uint8Array | string): void;
+
+    getDepth(): number;
+    setDepth(value: number): void;
+
+    getCheckpointHeight(): number;
+    setCheckpointHeight(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetNullifiersBranchStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetNullifiersBranchStateRequestV0): GetNullifiersBranchStateRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetNullifiersBranchStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetNullifiersBranchStateRequestV0;
+    static deserializeBinaryFromReader(message: GetNullifiersBranchStateRequestV0, reader: jspb.BinaryReader): GetNullifiersBranchStateRequestV0;
+  }
+
+  export namespace GetNullifiersBranchStateRequestV0 {
+    export type AsObject = {
+      poolType: number,
+      poolIdentifier: Uint8Array | string,
+      key: Uint8Array | string,
+      depth: number,
+      checkpointHeight: number,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetNullifiersBranchStateResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0 | undefined;
+  setV0(value?: GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0): void;
+
+  getVersionCase(): GetNullifiersBranchStateResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetNullifiersBranchStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetNullifiersBranchStateResponse): GetNullifiersBranchStateResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetNullifiersBranchStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetNullifiersBranchStateResponse;
+  static deserializeBinaryFromReader(message: GetNullifiersBranchStateResponse, reader: jspb.BinaryReader): GetNullifiersBranchStateResponse;
+}
+
+export namespace GetNullifiersBranchStateResponse {
+  export type AsObject = {
+    v0?: GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.AsObject,
+  }
+
+  export class GetNullifiersBranchStateResponseV0 extends jspb.Message {
+    getMerkProof(): Uint8Array | string;
+    getMerkProof_asU8(): Uint8Array;
+    getMerkProof_asB64(): string;
+    setMerkProof(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetNullifiersBranchStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetNullifiersBranchStateResponseV0): GetNullifiersBranchStateResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetNullifiersBranchStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetNullifiersBranchStateResponseV0;
+    static deserializeBinaryFromReader(message: GetNullifiersBranchStateResponseV0, reader: jspb.BinaryReader): GetNullifiersBranchStateResponseV0;
+  }
+
+  export namespace GetNullifiersBranchStateResponseV0 {
+    export type AsObject = {
+      merkProof: Uint8Array | string,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class BlockNullifierChanges extends jspb.Message {
+  getBlockHeight(): string;
+  setBlockHeight(value: string): void;
+
+  clearNullifiersList(): void;
+  getNullifiersList(): Array<Uint8Array | string>;
+  getNullifiersList_asU8(): Array<Uint8Array>;
+  getNullifiersList_asB64(): Array<string>;
+  setNullifiersList(value: Array<Uint8Array | string>): void;
+  addNullifiers(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): BlockNullifierChanges.AsObject;
+  static toObject(includeInstance: boolean, msg: BlockNullifierChanges): BlockNullifierChanges.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: BlockNullifierChanges, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): BlockNullifierChanges;
+  static deserializeBinaryFromReader(message: BlockNullifierChanges, reader: jspb.BinaryReader): BlockNullifierChanges;
+}
+
+export namespace BlockNullifierChanges {
+  export type AsObject = {
+    blockHeight: string,
+    nullifiersList: Array<Uint8Array | string>,
+  }
+}
+
+export class NullifierUpdateEntries extends jspb.Message {
+  clearBlockChangesList(): void;
+  getBlockChangesList(): Array<BlockNullifierChanges>;
+  setBlockChangesList(value: Array<BlockNullifierChanges>): void;
+  addBlockChanges(value?: BlockNullifierChanges, index?: number): BlockNullifierChanges;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): NullifierUpdateEntries.AsObject;
+  static toObject(includeInstance: boolean, msg: NullifierUpdateEntries): NullifierUpdateEntries.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: NullifierUpdateEntries, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): NullifierUpdateEntries;
+  static deserializeBinaryFromReader(message: NullifierUpdateEntries, reader: jspb.BinaryReader): NullifierUpdateEntries;
+}
+
+export namespace NullifierUpdateEntries {
+  export type AsObject = {
+    blockChangesList: Array<BlockNullifierChanges.AsObject>,
+  }
+}
+
+export class GetRecentNullifierChangesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0 | undefined;
+  setV0(value?: GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0): void;
+
+  getVersionCase(): GetRecentNullifierChangesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentNullifierChangesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentNullifierChangesRequest): GetRecentNullifierChangesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentNullifierChangesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentNullifierChangesRequest;
+  static deserializeBinaryFromReader(message: GetRecentNullifierChangesRequest, reader: jspb.BinaryReader): GetRecentNullifierChangesRequest;
+}
+
+export namespace GetRecentNullifierChangesRequest {
+  export type AsObject = {
+    v0?: GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.AsObject,
+  }
+
+  export class GetRecentNullifierChangesRequestV0 extends jspb.Message {
+    getStartHeight(): string;
+    setStartHeight(value: string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentNullifierChangesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentNullifierChangesRequestV0): GetRecentNullifierChangesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentNullifierChangesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentNullifierChangesRequestV0;
+    static deserializeBinaryFromReader(message: GetRecentNullifierChangesRequestV0, reader: jspb.BinaryReader): GetRecentNullifierChangesRequestV0;
+  }
+
+  export namespace GetRecentNullifierChangesRequestV0 {
+    export type AsObject = {
+      startHeight: string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetRecentNullifierChangesResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0 | undefined;
+  setV0(value?: GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0): void;
+
+  getVersionCase(): GetRecentNullifierChangesResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentNullifierChangesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentNullifierChangesResponse): GetRecentNullifierChangesResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentNullifierChangesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentNullifierChangesResponse;
+  static deserializeBinaryFromReader(message: GetRecentNullifierChangesResponse, reader: jspb.BinaryReader): GetRecentNullifierChangesResponse;
+}
+
+export namespace GetRecentNullifierChangesResponse {
+  export type AsObject = {
+    v0?: GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.AsObject,
+  }
+
+  export class GetRecentNullifierChangesResponseV0 extends jspb.Message {
+    hasNullifierUpdateEntries(): boolean;
+    clearNullifierUpdateEntries(): void;
+    getNullifierUpdateEntries(): NullifierUpdateEntries | undefined;
+    setNullifierUpdateEntries(value?: NullifierUpdateEntries): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetRecentNullifierChangesResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentNullifierChangesResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentNullifierChangesResponseV0): GetRecentNullifierChangesResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentNullifierChangesResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentNullifierChangesResponseV0;
+    static deserializeBinaryFromReader(message: GetRecentNullifierChangesResponseV0, reader: jspb.BinaryReader): GetRecentNullifierChangesResponseV0;
+  }
+
+  export namespace GetRecentNullifierChangesResponseV0 {
+    export type AsObject = {
+      nullifierUpdateEntries?: NullifierUpdateEntries.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      NULLIFIER_UPDATE_ENTRIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class CompactedBlockNullifierChanges extends jspb.Message {
+  getStartBlockHeight(): string;
+  setStartBlockHeight(value: string): void;
+
+  getEndBlockHeight(): string;
+  setEndBlockHeight(value: string): void;
+
+  clearNullifiersList(): void;
+  getNullifiersList(): Array<Uint8Array | string>;
+  getNullifiersList_asU8(): Array<Uint8Array>;
+  getNullifiersList_asB64(): Array<string>;
+  setNullifiersList(value: Array<Uint8Array | string>): void;
+  addNullifiers(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CompactedBlockNullifierChanges.AsObject;
+  static toObject(includeInstance: boolean, msg: CompactedBlockNullifierChanges): CompactedBlockNullifierChanges.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CompactedBlockNullifierChanges, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CompactedBlockNullifierChanges;
+  static deserializeBinaryFromReader(message: CompactedBlockNullifierChanges, reader: jspb.BinaryReader): CompactedBlockNullifierChanges;
+}
+
+export namespace CompactedBlockNullifierChanges {
+  export type AsObject = {
+    startBlockHeight: string,
+    endBlockHeight: string,
+    nullifiersList: Array<Uint8Array | string>,
+  }
+}
+
+export class CompactedNullifierUpdateEntries extends jspb.Message {
+  clearCompactedBlockChangesList(): void;
+  getCompactedBlockChangesList(): Array<CompactedBlockNullifierChanges>;
+  setCompactedBlockChangesList(value: Array<CompactedBlockNullifierChanges>): void;
+  addCompactedBlockChanges(value?: CompactedBlockNullifierChanges, index?: number): CompactedBlockNullifierChanges;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): CompactedNullifierUpdateEntries.AsObject;
+  static toObject(includeInstance: boolean, msg: CompactedNullifierUpdateEntries): CompactedNullifierUpdateEntries.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: CompactedNullifierUpdateEntries, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): CompactedNullifierUpdateEntries;
+  static deserializeBinaryFromReader(message: CompactedNullifierUpdateEntries, reader: jspb.BinaryReader): CompactedNullifierUpdateEntries;
+}
+
+export namespace CompactedNullifierUpdateEntries {
+  export type AsObject = {
+    compactedBlockChangesList: Array<CompactedBlockNullifierChanges.AsObject>,
+  }
+}
+
+export class GetRecentCompactedNullifierChangesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0 | undefined;
+  setV0(value?: GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0): void;
+
+  getVersionCase(): GetRecentCompactedNullifierChangesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentCompactedNullifierChangesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentCompactedNullifierChangesRequest): GetRecentCompactedNullifierChangesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentCompactedNullifierChangesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentCompactedNullifierChangesRequest;
+  static deserializeBinaryFromReader(message: GetRecentCompactedNullifierChangesRequest, reader: jspb.BinaryReader): GetRecentCompactedNullifierChangesRequest;
+}
+
+export namespace GetRecentCompactedNullifierChangesRequest {
+  export type AsObject = {
+    v0?: GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.AsObject,
+  }
+
+  export class GetRecentCompactedNullifierChangesRequestV0 extends jspb.Message {
+    getStartBlockHeight(): string;
+    setStartBlockHeight(value: string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentCompactedNullifierChangesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentCompactedNullifierChangesRequestV0): GetRecentCompactedNullifierChangesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentCompactedNullifierChangesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentCompactedNullifierChangesRequestV0;
+    static deserializeBinaryFromReader(message: GetRecentCompactedNullifierChangesRequestV0, reader: jspb.BinaryReader): GetRecentCompactedNullifierChangesRequestV0;
+  }
+
+  export namespace GetRecentCompactedNullifierChangesRequestV0 {
+    export type AsObject = {
+      startBlockHeight: string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetRecentCompactedNullifierChangesResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0 | undefined;
+  setV0(value?: GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0): void;
+
+  getVersionCase(): GetRecentCompactedNullifierChangesResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetRecentCompactedNullifierChangesResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetRecentCompactedNullifierChangesResponse): GetRecentCompactedNullifierChangesResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetRecentCompactedNullifierChangesResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetRecentCompactedNullifierChangesResponse;
+  static deserializeBinaryFromReader(message: GetRecentCompactedNullifierChangesResponse, reader: jspb.BinaryReader): GetRecentCompactedNullifierChangesResponse;
+}
+
+export namespace GetRecentCompactedNullifierChangesResponse {
+  export type AsObject = {
+    v0?: GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.AsObject,
+  }
+
+  export class GetRecentCompactedNullifierChangesResponseV0 extends jspb.Message {
+    hasCompactedNullifierUpdateEntries(): boolean;
+    clearCompactedNullifierUpdateEntries(): void;
+    getCompactedNullifierUpdateEntries(): CompactedNullifierUpdateEntries | undefined;
+    setCompactedNullifierUpdateEntries(value?: CompactedNullifierUpdateEntries): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetRecentCompactedNullifierChangesResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetRecentCompactedNullifierChangesResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetRecentCompactedNullifierChangesResponseV0): GetRecentCompactedNullifierChangesResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetRecentCompactedNullifierChangesResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetRecentCompactedNullifierChangesResponseV0;
+    static deserializeBinaryFromReader(message: GetRecentCompactedNullifierChangesResponseV0, reader: jspb.BinaryReader): GetRecentCompactedNullifierChangesResponseV0;
+  }
+
+  export namespace GetRecentCompactedNullifierChangesResponseV0 {
+    export type AsObject = {
+      compactedNullifierUpdateEntries?: CompactedNullifierUpdateEntries.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      COMPACTED_NULLIFIER_UPDATE_ENTRIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;

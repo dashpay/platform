@@ -580,4 +580,28 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse
     );
+
+    drive_method!(
+        get_nullifiers_trunk_state,
+        dapi_grpc::platform::v0::GetNullifiersTrunkStateRequest,
+        dapi_grpc::platform::v0::GetNullifiersTrunkStateResponse
+    );
+
+    drive_method!(
+        get_nullifiers_branch_state,
+        dapi_grpc::platform::v0::GetNullifiersBranchStateRequest,
+        dapi_grpc::platform::v0::GetNullifiersBranchStateResponse
+    );
+
+    drive_method!(
+        get_recent_nullifier_changes,
+        dapi_grpc::platform::v0::GetRecentNullifierChangesRequest,
+        dapi_grpc::platform::v0::GetRecentNullifierChangesResponse
+    );
+
+    drive_method!(
+        get_recent_compacted_nullifier_changes,
+        dapi_grpc::platform::v0::GetRecentCompactedNullifierChangesRequest,
+        dapi_grpc::platform::v0::GetRecentCompactedNullifierChangesResponse
+    );
 }

@@ -1275,5 +1275,85 @@
              responseClass:[GetShieldedNullifiersResponse class]];
 }
 
+#pragma mark getNullifiersTrunkState(GetNullifiersTrunkStateRequest) returns (GetNullifiersTrunkStateResponse)
+
+- (void)getNullifiersTrunkStateWithRequest:(GetNullifiersTrunkStateRequest *)request handler:(void(^)(GetNullifiersTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetNullifiersTrunkStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetNullifiersTrunkStateWithRequest:(GetNullifiersTrunkStateRequest *)request handler:(void(^)(GetNullifiersTrunkStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getNullifiersTrunkState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetNullifiersTrunkStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getNullifiersTrunkStateWithMessage:(GetNullifiersTrunkStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getNullifiersTrunkState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetNullifiersTrunkStateResponse class]];
+}
+
+#pragma mark getNullifiersBranchState(GetNullifiersBranchStateRequest) returns (GetNullifiersBranchStateResponse)
+
+- (void)getNullifiersBranchStateWithRequest:(GetNullifiersBranchStateRequest *)request handler:(void(^)(GetNullifiersBranchStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetNullifiersBranchStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetNullifiersBranchStateWithRequest:(GetNullifiersBranchStateRequest *)request handler:(void(^)(GetNullifiersBranchStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getNullifiersBranchState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetNullifiersBranchStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getNullifiersBranchStateWithMessage:(GetNullifiersBranchStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getNullifiersBranchState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetNullifiersBranchStateResponse class]];
+}
+
+#pragma mark getRecentNullifierChanges(GetRecentNullifierChangesRequest) returns (GetRecentNullifierChangesResponse)
+
+- (void)getRecentNullifierChangesWithRequest:(GetRecentNullifierChangesRequest *)request handler:(void(^)(GetRecentNullifierChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentNullifierChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentNullifierChangesWithRequest:(GetRecentNullifierChangesRequest *)request handler:(void(^)(GetRecentNullifierChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentNullifierChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentNullifierChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentNullifierChangesWithMessage:(GetRecentNullifierChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentNullifierChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentNullifierChangesResponse class]];
+}
+
+#pragma mark getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest) returns (GetRecentCompactedNullifierChangesResponse)
+
+- (void)getRecentCompactedNullifierChangesWithRequest:(GetRecentCompactedNullifierChangesRequest *)request handler:(void(^)(GetRecentCompactedNullifierChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetRecentCompactedNullifierChangesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetRecentCompactedNullifierChangesWithRequest:(GetRecentCompactedNullifierChangesRequest *)request handler:(void(^)(GetRecentCompactedNullifierChangesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getRecentCompactedNullifierChanges"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetRecentCompactedNullifierChangesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getRecentCompactedNullifierChangesWithMessage:(GetRecentCompactedNullifierChangesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getRecentCompactedNullifierChanges"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetRecentCompactedNullifierChangesResponse class]];
+}
+
 @end
 #endif
