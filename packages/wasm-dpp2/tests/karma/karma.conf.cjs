@@ -5,11 +5,11 @@ module.exports = (config) => {
     ...options,
     files: [
       '../bootstrap.cjs',
-      '../unit/**/*.spec.mjs',
+      '../unit/**/*.spec.ts',
     ],
     preprocessors: {
       '../bootstrap.cjs': ['webpack'],
-      '../unit/**/*.spec.mjs': ['webpack'],
+      '../unit/**/*.spec.ts': ['webpack'],
     },
   });
 };

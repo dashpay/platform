@@ -121,7 +121,7 @@ describe('Platform', () => {
           await register.call(platformMock, 'user.dash', {
             identity: await generateRandomIdentifier(),
           }, identityMock);
-        } catch (e) {
+        } catch (e: any) {
           expect(e.message).to.equal('DPNS is required to register a new name.');
         }
       });

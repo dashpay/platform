@@ -5,22 +5,34 @@ export class VotingFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async contestedResourceVoteState(query: wasm.ContestedResourceVoteStateQuery): Promise<wasm.ContestedResourceVoteState> {
+  async contestedResourceVoteState(
+    query: wasm.ContestedResourceVoteStateQuery,
+  ): Promise<wasm.ContestedResourceVoteState> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVoteState(query);
   }
 
-  async contestedResourceVoteStateWithProof(query: wasm.ContestedResourceVoteStateQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.ContestedResourceVoteState>> {
+  async contestedResourceVoteStateWithProof(
+    query: wasm.ContestedResourceVoteStateQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    wasm.ContestedResourceVoteState
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVoteStateWithProofInfo(query);
   }
 
-  async contestedResourceIdentityVotes(query: wasm.ContestedResourceIdentityVotesQuery): Promise<Map<wasm.Identifier, wasm.ResourceVote>> {
+  async contestedResourceIdentityVotes(
+    query: wasm.ContestedResourceIdentityVotesQuery,
+  ): Promise<Map<wasm.Identifier, wasm.ResourceVote>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotes(query);
   }
 
-  async contestedResourceIdentityVotesWithProof(query: wasm.ContestedResourceIdentityVotesQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.ResourceVote>>> {
+  async contestedResourceIdentityVotesWithProof(
+    query: wasm.ContestedResourceIdentityVotesQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<wasm.Identifier, wasm.ResourceVote>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotesWithProofInfo(query);
   }
@@ -28,13 +40,17 @@ export class VotingFacade {
   async votePollsByEndDate(query?: wasm.VotePollsByEndDateQuery): Promise<wasm.VotePollsByEndDateEntry[]> {
     const w = await this.sdk.getWasmSdkConnected();
 
-    return w.getVotePollsByEndDate(query ?? null);
+    return w.getVotePollsByEndDate(query);
   }
 
-  async votePollsByEndDateWithProof(query?: wasm.VotePollsByEndDateQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.VotePollsByEndDateEntry[]>> {
+  async votePollsByEndDateWithProof(
+    query?: wasm.VotePollsByEndDateQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    wasm.VotePollsByEndDateEntry[]
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
 
-    return w.getVotePollsByEndDateWithProofInfo(query ?? null);
+    return w.getVotePollsByEndDateWithProofInfo(query);
   }
 
   async masternodeVote(options: wasm.MasternodeVoteOptions): Promise<void> {

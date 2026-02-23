@@ -4,7 +4,7 @@ use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
-use dash_sdk::dpp::platform_value::{platform_value, Value};
+use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
@@ -16,7 +16,7 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENTS_QUERY_TS: &'static str = r#"
@@ -286,22 +286,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
                 Err(WasmSdkError::invalid_argument("Unsupported number type"))
             }
         }
-        JsonValue::String(s) => {
-            // TODO: Should use Identifier::try_from and return text if failed
-            // Check if it's an identifier (base58 encoded)
-            if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
-                // Try to parse as identifier
-                match Identifier::from_string(
-                    s,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                ) {
-                    Ok(id) => Ok(platform_value!(id)),
-                    Err(_) => Ok(Value::Text(s.clone())),
-                }
-            } else {
-                Ok(Value::Text(s.clone()))
-            }
-        }
+        JsonValue::String(s) => Ok(Value::Text(s.clone())),
         JsonValue::Array(arr) => {
             let values: Result<Vec<Value>, WasmSdkError> =
                 arr.iter().map(json_to_platform_value).collect();
@@ -395,24 +380,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "documentType")] document_type: &str,
-        #[wasm_bindgen(js_name = "documentId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        document_id: JsValue,
+        #[wasm_bindgen(js_name = "documentId")] document_id: IdentifierLikeJs,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
         // Parse IDs
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-            })?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
-        let doc_id: Identifier = IdentifierWasm::try_from(&document_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
-            .into();
+        let doc_id: Identifier = document_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err))
+        })?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -439,24 +418,18 @@ impl WasmSdk {
     )]
     pub async fn get_document_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "documentType")] document_type: &str,
-        #[wasm_bindgen(js_name = "documentId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        document_id: JsValue,
+        #[wasm_bindgen(js_name = "documentId")] document_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse IDs
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-            })?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
-        let doc_id: Identifier = IdentifierWasm::try_from(&document_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
-            .into();
+        let doc_id: Identifier = document_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err))
+        })?;
 
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;

@@ -231,6 +231,7 @@ impl ErrorWithCode for BasicError {
             Self::InputsNotLessThanOutputsError(_) => 10815,
             Self::OutputAddressAlsoInputError(_) => 10816,
             Self::InvalidRemainderOutputCountError(_) => 10817,
+            Self::WithdrawalBelowMinAmountError(_) => 10818,
         }
     }
 }

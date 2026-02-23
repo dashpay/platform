@@ -45,7 +45,15 @@ members = [
     "packages/wasm-sdk",
 ]
 
+[workspace.dependencies]
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+
 [workspace.package]
 
-version = "3.0.0"
+version = "3.1.0-dev.1"
 rust-version = "1.92"

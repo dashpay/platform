@@ -11,14 +11,14 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STAT
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v1::TOKEN_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_validation_versions::v2::DPP_VALIDATION_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v7::DRIVE_ABCI_METHOD_VERSIONS_V7;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v7::DRIVE_ABCI_VALIDATION_VERSIONS_V7;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v8::DRIVE_ABCI_VALIDATION_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v6::DRIVE_VERSION_V6;
@@ -30,21 +30,23 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 
-/// This version was for Platform release 3.1.0
+/// This version is for Platform release 3.1.0
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
     drive: DRIVE_VERSION_V6,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V7,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V7,
+        // enforce minimum config version check for contract create/update transitions
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V2,
+        // prevent sized_integer_types config downgrade on contract update
+        validation: DPP_VALIDATION_VERSIONS_V3,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,

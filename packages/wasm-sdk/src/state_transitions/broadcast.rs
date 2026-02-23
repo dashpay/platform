@@ -10,6 +10,9 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use wasm_bindgen::prelude::*;
+use wasm_dpp2::state_transitions::proof_result::{
+    convert_proof_result, StateTransitionProofResultTypeJs,
+};
 use wasm_dpp2::StateTransitionWasm;
 
 #[wasm_bindgen]
@@ -49,13 +52,13 @@ impl WasmSdk {
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns JSON representation of the state transition result
+    /// @returns The verified state transition result
     #[wasm_bindgen(js_name = "waitForResponse")]
     pub async fn wait_for_response(
         &self,
         #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
         settings: Option<PutSettingsJs>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
 
@@ -66,9 +69,7 @@ impl WasmSdk {
                 WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
             })?;
 
-        // Convert result to a JsValue representation
-        let result_str = format!("{:?}", result);
-        Ok(JsValue::from_str(&result_str))
+        convert_proof_result(result).map_err(WasmSdkError::from)
     }
 
     /// Broadcasts a state transition and waits for the result.
@@ -80,13 +81,13 @@ impl WasmSdk {
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns JSON representation of the state transition result
+    /// @returns The verified state transition result
     #[wasm_bindgen(js_name = "broadcastAndWait")]
     pub async fn broadcast_and_wait(
         &self,
         #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
         settings: Option<PutSettingsJs>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
 
@@ -95,8 +96,6 @@ impl WasmSdk {
             .await
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
-        // Convert result to a JsValue representation
-        let result_str = format!("{:?}", result);
-        Ok(JsValue::from_str(&result_str))
+        convert_proof_result(result).map_err(WasmSdkError::from)
     }
 }

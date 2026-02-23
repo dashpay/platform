@@ -15,7 +15,7 @@ export class SystemFacade {
     return w.getCurrentQuorumsInfo();
   }
 
-  async totalCreditsInPlatform(): Promise<bigint | undefined> {
+  async totalCreditsInPlatform(): Promise<bigint> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTotalCreditsInPlatform();
   }
@@ -25,19 +25,20 @@ export class SystemFacade {
     return w.getTotalCreditsInPlatformWithProofInfo();
   }
 
-  async prefundedSpecializedBalance(identityId: wasm.IdentifierLike): Promise<wasm.PrefundedSpecializedBalance | undefined> {
+  async prefundedSpecializedBalance(
+    identityId: wasm.IdentifierLike,
+  ): Promise<wasm.PrefundedSpecializedBalance> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPrefundedSpecializedBalance(identityId);
   }
 
-  async prefundedSpecializedBalanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.PrefundedSpecializedBalance | undefined>> {
+  async prefundedSpecializedBalanceWithProof(
+    identityId: wasm.IdentifierLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    wasm.PrefundedSpecializedBalance | undefined
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPrefundedSpecializedBalanceWithProofInfo(identityId);
-  }
-
-  async waitForStateTransitionResult(stateTransitionHash: string): Promise<wasm.StateTransitionResult> {
-    const w = await this.sdk.getWasmSdkConnected();
-    return w.waitForStateTransitionResult(stateTransitionHash);
   }
 
   async pathElements(path: string[], keys: string[]): Promise<wasm.PathElement[]> {
@@ -45,7 +46,8 @@ export class SystemFacade {
     return w.getPathElements(path, keys);
   }
 
-  async pathElementsWithProof(path: string[], keys: string[]): Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
+  async pathElementsWithProof(path: string[], keys: string[]):
+    Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElementsWithProofInfo(path, keys);
   }

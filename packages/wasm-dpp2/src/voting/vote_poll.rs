@@ -1,16 +1,69 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
-use crate::utils::ToSerdeJSONExt;
-use crate::{impl_try_from_options, impl_wasm_conversions};
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
+use crate::{
+    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
+};
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use js_sys::Array;
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone)]
-#[wasm_bindgen(js_name = VotePoll)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VotePollOptions {
+    document_type_name: String,
+    index_name: String,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export interface VotePollOptions {
+    contractId: IdentifierLike;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
+}
+
+/**
+ * VotePoll serialized as a plain object.
+ */
+export interface VotePollObject {
+    contractId: Uint8Array;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
+}
+
+/**
+ * VotePoll serialized as JSON.
+ */
+export interface VotePollJSON {
+    contractId: string;
+    documentTypeName: string;
+    indexName: string;
+    indexValues: any[];
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "VotePollOptions")]
+    pub type VotePollOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "VotePollObject")]
+    pub type VotePollObjectJs;
+
+    #[wasm_bindgen(typescript_type = "VotePollJSON")]
+    pub type VotePollJSONJs;
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[wasm_bindgen(js_name = "VotePoll")]
 pub struct VotePollWasm(VotePoll);
 
 impl From<VotePoll> for VotePollWasm {
@@ -27,36 +80,28 @@ impl From<VotePollWasm> for VotePoll {
 
 #[wasm_bindgen(js_class = VotePoll)]
 impl VotePollWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "VotePoll".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "VotePoll".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
-        document_type_name: String,
-        index_name: String,
-        js_index_values: JsValue,
-    ) -> WasmDppResult<VotePollWasm> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();
+    pub fn constructor(options: VotePollOptionsJs) -> WasmDppResult<VotePollWasm> {
+        // Extract contractId (required)
+        let contract_id: IdentifierWasm = try_from_options(&options, "contractId")?;
 
-        let index_values_value = js_index_values.with_serde_to_platform_value()?;
-        let index_values = index_values_value
-            .into_array()
-            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        // Extract indexValues (required)
+        let index_values = try_from_options_with(&options, "indexValues", |v| {
+            let index_values_value = v.with_serde_to_platform_value()?;
+            index_values_value
+                .into_array()
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+        })?;
+
+        // Extract simple fields via serde
+        let opts: VotePollOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
         Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(
             ContestedDocumentResourceVotePoll {
-                contract_id,
-                document_type_name,
-                index_name,
+                contract_id: contract_id.into(),
+                document_type_name: opts.document_type_name,
+                index_name: opts.index_name,
                 index_values,
             },
         )))
@@ -121,10 +166,9 @@ impl VotePollWasm {
     #[wasm_bindgen(setter = "contractId")]
     pub fn set_contract_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id = contract_id.try_into()?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
@@ -138,7 +182,10 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "documentTypeName")]
-    pub fn set_document_type_name(&mut self, document_type_name: String) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.document_type_name = document_type_name;
@@ -149,7 +196,7 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexName")]
-    pub fn set_index_name(&mut self, index_name: String) {
+    pub fn set_index_name(&mut self, #[wasm_bindgen(js_name = "indexName")] index_name: String) {
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
                 poll.index_name = index_name;
@@ -160,15 +207,19 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexValues")]
-    pub fn set_index_values(&mut self, js_index_values: JsValue) -> WasmDppResult<()> {
-        let index_values = js_index_values
+    pub fn set_index_values(
+        &mut self,
+        #[wasm_bindgen(js_name = "indexValues")] index_values: js_sys::Array,
+    ) -> WasmDppResult<()> {
+        let js_value: JsValue = index_values.into();
+        let values = js_value
             .with_serde_to_platform_value()?
             .into_array()
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
-                poll.index_values = index_values;
+                poll.index_values = values;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }
@@ -178,5 +229,7 @@ impl VotePollWasm {
     }
 }
 
-impl_try_from_options!(VotePollWasm, "VotePoll");
-impl_wasm_conversions!(VotePollWasm, VotePoll);
+impl_try_from_js_value!(VotePollWasm, "VotePoll");
+impl_try_from_options!(VotePollWasm);
+impl_wasm_conversions!(VotePollWasm, VotePoll, VotePollObjectJs, VotePollJSONJs);
+impl_wasm_type_info!(VotePollWasm, VotePoll);

@@ -97,6 +97,33 @@ esac
 # Get script directory and package directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(dirname "$SCRIPT_DIR")/$PACKAGE_NAME"
+REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# --- Pre-flight: verify wasm-bindgen-cli version matches the crate dependency ---
+REQUIRED_WB_VERSION=$(awk '/^name = "wasm-bindgen"$/{getline; print}' "$REPO_ROOT/Cargo.lock" | head -1 | sed 's/version = "//;s/"//')
+if [ -n "$REQUIRED_WB_VERSION" ]; then
+    if command -v wasm-bindgen &> /dev/null; then
+        INSTALLED_WB_VERSION=$(wasm-bindgen --version 2>/dev/null | awk '{print $2}')
+        if [ "$INSTALLED_WB_VERSION" != "$REQUIRED_WB_VERSION" ]; then
+            echo ""
+            echo "ERROR: wasm-bindgen version mismatch!"
+            echo ""
+            echo "  Installed wasm-bindgen-cli:  $INSTALLED_WB_VERSION"
+            echo "  Required by Cargo.lock:      $REQUIRED_WB_VERSION"
+            echo ""
+            echo "Fix with:  cargo install -f wasm-bindgen-cli --version $REQUIRED_WB_VERSION"
+            echo ""
+            exit 1
+        fi
+    else
+        echo ""
+        echo "ERROR: wasm-bindgen-cli is not installed."
+        echo ""
+        echo "Install with:  cargo install wasm-bindgen-cli --version $REQUIRED_WB_VERSION"
+        echo ""
+        exit 1
+    fi
+fi
 
 # Change to package directory
 cd "$PACKAGE_DIR"

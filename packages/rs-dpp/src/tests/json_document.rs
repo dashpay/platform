@@ -1,5 +1,7 @@
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 #[cfg(feature = "data-contract-json-conversion")]
+use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "data-contract-json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
@@ -84,7 +86,12 @@ pub fn json_document_to_created_contract(
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path, full_validation, platform_version)?;
+    let mut data_contract = json_document_to_contract(path, full_validation, platform_version)?;
+
+    // JSON fixtures typically lack a config field, so they deserialize with V0 config default.
+    // Set config to the platform version default to match what the factory would produce,
+    // ensuring the contract passes config min_version validation during state transition processing.
+    data_contract.set_config(DataContractConfig::default_for_version(platform_version)?);
 
     Ok(CreatedDataContractV0 {
         data_contract,

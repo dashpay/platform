@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "3.0.0",
+  "version": "3.1.0-dev.1",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -42,11 +42,17 @@
   },
   "devDependencies": {
     "@iarna/toml": "^2.2.5",
+    "@typescript-eslint/parser": "^8.0.0",
     "add-stream": "^1.0.0",
     "conventional-changelog": "^3.1.24",
     "conventional-changelog-dash": "github:dashevo/conventional-changelog-dash",
+    "eslint": "^9.18.0",
+    "eslint-config-airbnb-extended": "^3.0.1",
+    "eslint-plugin-jsdoc": "^50.6.3",
+    "globals": "^15.14.0",
     "semver": "^7.5.3",
     "tempfile": "^3.0.0",
+    "typescript": "^5.7.3",
     "ultra-runner": "^3.10.5"
   },
   "workspaces": [
@@ -75,6 +81,7 @@
     "packages/js-evo-sdk"
   ],
   "resolutions": {
+    "tar": "7.5.9",
     "pbkdf2": "^3.1.3",
     "elliptic": "6.6.1",
     "bn.js": "4.12.0",
@@ -108,7 +115,6 @@
     "cross-spawn": "^7.0.5",
     "nanoid": "^3.3.8",
     "tar-fs": "^3.0.9",
-    "tar": "^7.5.4",
     "brace-expansion": "^2.0.2",
     "cipher-base": "^1.0.5",
     "sha.js": "^2.4.12",

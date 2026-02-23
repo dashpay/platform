@@ -112,24 +112,24 @@ jobs:
           echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
           "$HOME/.local/protoc-32.0/bin/protoc" --version
 
-      - name: Determine rust-dashcore revision (from rs-dpp)
+      - name: Determine rust-dashcore revision (from workspace Cargo.toml)
         id: dashcore_rev
         shell: bash
         run: |
           set -euo pipefail
           # Use the same rust-dashcore revision/tag as rs-dpp
           # Try to find tag first (preferred format)
-          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*tag[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*tag[[:space:]]*=' Cargo.toml \
                 | sed -E 's/.*tag[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
                 | head -n1 || true)
           # If no tag found, try rev format
           if [ -z "${REV:-}" ]; then
-            REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+            REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' Cargo.toml \
                   | sed -E 's/.*rev[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
                   | head -n1 || true)
           fi
           if [ -z "${REV:-}" ]; then
-            echo "Failed to determine rust-dashcore revision or tag from Cargo.toml" >&2
+            echo "Failed to determine rust-dashcore revision or tag from workspace Cargo.toml" >&2
             exit 1
           fi
           echo "rev=$REV" >> "$GITHUB_OUTPUT"
