@@ -56,7 +56,7 @@ impl Default for DashSDKAddressSyncConfig {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DashSDKAddressSyncMetrics {
-    /// Number of trunk queries (always 1 for a successful sync)
+    /// Number of trunk queries (0 for incremental-only, 1 for full scan)
     pub trunk_queries: u32,
 
     /// Number of branch queries

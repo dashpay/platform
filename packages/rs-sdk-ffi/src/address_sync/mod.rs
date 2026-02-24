@@ -399,6 +399,7 @@ mod tests {
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_concurrent_requests, 10);
         assert_eq!(config.max_iterations, 50);
+        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
     }
 
     #[test]
