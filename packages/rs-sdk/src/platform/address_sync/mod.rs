@@ -12,12 +12,15 @@
 //!
 //! # Sync Modes
 //!
-//! The behavior depends on [`AddressSyncConfig::last_sync_height`]:
+//! The behavior depends on the `last_sync_timestamp` parameter passed to
+//! [`sync_address_balances`]:
 //!
-//! - **`None` or `Some(0)`** — Full tree scan, then incremental catch-up from
-//!   the tree snapshot to chain tip.
-//! - **`Some(height)`** — Incremental-only from that height (unless the height
-//!   is too old per `full_rescan_after_time_s`, in which case a full scan runs).
+//! - **`None`** — Full tree scan, then incremental catch-up from the tree
+//!   snapshot to chain tip.
+//! - **`Some(timestamp)`** — Incremental-only from
+//!   [`AddressProvider::last_sync_height`] (unless the elapsed time exceeds
+//!   [`AddressSyncConfig::full_rescan_after_time_s`], in which case a full
+//!   scan runs).
 //!
 //! # Example
 //!

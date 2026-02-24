@@ -116,7 +116,7 @@ pub trait AddressProvider: Send {
 
     /// Get the last sync height from a previous sync.
     ///
-    /// Returns the [`AddressSyncResult::new_sync_height`] value from the
+    /// Returns the [`new_sync_height`](super::AddressSyncResult::new_sync_height) value from the
     /// previous call. Used as the starting block height for incremental-only
     /// catch-up. The caller should store this value after each sync and
     /// return it here on subsequent calls.
