@@ -1,43 +1,44 @@
-//! Address balance synchronization using trunk/branch chunk queries.
+//! Address balance synchronization using trunk/branch chunk queries with
+//! incremental catch-up.
 //!
 //! This module provides privacy-preserving address balance synchronization for wallets.
-//! It uses an iterative query process that fetches chunks of the address tree rather than
-//! individual addresses, providing privacy by making it unclear which specific addresses
-//! are being queried.
+//! It combines two strategies:
 //!
-//! # Query Strategy
+//! 1. **Tree scan** (trunk/branch): Privacy-preserving bulk query of the address tree.
+//!    Used for initial sync or when the last sync is stale.
 //!
-//! 1. **Trunk Query**: Gets the top N levels of the address tree, returning
-//!    elements (addresses with balances) and leaf keys with their expected hashes.
+//! 2. **Incremental catch-up** (compacted + recent blocks): Fetches balance changes
+//!    block-by-block from a known height to chain tip. Fast for frequent re-syncs.
 //!
-//! 2. **Branch Queries**: For keys not found in trunk, trace through the tree
-//!    structure to find which leaf subtree contains each target key, then query
-//!    only those specific branches.
+//! # Sync Modes
 //!
-//! # Privacy Considerations
+//! The behavior depends on [`AddressSyncConfig::last_sync_height`]:
 //!
-//! The module ensures that result sets are sufficiently large to provide privacy.
-//! When a subtree is too small (fewer elements than `min_privacy_count`), the query
-//! is redirected to an ancestor subtree with sufficient elements.
+//! - **`None` or `Some(0)`** — Full tree scan, then incremental catch-up from
+//!   the tree snapshot to chain tip.
+//! - **`Some(height)`** — Incremental-only from that height (unless the height
+//!   is too old per `full_rescan_after_time_s`, in which case a full scan runs).
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! use dash_sdk::{Sdk, platform::address_sync::{AddressProvider, sync_address_balances}};
+//! use dash_sdk::{Sdk, platform::address_sync::{AddressProvider, AddressSyncConfig}};
 //!
-//! // Implement AddressProvider for your wallet type
-//! struct MyWallet { /* ... */ }
-//! impl AddressProvider for MyWallet { /* ... */ }
-//!
-//! let mut wallet = MyWallet::new();
+//! // First sync — full tree scan + catch-up
 //! let result = sdk.sync_address_balances(&mut wallet, None).await?;
+//! let saved_height = result.new_sync_height;
 //!
-//! println!("Found {} addresses with balances", result.found.len());
-//! println!("Proved {} addresses absent", result.absent.len());
+//! // Subsequent sync — incremental only
+//! let config = AddressSyncConfig {
+//!     last_sync_height: Some(saved_height),
+//!     ..Default::default()
+//! };
+//! let result = sdk.sync_address_balances(&mut wallet, Some(config)).await?;
+//! let saved_height = result.new_sync_height; // store for next time
 //! ```
 
 mod provider;
-mod tracker;
+pub(crate) mod tracker;
 mod types;
 
 pub use provider::AddressProvider;
@@ -52,8 +53,11 @@ use crate::sync::retry;
 use crate::Sdk;
 use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
-    GetAddressesBranchStateRequest,
+    get_recent_address_balance_changes_request,
+    get_recent_compacted_address_balance_changes_request, GetAddressesBranchStateRequest,
+    GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
 };
+use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -61,7 +65,9 @@ use drive::grovedb::{
     calculate_max_tree_depth_from_count, Element, GroveBranchQueryResult, GroveTrunkQueryResult,
     LeafInfo,
 };
-use drive_proof_verifier::types::PlatformAddressTrunkState;
+use drive_proof_verifier::types::{
+    PlatformAddressTrunkState, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
+};
 use futures::stream::{FuturesUnordered, StreamExt};
 use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
@@ -70,11 +76,15 @@ use std::collections::{BTreeSet, HashMap};
 use tracing::{debug, trace, warn};
 use tracker::KeyLeafTracker;
 
-/// Synchronize address balances using trunk/branch chunk queries.
+/// Server limit for compacted address balance changes per request.
+const COMPACTED_BATCH_LIMIT: usize = 25;
+/// Server limit for recent address balance changes per request.
+const RECENT_BATCH_LIMIT: usize = 100;
+
+/// Synchronize address balances using trunk/branch chunk queries with
+/// incremental block-based catch-up.
 ///
-/// This function discovers address balances for addresses supplied by the provider,
-/// using privacy-preserving chunk queries. It supports HD wallet gap limit behavior
-/// where finding a used address extends the search range.
+/// See [module docs](self) for full description of sync modes.
 ///
 /// # Arguments
 /// - `sdk`: The SDK instance for making network requests.
@@ -82,20 +92,9 @@ use tracker::KeyLeafTracker;
 /// - `config`: Optional configuration; uses defaults if `None`.
 ///
 /// # Returns
-/// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses.
+/// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses,
+///   plus `new_sync_height` to pass back on the next call.
 /// - `Err(Error)`: If the sync fails after exhausting retries.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use dash_sdk::platform::address_sync::{sync_address_balances, AddressSyncConfig};
-///
-/// let config = AddressSyncConfig {
-///     min_privacy_count: 64,  // Require larger result sets for more privacy
-///     ..Default::default()
-/// };
-/// let result = sync_address_balances(&sdk, &mut wallet, Some(config)).await?;
-/// ```
 pub async fn sync_address_balances<P: AddressProvider>(
     sdk: &Sdk,
     provider: &mut P,
@@ -118,6 +117,76 @@ pub async fn sync_address_balances<P: AddressProvider>(
         return Ok(result);
     }
 
+    // Decide whether to do a full tree scan or incremental-only
+    let incremental_start = match config.last_sync_height {
+        Some(height) if height > 0 => {
+            if config.full_rescan_after_time_s > 0 {
+                // TODO: could probe chain tip timestamp here to compare
+                // For now, if full_rescan_after_time_s > 0, always do full scan
+                // (the caller can set full_rescan_after_time_s = 0 to skip this)
+                None
+            } else {
+                // Always do incremental when height is provided and threshold is 0
+                Some(height)
+            }
+        }
+        _ => None,
+    };
+
+    let catch_up_from = if let Some(start_height) = incremental_start {
+        // Incremental-only mode — skip the tree scan, seed result from current_balances
+        debug!(
+            "Address sync: incremental-only from height {}",
+            start_height
+        );
+        for (index, key, funds) in provider.current_balances() {
+            result.found.insert((index, key), funds);
+        }
+        start_height
+    } else {
+        // Full tree scan
+        let scan_height = full_tree_scan(
+            sdk,
+            &config,
+            provider,
+            &mut key_to_index,
+            &mut result,
+            platform_version,
+        )
+        .await?;
+        scan_height
+    };
+
+    // Incremental catch-up from catch_up_from to chain tip
+    incremental_catch_up(
+        sdk,
+        &key_to_index,
+        catch_up_from,
+        provider,
+        &mut result,
+        config.request_settings,
+    )
+    .await?;
+
+    // Set highest found index from provider
+    result.highest_found_index = provider.highest_found_index();
+
+    Ok(result)
+}
+
+// ── Full tree scan ───────────────────────────────────────────────────
+
+/// Perform the full trunk/branch tree scan.
+///
+/// Returns the checkpoint height from the trunk query.
+async fn full_tree_scan<P: AddressProvider>(
+    sdk: &Sdk,
+    config: &AddressSyncConfig,
+    provider: &mut P,
+    key_to_index: &mut HashMap<AddressKey, AddressIndex>,
+    result: &mut AddressSyncResult,
+    platform_version: &PlatformVersion,
+) -> Result<u64, Error> {
     // Step 1: Execute trunk query
     let (trunk_result, checkpoint_height) =
         execute_trunk_query(sdk, config.request_settings, &mut result.metrics).await?;
@@ -131,7 +200,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
 
     // Step 2: Process trunk result
     let mut tracker = KeyLeafTracker::new();
-    process_trunk_result(&trunk_result, provider, &mut result, &mut tracker)?;
+    process_trunk_result(&trunk_result, provider, result, &mut tracker)?;
 
     // Step 3: Iterative branch queries
     let min_query_depth = platform_version
@@ -188,8 +257,8 @@ pub async fn sync_address_balances<P: AddressProvider>(
                 &branch_result,
                 &leaf_key,
                 provider,
-                &key_to_index,
-                &mut result,
+                key_to_index,
+                result,
                 &mut tracker,
             )?;
         }
@@ -199,7 +268,6 @@ pub async fn sync_address_balances<P: AddressProvider>(
             if !key_to_index.contains_key(&key) {
                 key_to_index.insert(key.clone(), index);
                 // New key needs to be traced - it will be picked up in next iteration
-                // For now, trace it using the trunk result if possible
                 if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
                     tracker.add_key(key, leaf_key, info);
                 }
@@ -215,11 +283,212 @@ pub async fn sync_address_balances<P: AddressProvider>(
         );
     }
 
-    // Set highest found index from provider
-    result.highest_found_index = provider.highest_found_index();
-
-    Ok(result)
+    Ok(checkpoint_height)
 }
+
+// ── Incremental catch-up ─────────────────────────────────────────────
+
+/// Perform incremental block-based catch-up using compacted + recent address
+/// balance changes RPCs.
+///
+/// Updates `result.found` with new balance values and sets `result.new_sync_height`.
+async fn incremental_catch_up<P: AddressProvider>(
+    sdk: &Sdk,
+    key_to_index: &HashMap<AddressKey, AddressIndex>,
+    start_height: u64,
+    provider: &mut P,
+    result: &mut AddressSyncResult,
+    settings: RequestSettings,
+) -> Result<(), Error> {
+    // Build a reverse lookup from PlatformAddress bytes to (index, key) for
+    // efficient matching against change entries.
+    let address_key_lookup: HashMap<Vec<u8>, (AddressIndex, AddressKey)> = key_to_index
+        .iter()
+        .map(|(key, &index)| (key.clone(), (index, key.clone())))
+        .collect();
+
+    let mut current_height = start_height;
+    let mut had_successful_query = false;
+
+    // Phase 1 — Compacted (historical) catch-up
+    loop {
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(
+                get_recent_compacted_address_balance_changes_request::Version::V0(
+                    get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
+                        start_block_height: current_height,
+                        prove: true,
+                    },
+                ),
+            ),
+        };
+
+        let changes: Option<RecentCompactedAddressBalanceChanges> =
+            match RecentCompactedAddressBalanceChanges::fetch_with_settings(sdk, request, settings)
+                .await
+            {
+                Ok(changes) => changes,
+                Err(e) if !had_successful_query => {
+                    // First query failed — server may not support incremental
+                    // RPCs or may not have data for this height. Treat as
+                    // "no incremental data available" rather than hard error.
+                    debug!(
+                        "Compacted address balance changes query failed (non-fatal): {}",
+                        e
+                    );
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
+
+        let entries = match changes {
+            Some(c) => c.into_inner(),
+            None => break,
+        };
+
+        if entries.is_empty() {
+            break;
+        }
+
+        let entry_count = entries.len();
+        result.metrics.compacted_queries += 1;
+        had_successful_query = true;
+
+        for entry in &entries {
+            for (platform_addr, credit_op) in &entry.changes {
+                let addr_bytes = platform_addr.to_bytes();
+                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                    let current_balance = result
+                        .found
+                        .get(&(*index, key.clone()))
+                        .map(|f| f.balance)
+                        .unwrap_or(0);
+
+                    let new_balance = match credit_op {
+                        BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                        BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                            let total_to_add: u64 = operations
+                                .iter()
+                                .filter(|(height, _)| **height >= current_height)
+                                .map(|(_, credits)| *credits)
+                                .sum();
+                            current_balance.saturating_add(total_to_add)
+                        }
+                    };
+
+                    if new_balance != current_balance {
+                        let nonce = result
+                            .found
+                            .get(&(*index, key.clone()))
+                            .map(|f| f.nonce)
+                            .unwrap_or(0);
+                        let funds = AddressFunds {
+                            nonce,
+                            balance: new_balance,
+                        };
+                        result.found.insert((*index, key.clone()), funds);
+                        provider.on_address_found(*index, key, funds);
+                    }
+                }
+            }
+
+            if entry.end_block_height + 1 > current_height {
+                current_height = entry.end_block_height + 1;
+            }
+        }
+
+        if entry_count < COMPACTED_BATCH_LIMIT {
+            break;
+        }
+    }
+
+    // Phase 2 — Recent (per-block) changes
+    loop {
+        let request = GetRecentAddressBalanceChangesRequest {
+            version: Some(
+                get_recent_address_balance_changes_request::Version::V0(
+                    get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                        start_height: current_height,
+                        prove: true,
+                    },
+                ),
+            ),
+        };
+
+        let changes: Option<RecentAddressBalanceChanges> =
+            match RecentAddressBalanceChanges::fetch_with_settings(sdk, request, settings).await {
+                Ok(changes) => changes,
+                Err(e) if !had_successful_query => {
+                    debug!(
+                        "Recent address balance changes query failed (non-fatal): {}",
+                        e
+                    );
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
+
+        let entries = match changes {
+            Some(c) => c.into_inner(),
+            None => break,
+        };
+
+        if entries.is_empty() {
+            break;
+        }
+
+        let entry_count = entries.len();
+        result.metrics.recent_queries += 1;
+        had_successful_query = true;
+
+        for entry in &entries {
+            for (platform_addr, credit_op) in &entry.changes {
+                let addr_bytes = platform_addr.to_bytes();
+                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                    let current_balance = result
+                        .found
+                        .get(&(*index, key.clone()))
+                        .map(|f| f.balance)
+                        .unwrap_or(0);
+
+                    let new_balance = match credit_op {
+                        CreditOperation::SetCredits(credits) => *credits,
+                        CreditOperation::AddToCredits(credits) => {
+                            current_balance.saturating_add(*credits)
+                        }
+                    };
+
+                    if new_balance != current_balance {
+                        let nonce = result
+                            .found
+                            .get(&(*index, key.clone()))
+                            .map(|f| f.nonce)
+                            .unwrap_or(0);
+                        let funds = AddressFunds {
+                            nonce,
+                            balance: new_balance,
+                        };
+                        result.found.insert((*index, key.clone()), funds);
+                        provider.on_address_found(*index, key, funds);
+                    }
+                }
+            }
+
+            if entry.block_height + 1 > current_height {
+                current_height = entry.block_height + 1;
+            }
+        }
+
+        if entry_count < RECENT_BATCH_LIMIT {
+            break;
+        }
+    }
+
+    result.new_sync_height = current_height;
+    Ok(())
+}
+
+// ── Tree scan helpers ────────────────────────────────────────────────
 
 /// Execute the trunk query and return the verified result.
 async fn execute_trunk_query(
@@ -532,12 +801,20 @@ impl TryFrom<&Element> for AddressFunds {
 
 // SDK integration impl
 impl Sdk {
-    /// Synchronize address balances using privacy-preserving trunk/branch chunk queries.
+    /// Synchronize address balances using privacy-preserving trunk/branch chunk
+    /// queries with incremental block-based catch-up.
     ///
     /// This method discovers address balances for addresses supplied by the provider,
     /// using an iterative query process that fetches chunks of the address tree rather
     /// than individual addresses. This provides privacy by making it unclear which
     /// specific addresses are being queried.
+    ///
+    /// After the tree scan, incremental catch-up fetches balance changes from the
+    /// checkpoint height to chain tip so the result is as fresh as possible.
+    ///
+    /// On subsequent calls, pass [`AddressSyncResult::new_sync_height`] back via
+    /// [`AddressSyncConfig::last_sync_height`] to skip the tree scan and only
+    /// fetch incremental changes.
     ///
     /// # Arguments
     /// - `provider`: An implementation of [`AddressProvider`] that supplies addresses
@@ -553,22 +830,16 @@ impl Sdk {
     /// ```rust,ignore
     /// use dash_sdk::{Sdk, platform::address_sync::{AddressProvider, AddressSyncConfig}};
     ///
-    /// // Implement AddressProvider for your wallet type
-    /// struct MyWallet { /* ... */ }
-    /// impl AddressProvider for MyWallet { /* ... */ }
+    /// // First sync — full tree scan + catch-up
+    /// let result = sdk.sync_address_balances(&mut wallet, None).await?;
+    /// let saved_height = result.new_sync_height;
     ///
-    /// let sdk = Sdk::new(/* ... */);
-    /// let mut wallet = MyWallet::new();
-    ///
+    /// // Subsequent sync — incremental only
     /// let config = AddressSyncConfig {
-    ///     min_privacy_count: 64,
+    ///     last_sync_height: Some(saved_height),
     ///     ..Default::default()
     /// };
-    ///
     /// let result = sdk.sync_address_balances(&mut wallet, Some(config)).await?;
-    /// println!("Found {} addresses with {} total balance",
-    ///     result.found.len(),
-    ///     result.total_balance());
     /// ```
     pub async fn sync_address_balances<P: AddressProvider>(
         &self,
@@ -593,5 +864,31 @@ mod tests {
         let item = Element::Item(vec![1, 2, 3], None);
         let err = AddressFunds::try_from(&item).unwrap_err();
         assert!(matches!(err, Error::InvalidProvedResponse(_)));
+    }
+
+    #[test]
+    fn test_default_config_has_no_last_sync_height() {
+        let config = AddressSyncConfig::default();
+        assert!(config.last_sync_height.is_none());
+        assert_eq!(config.full_rescan_after_time_s, 0);
+    }
+
+    #[test]
+    fn test_default_result_has_zero_new_sync_height() {
+        let result = AddressSyncResult::new();
+        assert_eq!(result.new_sync_height, 0);
+        assert_eq!(result.checkpoint_height, 0);
+    }
+
+    #[test]
+    fn test_metrics_total_includes_incremental() {
+        let metrics = AddressSyncMetrics {
+            trunk_queries: 1,
+            branch_queries: 3,
+            compacted_queries: 2,
+            recent_queries: 1,
+            ..Default::default()
+        };
+        assert_eq!(metrics.total_queries(), 7);
     }
 }

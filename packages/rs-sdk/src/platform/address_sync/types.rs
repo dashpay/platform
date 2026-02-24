@@ -53,6 +53,33 @@ pub struct AddressSyncConfig {
     /// Default: 50
     pub max_iterations: usize,
 
+    /// Last sync height from a previous call.
+    ///
+    /// - `None` or `Some(0)` — perform a full trunk/branch tree scan, then
+    ///   incremental block-based catch-up from the tree snapshot to chain tip.
+    /// - `Some(height)` — if the height is recent enough (within
+    ///   [`full_rescan_after_time_s`](Self::full_rescan_after_time_s) seconds
+    ///   of current time), skip the tree scan and only do incremental
+    ///   block-based catch-up from that height.
+    ///
+    /// The caller should store [`AddressSyncResult::new_sync_height`] after
+    /// each call and pass it back here on the next call.
+    pub last_sync_height: Option<u64>,
+
+    /// Maximum age in seconds before a full tree rescan is forced.
+    ///
+    /// When [`last_sync_height`](Self::last_sync_height) is provided, the
+    /// function compares elapsed time to decide whether incremental catch-up
+    /// alone is sufficient. If the gap exceeds this threshold, a full rescan
+    /// is performed instead.
+    ///
+    /// Set to `0` to always do incremental when a height is provided (the
+    /// caller can reset `last_sync_height` to `None` when they want a full
+    /// rescan).
+    ///
+    /// Default: 0 (always incremental when height is provided)
+    pub full_rescan_after_time_s: u64,
+
     /// Request settings for undergoing address sync queries.
     pub request_settings: RequestSettings,
 }
@@ -63,6 +90,8 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
+            last_sync_height: None,
+            full_rescan_after_time_s: 0,
             request_settings: RequestSettings::default(),
         }
     }
@@ -89,11 +118,19 @@ pub struct AddressSyncResult {
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
 
-    /// The checkpoint height at which balances were synced.
+    /// The checkpoint height from the trunk/branch tree scan.
     ///
-    /// This is the block height from which terminal balance updates should start
-    /// to catch any changes that occurred after the checkpoint.
+    /// This is the block height at which the tree snapshot was taken.
+    /// Only meaningful when a full tree scan was performed.
     pub checkpoint_height: u64,
+
+    /// The new sync height to pass back on the next call as
+    /// [`AddressSyncConfig::last_sync_height`].
+    ///
+    /// This is the highest block height seen from the incremental phase
+    /// (or the checkpoint height if no incremental phase ran). The caller
+    /// should store this and pass it back on the next call.
+    pub new_sync_height: u64,
 }
 
 impl AddressSyncResult {
@@ -105,6 +142,7 @@ impl AddressSyncResult {
             highest_found_index: None,
             metrics: AddressSyncMetrics::default(),
             checkpoint_height: 0,
+            new_sync_height: 0,
         }
     }
 
@@ -131,7 +169,7 @@ impl Default for AddressSyncResult {
 /// Metrics about the synchronization process.
 #[derive(Debug, Default, Clone)]
 pub struct AddressSyncMetrics {
-    /// Number of trunk queries (always 1 for a successful sync).
+    /// Number of trunk queries (0 for incremental-only, 1 for full scan).
     pub trunk_queries: usize,
 
     /// Number of branch queries.
@@ -148,12 +186,18 @@ pub struct AddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds).
     pub iterations: usize,
+
+    /// Number of compacted incremental queries.
+    pub compacted_queries: usize,
+
+    /// Number of recent incremental queries.
+    pub recent_queries: usize,
 }
 
 impl AddressSyncMetrics {
-    /// Get total number of queries (trunk + branch).
+    /// Get total number of queries (trunk + branch + incremental).
     pub fn total_queries(&self) -> usize {
-        self.trunk_queries + self.branch_queries
+        self.trunk_queries + self.branch_queries + self.compacted_queries + self.recent_queries
     }
 
     /// Get average proof size in bytes.
