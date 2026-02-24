@@ -385,6 +385,10 @@ impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Request = platform_proto::GetShieldedNullifiersRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::NullifiersTrunkState {
+    type Request = platform_proto::GetNullifiersTrunkStateRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::RecentNullifierChanges {
     type Request = platform_proto::GetRecentNullifierChangesRequest;
 }

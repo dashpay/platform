@@ -877,6 +877,32 @@ pub struct ShieldedEncryptedNotesQuery {
 )]
 pub struct ShieldedNullifiersQuery(pub Vec<Vec<u8>>);
 
+/// Query parameters for nullifier trunk state retrieval.
+///
+/// Used with the `GetNullifiersTrunkStateRequest` RPC to fetch the top levels
+/// of the nullifier tree for privacy-preserving synchronization.
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct NullifiersTrunkQuery {
+    /// The shielded pool type (0 = credit, 1 = main token, 2 = individual token).
+    pub pool_type: u32,
+    /// Optional 32-byte identifier for individual token pools.
+    pub pool_identifier: Option<Vec<u8>>,
+}
+
+impl Default for NullifiersTrunkQuery {
+    fn default() -> Self {
+        Self {
+            pool_type: 0,
+            pool_identifier: None,
+        }
+    }
+}
+
 /// Nullifier changes for a single block.
 #[derive(Debug, Clone)]
 #[cfg_attr(

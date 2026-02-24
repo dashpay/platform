@@ -28,9 +28,10 @@ use dapi_grpc::platform::v0::{
     GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
-    GetContestedResourceIdentityVotesRequest, GetPrefundedSpecializedBalanceRequest,
+    get_nullifiers_trunk_state_request, get_shielded_anchors_request,
+    get_shielded_encrypted_notes_request, get_shielded_nullifiers_request,
+    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetNullifiersTrunkStateRequest, GetPrefundedSpecializedBalanceRequest,
     GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
@@ -47,7 +48,8 @@ use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuer
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{
-    KeysInPath, NoParamQuery, ShieldedEncryptedNotesQuery, ShieldedNullifiersQuery,
+    KeysInPath, NoParamQuery, NullifiersTrunkQuery, ShieldedEncryptedNotesQuery,
+    ShieldedNullifiersQuery,
 };
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeSet;
@@ -1047,6 +1049,23 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
                 get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
                     nullifiers: self.0,
                     prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetNullifiersTrunkStateRequest> for NullifiersTrunkQuery {
+    fn query(self, prove: bool) -> Result<GetNullifiersTrunkStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetNullifiersTrunkStateRequest {
+            version: Some(get_nullifiers_trunk_state_request::Version::V0(
+                get_nullifiers_trunk_state_request::GetNullifiersTrunkStateRequestV0 {
+                    pool_type: self.pool_type,
+                    pool_identifier: self.pool_identifier.unwrap_or_default(),
                 },
             )),
         })

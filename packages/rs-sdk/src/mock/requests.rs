@@ -35,11 +35,13 @@ use drive_proof_verifier::types::token_status::TokenStatuses;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive_proof_verifier::types::{
     AddressInfo, Contenders, ContestedResources, CurrentQuorumsInfo, ElementFetchRequestItem,
-    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, PlatformAddressTrunkState,
-    PrefundedSpecializedBalance, ProposerBlockCounts, RecentAddressBalanceChanges,
-    RecentCompactedAddressBalanceChanges, RetrievedValues, ShieldedAnchors, ShieldedEncryptedNote,
-    ShieldedEncryptedNotes, ShieldedNullifierStatus, ShieldedNullifierStatuses, ShieldedPoolState,
-    TotalCreditsInPlatform, VotePollsGroupedByTimestamp, Voters,
+    IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, NullifiersTrunkState,
+    PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
+    RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
+    RecentCompactedNullifierChanges, RecentNullifierChanges, RetrievedValues, ShieldedAnchors,
+    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNullifierStatus,
+    ShieldedNullifierStatuses, ShieldedPoolState, TotalCreditsInPlatform,
+    VotePollsGroupedByTimestamp, Voters,
 };
 use std::{collections::BTreeMap, hash::Hash};
 
@@ -514,6 +516,8 @@ impl_mock_response!(ShieldedEncryptedNotes);
 impl_mock_response!(ShieldedEncryptedNote);
 impl_mock_response!(ShieldedNullifierStatuses);
 impl_mock_response!(ShieldedNullifierStatus);
+impl_mock_response!(RecentNullifierChanges);
+impl_mock_response!(RecentCompactedNullifierChanges);
 
 /// MockResponse for GroveTrunkQueryResult - panics when called because the Tree type
 /// doesn't support serialization. Address sync operations should not be mocked.
@@ -542,5 +546,20 @@ impl MockResponse for PlatformAddressTrunkState {
         Self: Sized,
     {
         unimplemented!("PlatformAddressTrunkState does not support mock deserialization - the Tree type is not serializable")
+    }
+}
+
+/// MockResponse for NullifiersTrunkState - panics when called because the underlying
+/// Tree type doesn't support serialization. Nullifier sync operations should not be mocked.
+impl MockResponse for NullifiersTrunkState {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        unimplemented!("NullifiersTrunkState does not support mock serialization - the Tree type is not serializable")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, _buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        unimplemented!("NullifiersTrunkState does not support mock deserialization - the Tree type is not serializable")
     }
 }

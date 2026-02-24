@@ -37,7 +37,7 @@
 //! ```
 
 mod provider;
-mod tracker;
+pub(crate) mod tracker;
 mod types;
 
 pub use provider::AddressProvider;
