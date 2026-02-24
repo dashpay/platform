@@ -68,12 +68,14 @@ impl Sdk {
     ) -> Result<SetPriceResult, Error> {
         let platform_version = self.version();
 
+        let put_settings = set_price_transition_builder.settings;
+
         let state_transition = set_price_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

@@ -51,6 +51,8 @@ mod tests {
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
@@ -151,6 +153,76 @@ mod tests {
                 Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to override a document successfully");
+    }
+
+    #[test]
+    fn test_add_dashpay_document_duplicate_insert_returns_error() {
+        let (drive, dashpay) = setup_dashpay("add-duplicate-error", true);
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let platform_version = PlatformVersion::first();
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let dashpay_cr_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get cbor document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &dashpay,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        let err = drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &dashpay,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect_err("expected duplicate insert to return an error");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::CorruptedDocumentAlreadyExists(_))
+        ));
     }
 
     #[test]
