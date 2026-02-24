@@ -377,11 +377,11 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
     # Merge with dash-spv-ffi device lib if available
-    if [ -f "$RUST_DASHCORE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
+    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
       libtool -static -o "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
-        "$RUST_DASHCORE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a"
+        "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a"
       COMBINED_DEVICE_LIB=1
     fi
 fi
@@ -445,10 +445,10 @@ fi
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     # Try to merge with SPV sim lib if it exists
     SIM_SPV_LIB=""
-    if [ -f "$RUST_DASHCORE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$RUST_DASHCORE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
-    elif [ -f "$RUST_DASHCORE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$RUST_DASHCORE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
+    elif [ -f "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a"
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
