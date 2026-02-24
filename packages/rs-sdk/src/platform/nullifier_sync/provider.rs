@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 ///
 /// let nullifiers: Vec<[u8; 32]> = vec![[0u8; 32], [1u8; 32]];
 /// // Vec<[u8; 32]> implements NullifierProvider directly
-/// let result = sdk.sync_nullifiers(&nullifiers, None).await?;
+/// let result = sdk.sync_nullifiers(&nullifiers, None, None, None).await?;
 /// ```
 pub trait NullifierProvider: Send {
     /// Get the set of nullifier keys to check.

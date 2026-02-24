@@ -35,31 +35,16 @@ pub struct NullifierSyncConfig {
     /// Default: None
     pub pool_identifier: Option<Vec<u8>>,
 
-    /// Last sync height from a previous call.
-    ///
-    /// - `None` or `Some(0)` — perform a full trunk/branch tree scan, then
-    ///   incremental block-based catch-up from the trunk snapshot to chain tip.
-    /// - `Some(height)` — if the height is recent enough (within
-    ///   [`full_rescan_after_time_s`](Self::full_rescan_after_time_s) seconds
-    ///   of current time), skip the tree scan and only do incremental
-    ///   block-based catch-up from that height.
-    ///
-    /// The caller should store [`NullifierSyncResult::new_sync_height`] after
-    /// each call and pass it back here on the next call.
-    pub last_sync_height: Option<u64>,
-
     /// Maximum age in seconds before a full tree rescan is forced.
     ///
-    /// When [`last_sync_height`](Self::last_sync_height) is provided, the
-    /// function compares the metadata timestamp of a lightweight probe against
-    /// the last sync time. If the gap exceeds this threshold, a full rescan
-    /// is performed instead of incremental catch-up.
+    /// When `last_sync_timestamp` is passed to [`sync_nullifiers`](super::sync_nullifiers),
+    /// the function compares `now - last_sync_timestamp` against this threshold.
+    /// If the elapsed time exceeds this value, a full tree rescan is performed
+    /// instead of incremental-only catch-up.
     ///
-    /// Set to `0` to always do incremental when a height is provided (the
-    /// caller can reset `last_sync_height` to `None` when they want a full
-    /// rescan).
+    /// Set to `0` to always do a full tree scan regardless of the timestamp.
     ///
-    /// Default: 0 (always incremental when height is provided)
+    /// Default: 604800 (7 days)
     pub full_rescan_after_time_s: u64,
 
     /// Request settings for nullifier sync queries.
@@ -74,8 +59,7 @@ impl Default for NullifierSyncConfig {
             max_iterations: 50,
             pool_type: 0,
             pool_identifier: None,
-            last_sync_height: None,
-            full_rescan_after_time_s: 0,
+            full_rescan_after_time_s: 7 * 24 * 60 * 60,
             request_settings: RequestSettings::default(),
         }
     }
@@ -99,13 +83,23 @@ pub struct NullifierSyncResult {
     /// Only meaningful when a full tree scan was performed.
     pub checkpoint_height: u64,
 
-    /// The new sync height to pass back on the next call as
-    /// [`NullifierSyncConfig::last_sync_height`].
+    /// The highest block height seen from the incremental phase
+    /// (or the checkpoint height if no incremental phase ran).
     ///
-    /// This is the highest block height seen from the incremental phase
-    /// (or the checkpoint height if no incremental phase ran). The caller
-    /// should store this and pass it back on the next call.
+    /// After each sync the caller should persist two values:
+    /// 1. This `new_sync_height` — pass it back as `last_sync_height` on the
+    ///    next call to [`sync_nullifiers`](super::sync_nullifiers).
+    /// 2. [`new_sync_timestamp`](Self::new_sync_timestamp) — pass it as the
+    ///    `last_sync_timestamp` parameter of [`sync_nullifiers`](super::sync_nullifiers).
     pub new_sync_height: u64,
+
+    /// Platform block time (Unix seconds) at the point of the latest response.
+    ///
+    /// Store this value and pass it back as `last_sync_timestamp` on the next
+    /// call to [`sync_nullifiers`](super::sync_nullifiers). The function compares
+    /// it against the current wall-clock time to decide whether a full tree
+    /// rescan is needed.
+    pub new_sync_timestamp: u64,
 }
 
 impl NullifierSyncResult {
@@ -117,6 +111,7 @@ impl NullifierSyncResult {
             metrics: NullifierSyncMetrics::default(),
             checkpoint_height: 0,
             new_sync_height: 0,
+            new_sync_timestamp: 0,
         }
     }
 }

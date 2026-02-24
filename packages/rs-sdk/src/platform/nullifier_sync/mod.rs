@@ -12,32 +12,32 @@
 //!
 //! # Sync Modes
 //!
-//! The behavior depends on [`NullifierSyncConfig::last_sync_height`]:
+//! The behavior depends on the `last_sync_timestamp` parameter passed to
+//! [`sync_nullifiers`]:
 //!
-//! - **`None` or `Some(0)`** — Full tree scan, then incremental catch-up from
-//!   the tree snapshot to chain tip.
-//! - **`Some(height)`** — Incremental-only from that height (unless the height
-//!   is too old per `full_rescan_after_time_s`, in which case a full scan runs).
+//! - **`None`** — Full tree scan, then incremental catch-up from the tree
+//!   snapshot to chain tip.
+//! - **`Some(timestamp)`** — Incremental-only from `last_sync_height`
+//!   (unless the elapsed time exceeds
+//!   [`NullifierSyncConfig::full_rescan_after_time_s`], in which case a full
+//!   scan runs).
 //!
 //! # Example
 //!
 //! ```rust,ignore
 //! use dash_sdk::Sdk;
-//! use dash_sdk::platform::nullifier_sync::NullifierSyncConfig;
 //!
 //! let nullifiers: Vec<[u8; 32]> = vec![/* ... */];
 //!
 //! // First sync — full tree scan + catch-up
-//! let result = sdk.sync_nullifiers(&nullifiers, None).await?;
-//! let saved_height = result.new_sync_height;
+//! let result = sdk.sync_nullifiers(&nullifiers, None, None, None).await?;
+//! let saved_height = result.new_sync_height;       // store for next call
+//! let saved_timestamp = result.new_sync_timestamp;  // store for next call
 //!
-//! // Subsequent sync — incremental only
-//! let config = NullifierSyncConfig {
-//!     last_sync_height: Some(saved_height),
-//!     ..Default::default()
-//! };
-//! let result = sdk.sync_nullifiers(&nullifiers, Some(config)).await?;
-//! let saved_height = result.new_sync_height; // store for next time
+//! // Subsequent sync — incremental only (unless too old per full_rescan_after_time_s)
+//! let result = sdk.sync_nullifiers(&nullifiers, None, Some(saved_height), Some(saved_timestamp)).await?;
+//! let saved_height = result.new_sync_height;
+//! let saved_timestamp = result.new_sync_timestamp;
 //! ```
 
 mod provider;
@@ -90,15 +90,27 @@ const RECENT_BATCH_LIMIT: usize = 100;
 /// - `sdk`: The SDK instance for making network requests.
 /// - `provider`: An implementation of [`NullifierProvider`] that supplies nullifier keys.
 /// - `config`: Optional configuration; uses defaults if `None`.
+/// - `last_sync_height`: Optional block height from the previous sync's
+///   [`NullifierSyncResult::new_sync_height`]. Used as the starting point for
+///   incremental-only catch-up.
+/// - `last_sync_timestamp`: Optional block time (Unix seconds) from the previous
+///   sync's [`NullifierSyncResult::new_sync_timestamp`]. When provided together
+///   with a non-zero [`NullifierSyncConfig::full_rescan_after_time_s`], the
+///   function compares `now - last_sync_timestamp` to decide whether a full tree
+///   rescan is needed or incremental-only catch-up suffices.
+///   Pass `None` to always perform a full tree scan.
 ///
 /// # Returns
-/// - `Ok(NullifierSyncResult)`: Contains found (spent) and absent (unspent) nullifiers,
-///   plus `new_sync_height` to pass back on the next call.
+/// - `Ok(NullifierSyncResult)`: Contains found (spent) and absent (unspent)
+///   nullifiers, plus `new_sync_height` and `new_sync_timestamp` to persist
+///   for the next call.
 /// - `Err(Error)`: If the sync fails after exhausting retries.
 pub async fn sync_nullifiers<P: NullifierProvider>(
     sdk: &Sdk,
     provider: &P,
     config: Option<NullifierSyncConfig>,
+    last_sync_height: Option<u64>,
+    last_sync_timestamp: Option<u64>,
 ) -> Result<NullifierSyncResult, Error> {
     let config = config.unwrap_or_default();
     let platform_version = sdk.version();
@@ -111,25 +123,35 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
         return Ok(result);
     }
 
-    // Decide whether to do a full tree scan or incremental-only
-    let incremental_start = match config.last_sync_height {
-        Some(height) if height > 0 => {
-            // Caller has a previous sync height — check if it's fresh enough
-            if config.full_rescan_after_time_s > 0 {
-                // TODO: could probe chain tip timestamp here to compare
-                // For now, if full_rescan_after_time_s > 0, always do full scan
-                // (the caller can set full_rescan_after_time_s = 0 to skip this)
-                None
+    // Decide whether to do a full tree scan or incremental-only.
+    //
+    // Incremental-only is chosen when ALL of these are true:
+    //   1. last_sync_timestamp is provided
+    //   2. full_rescan_after_time_s > 0
+    //   3. elapsed time since last sync < full_rescan_after_time_s
+    let needs_full_scan = match last_sync_timestamp {
+        Some(last_ts) if config.full_rescan_after_time_s > 0 => {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let elapsed = now_secs.saturating_sub(last_ts);
+            if elapsed >= config.full_rescan_after_time_s {
+                debug!(
+                    "Nullifier sync: full rescan needed (elapsed {}s >= threshold {}s)",
+                    elapsed, config.full_rescan_after_time_s
+                );
+                true
             } else {
-                // Always do incremental when height is provided and threshold is 0
-                Some(height)
+                false
             }
         }
-        _ => None,
+        _ => true,
     };
 
-    let catch_up_from = if let Some(start_height) = incremental_start {
+    let catch_up_from = if !needs_full_scan {
         // Incremental-only mode — skip the tree scan
+        let start_height = last_sync_height.unwrap_or(0);
         debug!(
             "Nullifier sync: incremental-only from height {}",
             start_height
@@ -137,14 +159,15 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
         start_height
     } else {
         // Full tree scan
-        let scan_height =
+        let (scan_height, block_time_ms) =
             full_tree_scan(sdk, &config, &nullifiers, &mut result, platform_version).await?;
+        result.new_sync_timestamp = block_time_ms / 1000;
         scan_height
     };
 
     // Incremental catch-up from catch_up_from to chain tip
     let nullifier_set: HashSet<NullifierKey> = nullifiers.iter().copied().collect();
-    let final_height = incremental_catch_up(
+    incremental_catch_up(
         sdk,
         &nullifier_set,
         catch_up_from,
@@ -153,23 +176,21 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
     )
     .await?;
 
-    result.new_sync_height = final_height;
-
     Ok(result)
 }
 
 /// Perform the full trunk/branch tree scan.
 ///
-/// Returns the checkpoint height from the trunk query.
+/// Returns `(checkpoint_height, block_time_ms)` from the trunk query.
 async fn full_tree_scan(
     sdk: &Sdk,
     config: &NullifierSyncConfig,
     nullifiers: &[NullifierKey],
     result: &mut NullifierSyncResult,
     platform_version: &PlatformVersion,
-) -> Result<u64, Error> {
+) -> Result<(u64, u64), Error> {
     // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height) =
+    let (trunk_result, checkpoint_height, block_time_ms) =
         execute_trunk_query(sdk, config, config.request_settings, &mut result.metrics).await?;
     result.checkpoint_height = checkpoint_height;
 
@@ -244,21 +265,22 @@ async fn full_tree_scan(
         );
     }
 
-    Ok(checkpoint_height)
+    Ok((checkpoint_height, block_time_ms))
 }
 
 /// Perform incremental block-based catch-up using compacted + recent nullifier
 /// changes RPCs.
 ///
-/// Returns the final sync height (highest block height seen + 1).
+/// Updates `result.new_sync_height` and `result.new_sync_timestamp`.
 async fn incremental_catch_up(
     sdk: &Sdk,
     nullifier_set: &HashSet<NullifierKey>,
     start_height: u64,
     result: &mut NullifierSyncResult,
     settings: RequestSettings,
-) -> Result<u64, Error> {
+) -> Result<(), Error> {
     let mut current_height = start_height;
+    let mut had_successful_query = false;
 
     // Phase 1 — Compacted (historical) catch-up
     loop {
@@ -273,13 +295,27 @@ async fn incremental_catch_up(
             ),
         };
 
-        let changes: Option<RecentCompactedNullifierChanges> =
-            RecentCompactedNullifierChanges::fetch_with_settings(sdk, request, settings).await?;
+        let (changes, metadata): (Option<RecentCompactedNullifierChanges>, _) =
+            match RecentCompactedNullifierChanges::fetch_with_metadata(sdk, request, Some(settings))
+                .await
+            {
+                Ok(result) => result,
+                Err(e) if !had_successful_query => {
+                    debug!(
+                        "Compacted nullifier changes query failed (non-fatal): {}",
+                        e
+                    );
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
 
         let entries = match changes {
             Some(c) => c.into_inner(),
             None => break,
         };
+
+        result.new_sync_timestamp = metadata.time_ms / 1000;
 
         if entries.is_empty() {
             break;
@@ -287,6 +323,7 @@ async fn incremental_catch_up(
 
         let entry_count = entries.len();
         result.metrics.compacted_queries += 1;
+        had_successful_query = true;
 
         for entry in &entries {
             for nf_bytes in &entry.nullifiers {
@@ -294,8 +331,8 @@ async fn incremental_catch_up(
                     result.found.insert(*nf_bytes);
                 }
             }
-            if entry.end_block_height + 1 > current_height {
-                current_height = entry.end_block_height + 1;
+            if entry.end_block_height.saturating_add(1) > current_height {
+                current_height = entry.end_block_height.saturating_add(1);
             }
         }
 
@@ -315,13 +352,22 @@ async fn incremental_catch_up(
             )),
         };
 
-        let changes: Option<RecentNullifierChanges> =
-            RecentNullifierChanges::fetch_with_settings(sdk, request, settings).await?;
+        let (changes, metadata): (Option<RecentNullifierChanges>, _) =
+            match RecentNullifierChanges::fetch_with_metadata(sdk, request, Some(settings)).await {
+                Ok(result) => result,
+                Err(e) if !had_successful_query => {
+                    debug!("Recent nullifier changes query failed (non-fatal): {}", e);
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
 
         let entries = match changes {
             Some(c) => c.into_inner(),
             None => break,
         };
+
+        result.new_sync_timestamp = metadata.time_ms / 1000;
 
         if entries.is_empty() {
             break;
@@ -329,6 +375,7 @@ async fn incremental_catch_up(
 
         let entry_count = entries.len();
         result.metrics.recent_queries += 1;
+        had_successful_query = true;
 
         for entry in &entries {
             for nf_bytes in &entry.nullifiers {
@@ -336,8 +383,8 @@ async fn incremental_catch_up(
                     result.found.insert(*nf_bytes);
                 }
             }
-            if entry.block_height + 1 > current_height {
-                current_height = entry.block_height + 1;
+            if entry.block_height.saturating_add(1) > current_height {
+                current_height = entry.block_height.saturating_add(1);
             }
         }
 
@@ -346,18 +393,21 @@ async fn incremental_catch_up(
         }
     }
 
-    Ok(current_height)
+    result.new_sync_height = current_height;
+    Ok(())
 }
 
 // ── Tree scan helpers ────────────────────────────────────────────────
 
 /// Execute the trunk query and return the verified result.
+///
+/// Returns `(trunk_result, checkpoint_height, block_time_ms)`.
 async fn execute_trunk_query(
     sdk: &Sdk,
     config: &NullifierSyncConfig,
     settings: RequestSettings,
     metrics: &mut NullifierSyncMetrics,
-) -> Result<(GroveTrunkQueryResult, u64), Error> {
+) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
     let trunk_query = NullifiersTrunkQuery {
         pool_type: config.pool_type,
         pool_identifier: config.pool_identifier.clone(),
@@ -374,7 +424,7 @@ async fn execute_trunk_query(
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
-    Ok((trunk_state.into_inner(), metadata.height))
+    Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
 }
 
 /// Process the trunk query result.
@@ -635,52 +685,60 @@ impl Sdk {
     ///
     /// This is the main entry point for nullifier synchronization. It handles
     /// both full tree scans and incremental block-based catch-up, depending on
-    /// the configuration.
+    /// the parameters.
     ///
-    /// # Sync Modes
-    ///
-    /// - **Full scan** (default): Queries the nullifier Merkle tree using
-    ///   privacy-preserving trunk/branch chunk queries, then catches up to
-    ///   chain tip using block-based incremental queries.
-    ///
-    /// - **Incremental**: When `last_sync_height` is set in the config, skips
-    ///   the tree scan and only fetches nullifier changes since that height.
+    /// On subsequent calls, pass [`NullifierSyncResult::new_sync_height`] as
+    /// `last_sync_height` and [`NullifierSyncResult::new_sync_timestamp`] as
+    /// `last_sync_timestamp` so the function can decide whether a full tree
+    /// rescan is needed or incremental-only catch-up suffices.
     ///
     /// # Arguments
     /// - `provider`: An implementation of [`NullifierProvider`] that supplies nullifier keys.
     /// - `config`: Optional configuration; uses defaults if `None`.
+    /// - `last_sync_height`: Optional block height from the previous sync's
+    ///   [`NullifierSyncResult::new_sync_height`]. Used as the starting point
+    ///   for incremental-only catch-up.
+    /// - `last_sync_timestamp`: Optional block time (Unix seconds) from the
+    ///   previous sync's [`NullifierSyncResult::new_sync_timestamp`].
+    ///   Pass `None` to always perform a full tree scan.
     ///
     /// # Returns
-    /// - `Ok(NullifierSyncResult)`: Contains found (spent) and absent (unspent) nullifiers,
-    ///   plus `new_sync_height` to store for the next call.
+    /// - `Ok(NullifierSyncResult)`: Contains found (spent) and absent (unspent)
+    ///   nullifiers, `new_sync_height` and `new_sync_timestamp` to store for
+    ///   the next call.
     /// - `Err(Error)`: If the sync fails after exhausting retries.
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// use dash_sdk::Sdk;
-    /// use dash_sdk::platform::nullifier_sync::NullifierSyncConfig;
     ///
     /// let sdk = Sdk::new(/* ... */);
     /// let nullifiers: Vec<[u8; 32]> = vec![/* known nullifiers */];
     ///
     /// // First call — full scan
-    /// let result = sdk.sync_nullifiers(&nullifiers, None).await?;
-    /// let height = result.new_sync_height;
+    /// let result = sdk.sync_nullifiers(&nullifiers, None, None, None).await?;
+    /// let height = result.new_sync_height;       // → last_sync_height param
+    /// let timestamp = result.new_sync_timestamp;  // → last_sync_timestamp param
     ///
-    /// // Next call — incremental only
-    /// let config = NullifierSyncConfig {
-    ///     last_sync_height: Some(height),
-    ///     ..Default::default()
-    /// };
-    /// let result = sdk.sync_nullifiers(&nullifiers, Some(config)).await?;
+    /// // Next call — incremental only if within threshold
+    /// let result = sdk.sync_nullifiers(&nullifiers, None, Some(height), Some(timestamp)).await?;
     /// ```
     pub async fn sync_nullifiers<P: NullifierProvider>(
         &self,
         provider: &P,
         config: Option<NullifierSyncConfig>,
+        last_sync_height: Option<u64>,
+        last_sync_timestamp: Option<u64>,
     ) -> Result<NullifierSyncResult, Error> {
-        sync_nullifiers(self, provider, config).await
+        sync_nullifiers(
+            self,
+            provider,
+            config,
+            last_sync_height,
+            last_sync_timestamp,
+        )
+        .await
     }
 }
 
@@ -727,8 +785,7 @@ mod tests {
         assert_eq!(config.max_iterations, 50);
         assert_eq!(config.pool_type, 0);
         assert!(config.pool_identifier.is_none());
-        assert!(config.last_sync_height.is_none());
-        assert_eq!(config.full_rescan_after_time_s, 0);
+        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
     }
 
     #[test]
@@ -738,6 +795,7 @@ mod tests {
         assert!(result.absent.is_empty());
         assert_eq!(result.checkpoint_height, 0);
         assert_eq!(result.new_sync_height, 0);
+        assert_eq!(result.new_sync_timestamp, 0);
         assert_eq!(result.metrics.total_queries(), 0);
     }
 
