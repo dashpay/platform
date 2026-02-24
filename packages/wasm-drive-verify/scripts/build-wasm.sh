@@ -16,7 +16,7 @@ fi
 OUTPUT_DIR="${PWD}/wasm"
 # shellcheck disable=SC2034
 OUTPUT_FILE="${OUTPUT_DIR}/wasm_drive_verify_bg.wasm"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 BUILD_COMMAND="cargo build --config net.git-fetch-with-cli=true --target=${TARGET} ${PROFILE_ARG}"
 BINDGEN_COMMAND="wasm-bindgen --out-dir=${OUTPUT_DIR} --target=web --omit-default-module-path ${CARGO_OUT_DIR}/${TARGET}/${PROFILE}/wasm_drive_verify.wasm"
