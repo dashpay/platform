@@ -132,6 +132,13 @@ pub struct DashSDKAddressSyncResult {
     /// Whether highest_found_index is valid
     pub has_highest_found_index: bool,
 
+    /// The new sync height to store for the next incremental sync.
+    ///
+    /// The caller should save this value alongside the current timestamp.
+    /// On the next call, pass the saved timestamp as `last_sync_timestamp`
+    /// and return this height from the provider's `last_sync_height()`.
+    pub new_sync_height: u64,
+
     /// Metrics about the sync process
     pub metrics: DashSDKAddressSyncMetrics,
 }
