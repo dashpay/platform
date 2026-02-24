@@ -43,6 +43,8 @@ mod tests {
 
     use crate::config::DriveConfig;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -247,6 +249,53 @@ mod tests {
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
+    }
+
+    #[test]
+    fn test_update_nonexistent_document_returns_error() {
+        let (drive, contract) = setup_dashpay("update-nonexistent", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest document exists");
+
+        let owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get cbor document");
+
+        let err = drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                Some(owner_id),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected updating a nonexistent document to fail");
+
+        assert!(
+            matches!(
+                err,
+                Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(_))
+            ) || matches!(
+                err,
+                Error::GroveDB(ref grovedb_error)
+                    if matches!(grovedb_error.as_ref(), grovedb::Error::PathKeyNotFound(_))
+            )
+        );
     }
 
     #[test]

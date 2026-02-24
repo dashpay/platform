@@ -78,7 +78,7 @@ async fn test_sync_address_balances() {
         (2, key_unknown.clone()),
     ]);
 
-    let result = sync_address_balances(&sdk, &mut provider, None)
+    let result = sync_address_balances(&sdk, &mut provider, None, None)
         .await
         .expect("sync address balances");
 
