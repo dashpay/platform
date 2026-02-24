@@ -53,31 +53,16 @@ pub struct AddressSyncConfig {
     /// Default: 50
     pub max_iterations: usize,
 
-    /// Last sync height from a previous call.
-    ///
-    /// - `None` or `Some(0)` — perform a full trunk/branch tree scan, then
-    ///   incremental block-based catch-up from the tree snapshot to chain tip.
-    /// - `Some(height)` — if the height is recent enough (within
-    ///   [`full_rescan_after_time_s`](Self::full_rescan_after_time_s) seconds
-    ///   of current time), skip the tree scan and only do incremental
-    ///   block-based catch-up from that height.
-    ///
-    /// The caller should store [`AddressSyncResult::new_sync_height`] after
-    /// each call and pass it back here on the next call.
-    pub last_sync_height: Option<u64>,
-
     /// Maximum age in seconds before a full tree rescan is forced.
     ///
-    /// When [`last_sync_height`](Self::last_sync_height) is provided, the
-    /// function compares elapsed time to decide whether incremental catch-up
-    /// alone is sufficient. If the gap exceeds this threshold, a full rescan
-    /// is performed instead.
+    /// When `last_sync_timestamp` is passed to [`sync_address_balances`], the
+    /// function compares `now - last_sync_timestamp` against this threshold.
+    /// If the elapsed time exceeds this value, a full tree rescan is performed
+    /// instead of incremental-only catch-up.
     ///
-    /// Set to `0` to always do incremental when a height is provided (the
-    /// caller can reset `last_sync_height` to `None` when they want a full
-    /// rescan).
+    /// Set to `0` to always do a full tree scan regardless of the timestamp.
     ///
-    /// Default: 0 (always incremental when height is provided)
+    /// Default: 604800 (7 days)
     pub full_rescan_after_time_s: u64,
 
     /// Request settings for undergoing address sync queries.
@@ -90,8 +75,7 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
-            last_sync_height: None,
-            full_rescan_after_time_s: 0,
+            full_rescan_after_time_s: 7 * 24 * 60 * 60, // 7 days
             request_settings: RequestSettings::default(),
         }
     }
@@ -124,12 +108,13 @@ pub struct AddressSyncResult {
     /// Only meaningful when a full tree scan was performed.
     pub checkpoint_height: u64,
 
-    /// The new sync height to pass back on the next call as
-    /// [`AddressSyncConfig::last_sync_height`].
+    /// The new sync height to pass back on the next call via the
+    /// `last_sync_timestamp` parameter.
     ///
     /// This is the highest block height seen from the incremental phase
     /// (or the checkpoint height if no incremental phase ran). The caller
-    /// should store this and pass it back on the next call.
+    /// should store this alongside the current timestamp, then pass them
+    /// back on the next call.
     pub new_sync_height: u64,
 }
 

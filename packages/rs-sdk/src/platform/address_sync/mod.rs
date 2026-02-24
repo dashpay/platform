@@ -25,16 +25,14 @@
 //! use dash_sdk::{Sdk, platform::address_sync::{AddressProvider, AddressSyncConfig}};
 //!
 //! // First sync — full tree scan + catch-up
-//! let result = sdk.sync_address_balances(&mut wallet, None).await?;
-//! let saved_height = result.new_sync_height;
+//! let result = sdk.sync_address_balances(&mut wallet, None, None).await?;
+//! let saved_timestamp = std::time::SystemTime::now()
+//!     .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 //!
-//! // Subsequent sync — incremental only
-//! let config = AddressSyncConfig {
-//!     last_sync_height: Some(saved_height),
-//!     ..Default::default()
-//! };
-//! let result = sdk.sync_address_balances(&mut wallet, Some(config)).await?;
-//! let saved_height = result.new_sync_height; // store for next time
+//! // Subsequent sync — incremental only (unless too old per full_rescan_after_time_s)
+//! let result = sdk.sync_address_balances(&mut wallet, None, Some(saved_timestamp)).await?;
+//! let saved_timestamp = std::time::SystemTime::now()
+//!     .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
 //! ```
 
 mod provider;
@@ -90,6 +88,12 @@ const RECENT_BATCH_LIMIT: usize = 100;
 /// - `sdk`: The SDK instance for making network requests.
 /// - `provider`: An implementation of [`AddressProvider`] that supplies addresses.
 /// - `config`: Optional configuration; uses defaults if `None`.
+/// - `last_sync_timestamp`: Optional Unix timestamp (seconds) of the last successful
+///   sync. When provided together with a non-zero
+///   [`full_rescan_after_time_s`](AddressSyncConfig::full_rescan_after_time_s), the
+///   function compares `now - last_sync_timestamp` to decide whether a full tree
+///   rescan is needed or incremental-only catch-up suffices.
+///   Pass `None` to always perform a full tree scan.
 ///
 /// # Returns
 /// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses,
@@ -99,6 +103,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
     sdk: &Sdk,
     provider: &mut P,
     config: Option<AddressSyncConfig>,
+    last_sync_timestamp: Option<u64>,
 ) -> Result<AddressSyncResult, Error> {
     let config = config.unwrap_or_default();
     let platform_version = sdk.version();
@@ -117,24 +122,35 @@ pub async fn sync_address_balances<P: AddressProvider>(
         return Ok(result);
     }
 
-    // Decide whether to do a full tree scan or incremental-only
-    let incremental_start = match config.last_sync_height {
-        Some(height) if height > 0 => {
-            if config.full_rescan_after_time_s > 0 {
-                // TODO: could probe chain tip timestamp here to compare
-                // For now, if full_rescan_after_time_s > 0, always do full scan
-                // (the caller can set full_rescan_after_time_s = 0 to skip this)
-                None
+    // Decide whether to do a full tree scan or incremental-only.
+    //
+    // Incremental-only is chosen when ALL of these are true:
+    //   1. last_sync_timestamp is provided
+    //   2. full_rescan_after_time_s > 0
+    //   3. elapsed time since last sync < full_rescan_after_time_s
+    let needs_full_scan = match last_sync_timestamp {
+        Some(last_ts) if config.full_rescan_after_time_s > 0 => {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let elapsed = now_secs.saturating_sub(last_ts);
+            if elapsed >= config.full_rescan_after_time_s {
+                debug!(
+                    "Address sync: full rescan needed (elapsed {}s >= threshold {}s)",
+                    elapsed, config.full_rescan_after_time_s
+                );
+                true
             } else {
-                // Always do incremental when height is provided and threshold is 0
-                Some(height)
+                false
             }
         }
-        _ => None,
+        _ => true,
     };
 
-    let catch_up_from = if let Some(start_height) = incremental_start {
+    let catch_up_from = if !needs_full_scan {
         // Incremental-only mode — skip the tree scan, seed result from current_balances
+        let start_height = provider.last_sync_height();
         debug!(
             "Address sync: incremental-only from height {}",
             start_height
@@ -812,14 +828,18 @@ impl Sdk {
     /// After the tree scan, incremental catch-up fetches balance changes from the
     /// checkpoint height to chain tip so the result is as fresh as possible.
     ///
-    /// On subsequent calls, pass [`AddressSyncResult::new_sync_height`] back via
-    /// [`AddressSyncConfig::last_sync_height`] to skip the tree scan and only
-    /// fetch incremental changes.
+    /// On subsequent calls, pass the current timestamp as `last_sync_timestamp` so
+    /// the function can decide whether a full tree rescan is needed or incremental-
+    /// only catch-up suffices. The provider should implement
+    /// [`AddressProvider::last_sync_height`] and [`AddressProvider::current_balances`]
+    /// to supply the state from the previous sync.
     ///
     /// # Arguments
     /// - `provider`: An implementation of [`AddressProvider`] that supplies addresses
     ///   and handles callbacks when addresses are found or proven absent.
     /// - `config`: Optional configuration; uses defaults if `None`.
+    /// - `last_sync_timestamp`: Optional Unix timestamp (seconds) of the last
+    ///   successful sync. Pass `None` to always perform a full tree scan.
     ///
     /// # Returns
     /// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses.
@@ -830,23 +850,22 @@ impl Sdk {
     /// ```rust,ignore
     /// use dash_sdk::{Sdk, platform::address_sync::{AddressProvider, AddressSyncConfig}};
     ///
-    /// // First sync — full tree scan + catch-up
-    /// let result = sdk.sync_address_balances(&mut wallet, None).await?;
+    /// // First sync — full tree scan + catch-up (no timestamp)
+    /// let result = sdk.sync_address_balances(&mut wallet, None, None).await?;
     /// let saved_height = result.new_sync_height;
+    /// let saved_timestamp = now_secs(); // store current time
     ///
-    /// // Subsequent sync — incremental only
-    /// let config = AddressSyncConfig {
-    ///     last_sync_height: Some(saved_height),
-    ///     ..Default::default()
-    /// };
-    /// let result = sdk.sync_address_balances(&mut wallet, Some(config)).await?;
+    /// // Subsequent sync — incremental only if within threshold
+    /// // (provider returns saved_height from last_sync_height())
+    /// let result = sdk.sync_address_balances(&mut wallet, None, Some(saved_timestamp)).await?;
     /// ```
     pub async fn sync_address_balances<P: AddressProvider>(
         &self,
         provider: &mut P,
         config: Option<AddressSyncConfig>,
+        last_sync_timestamp: Option<u64>,
     ) -> Result<AddressSyncResult, Error> {
-        sync_address_balances(self, provider, config).await
+        sync_address_balances(self, provider, config, last_sync_timestamp).await
     }
 }
 
@@ -867,10 +886,11 @@ mod tests {
     }
 
     #[test]
-    fn test_default_config_has_no_last_sync_height() {
+    fn test_default_config_values() {
         let config = AddressSyncConfig::default();
-        assert!(config.last_sync_height.is_none());
-        assert_eq!(config.full_rescan_after_time_s, 0);
+        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
+        assert_eq!(config.min_privacy_count, 32);
+        assert_eq!(config.max_iterations, 50);
     }
 
     #[test]

@@ -28,6 +28,17 @@ pub struct DashSDKAddressSyncConfig {
     ///
     /// Default: 50
     pub max_iterations: u32,
+
+    /// Maximum age in seconds before a full tree rescan is forced.
+    ///
+    /// When `last_sync_timestamp` is provided, elapsed time is compared against
+    /// this threshold. If exceeded, a full tree rescan is performed instead of
+    /// incremental-only catch-up.
+    ///
+    /// Set to 0 to always do a full tree scan.
+    ///
+    /// Default: 604800 (7 days)
+    pub full_rescan_after_time_s: u64,
 }
 
 impl Default for DashSDKAddressSyncConfig {
@@ -36,6 +47,7 @@ impl Default for DashSDKAddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
+            full_rescan_after_time_s: 7 * 24 * 60 * 60,
         }
     }
 }

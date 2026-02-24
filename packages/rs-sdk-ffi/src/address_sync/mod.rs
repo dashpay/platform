@@ -57,6 +57,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            full_rescan_after_time_s: (*config).full_rescan_after_time_s,
             request_settings: RequestSettings::default(),
         })
     };
@@ -69,11 +70,11 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
     // Create the callback-based provider wrapper
     let mut callback_provider = CallbackAddressProvider::new(provider_ffi);
 
-    // Execute the sync
+    // Execute the sync (pass None for last_sync_timestamp — FFI caller doesn't provide it yet)
     let result = wrapper.runtime.block_on(async {
         wrapper
             .sdk
-            .sync_address_balances(&mut callback_provider, rust_config)
+            .sync_address_balances(&mut callback_provider, rust_config, None)
             .await
     });
 
@@ -136,6 +137,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            full_rescan_after_time_s: (*config).full_rescan_after_time_s,
             request_settings: RequestSettings::default(),
         })
     };
@@ -143,11 +145,11 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
     // Create the callback-based provider wrapper
     let mut callback_provider = CallbackAddressProvider::new(provider_ffi);
 
-    // Execute the sync
+    // Execute the sync (pass None for last_sync_timestamp — FFI caller doesn't provide it yet)
     let result = wrapper.runtime.block_on(async {
         wrapper
             .sdk
-            .sync_address_balances(&mut callback_provider, rust_config)
+            .sync_address_balances(&mut callback_provider, rust_config, None)
             .await
     });
 
