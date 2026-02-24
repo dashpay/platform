@@ -358,7 +358,7 @@ impl DataContractWasm {
     pub fn set_config(&mut self, config: JsValue) -> Result<(), JsValue> {
         let value = config.with_serde_to_platform_value()?;
 
-        let platform_version = &PlatformVersion::first();
+        let platform_version = PlatformVersion::latest();
 
         let data_contract_config =
             DataContractConfig::from_value(value, platform_version).with_js_error()?;

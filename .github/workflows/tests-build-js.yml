@@ -18,16 +18,42 @@ jobs:
           fetch-depth: 0
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Check DockerHub credentials
+        id: check-dockerhub
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.check-dockerhub.outputs.available == 'true' }}
+
+      - name: Cache protoc Docker image
+        id: cache-protoc
+        uses: actions/cache@v4
+        with:
+          path: /tmp/protoc-image.tar
+          key: docker-rvolosatovs-protoc-4.0.0
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Pre-pull protoc Docker image for gRPC codegen
-        run: docker pull rvolosatovs/protoc:4.0.0
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+      - name: Load protoc image from cache
+        run: docker load -i /tmp/protoc-image.tar
+        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.cache-protoc.outputs.cache-hit == 'true' }}
+
+      - name: Pull and cache protoc Docker image
+        run: |
+          docker pull rvolosatovs/protoc:4.0.0
+          docker save rvolosatovs/protoc:4.0.0 -o /tmp/protoc-image.tar
+        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.cache-protoc.outputs.cache-hit != 'true' }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -54,7 +80,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.103
+        run: cargo binstall wasm-bindgen-cli@0.2.108
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-pack

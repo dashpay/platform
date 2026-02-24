@@ -24,6 +24,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
         },
       },
       core: {
+        insight: {
+          port: 23001,
+        },
         p2p: {
           port: 20001,
         },
@@ -34,10 +37,28 @@ export default function getLocalConfigFactory(getBaseConfig) {
           port: 49998,
         },
       },
+      dashmate: {
+        helper: {
+          api: {
+            port: 29100,
+          },
+        },
+      },
       platform: {
+        quorumList: {
+          api: {
+            port: 22444,
+          },
+        },
         gateway: {
           ssl: {
             provider: SSL_PROVIDERS.SELF_SIGNED,
+          },
+          metrics: {
+            port: 29090,
+          },
+          admin: {
+            port: 29901,
           },
           listeners: {
             dapiAndDrive: {
@@ -46,6 +67,9 @@ export default function getLocalConfigFactory(getBaseConfig) {
           },
           rateLimiter: {
             enabled: false,
+            metrics: {
+              port: 29102,
+            },
           },
         },
         dapi: {
@@ -75,6 +99,15 @@ export default function getLocalConfigFactory(getBaseConfig) {
             },
           },
           abci: {
+            tokioConsole: {
+              port: 26669,
+            },
+            metrics: {
+              port: 49090,
+            },
+            grovedbVisualizer: {
+              port: 28083,
+            },
             epochTime: 1200,
             validatorSet: {
               quorum: {

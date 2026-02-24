@@ -1410,6 +1410,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
 
             if (options.platform?.drive?.tenderdash?.docker
               && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
@@ -1421,6 +1423,52 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
                 .get('platform.drive.tenderdash.p2p.allowlistOnly');
+            }
+
+            // --- Differentiate ports between networks to avoid conflicts ---
+            // when running multiple networks on the same machine (issue #3002)
+            // Note: earlier migrations may assign objects from base.get() without
+            // cloning, causing shared references. We must clone before mutating.
+
+            if (!isTestnet && !isLocal) {
+              return;
+            }
+
+            const networkConfig = getDefaultConfigByNetwork(options.network);
+
+            const portPaths = [
+              'dashmate.helper.api',
+              'core.insight',
+            ];
+
+            for (const parentPath of portPaths) {
+              const obj = lodash.get(options, parentPath);
+              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+                lodash.set(options, parentPath, lodash.cloneDeep(obj));
+                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+              }
+            }
+
+            if (!options.platform) {
+              return;
+            }
+
+            const platformPortPaths = [
+              'platform.gateway.metrics',
+              'platform.gateway.admin',
+              'platform.gateway.rateLimiter.metrics',
+              'platform.quorumList.api',
+              'platform.drive.abci.tokioConsole',
+              'platform.drive.abci.metrics',
+              'platform.drive.abci.grovedbVisualizer',
+            ];
+
+            for (const parentPath of platformPortPaths) {
+              const obj = lodash.get(options, parentPath);
+              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+                lodash.set(options, parentPath, lodash.cloneDeep(obj));
+                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+              }
             }
           });
 

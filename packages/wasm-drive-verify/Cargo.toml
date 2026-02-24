@@ -47,7 +47,7 @@ bs58 = { version = "0.5.1" }
 indexmap = { version = "2.11.4" }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.53"
+wasm-bindgen-test = "0.3.58"
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
     "random-public-keys",

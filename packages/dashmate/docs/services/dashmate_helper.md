@@ -11,4 +11,4 @@ Helper also performs some background tasks such as ZeroSSL certificates renewal.
 
 | Service                   | Port Purpose         | Default Value | Config Path                                  | Default Host Binding | Host Config Path |
 |---------------------------|----------------------|---------------|----------------------------------------------|---------------------|-----------------|
-| **Dashmate Helper**       | API                  | 9100          | `dashmate.helper.api.port`                   | 127.0.0.1 (local)   | (fixed)         |
+| **Dashmate Helper**       | API                  | 9100 (mainnet), 19100 (testnet), 29100 (local) | `dashmate.helper.api.port`                   | 127.0.0.1 (local)   | (fixed)         |
