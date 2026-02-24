@@ -108,14 +108,22 @@ pub struct AddressSyncResult {
     /// Only meaningful when a full tree scan was performed.
     pub checkpoint_height: u64,
 
-    /// The new sync height to pass back on the next call via the
-    /// `last_sync_timestamp` parameter.
+    /// The highest block height seen from the incremental phase
+    /// (or the checkpoint height if no incremental phase ran).
     ///
-    /// This is the highest block height seen from the incremental phase
-    /// (or the checkpoint height if no incremental phase ran). The caller
-    /// should store this alongside the current timestamp, then pass them
-    /// back on the next call.
+    /// After each sync the caller should persist two values:
+    /// 1. This `new_sync_height` — return it from
+    ///    [`AddressProvider::last_sync_height`] on the next call.
+    /// 2. [`new_sync_timestamp`](Self::new_sync_timestamp) — pass it as the
+    ///    `last_sync_timestamp` parameter of [`sync_address_balances`].
     pub new_sync_height: u64,
+
+    /// Platform block time (Unix seconds) at the point of the latest response.
+    ///
+    /// Store this value and pass it back as `last_sync_timestamp` on the next
+    /// call to [`sync_address_balances`]. The function compares it against the
+    /// current wall-clock time to decide whether a full tree rescan is needed.
+    pub new_sync_timestamp: u64,
 }
 
 impl AddressSyncResult {
@@ -128,6 +136,7 @@ impl AddressSyncResult {
             metrics: AddressSyncMetrics::default(),
             checkpoint_height: 0,
             new_sync_height: 0,
+            new_sync_timestamp: 0,
         }
     }
 

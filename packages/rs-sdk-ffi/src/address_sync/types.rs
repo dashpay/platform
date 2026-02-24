@@ -134,10 +134,15 @@ pub struct DashSDKAddressSyncResult {
 
     /// The new sync height to store for the next incremental sync.
     ///
-    /// The caller should save this value alongside the current timestamp.
-    /// On the next call, pass the saved timestamp as `last_sync_timestamp`
-    /// and return this height from the provider's `last_sync_height()`.
+    /// Return this value from the provider's `last_sync_height()` on the
+    /// next call.
     pub new_sync_height: u64,
+
+    /// Platform block time (Unix seconds) at the point of the latest response.
+    ///
+    /// Pass this value as `last_sync_timestamp` on the next call to
+    /// `dash_sdk_sync_address_balances`.
+    pub new_sync_timestamp: u64,
 
     /// Metrics about the sync process
     pub metrics: DashSDKAddressSyncMetrics,

@@ -26,13 +26,13 @@
 //!
 //! // First sync — full tree scan + catch-up
 //! let result = sdk.sync_address_balances(&mut wallet, None, None).await?;
-//! let saved_timestamp = std::time::SystemTime::now()
-//!     .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+//! let saved_height = result.new_sync_height;       // store for provider.last_sync_height()
+//! let saved_timestamp = result.new_sync_timestamp;  // store for last_sync_timestamp param
 //!
 //! // Subsequent sync — incremental only (unless too old per full_rescan_after_time_s)
 //! let result = sdk.sync_address_balances(&mut wallet, None, Some(saved_timestamp)).await?;
-//! let saved_timestamp = std::time::SystemTime::now()
-//!     .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+//! let saved_height = result.new_sync_height;
+//! let saved_timestamp = result.new_sync_timestamp;
 //! ```
 
 mod provider;
@@ -88,16 +88,17 @@ const RECENT_BATCH_LIMIT: usize = 100;
 /// - `sdk`: The SDK instance for making network requests.
 /// - `provider`: An implementation of [`AddressProvider`] that supplies addresses.
 /// - `config`: Optional configuration; uses defaults if `None`.
-/// - `last_sync_timestamp`: Optional Unix timestamp (seconds) of the last successful
-///   sync. When provided together with a non-zero
-///   [`full_rescan_after_time_s`](AddressSyncConfig::full_rescan_after_time_s), the
-///   function compares `now - last_sync_timestamp` to decide whether a full tree
-///   rescan is needed or incremental-only catch-up suffices.
+/// - `last_sync_timestamp`: Optional block time (Unix seconds) from the previous
+///   sync's [`AddressSyncResult::new_sync_timestamp`]. When provided together
+///   with a non-zero [`full_rescan_after_time_s`](AddressSyncConfig::full_rescan_after_time_s),
+///   the function compares `now - last_sync_timestamp` to decide whether a full
+///   tree rescan is needed or incremental-only catch-up suffices.
 ///   Pass `None` to always perform a full tree scan.
 ///
 /// # Returns
-/// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses,
-///   plus `new_sync_height` to pass back on the next call.
+/// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces,
+///   absent addresses, plus `new_sync_height` and `new_sync_timestamp` to
+///   persist for the next call.
 /// - `Err(Error)`: If the sync fails after exhausting retries.
 pub async fn sync_address_balances<P: AddressProvider>(
     sdk: &Sdk,
@@ -161,7 +162,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
         start_height
     } else {
         // Full tree scan
-        let scan_height = full_tree_scan(
+        let (scan_height, block_time_ms) = full_tree_scan(
             sdk,
             &config,
             provider,
@@ -170,6 +171,8 @@ pub async fn sync_address_balances<P: AddressProvider>(
             platform_version,
         )
         .await?;
+        // Seed timestamp from the trunk query (may be updated by incremental phase)
+        result.new_sync_timestamp = block_time_ms / 1000;
         scan_height
     };
 
@@ -194,7 +197,7 @@ pub async fn sync_address_balances<P: AddressProvider>(
 
 /// Perform the full trunk/branch tree scan.
 ///
-/// Returns the checkpoint height from the trunk query.
+/// Returns `(checkpoint_height, block_time_ms)` from the trunk query.
 async fn full_tree_scan<P: AddressProvider>(
     sdk: &Sdk,
     config: &AddressSyncConfig,
@@ -202,9 +205,9 @@ async fn full_tree_scan<P: AddressProvider>(
     key_to_index: &mut HashMap<AddressKey, AddressIndex>,
     result: &mut AddressSyncResult,
     platform_version: &PlatformVersion,
-) -> Result<u64, Error> {
+) -> Result<(u64, u64), Error> {
     // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height) =
+    let (trunk_result, checkpoint_height, block_time_ms) =
         execute_trunk_query(sdk, config.request_settings, &mut result.metrics).await?;
     result.checkpoint_height = checkpoint_height;
 
@@ -299,7 +302,7 @@ async fn full_tree_scan<P: AddressProvider>(
         );
     }
 
-    Ok(checkpoint_height)
+    Ok((checkpoint_height, block_time_ms))
 }
 
 // ── Incremental catch-up ─────────────────────────────────────────────
@@ -339,11 +342,15 @@ async fn incremental_catch_up<P: AddressProvider>(
             ),
         };
 
-        let changes: Option<RecentCompactedAddressBalanceChanges> =
-            match RecentCompactedAddressBalanceChanges::fetch_with_settings(sdk, request, settings)
-                .await
+        let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
+            match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
+                sdk,
+                request,
+                Some(settings),
+            )
+            .await
             {
-                Ok(changes) => changes,
+                Ok(result) => result,
                 Err(e) if !had_successful_query => {
                     // First query failed — server may not support incremental
                     // RPCs or may not have data for this height. Treat as
@@ -361,6 +368,8 @@ async fn incremental_catch_up<P: AddressProvider>(
             Some(c) => c.into_inner(),
             None => break,
         };
+
+        result.new_sync_timestamp = metadata.time_ms / 1000;
 
         if entries.is_empty() {
             break;
@@ -387,7 +396,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                                 .iter()
                                 .filter(|(height, _)| **height >= current_height)
                                 .map(|(_, credits)| *credits)
-                                .sum();
+                                .fold(0u64, |acc, c| acc.saturating_add(c));
                             current_balance.saturating_add(total_to_add)
                         }
                     };
@@ -408,8 +417,8 @@ async fn incremental_catch_up<P: AddressProvider>(
                 }
             }
 
-            if entry.end_block_height + 1 > current_height {
-                current_height = entry.end_block_height + 1;
+            if entry.end_block_height.saturating_add(1) > current_height {
+                current_height = entry.end_block_height.saturating_add(1);
             }
         }
 
@@ -431,9 +440,11 @@ async fn incremental_catch_up<P: AddressProvider>(
             ),
         };
 
-        let changes: Option<RecentAddressBalanceChanges> =
-            match RecentAddressBalanceChanges::fetch_with_settings(sdk, request, settings).await {
-                Ok(changes) => changes,
+        let (changes, metadata): (Option<RecentAddressBalanceChanges>, _) =
+            match RecentAddressBalanceChanges::fetch_with_metadata(sdk, request, Some(settings))
+                .await
+            {
+                Ok(result) => result,
                 Err(e) if !had_successful_query => {
                     debug!(
                         "Recent address balance changes query failed (non-fatal): {}",
@@ -448,6 +459,8 @@ async fn incremental_catch_up<P: AddressProvider>(
             Some(c) => c.into_inner(),
             None => break,
         };
+
+        result.new_sync_timestamp = metadata.time_ms / 1000;
 
         if entries.is_empty() {
             break;
@@ -490,8 +503,8 @@ async fn incremental_catch_up<P: AddressProvider>(
                 }
             }
 
-            if entry.block_height + 1 > current_height {
-                current_height = entry.block_height + 1;
+            if entry.block_height.saturating_add(1) > current_height {
+                current_height = entry.block_height.saturating_add(1);
             }
         }
 
@@ -507,11 +520,13 @@ async fn incremental_catch_up<P: AddressProvider>(
 // ── Tree scan helpers ────────────────────────────────────────────────
 
 /// Execute the trunk query and return the verified result.
+///
+/// Returns `(trunk_result, checkpoint_height, block_time_ms)`.
 async fn execute_trunk_query(
     sdk: &Sdk,
     settings: RequestSettings,
     metrics: &mut AddressSyncMetrics,
-) -> Result<(GroveTrunkQueryResult, u64), Error> {
+) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
     let (trunk_state, metadata) =
         PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
 
@@ -522,7 +537,7 @@ async fn execute_trunk_query(
 
     metrics.total_elements_seen += trunk_state.elements.len();
 
-    Ok((trunk_state.into_inner(), metadata.height))
+    Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
 }
 
 /// Process the trunk query result.
@@ -828,21 +843,26 @@ impl Sdk {
     /// After the tree scan, incremental catch-up fetches balance changes from the
     /// checkpoint height to chain tip so the result is as fresh as possible.
     ///
-    /// On subsequent calls, pass the current timestamp as `last_sync_timestamp` so
-    /// the function can decide whether a full tree rescan is needed or incremental-
-    /// only catch-up suffices. The provider should implement
-    /// [`AddressProvider::last_sync_height`] and [`AddressProvider::current_balances`]
-    /// to supply the state from the previous sync.
+    /// On subsequent calls, pass [`AddressSyncResult::new_sync_timestamp`] as
+    /// `last_sync_timestamp` so the function can decide whether a full tree
+    /// rescan is needed or incremental-only catch-up suffices. The provider
+    /// should implement [`AddressProvider::last_sync_height`] (returning the
+    /// stored [`AddressSyncResult::new_sync_height`]) and
+    /// [`AddressProvider::current_balances`] to supply state from the previous
+    /// sync.
     ///
     /// # Arguments
     /// - `provider`: An implementation of [`AddressProvider`] that supplies addresses
     ///   and handles callbacks when addresses are found or proven absent.
     /// - `config`: Optional configuration; uses defaults if `None`.
-    /// - `last_sync_timestamp`: Optional Unix timestamp (seconds) of the last
-    ///   successful sync. Pass `None` to always perform a full tree scan.
+    /// - `last_sync_timestamp`: Optional block time (Unix seconds) from the
+    ///   previous sync's [`AddressSyncResult::new_sync_timestamp`].
+    ///   Pass `None` to always perform a full tree scan.
     ///
     /// # Returns
-    /// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces and absent addresses.
+    /// - `Ok(AddressSyncResult)`: Contains found addresses with balances/nonces,
+    ///   absent addresses, `new_sync_height` and `new_sync_timestamp` to store
+    ///   for the next call.
     /// - `Err(Error)`: If the sync fails after exhausting retries.
     ///
     /// # Example
@@ -852,11 +872,10 @@ impl Sdk {
     ///
     /// // First sync — full tree scan + catch-up (no timestamp)
     /// let result = sdk.sync_address_balances(&mut wallet, None, None).await?;
-    /// let saved_height = result.new_sync_height;
-    /// let saved_timestamp = now_secs(); // store current time
+    /// let saved_height = result.new_sync_height;       // → provider.last_sync_height()
+    /// let saved_timestamp = result.new_sync_timestamp;  // → last_sync_timestamp param
     ///
     /// // Subsequent sync — incremental only if within threshold
-    /// // (provider returns saved_height from last_sync_height())
     /// let result = sdk.sync_address_balances(&mut wallet, None, Some(saved_timestamp)).await?;
     /// ```
     pub async fn sync_address_balances<P: AddressProvider>(

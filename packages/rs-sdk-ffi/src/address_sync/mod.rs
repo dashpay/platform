@@ -255,6 +255,7 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         highest_found_index: result.highest_found_index.unwrap_or(u32::MAX),
         has_highest_found_index: result.highest_found_index.is_some(),
         new_sync_height: result.new_sync_height,
+        new_sync_timestamp: result.new_sync_timestamp,
         metrics,
     }
 }
