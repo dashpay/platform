@@ -1,13 +1,10 @@
 //! Identity creation from addresses operations
 
-use dash_sdk::dpp::address_funds::{
-    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
-};
+use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::fee::Credits;
-use dash_sdk::dpp::identity::signer::Signer;
-use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
+use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::prelude::AddressNonce;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use std::collections::BTreeMap;

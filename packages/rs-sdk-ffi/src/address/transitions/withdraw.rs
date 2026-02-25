@@ -103,6 +103,7 @@ pub unsafe extern "C" fn dash_sdk_address_withdraw_funds(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn dash_sdk_address_withdraw_funds_inner(
     sdk_handle: *const SDKHandle,
     inputs: *const DashSDKAddressTransferInput,

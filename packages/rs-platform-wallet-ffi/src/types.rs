@@ -166,13 +166,15 @@ mod tests {
 
     #[test]
     fn test_identifier_array_with_items() {
-        let id1 = dpp::prelude::Identifier::random();
-        let id2 = dpp::prelude::Identifier::random();
+        unsafe {
+            let id1 = dpp::prelude::Identifier::random();
+            let id2 = dpp::prelude::Identifier::random();
 
-        let array = IdentifierArray::new(vec![id1, id2]);
-        assert!(!array.items.is_null());
-        assert_eq!(array.count, 2);
+            let array = IdentifierArray::new(vec![id1, id2]);
+            assert!(!array.items.is_null());
+            assert_eq!(array.count, 2);
 
-        platform_wallet_identifier_array_free(array);
+            platform_wallet_identifier_array_free(array);
+        }
     }
 }

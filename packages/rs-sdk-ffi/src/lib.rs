@@ -52,6 +52,7 @@ pub use error::*;
 pub use evonode::*;
 pub use group::*;
 pub use identity::*;
+#[allow(unused_imports)]
 pub use platform_wallet_types::*;
 pub use protocol_version::*;
 pub use sdk::*;

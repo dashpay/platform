@@ -73,13 +73,17 @@ mod tests {
 
     #[test]
     fn test_error_creation() {
-        let error =
-            PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorInvalidHandle, "Test error");
-        assert_eq!(error.code, PlatformWalletFFIResult::ErrorInvalidHandle);
-        assert!(!error.message.is_null());
+        unsafe {
+            let error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorInvalidHandle,
+                "Test error",
+            );
+            assert_eq!(error.code, PlatformWalletFFIResult::ErrorInvalidHandle);
+            assert!(!error.message.is_null());
 
-        // Clean up
-        platform_wallet_ffi_error_free(error);
+            // Clean up
+            platform_wallet_ffi_error_free(error);
+        }
     }
 
     #[test]
@@ -91,8 +95,10 @@ mod tests {
 
     #[test]
     fn test_error_free() {
-        let error = PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUnknown, "Test");
-        platform_wallet_ffi_error_free(error);
-        // Should not crash
+        unsafe {
+            let error = PlatformWalletFFIError::new(PlatformWalletFFIResult::ErrorUnknown, "Test");
+            platform_wallet_ffi_error_free(error);
+            // Should not crash
+        }
     }
 }

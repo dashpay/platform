@@ -23,7 +23,7 @@ use crate::types::{
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Simple address signer that holds private keys for addresses
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AddressSigner {
     /// Maps address hash to private key
     keys: BTreeMap<[u8; 20], PrivateKey>,
@@ -31,9 +31,7 @@ pub struct AddressSigner {
 
 impl AddressSigner {
     pub fn new() -> Self {
-        Self {
-            keys: BTreeMap::new(),
-        }
+        Self::default()
     }
 
     pub fn add_key(&mut self, address: &PlatformAddress, private_key: PrivateKey) {

@@ -3,6 +3,8 @@
 //! This module provides realistic fake data for testing contact requests,
 //! identities, and other platform wallet operations.
 
+#![allow(dead_code)]
+
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use platform_wallet::{ContactRequest, EstablishedContact, ManagedIdentity};
@@ -99,8 +101,7 @@ pub fn create_contact_request(
     let mut encrypted_public_key = Vec::with_capacity(96);
     // Simulate encrypted data with some pattern
     for i in 0..96 {
-        let val =
-            (sender_id.as_bytes()[i % 32].wrapping_add(recipient_id.as_bytes()[i % 32])) as u8;
+        let val = sender_id.as_bytes()[i % 32].wrapping_add(recipient_id.as_bytes()[i % 32]);
         encrypted_public_key.push(val);
     }
 
