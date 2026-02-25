@@ -1,5 +1,9 @@
 # Shielded Transaction Fees
 
+> Introduced in protocol version 12. For the general fee system overview, see
+> [Fee System Overview](overview.md). For address-based fees (protocol versions
+> 10--11), see [Platform Address Fees](platform-address-fees.md).
+
 Shielded transactions use the Orchard protocol's zero-knowledge proofs to hide
 transaction amounts. Because amounts are hidden, the platform cannot inspect the
 transaction to compute fees the way it does for transparent transitions. Instead,
@@ -7,7 +11,7 @@ the fee is embedded into the cryptographic structure of the bundle itself, and t
 platform enforces a minimum.
 
 This chapter explains the fee model, how it is validated, and how it differs from
-the transparent fee system.
+the transparent and address-based fee systems.
 
 ## The Problem: Fees in a Privacy System
 
@@ -115,7 +119,7 @@ action). Bundles with 1 action are structurally invalid.
 ## Where Fee Validation Runs
 
 Fee validation is integrated into the processor pipeline (see
-[Validation Pipeline](validation-pipeline.md)) between basic structure validation
+[Validation Pipeline](../state-transitions/validation-pipeline.md)) between basic structure validation
 and ZK proof verification:
 
 ```
