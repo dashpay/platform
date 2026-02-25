@@ -83,6 +83,8 @@ class BaseViewModel: ObservableObject {
     /// Start loading state.
     func startLoading() {
         isLoading = true
+        currentError = nil
+        showResult = false
         loadingState = .loading
         errorMessage = nil
     }
@@ -96,6 +98,7 @@ class BaseViewModel: ObservableObject {
     /// Finish loading with error.
     func finishLoading(error: Error) {
         isLoading = false
+        showResult = true
         handleError(error)
     }
 
@@ -119,45 +122,6 @@ class BaseViewModel: ObservableObject {
         do {
             let result = try await operation()
             finishLoading()
-            if showResultOnSuccess {
-                showResult = true
-            }
-            return result
-        } catch {
-            finishLoading(error: error)
-            return nil
-        }
-    }
-
-    /// Start an async operation with loading state management
-    func startLoading() {
-        isLoading = true
-        errorMessage = nil
-        currentError = nil
-        showResult = false
-    }
-
-    /// Finish loading with success
-    func finishLoading() {
-        isLoading = false
-        showResult = true
-    }
-
-    /// Finish loading with an error
-    func finishLoading(error: Error) {
-        isLoading = false
-        handleError(error)
-    }
-
-    /// Execute an async operation with automatic loading state management
-    func executeAsync<T: Sendable>(
-        showResultOnSuccess: Bool = true,
-        operation: @Sendable () async throws -> T
-    ) async -> T? {
-        startLoading()
-        do {
-            let result = try await operation()
-            isLoading = false
             if showResultOnSuccess {
                 showResult = true
             }
