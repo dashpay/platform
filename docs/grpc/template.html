@@ -182,7 +182,7 @@
                   <a href="#{{.FullName}}"><span class="badge">E</span>{{.LongName}}</a>
                 </li>
               {{end}}
-              {{range .Extensions}}
+              {{if .Extensions}}
                 <li>
                   <a href="#{{$file_name}}-extensions"><span class="badge">X</span>File-level Extensions</a>
                 </li>

@@ -7,9 +7,12 @@ on:
     paths:
       - 'book/**'
       - 'docs/**'
+      - 'Cargo.toml'
+      - 'packages/**/Cargo.toml'
       - 'packages/**/*.rs'
       - 'packages/dapi-grpc/protos/**'
       - 'packages/js-dash-sdk/src/**'
+      - 'packages/js-dash-sdk/package.json'
       - 'packages/wasm-dpp/lib/**'
       - 'packages/wasm-sdk/dist/**/*.d.ts'
       - '.github/workflows/book.yml'
@@ -118,7 +121,7 @@ jobs:
             -v "${{ github.workspace }}/packages/dapi-grpc/protos:/protos:ro" \
             -v "${{ github.workspace }}/docs/grpc/template.html:/templates/template.html:ro" \
             -v "/tmp/grpc-out:/out" \
-            pseudomuto/protoc-gen-doc:latest \
+            pseudomuto/protoc-gen-doc@sha256:779263a6dc01fbe375298c4e556d784640539e7b2bd433a50588285da88b74d5 \
             --doc_opt=/templates/template.html,index.html \
             -I/protos \
             platform/v0/platform.proto \
@@ -152,9 +155,7 @@ jobs:
         run: YARN_ENABLE_SCRIPTS=false yarn install --inline-builds
 
       - name: Generate TypeDoc
-        run: |
-          yarn add --dev typedoc
-          yarn typedoc --options docs/typedoc.json --out /tmp/js-out
+        run: yarn typedoc --options docs/typedoc.json --out /tmp/js-out
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

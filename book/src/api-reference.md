@@ -1,7 +1,7 @@
 # API Reference
 
 Auto-generated API documentation for the Dash Platform developer ecosystem.
-Each section is built from source and updated on every push to `v*-dev` branches.
+Each section is built from source and updated by CI when relevant source files change on `v*-dev` branches.
 
 ---
 
