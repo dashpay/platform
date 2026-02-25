@@ -3,14 +3,10 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::shielded::SHIELDED_STORAGE_BYTES_PER_ACTION;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-
-/// Permanent storage bytes per shielded action:
-/// 280 bytes in BulkAppendTree (32 cmx + 32 nullifier + 216 encrypted note)
-/// + 32 bytes in nullifier tree = 312 bytes total.
-const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
 
 /// A trait for checking whether a state transition requires shielded ZK proof validation.
 pub(crate) trait StateTransitionHasShieldedProofValidationV0 {

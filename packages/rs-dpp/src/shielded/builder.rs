@@ -42,7 +42,7 @@ use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
 use crate::identity::signer::Signer;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
-use crate::shielded::{compute_platform_sighash, SerializedAction};
+use crate::shielded::{compute_minimum_shielded_fee, compute_platform_sighash, SerializedAction};
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::shield_transition::methods::ShieldTransitionMethodsV0;
@@ -309,8 +309,9 @@ pub fn build_shield_from_asset_lock_transition(
 
 /// Builds a ShieldedTransfer state transition (shielded pool -> shielded pool).
 ///
-/// Spends existing notes and creates a new note for the recipient. Any change
-/// (total spent - transfer amount) is returned to the `change_address`.
+/// Spends existing notes and creates a new note for the recipient. The shielded
+/// fee is deducted from the spent notes. Any remaining change is returned to
+/// the `change_address`.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths
@@ -322,6 +323,8 @@ pub fn build_shield_from_asset_lock_transition(
 /// - `anchor` - Merkle root of the commitment tree
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
+///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
 pub fn build_shielded_transfer_transition(
     spends: Vec<SpendableNote>,
@@ -333,17 +336,37 @@ pub fn build_shielded_transfer_transition(
     anchor: Anchor,
     proving_key: &ProvingKey,
     memo: [u8; 36],
+    fee: Option<Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if transfer_amount > total_spent {
+
+    // Conservative action count: at least (spends, 2) since we always have
+    // a recipient output and likely a change output.
+    let num_actions = spends.len().max(2);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let effective_fee = match fee {
+        Some(f) if f < min_fee => {
+            return Err(ProtocolError::Generic(format!(
+                "fee {} is below minimum required fee {}",
+                f, min_fee
+            )));
+        }
+        Some(f) => f,
+        None => min_fee,
+    };
+
+    let required = transfer_amount
+        .checked_add(effective_fee)
+        .ok_or_else(|| ProtocolError::Generic("fee + transfer_amount overflows u64".to_string()))?;
+    if required > total_spent {
         return Err(ProtocolError::Generic(format!(
-            "transfer amount {} exceeds total spendable value {}",
-            transfer_amount, total_spent
+            "transfer amount {} + fee {} = {} exceeds total spendable value {}",
+            transfer_amount, effective_fee, required, total_spent
         )));
     }
 
-    let change_amount = total_spent - transfer_amount;
+    let change_amount = total_spent - required;
 
     let recipient_payment = orchard_address_to_payment_address(recipient)?;
 
@@ -383,8 +406,7 @@ pub fn build_shielded_transfer_transition(
     let (actions, flags, value_balance, anchor_bytes, proof, binding_sig) =
         serialize_authorized_bundle(&bundle);
 
-    // value_balance for shielded transfer is u64; cast from i64
-    // (should be 0 when transfer_amount == total_spent, positive if fees leave pool)
+    // value_balance = effective_fee (the amount leaving the shielded pool as fee)
     ShieldedTransferTransition::try_from_bundle(
         actions,
         flags,
@@ -399,7 +421,8 @@ pub fn build_shielded_transfer_transition(
 /// Builds an Unshield state transition (shielded pool -> platform address).
 ///
 /// Spends existing notes and sends part of the value to a transparent platform
-/// address. Any remaining value is returned to the shielded `change_address`.
+/// address. The shielded fee is deducted from the spent notes. Any remaining
+/// value is returned to the shielded `change_address`.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths
@@ -411,6 +434,8 @@ pub fn build_shielded_transfer_transition(
 /// - `anchor` - Merkle root of the commitment tree
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
+/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
+///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
 pub fn build_unshield_transition(
     spends: Vec<SpendableNote>,
@@ -422,17 +447,36 @@ pub fn build_unshield_transition(
     anchor: Anchor,
     proving_key: &ProvingKey,
     memo: [u8; 36],
+    fee: Option<Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if unshield_amount > total_spent {
+
+    // Conservative action count: at least (spends, 1) since we have a change output.
+    let num_actions = spends.len().max(1);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let effective_fee = match fee {
+        Some(f) if f < min_fee => {
+            return Err(ProtocolError::Generic(format!(
+                "fee {} is below minimum required fee {}",
+                f, min_fee
+            )));
+        }
+        Some(f) => f,
+        None => min_fee,
+    };
+
+    let required = unshield_amount
+        .checked_add(effective_fee)
+        .ok_or_else(|| ProtocolError::Generic("fee + unshield_amount overflows u64".to_string()))?;
+    if required > total_spent {
         return Err(ProtocolError::Generic(format!(
-            "unshield amount {} exceeds total spendable value {}",
-            unshield_amount, total_spent
+            "unshield amount {} + fee {} = {} exceeds total spendable value {}",
+            unshield_amount, effective_fee, required, total_spent
         )));
     }
 
-    let change_amount = total_spent - unshield_amount;
+    let change_amount = total_spent - required;
 
     // Unshield extra_data = output_address.to_bytes() || amount.to_le_bytes()
     let mut extra_sighash_data = output_address.to_bytes();
@@ -469,7 +513,8 @@ pub fn build_unshield_transition(
 /// Builds a ShieldedWithdrawal state transition (shielded pool -> core L1 address).
 ///
 /// Spends existing notes and withdraws value to a core chain script output.
-/// Any remaining value is returned to the shielded `change_address`.
+/// The shielded fee is deducted from the spent notes. Any remaining value is
+/// returned to the shielded `change_address`.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths
@@ -483,6 +528,8 @@ pub fn build_unshield_transition(
 /// - `anchor` - Merkle root of the commitment tree
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
+/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
+///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
 pub fn build_shielded_withdrawal_transition(
     spends: Vec<SpendableNote>,
@@ -496,17 +543,38 @@ pub fn build_shielded_withdrawal_transition(
     anchor: Anchor,
     proving_key: &ProvingKey,
     memo: [u8; 36],
+    fee: Option<Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if withdrawal_amount > total_spent {
+
+    // Conservative action count: at least (spends, 1) since we have a change output.
+    let num_actions = spends.len().max(1);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let effective_fee = match fee {
+        Some(f) if f < min_fee => {
+            return Err(ProtocolError::Generic(format!(
+                "fee {} is below minimum required fee {}",
+                f, min_fee
+            )));
+        }
+        Some(f) => f,
+        None => min_fee,
+    };
+
+    let required = withdrawal_amount
+        .checked_add(effective_fee)
+        .ok_or_else(|| {
+            ProtocolError::Generic("fee + withdrawal_amount overflows u64".to_string())
+        })?;
+    if required > total_spent {
         return Err(ProtocolError::Generic(format!(
-            "withdrawal amount {} exceeds total spendable value {}",
-            withdrawal_amount, total_spent
+            "withdrawal amount {} + fee {} = {} exceeds total spendable value {}",
+            withdrawal_amount, effective_fee, required, total_spent
         )));
     }
 
-    let change_amount = total_spent - withdrawal_amount;
+    let change_amount = total_spent - required;
 
     // ShieldedWithdrawal extra_data = output_script.as_bytes() || amount.to_le_bytes()
     let mut extra_sighash_data = output_script.as_bytes().to_vec();

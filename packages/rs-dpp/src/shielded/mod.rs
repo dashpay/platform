@@ -6,6 +6,14 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::fee::Credits;
+use platform_version::version::PlatformVersion;
+
+/// Permanent storage bytes per shielded action:
+/// 280 bytes in BulkAppendTree (32 cmx + 32 nullifier + 216 encrypted note)
+/// + 32 bytes in nullifier tree = 312 bytes total.
+pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
 
@@ -28,6 +36,31 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
     hasher.update(bundle_commitment);
     hasher.update(extra_data);
     hasher.finalize().into()
+}
+
+/// Computes the minimum fee (in credits) for a shielded state transition.
+///
+/// The fee formula mirrors the on-chain validation in `validate_minimum_shielded_fee`:
+///   `min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)`
+///
+/// where `storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION × (disk + processing) credits/byte`.
+///
+/// # Parameters
+/// - `num_actions` — number of Orchard actions in the bundle
+/// - `platform_version` — protocol version (determines fee constants)
+pub fn compute_minimum_shielded_fee(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let constants = &platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants;
+    let storage = &platform_version.fee_version.storage;
+    let storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION
+        * (storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte);
+    let per_action = constants.shielded_per_action_processing_fee + storage_fee;
+    constants.shielded_proof_verification_fee + num_actions as u64 * per_action
 }
 
 /// Serde helper for `[u8; 64]` fields (serde only supports arrays up to 32).
