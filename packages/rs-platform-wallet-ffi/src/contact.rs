@@ -355,89 +355,99 @@ mod tests {
 
     #[test]
     fn test_get_sent_contact_request_ids() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let mut array = IdentifierArray {
-            items: std::ptr::null_mut(),
-            count: 0,
-        };
-        let mut error = PlatformWalletFFIError::success();
+            let mut array = IdentifierArray {
+                items: std::ptr::null_mut(),
+                count: 0,
+            };
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = managed_identity_get_sent_contact_request_ids(handle, &mut array, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(array.count, 0); // Should be empty for new identity
+            let result =
+                managed_identity_get_sent_contact_request_ids(handle, &mut array, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(array.count, 0); // Should be empty for new identity
 
-        // Cleanup
-        platform_wallet_identifier_array_free(array);
-        crate::managed_identity_destroy(handle);
+            // Cleanup
+            platform_wallet_identifier_array_free(array);
+            crate::managed_identity_destroy(handle);
+        }
     }
 
     #[test]
     fn test_get_incoming_contact_request_ids() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let mut array = IdentifierArray {
-            items: std::ptr::null_mut(),
-            count: 0,
-        };
-        let mut error = PlatformWalletFFIError::success();
+            let mut array = IdentifierArray {
+                items: std::ptr::null_mut(),
+                count: 0,
+            };
+            let mut error = PlatformWalletFFIError::success();
 
-        let result =
-            managed_identity_get_incoming_contact_request_ids(handle, &mut array, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(array.count, 0);
+            let result =
+                managed_identity_get_incoming_contact_request_ids(handle, &mut array, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(array.count, 0);
 
-        // Cleanup
-        platform_wallet_identifier_array_free(array);
-        crate::managed_identity_destroy(handle);
+            // Cleanup
+            platform_wallet_identifier_array_free(array);
+            crate::managed_identity_destroy(handle);
+        }
     }
 
     #[test]
     fn test_get_established_contact_ids() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let mut array = IdentifierArray {
-            items: std::ptr::null_mut(),
-            count: 0,
-        };
-        let mut error = PlatformWalletFFIError::success();
+            let mut array = IdentifierArray {
+                items: std::ptr::null_mut(),
+                count: 0,
+            };
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = managed_identity_get_established_contact_ids(handle, &mut array, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(array.count, 0);
+            let result =
+                managed_identity_get_established_contact_ids(handle, &mut array, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(array.count, 0);
 
-        // Cleanup
-        platform_wallet_identifier_array_free(array);
-        crate::managed_identity_destroy(handle);
+            // Cleanup
+            platform_wallet_identifier_array_free(array);
+            crate::managed_identity_destroy(handle);
+        }
     }
 
     #[test]
     fn test_is_contact_established() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let contact_id = Identifier::random();
-        let id_bytes: IdentifierBytes = contact_id.into();
-        let mut error = PlatformWalletFFIError::success();
+            let contact_id = Identifier::random();
+            let id_bytes: IdentifierBytes = contact_id.into();
+            let mut error = PlatformWalletFFIError::success();
 
-        let mut is_established = true;
-        let result = managed_identity_is_contact_established(
-            handle,
-            id_bytes,
-            &mut is_established,
-            &mut error,
-        );
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(is_established, false);
+            let mut is_established = true;
+            let result = managed_identity_is_contact_established(
+                handle,
+                id_bytes,
+                &mut is_established,
+                &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!is_established);
 
-        // Cleanup
-        crate::managed_identity_destroy(handle);
+            // Cleanup
+            crate::managed_identity_destroy(handle);
+        }
     }
 }

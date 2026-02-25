@@ -253,72 +253,78 @@ mod tests {
 
     #[test]
     fn test_serialize_deserialize_json_bytes() {
-        let json = std::ffi::CString::new(r#"{"test":"value"}"#).unwrap();
-        let mut bytes: *mut c_uchar = std::ptr::null_mut();
-        let mut len: usize = 0;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let json = std::ffi::CString::new(r#"{"test":"value"}"#).unwrap();
+            let mut bytes: *mut c_uchar = std::ptr::null_mut();
+            let mut len: usize = 0;
+            let mut error = PlatformWalletFFIError::success();
 
-        // Serialize
-        let result = platform_wallet_serialize_to_json_bytes(
-            json.as_ptr(),
-            &mut bytes,
-            &mut len,
-            &mut error,
-        );
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!bytes.is_null());
-        assert!(len > 0);
+            // Serialize
+            let result = platform_wallet_serialize_to_json_bytes(
+                json.as_ptr(),
+                &mut bytes,
+                &mut len,
+                &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!bytes.is_null());
+            assert!(len > 0);
 
-        // Deserialize
-        let mut json_out: *mut c_char = std::ptr::null_mut();
-        let result =
-            platform_wallet_deserialize_from_json_bytes(bytes, len, &mut json_out, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!json_out.is_null());
+            // Deserialize
+            let mut json_out: *mut c_char = std::ptr::null_mut();
+            let result =
+                platform_wallet_deserialize_from_json_bytes(bytes, len, &mut json_out, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!json_out.is_null());
 
-        let json_str = unsafe { std::ffi::CStr::from_ptr(json_out).to_str().unwrap() };
-        assert_eq!(json_str, r#"{"test":"value"}"#);
+            let json_str = std::ffi::CStr::from_ptr(json_out).to_str().unwrap();
+            assert_eq!(json_str, r#"{"test":"value"}"#);
 
-        // Cleanup
-        platform_wallet_bytes_free(bytes, len);
-        crate::platform_wallet_string_free(json_out);
+            // Cleanup
+            platform_wallet_bytes_free(bytes, len);
+            crate::platform_wallet_string_free(json_out);
+        }
     }
 
     #[test]
     fn test_generate_random_identifier() {
-        let mut id = crate::types::IdentifierBytes { bytes: [0u8; 32] };
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let mut id = crate::types::IdentifierBytes { bytes: [0u8; 32] };
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = platform_wallet_generate_random_identifier(&mut id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = platform_wallet_generate_random_identifier(&mut id, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Check that it's not all zeros
-        assert_ne!(id.bytes, [0u8; 32]);
+            // Check that it's not all zeros
+            assert_ne!(id.bytes, [0u8; 32]);
+        }
     }
 
     #[test]
     fn test_identifier_to_from_hex() {
-        let mut id = crate::types::IdentifierBytes { bytes: [0u8; 32] };
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let mut id = crate::types::IdentifierBytes { bytes: [0u8; 32] };
+            let mut error = PlatformWalletFFIError::success();
 
-        // Generate random ID
-        platform_wallet_generate_random_identifier(&mut id, &mut error);
+            // Generate random ID
+            platform_wallet_generate_random_identifier(&mut id, &mut error);
 
-        // Convert to hex
-        let mut hex: *mut c_char = std::ptr::null_mut();
-        let result = platform_wallet_identifier_to_hex(id, &mut hex, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!hex.is_null());
+            // Convert to hex
+            let mut hex: *mut c_char = std::ptr::null_mut();
+            let result = platform_wallet_identifier_to_hex(id, &mut hex, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!hex.is_null());
 
-        // Convert back from hex
-        let mut id2 = crate::types::IdentifierBytes { bytes: [0u8; 32] };
-        let result = platform_wallet_identifier_from_hex(hex, &mut id2, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            // Convert back from hex
+            let mut id2 = crate::types::IdentifierBytes { bytes: [0u8; 32] };
+            let result = platform_wallet_identifier_from_hex(hex, &mut id2, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Should match
-        assert_eq!(id.bytes, id2.bytes);
+            // Should match
+            assert_eq!(id.bytes, id2.bytes);
 
-        // Cleanup
-        crate::platform_wallet_string_free(hex);
+            // Cleanup
+            crate::platform_wallet_string_free(hex);
+        }
     }
 }

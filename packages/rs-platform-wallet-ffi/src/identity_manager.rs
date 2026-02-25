@@ -410,69 +410,81 @@ mod tests {
 
     #[test]
     fn test_create_identity_manager() {
-        let mut handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let mut handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = identity_manager_create(&mut handle, &mut error);
+            let result = identity_manager_create(&mut handle, &mut error);
 
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_ne!(handle, NULL_HANDLE);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_ne!(handle, NULL_HANDLE);
 
-        // Cleanup
-        identity_manager_destroy(handle);
+            // Cleanup
+            identity_manager_destroy(handle);
+        }
     }
 
     #[test]
     fn test_get_identity_count() {
-        let mut handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let mut handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        identity_manager_create(&mut handle, &mut error);
+            identity_manager_create(&mut handle, &mut error);
 
-        let mut count: usize = 0;
-        let result = identity_manager_get_identity_count(handle, &mut count, &mut error);
+            let mut count: usize = 0;
+            let result = identity_manager_get_identity_count(handle, &mut count, &mut error);
 
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(count, 0);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(count, 0);
 
-        // Cleanup
-        identity_manager_destroy(handle);
+            // Cleanup
+            identity_manager_destroy(handle);
+        }
     }
 
     #[test]
     fn test_set_and_get_primary_identity() {
-        let mut manager_handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let mut manager_handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        identity_manager_create(&mut manager_handle, &mut error);
+            identity_manager_create(&mut manager_handle, &mut error);
 
-        let identity_id = Identifier::random();
-        let id_bytes: IdentifierBytes = identity_id.into();
+            let identity_id = Identifier::random();
+            let id_bytes: IdentifierBytes = identity_id.into();
 
-        // Create and add a managed identity
-        let identity = create_test_identity();
-        let managed_identity = ManagedIdentity::new(identity);
-        let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
+            // Create and add a managed identity
+            let identity = create_test_identity();
+            let managed_identity = ManagedIdentity::new(identity);
+            let identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
 
-        identity_manager_add_identity(manager_handle, identity_handle, &mut error);
+            identity_manager_add_identity(manager_handle, identity_handle, &mut error);
 
-        // Set primary identity
-        let result = identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            // Set primary identity
+            let result =
+                identity_manager_set_primary_identity(manager_handle, id_bytes, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Get primary identity
-        let mut retrieved_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result =
-            identity_manager_get_primary_identity_id(manager_handle, &mut retrieved_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            // Get primary identity
+            let mut retrieved_id = IdentifierBytes { bytes: [0u8; 32] };
+            let result = identity_manager_get_primary_identity_id(
+                manager_handle,
+                &mut retrieved_id,
+                &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Cleanup
-        identity_manager_destroy(manager_handle);
+            // Cleanup
+            identity_manager_destroy(manager_handle);
+        }
     }
 
     #[test]
     fn test_destroy_invalid_handle() {
-        let result = identity_manager_destroy(9999);
-        assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+        unsafe {
+            let result = identity_manager_destroy(9999);
+            assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+        }
     }
 }

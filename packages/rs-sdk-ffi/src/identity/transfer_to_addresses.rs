@@ -3,10 +3,7 @@
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::identity::signer::Signer;
-use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::dpp::identity::Identity;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
 use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};

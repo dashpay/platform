@@ -400,81 +400,88 @@ mod tests {
 
     #[test]
     fn test_get_and_set_label() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let label = std::ffi::CString::new("Test Identity").unwrap();
-        let mut error = PlatformWalletFFIError::success();
+            let label = std::ffi::CString::new("Test Identity").unwrap();
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = managed_identity_set_label(handle, label.as_ptr(), &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = managed_identity_set_label(handle, label.as_ptr(), &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        let mut label_ptr: *mut c_char = std::ptr::null_mut();
-        let result = managed_identity_get_label(handle, &mut label_ptr, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!label_ptr.is_null());
+            let mut label_ptr: *mut c_char = std::ptr::null_mut();
+            let result = managed_identity_get_label(handle, &mut label_ptr, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!label_ptr.is_null());
 
-        let retrieved_label = unsafe { std::ffi::CStr::from_ptr(label_ptr).to_str().unwrap() };
-        assert_eq!(retrieved_label, "Test Identity");
+            let retrieved_label = std::ffi::CStr::from_ptr(label_ptr).to_str().unwrap();
+            assert_eq!(retrieved_label, "Test Identity");
 
-        // Cleanup
-        platform_wallet_string_free(label_ptr);
-        managed_identity_destroy(handle);
+            // Cleanup
+            platform_wallet_string_free(label_ptr);
+            managed_identity_destroy(handle);
+        }
     }
 
     #[test]
     fn test_get_balance() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let mut balance: u64 = 0;
-        let mut error = PlatformWalletFFIError::success();
+            let mut balance: u64 = 0;
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = managed_identity_get_balance(handle, &mut balance, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            let result = managed_identity_get_balance(handle, &mut balance, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Cleanup
-        managed_identity_destroy(handle);
+            // Cleanup
+            managed_identity_destroy(handle);
+        }
     }
 
     #[test]
     fn test_block_time_operations() {
-        let identity = create_test_identity();
-        let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
-        let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
+        unsafe {
+            let identity = create_test_identity();
+            let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
+            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
-        let block_time = BlockTime {
-            height: 100,
-            core_height: 200,
-            timestamp: 1234567890,
-        };
+            let block_time = BlockTime {
+                height: 100,
+                core_height: 200,
+                timestamp: 1234567890,
+            };
 
-        let mut error = PlatformWalletFFIError::success();
+            let mut error = PlatformWalletFFIError::success();
 
-        // Set block time
-        let result =
-            managed_identity_set_last_updated_balance_block_time(handle, block_time, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
+            // Set block time
+            let result = managed_identity_set_last_updated_balance_block_time(
+                handle, block_time, &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
 
-        // Get block time
-        let mut retrieved_bt = BlockTime {
-            height: 0,
-            core_height: 0,
-            timestamp: 0,
-        };
-        let result = managed_identity_get_last_updated_balance_block_time(
-            handle,
-            &mut retrieved_bt,
-            &mut error,
-        );
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(retrieved_bt.height, 100);
-        assert_eq!(retrieved_bt.core_height, 200);
-        assert_eq!(retrieved_bt.timestamp, 1234567890);
+            // Get block time
+            let mut retrieved_bt = BlockTime {
+                height: 0,
+                core_height: 0,
+                timestamp: 0,
+            };
+            let result = managed_identity_get_last_updated_balance_block_time(
+                handle,
+                &mut retrieved_bt,
+                &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(retrieved_bt.height, 100);
+            assert_eq!(retrieved_bt.core_height, 200);
+            assert_eq!(retrieved_bt.timestamp, 1234567890);
 
-        // Cleanup
-        managed_identity_destroy(handle);
+            // Cleanup
+            managed_identity_destroy(handle);
+        }
     }
 }

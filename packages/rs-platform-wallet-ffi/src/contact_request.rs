@@ -506,74 +506,82 @@ mod tests {
 
     #[test]
     fn test_contact_request_getters() {
-        let sender_id = Identifier::from([1u8; 32]);
-        let recipient_id = Identifier::from([2u8; 32]);
-        let encrypted_key = vec![5u8; 96];
+        unsafe {
+            let sender_id = Identifier::from([1u8; 32]);
+            let recipient_id = Identifier::from([2u8; 32]);
+            let encrypted_key = vec![5u8; 96];
 
-        let request = ContactRequest::new(
-            sender_id,
-            recipient_id,
-            0,
-            1,
-            42,
-            encrypted_key.clone(),
-            100_000,
-            1_700_000_000,
-        );
+            let request = ContactRequest::new(
+                sender_id,
+                recipient_id,
+                0,
+                1,
+                42,
+                encrypted_key.clone(),
+                100_000,
+                1_700_000_000,
+            );
 
-        let handle = CONTACT_REQUEST_STORAGE.insert(request);
-        let mut error = PlatformWalletFFIError::success();
+            let handle = CONTACT_REQUEST_STORAGE.insert(request);
+            let mut error = PlatformWalletFFIError::success();
 
-        // Test sender ID
-        let mut out_id = IdentifierBytes { bytes: [0u8; 32] };
-        let result = contact_request_get_sender_id(handle, &mut out_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(out_id.bytes, [1u8; 32]);
+            // Test sender ID
+            let mut out_id = IdentifierBytes { bytes: [0u8; 32] };
+            let result = contact_request_get_sender_id(handle, &mut out_id, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(out_id.bytes, [1u8; 32]);
 
-        // Test recipient ID
-        let result = contact_request_get_recipient_id(handle, &mut out_id, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(out_id.bytes, [2u8; 32]);
+            // Test recipient ID
+            let result = contact_request_get_recipient_id(handle, &mut out_id, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(out_id.bytes, [2u8; 32]);
 
-        // Test sender key index
-        let mut sender_key_idx = 0u32;
-        let result = contact_request_get_sender_key_index(handle, &mut sender_key_idx, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(sender_key_idx, 0);
+            // Test sender key index
+            let mut sender_key_idx = 0u32;
+            let result =
+                contact_request_get_sender_key_index(handle, &mut sender_key_idx, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(sender_key_idx, 0);
 
-        // Test recipient key index
-        let mut recipient_key_idx = 0u32;
-        let result =
-            contact_request_get_recipient_key_index(handle, &mut recipient_key_idx, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(recipient_key_idx, 1);
+            // Test recipient key index
+            let mut recipient_key_idx = 0u32;
+            let result =
+                contact_request_get_recipient_key_index(handle, &mut recipient_key_idx, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(recipient_key_idx, 1);
 
-        // Test account reference
-        let mut account_ref = 0u32;
-        let result = contact_request_get_account_reference(handle, &mut account_ref, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(account_ref, 42);
+            // Test account reference
+            let mut account_ref = 0u32;
+            let result =
+                contact_request_get_account_reference(handle, &mut account_ref, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(account_ref, 42);
 
-        // Test created_at
-        let mut created_at = 0u64;
-        let result = contact_request_get_created_at(handle, &mut created_at, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(created_at, 1_700_000_000);
+            // Test created_at
+            let mut created_at = 0u64;
+            let result = contact_request_get_created_at(handle, &mut created_at, &mut error);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(created_at, 1_700_000_000);
 
-        // Test encrypted public key
-        let mut bytes_ptr: *mut u8 = std::ptr::null_mut();
-        let mut len: usize = 0;
-        let result =
-            contact_request_get_encrypted_public_key(handle, &mut bytes_ptr, &mut len, &mut error);
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_eq!(len, 96);
-        assert!(!bytes_ptr.is_null());
+            // Test encrypted public key
+            let mut bytes_ptr: *mut u8 = std::ptr::null_mut();
+            let mut len: usize = 0;
+            let result = contact_request_get_encrypted_public_key(
+                handle,
+                &mut bytes_ptr,
+                &mut len,
+                &mut error,
+            );
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_eq!(len, 96);
+            assert!(!bytes_ptr.is_null());
 
-        let bytes_slice = unsafe { std::slice::from_raw_parts(bytes_ptr, len) };
-        assert_eq!(bytes_slice, &encrypted_key[..]);
+            let bytes_slice = std::slice::from_raw_parts(bytes_ptr, len);
+            assert_eq!(bytes_slice, &encrypted_key[..]);
 
-        // Clean up
-        crate::platform_wallet_bytes_free(bytes_ptr, len);
-        contact_request_destroy(handle);
+            // Clean up
+            crate::platform_wallet_bytes_free(bytes_ptr, len);
+            contact_request_destroy(handle);
+        }
     }
 }

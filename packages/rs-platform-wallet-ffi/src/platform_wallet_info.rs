@@ -334,78 +334,86 @@ mod tests {
 
     #[test]
     fn test_create_from_seed() {
-        let seed = [0u8; 64];
-        let mut handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let seed = [0u8; 64];
+            let mut handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = platform_wallet_info_create_from_seed(
-            Network::Testnet,
-            seed.as_ptr(),
-            seed.len(),
-            &mut handle,
-            &mut error,
-        );
+            let result = platform_wallet_info_create_from_seed(
+                Network::Testnet,
+                seed.as_ptr(),
+                seed.len(),
+                &mut handle,
+                &mut error,
+            );
 
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_ne!(handle, NULL_HANDLE);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_ne!(handle, NULL_HANDLE);
 
-        // Cleanup
-        platform_wallet_info_destroy(handle);
+            // Cleanup
+            platform_wallet_info_destroy(handle);
+        }
     }
 
     #[test]
     fn test_create_from_mnemonic() {
-        let mnemonic = std::ffi::CString::new(
+        unsafe {
+            let mnemonic = std::ffi::CString::new(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         ).unwrap();
 
-        let mut handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+            let mut handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        let result = platform_wallet_info_create_from_mnemonic(
-            Network::Testnet,
-            mnemonic.as_ptr(),
-            std::ptr::null(),
-            &mut handle,
-            &mut error,
-        );
+            let result = platform_wallet_info_create_from_mnemonic(
+                Network::Testnet,
+                mnemonic.as_ptr(),
+                std::ptr::null(),
+                &mut handle,
+                &mut error,
+            );
 
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert_ne!(handle, NULL_HANDLE);
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert_ne!(handle, NULL_HANDLE);
 
-        // Cleanup
-        platform_wallet_info_destroy(handle);
+            // Cleanup
+            platform_wallet_info_destroy(handle);
+        }
     }
 
     #[test]
     #[ignore] // Stubbed - requires serde support on PlatformWalletInfo
     fn test_to_json() {
-        let seed = [0u8; 64];
-        let mut handle: Handle = NULL_HANDLE;
-        let mut error = PlatformWalletFFIError::success();
+        unsafe {
+            let seed = [0u8; 64];
+            let mut handle: Handle = NULL_HANDLE;
+            let mut error = PlatformWalletFFIError::success();
 
-        platform_wallet_info_create_from_seed(
-            Network::Testnet,
-            seed.as_ptr(),
-            seed.len(),
-            &mut handle,
-            &mut error,
-        );
+            platform_wallet_info_create_from_seed(
+                Network::Testnet,
+                seed.as_ptr(),
+                seed.len(),
+                &mut handle,
+                &mut error,
+            );
 
-        let mut json_ptr: *mut c_char = std::ptr::null_mut();
-        let result = platform_wallet_info_to_json(handle, &mut json_ptr, &mut error);
+            let mut json_ptr: *mut c_char = std::ptr::null_mut();
+            let result = platform_wallet_info_to_json(handle, &mut json_ptr, &mut error);
 
-        assert_eq!(result, PlatformWalletFFIResult::Success);
-        assert!(!json_ptr.is_null());
+            assert_eq!(result, PlatformWalletFFIResult::Success);
+            assert!(!json_ptr.is_null());
 
-        // Cleanup
-        platform_wallet_string_free(json_ptr);
-        platform_wallet_info_destroy(handle);
+            // Cleanup
+            platform_wallet_string_free(json_ptr);
+            platform_wallet_info_destroy(handle);
+        }
     }
 
     #[test]
     fn test_destroy_invalid_handle() {
-        let result = platform_wallet_info_destroy(9999);
-        assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+        unsafe {
+            let result = platform_wallet_info_destroy(9999);
+            assert_eq!(result, PlatformWalletFFIResult::ErrorInvalidHandle);
+        }
     }
 }

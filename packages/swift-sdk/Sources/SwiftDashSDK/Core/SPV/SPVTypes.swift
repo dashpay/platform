@@ -62,7 +62,7 @@ public struct SPVBlockHeadersProgress: Sendable {
 
     public init(_ ffi: FFIBlockHeadersProgress) {
         state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
-        currentHeight = ffi.current_height
+        currentHeight = ffi.tip_height
         targetHeight = ffi.target_height
         processed = ffi.processed
         buffered = ffi.buffered

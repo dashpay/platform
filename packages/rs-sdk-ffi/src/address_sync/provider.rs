@@ -64,14 +64,14 @@ pub struct AddressProviderVTable {
 
     /// Check if there are still pending addresses (optional, can be NULL)
     /// If null, the default implementation (pending_addresses is non-empty) is used
-    pub has_pending: Option<HasPendingFn>,
+    pub has_pending: Option<unsafe extern "C" fn(context: *mut c_void) -> bool>,
 
     /// Get the highest found index (optional, can be NULL)
-    /// If null, returns None
-    pub highest_found_index: Option<GetHighestFoundIndexFn>,
+    /// If null, returns None (u32::MAX means none found)
+    pub highest_found_index: Option<unsafe extern "C" fn(context: *mut c_void) -> u32>,
 
     /// Optional destructor for cleanup (can be NULL)
-    pub destroy: Option<DestroyProviderFn>,
+    pub destroy: Option<unsafe extern "C" fn(context: *mut c_void)>,
 }
 
 /// FFI-compatible address provider using callbacks

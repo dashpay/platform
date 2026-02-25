@@ -5,12 +5,7 @@
 use dash_sdk::dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
 };
-use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
-use dash_sdk::dpp::dashcore::Network;
-use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
-use dash_sdk::dpp::identity::signer::Signer;
-use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use std::collections::BTreeMap;
 use std::panic::{self, AssertUnwindSafe};
@@ -116,6 +111,7 @@ pub unsafe extern "C" fn dash_sdk_address_top_up_from_asset_lock(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 unsafe fn dash_sdk_address_top_up_from_asset_lock_inner(
     sdk_handle: *const SDKHandle,
     proof_type: DashSDKAssetLockProofType,
