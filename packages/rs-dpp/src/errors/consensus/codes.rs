@@ -383,6 +383,7 @@ impl ErrorWithCode for StateError {
             Self::NullifierAlreadySpentError(_) => 40901,
             Self::InvalidShieldedProofError(_) => 40902,
             Self::InsufficientPoolNotesError(_) => 40903,
+            Self::InsufficientShieldedFeeError(_) => 40904,
         }
     }
 }

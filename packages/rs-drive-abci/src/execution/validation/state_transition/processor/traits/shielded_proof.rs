@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
+use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -34,6 +35,97 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
         )
+    }
+}
+
+/// A trait for validating that a shielded state transition includes sufficient fees.
+///
+/// The fee is derived from the public `value_balance` field (no ZK proof execution needed):
+/// - ShieldedTransfer: fee = value_balance
+/// - Unshield: fee = value_balance - amount
+/// - ShieldedWithdrawal: fee = value_balance - amount
+/// - Shield: fee paid by transparent address inputs (skipped here)
+pub(crate) trait StateTransitionShieldedMinimumFeeValidationV0 {
+    fn validate_minimum_shielded_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
+    fn validate_minimum_shielded_fee(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .validate_minimum_shielded_fee
+        {
+            0 => {
+                let fee: i64 = match self {
+                    // Shield: fee is paid from transparent address inputs, not from value_balance.
+                    StateTransition::Shield(_) => {
+                        return Ok(SimpleConsensusValidationResult::new())
+                    }
+                    // ShieldedTransfer: value_balance (u64) IS the fee.
+                    StateTransition::ShieldedTransfer(st) => match st {
+                        dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
+                            v0.value_balance as i64
+                        }
+                    },
+                    // Unshield: fee = value_balance - amount.
+                    StateTransition::Unshield(st) => match st {
+                        dpp::state_transition::unshield_transition::UnshieldTransition::V0(
+                            v0,
+                        ) => {
+                            if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
+                                0
+                            } else {
+                                (v0.value_balance as u64 - v0.amount) as i64
+                            }
+                        }
+                    },
+                    // ShieldedWithdrawal: fee = value_balance - amount.
+                    StateTransition::ShieldedWithdrawal(st) => match st {
+                        dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
+                            if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
+                                0
+                            } else {
+                                (v0.value_balance as u64 - v0.amount) as i64
+                            }
+                        }
+                    },
+                    // Other transitions don't go through shielded proof validation.
+                    _ => return Ok(SimpleConsensusValidationResult::new()),
+                };
+
+                let minimum_shielded_fee = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .event_constants
+                    .minimum_shielded_fee as i64;
+
+                if fee < minimum_shielded_fee {
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        StateError::InsufficientShieldedFeeError(
+                            InsufficientShieldedFeeError::new(format!(
+                                "shielded transition fee {} is below minimum required fee {}",
+                                fee, minimum_shielded_fee
+                            )),
+                        )
+                        .into(),
+                    ))
+                } else {
+                    Ok(SimpleConsensusValidationResult::new())
+                }
+            }
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "StateTransition::validate_minimum_shielded_fee".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 

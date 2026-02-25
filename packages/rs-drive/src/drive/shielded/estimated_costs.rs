@@ -1,6 +1,6 @@
 use crate::drive::shielded::paths::{
     shielded_credit_pool_anchors_path, shielded_credit_pool_notes_path,
-    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path,
+    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path, SHIELDED_NOTES_CHUNK_POWER,
 };
 use crate::drive::{Drive, RootTree};
 use grovedb::batch::KeyInfoPath;
@@ -10,8 +10,10 @@ use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
-/// Average size of a note value: 32 cmx + 692 encrypted note = 724 bytes
-const AVERAGE_NOTE_VALUE_SIZE: u32 = 724;
+/// Average size of a note value: 32 cmx + 32 nullifier + 216 encrypted note = 280 bytes
+/// (encrypted note = 32 epk + 104 enc_ciphertext + 80 out_ciphertext, using DashMemo 36-byte memos)
+/// The cmx is prepended by GroveDB's commitment_tree_insert_op for client retrieval.
+const AVERAGE_NOTE_VALUE_SIZE: u32 = 280;
 
 /// Size of a nullifier key (32 bytes)
 const NULLIFIER_KEY_SIZE: u8 = 32;
@@ -104,8 +106,8 @@ impl Drive {
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_notes_path()),
             EstimatedLayerInformation {
-                tree_type: TreeType::CommitmentTree,
-                estimated_layer_count: EstimatedLevel(10, false),
+                tree_type: TreeType::CommitmentTree(SHIELDED_NOTES_CHUNK_POWER),
+                estimated_layer_count: EstimatedLevel(16, false),
                 estimated_layer_sizes: AllItems(8, AVERAGE_NOTE_VALUE_SIZE, None),
             },
         );
@@ -116,7 +118,7 @@ impl Drive {
             KeyInfoPath::from_known_path(shielded_credit_pool_nullifiers_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
-                estimated_layer_count: EstimatedLevel(10, false),
+                estimated_layer_count: EstimatedLevel(16, false),
                 estimated_layer_sizes: AllItems(NULLIFIER_KEY_SIZE, 0, None),
             },
         );

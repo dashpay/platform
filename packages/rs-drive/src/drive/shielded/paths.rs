@@ -18,6 +18,9 @@ pub const SHIELDED_TOTAL_BALANCE_KEY: u8 = 5;
 /// Key for the anchors tree inside a shielded pool
 pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 6;
 
+/// Chunk power for the notes CommitmentTree (2^11 = 2048 items per chunk)
+pub const SHIELDED_NOTES_CHUNK_POWER: u8 = 11;
+
 /// Path to the shielded credit pool: [AddressBalances, "s"]
 pub fn shielded_credit_pool_path() -> [&'static [u8]; 2] {
     [

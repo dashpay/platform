@@ -579,15 +579,15 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
-            TreeType::CommitmentTree => {
-                Element::empty_commitment_tree_with_flags(11, element_flags)
+            TreeType::CommitmentTree(chunk_power) => {
+                Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)
             }
             TreeType::MmrTree => Element::empty_mmr_tree_with_flags(element_flags),
-            TreeType::BulkAppendTree => {
-                Element::empty_bulk_append_tree_with_flags(4, element_flags)
+            TreeType::BulkAppendTree(chunk_power) => {
+                Element::empty_bulk_append_tree_with_flags(*chunk_power, element_flags)
             }
-            TreeType::DenseAppendOnlyFixedSizeTree => {
-                Element::empty_dense_tree_with_flags(8, element_flags)
+            TreeType::DenseAppendOnlyFixedSizeTree(chunk_power) => {
+                Element::empty_dense_tree_with_flags(*chunk_power, element_flags)
             }
         };
 

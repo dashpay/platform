@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
+use crate::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use crate::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
 use crate::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use crate::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
@@ -350,6 +351,9 @@ pub enum StateError {
 
     #[error(transparent)]
     InsufficientPoolNotesError(InsufficientPoolNotesError),
+
+    #[error(transparent)]
+    InsufficientShieldedFeeError(InsufficientShieldedFeeError),
 }
 
 impl From<StateError> for ConsensusError {

@@ -245,6 +245,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
         has_address_witness_validation: 0,
         validate_address_witnesses: 0,
         validate_shielded_proof: 0,
+        validate_minimum_shielded_fee: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {
@@ -259,5 +260,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
             maximum_vote_polls_to_process: 2,
             maximum_contenders_to_consider: 100,
             minimum_pool_notes_for_outgoing: 250,
+            minimum_shielded_fee: 1,
         },
     };

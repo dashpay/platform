@@ -16,6 +16,7 @@ pub struct DriveAbciValidationVersions {
     pub has_address_witness_validation: FeatureVersion,
     pub validate_address_witnesses: FeatureVersion,
     pub validate_shielded_proof: FeatureVersion,
+    pub validate_minimum_shielded_fee: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
@@ -30,6 +31,9 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
+    /// Minimum fee (in credits) required for shielded transitions that pay fees
+    /// from the shielded pool (ShieldedTransfer, Unshield, ShieldedWithdrawal).
+    pub minimum_shielded_fee: u64,
 }
 
 #[derive(Clone, Debug, Default)]
