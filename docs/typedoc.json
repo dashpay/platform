@@ -2,11 +2,9 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPointStrategy": "resolve",
   "entryPoints": [
-    "packages/js-dash-sdk/src/index.ts",
-    "packages/wasm-dpp/lib/index.ts",
-    "packages/wasm-sdk/dist/raw/wasm_sdk.d.ts"
+    "packages/js-dash-sdk/src/index.ts"
   ],
-  "tsconfig": "packages/js-dash-sdk/tsconfig.json",
+  "tsconfig": "docs/tsconfig.typedoc.json",
   "name": "Dash Platform JavaScript SDK",
   "includeVersion": true,
   "readme": "none",

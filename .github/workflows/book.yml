@@ -74,15 +74,10 @@ jobs:
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
-      - name: Cache Rust docs output
-        uses: actions/cache@v4
-        with:
-          path: target/doc
-          key: cargo-doc/${{ runner.os }}/${{ runner.arch }}/${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-doc/${{ runner.os }}/${{ runner.arch }}/
-
       - name: Build Rust docs
         run: |
+          # Clean stale search index to avoid rustdoc corruption
+          rm -rf target/doc
           cargo doc \
             --workspace \
             --no-deps \
@@ -93,7 +88,7 @@ jobs:
             --exclude strategy-tests \
             --locked
         env:
-          RUSTDOCFLAGS: "--default-theme ayu --extend-css docs/rust-extra.css"
+          RUSTDOCFLAGS: "--default-theme ayu --extend-css ${{ github.workspace }}/docs/rust-extra.css"
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
@@ -145,9 +140,6 @@ jobs:
 
       - name: Setup Node.js
         uses: ./.github/actions/nodejs
-
-      - name: Build TypeScript types
-        run: yarn workspace dash run build:ts
 
       - name: Generate TypeDoc
         run: |

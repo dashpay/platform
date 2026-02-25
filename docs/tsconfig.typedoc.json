@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "commonjs",
+    "lib": ["es6", "dom"],
+    "skipLibCheck": true,
+    "strict": false,
+    "allowUmdGlobalAccess": true,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "declaration": true,
+    "noEmit": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@dashevo/wasm-dpp": ["packages/wasm-dpp/lib"],
+      "@dashevo/wasm-dpp/*": ["packages/wasm-dpp/lib/*"]
+    }
+  },
+  "include": [
+    "packages/js-dash-sdk/src/**/*"
+  ]
+}
