@@ -2205,10 +2205,9 @@ mod tests {
 
         // Now verify the proof using the FromProof trait with our test ContextProvider
         // This is the key test - it verifies the proof signature using the quorum public key
-        let verification_result = GroveTrunkQueryResult::maybe_from_proof_with_metadata::<
+        let verification_result = <GroveTrunkQueryResult as FromProof<
             GetAddressesTrunkStateRequest,
-            _,
-        >(
+        >>::maybe_from_proof_with_metadata(
             request,
             response,
             Network::Testnet,
