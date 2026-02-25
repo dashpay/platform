@@ -44,11 +44,12 @@ mod tests {
 
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// transfer transition. Has a non-zero anchor, valid field sizes, but random data.
+    /// Includes sufficient fee to pass the minimum shielded fee check (1 action = 111,548,800).
     fn create_default_shielded_transfer_transition() -> StateTransition {
         create_shielded_transfer_transition(
             vec![create_dummy_serialized_action()],
             0x03,           // spends_enabled | outputs_enabled
-            0,              // zero fee
+            111_548_800,    // minimum fee for 1 action
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -298,12 +299,18 @@ mod tests {
             );
         }
 
+        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
+
         #[test]
         fn test_valid_shielded_transfer_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             let mut rng = OsRng;
             let pk = get_proving_key();
+
+            let spend_amount = 200_000_000u64;
+            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
 
             // --- Create keys ---
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -320,7 +327,7 @@ mod tests {
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
             let note =
-                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
@@ -330,11 +337,16 @@ mod tests {
             let anchor = tree.anchor().unwrap();
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
-            // --- Build bundle: spend 10_000 → output 10_000 (value_balance = 0) ---
+            // --- Build bundle: spend 200M → output (200M - fee), value_balance = fee ---
             let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 36])
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
@@ -347,10 +359,10 @@ mod tests {
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
-            // value_balance should be 0 (equal spend and output)
-            assert_eq!(value_balance, 0);
+            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
 
-            // --- Insert anchor into platform state ---
+            // --- Set pool balance and insert anchor ---
+            set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             // --- Create and process transition ---
@@ -388,7 +400,7 @@ mod tests {
             let transition = create_shielded_transfer_transition(
                 vec![bad_action],
                 0x03,
-                0,
+                111_548_800, // minimum fee for 1 action (fee check runs before proof reconstruction)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -401,6 +413,318 @@ mod tests {
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
                 )]
+            );
+        }
+    }
+
+    // ==========================================
+    // FEE VALIDATION TESTS (InsufficientShieldedFeeError)
+    // ==========================================
+    //
+    // The minimum shielded fee is:
+    //   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
+    //
+    // With current constants:
+    //   proof_verification_fee     = 100_000_000
+    //   per_action_processing_fee  =   3_000_000
+    //   per_action_storage_fee     = 312 × (27_000 + 400) = 8_548_800
+    //   per_action_total           = 11_548_800
+    //
+    // Minimum fees by action count:
+    //   2 actions: 100_000_000 + 2 × 11_548_800 = 123_097_600
+    //   3 actions: 100_000_000 + 3 × 11_548_800 = 134_646_400
+    //   4 actions: 100_000_000 + 4 × 11_548_800 = 146_195_200
+
+    mod fee_validation {
+        use super::*;
+        use grovedb_commitment_tree::{
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
+            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
+        const MINIMUM_FEE_3_ACTIONS: u64 = 134_646_400;
+        const MINIMUM_FEE_4_ACTIONS: u64 = 146_195_200;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance() as u64;
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        /// Helper to create a dummy action with a unique seed (avoids duplicate nullifiers).
+        fn create_dummy_action(seed: u8) -> SerializedAction {
+            SerializedAction {
+                nullifier: [seed; 32],
+                rk: [seed.wrapping_add(10); 32],
+                cmx: [seed.wrapping_add(20); 32],
+                encrypted_note: vec![seed.wrapping_add(30); 692],
+                cv_net: [seed.wrapping_add(40); 32],
+                spend_auth_sig: [seed.wrapping_add(50); 64],
+            }
+        }
+
+        // --- Insufficient fee tests (dummy bundles — fee check runs before proof verification) ---
+
+        #[test]
+        fn test_zero_fee_returns_insufficient_fee_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // 2 actions with zero fee — well below minimum of 123,097,600
+            let transition = create_shielded_transfer_transition(
+                vec![create_dummy_action(1), create_dummy_action(2)],
+                0x03,
+                0, // zero fee
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn test_fee_one_below_minimum_for_2_actions_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // 2 actions with fee one credit below minimum
+            let transition = create_shielded_transfer_transition(
+                vec![create_dummy_action(1), create_dummy_action(2)],
+                0x03,
+                MINIMUM_FEE_2_ACTIONS - 1, // 123,097,599
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn test_fee_one_below_minimum_for_3_actions_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // 3 actions with fee one credit below minimum
+            let transition = create_shielded_transfer_transition(
+                vec![
+                    create_dummy_action(1),
+                    create_dummy_action(2),
+                    create_dummy_action(3),
+                ],
+                0x03,
+                MINIMUM_FEE_3_ACTIONS - 1, // 134,646,399
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn test_fee_one_below_minimum_for_4_actions_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // 4 actions with fee one credit below minimum
+            let transition = create_shielded_transfer_transition(
+                vec![
+                    create_dummy_action(1),
+                    create_dummy_action(2),
+                    create_dummy_action(3),
+                    create_dummy_action(4),
+                ],
+                0x03,
+                MINIMUM_FEE_4_ACTIONS - 1, // 146,195,199
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+
+        // --- Exact minimum fee tests (real bundles with valid ZK proofs) ---
+
+        /// Build a valid 2-action Orchard bundle where value_balance equals the desired fee.
+        /// Spends `spend_amount` and outputs `spend_amount - fee`, so value_balance = fee.
+        fn build_bundle_with_fee(
+            fee: u64,
+        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let spend_amount = 200_000_000u64; // 200M credits
+            let output_amount = spend_amount - fee;
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            serialize_authorized_bundle(&bundle)
+        }
+
+        #[test]
+        fn test_exact_minimum_fee_for_2_actions_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS);
+
+            // Verify the bundle has exactly 2 actions and the expected fee
+            assert_eq!(actions.len(), 2);
+            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+
+            // Set pool balance large enough to cover the fee deduction
+            set_pool_total_balance(&platform, 500_000_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            let transition = create_shielded_transfer_transition(
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        #[test]
+        fn test_fee_above_minimum_for_2_actions_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // Pay 1 credit more than the minimum
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS + 1);
+
+            assert_eq!(actions.len(), 2);
+            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS + 1);
+
+            set_pool_total_balance(&platform, 500_000_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            let transition = create_shielded_transfer_transition(
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -424,6 +748,9 @@ mod tests {
         };
         use rand::rngs::OsRng;
         use std::sync::OnceLock;
+
+        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
 
         static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
         fn get_proving_key() -> &'static ProvingKey {
@@ -461,11 +788,15 @@ mod tests {
         }
 
         /// Build a valid Orchard bundle for shielded transfer tests.
+        /// Includes sufficient fee (value_balance = MINIMUM_FEE_2_ACTIONS).
         /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_transfer_bundle(
         ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
+
+            let spend_amount = 200_000_000u64;
+            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
             let fvk = FullViewingKey::from(&sk);
@@ -480,7 +811,7 @@ mod tests {
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
             let note =
-                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let mut tree = ClientMemoryCommitmentTree::new(100);
@@ -492,7 +823,12 @@ mod tests {
             let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 36])
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
                 .unwrap();
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
@@ -520,19 +856,17 @@ mod tests {
 
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_shielded_transfer_bundle();
-            assert_eq!(value_balance, 0);
+            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
 
-            // ATTACK: Mutate value_balance from 0 to 5000
-            let mutated_value_balance = 5000u64;
+            // ATTACK: Mutate value_balance (increase by 5000 so it still passes fee check)
+            let mutated_value_balance = value_balance + 5000;
 
-            // Set pool balance so fee deduction doesn't underflow
-            set_pool_total_balance(&platform, 10_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_shielded_transfer_transition(
                 actions,
                 flags,
-                mutated_value_balance, // MUTATED: was 0, now 5000
+                mutated_value_balance, // MUTATED: different from signed value
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -540,7 +874,8 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // FIXED: BatchValidator detects the binding signature mismatch.
+            // FIXED: BatchValidator detects the binding signature mismatch
+            // because mutating value_balance changes the bundle commitment (sighash).
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
@@ -646,7 +981,7 @@ mod tests {
             let transition = create_shielded_transfer_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
                 0x03,
-                0,
+                MINIMUM_FEE_2_ACTIONS, // sufficient fee so we reach proof verification
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

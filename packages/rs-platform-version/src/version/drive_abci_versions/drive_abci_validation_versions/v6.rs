@@ -267,6 +267,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
             maximum_vote_polls_to_process: 2,
             maximum_contenders_to_consider: 100,
             minimum_pool_notes_for_outgoing: 250,
-            minimum_shielded_fee: 1,
+            shielded_proof_verification_fee: 100_000_000,
+            shielded_per_action_processing_fee: 3_000_000,
         },
     };

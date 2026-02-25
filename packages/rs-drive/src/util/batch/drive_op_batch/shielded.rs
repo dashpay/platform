@@ -36,18 +36,24 @@ pub enum ShieldedPoolOperationType {
         /// The new total balance value
         new_total_balance: u64,
     },
+    /// Store nullifiers to recent block storage for catch-up sync RPCs.
+    /// Block height and time are taken from BlockInfo during low-level conversion.
+    StoreNullifiersForBlock {
+        /// The nullifiers to store for this block
+        nullifiers: Vec<[u8; 32]>,
+    },
 }
 
 impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
     fn into_low_level_drive_operations(
         self,
-        _drive: &Drive,
+        drive: &Drive,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
-        _block_info: &BlockInfo,
-        _transaction: TransactionArg,
-        _platform_version: &PlatformVersion,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         if let Some(ref mut estimated_costs) = estimated_costs_only_with_layer_info {
             Drive::add_estimation_costs_for_shielded_pool_operations(estimated_costs);
@@ -97,6 +103,21 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
                         Element::new_sum_item(balance_i64),
                     ),
                 )])
+            }
+            ShieldedPoolOperationType::StoreNullifiersForBlock { nullifiers } => {
+                // Store nullifiers to recent block storage for catch-up sync RPCs.
+                // This is a side-effect operation — it doesn't produce low-level grove ops
+                // but instead calls store_nullifiers_for_block directly.
+                if !nullifiers.is_empty() {
+                    drive.store_nullifiers_for_block(
+                        &nullifiers,
+                        block_info.height,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
+                Ok(vec![])
             }
         }
     }

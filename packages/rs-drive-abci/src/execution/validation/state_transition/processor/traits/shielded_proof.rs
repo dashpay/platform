@@ -7,6 +7,11 @@ use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
+/// Permanent storage bytes per shielded action:
+/// 280 bytes in BulkAppendTree (32 cmx + 32 nullifier + 216 encrypted note)
+/// + 32 bytes in nullifier tree = 312 bytes total.
+const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+
 /// A trait for checking whether a state transition requires shielded ZK proof validation.
 pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns true if this state transition has a ZK proof that must be verified
@@ -40,6 +45,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 
 /// A trait for validating that a shielded state transition includes sufficient fees.
 ///
+/// The minimum fee is computed dynamically based on the number of actions:
+///   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
+///
 /// The fee is derived from the public `value_balance` field (no ZK proof execution needed):
 /// - ShieldedTransfer: fee = value_balance
 /// - Unshield: fee = value_balance - amount
@@ -63,7 +71,8 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
             .validate_minimum_shielded_fee
         {
             0 => {
-                let fee: i64 = match self {
+                // Extract the fee and action count from the transition.
+                let (fee, num_actions): (i64, usize) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
                     StateTransition::Shield(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
@@ -71,7 +80,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     // ShieldedTransfer: value_balance (u64) IS the fee.
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
-                            v0.value_balance as i64
+                            (v0.value_balance as i64, v0.actions.len())
                         }
                     },
                     // Unshield: fee = value_balance - amount.
@@ -79,39 +88,58 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
                         ) => {
-                            if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
+                            let fee = if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
                                 0
                             } else {
                                 (v0.value_balance as u64 - v0.amount) as i64
-                            }
+                            };
+                            (fee, v0.actions.len())
                         }
                     },
                     // ShieldedWithdrawal: fee = value_balance - amount.
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
+                            let fee = if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
                                 0
                             } else {
                                 (v0.value_balance as u64 - v0.amount) as i64
-                            }
+                            };
+                            (fee, v0.actions.len())
                         }
                     },
-                    // Other transitions don't go through shielded proof validation.
+                    // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
 
-                let minimum_shielded_fee = platform_version
+                let constants = &platform_version
                     .drive_abci
                     .validation_and_processing
-                    .event_constants
-                    .minimum_shielded_fee as i64;
+                    .event_constants;
 
-                if fee < minimum_shielded_fee {
+                // Storage fee per action: 312 bytes (280 BulkAppendTree + 32 nullifier)
+                // × (storage_disk_usage_credit_per_byte + storage_processing_credit_per_byte)
+                let storage_costs = &platform_version.fee_version.storage;
+                let storage_fee_per_action = SHIELDED_STORAGE_BYTES_PER_ACTION
+                    * (storage_costs.storage_disk_usage_credit_per_byte
+                        + storage_costs.storage_processing_credit_per_byte);
+
+                // min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
+                let per_action_fee =
+                    constants.shielded_per_action_processing_fee + storage_fee_per_action;
+                let minimum_shielded_fee =
+                    constants.shielded_proof_verification_fee + num_actions as u64 * per_action_fee;
+
+                if (fee as u64) < minimum_shielded_fee {
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         StateError::InsufficientShieldedFeeError(
                             InsufficientShieldedFeeError::new(format!(
-                                "shielded transition fee {} is below minimum required fee {}",
-                                fee, minimum_shielded_fee
+                                "shielded transition fee {} is below minimum required fee {} \
+                                 ({} proof + {} actions × {} per-action)",
+                                fee,
+                                minimum_shielded_fee,
+                                constants.shielded_proof_verification_fee,
+                                num_actions,
+                                per_action_fee,
                             )),
                         )
                         .into(),

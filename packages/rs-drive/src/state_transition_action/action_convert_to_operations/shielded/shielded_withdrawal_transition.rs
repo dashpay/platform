@@ -1,4 +1,4 @@
-use super::{insert_notes, insert_nullifiers, update_balance};
+use super::{insert_notes, insert_nullifiers, store_nullifiers_for_block, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -73,6 +73,9 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
                     ops.push(DriveOperation::SystemOperation(
                         SystemOperationType::RemoveFromSystemCredits { amount: v0.amount },
                     ));
+
+                    // 6. Store nullifiers to recent block storage for catch-up sync
+                    store_nullifiers_for_block(&mut ops, &v0.nullifiers);
 
                     Ok(ops)
                 }

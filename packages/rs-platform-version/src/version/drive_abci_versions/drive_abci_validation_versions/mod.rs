@@ -31,9 +31,12 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
-    /// Minimum fee (in credits) required for shielded transitions that pay fees
-    /// from the shielded pool (ShieldedTransfer, Unshield, ShieldedWithdrawal).
-    pub minimum_shielded_fee: u64,
+    /// Per-bundle fee (in credits) for Halo 2 ZK proof verification.
+    /// Benchmarked at ~30x per-action signature verification cost.
+    pub shielded_proof_verification_fee: u64,
+    /// Per-action fee (in credits) for processing: RedPallas spend auth signature
+    /// verification, nullifier duplicate check, and tree insertion.
+    pub shielded_per_action_processing_fee: u64,
 }
 
 #[derive(Clone, Debug, Default)]

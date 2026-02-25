@@ -49,3 +49,17 @@ pub(super) fn update_balance<'a>(ops: &mut Vec<DriveOperation<'a>>, new_total_ba
         ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
     ));
 }
+
+/// Store nullifiers to recent block storage for catch-up sync RPCs.
+pub(super) fn store_nullifiers_for_block<'a>(
+    ops: &mut Vec<DriveOperation<'a>>,
+    nullifiers: &[[u8; 32]],
+) {
+    if !nullifiers.is_empty() {
+        ops.push(DriveOperation::ShieldedPoolOperation(
+            ShieldedPoolOperationType::StoreNullifiersForBlock {
+                nullifiers: nullifiers.to_vec(),
+            },
+        ));
+    }
+}

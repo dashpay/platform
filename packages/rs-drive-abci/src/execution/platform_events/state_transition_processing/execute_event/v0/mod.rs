@@ -344,6 +344,7 @@ where
             )?),
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
             | ExecutionEvent::PaidFixedCost { .. }
+            | ExecutionEvent::PaidFromShieldedPool { .. }
             | ExecutionEvent::Free { .. } => None,
         };
 
@@ -486,6 +487,30 @@ where
                 }
             }
             ExecutionEvent::PaidFixedCost {
+                operations,
+                fees_to_add_to_pool,
+            } => {
+                if consensus_errors.is_empty() {
+                    self.drive
+                        .apply_drive_operations(
+                            operations,
+                            true,
+                            block_info,
+                            Some(transaction),
+                            platform_version,
+                            Some(previous_fee_versions),
+                        )
+                        .map_err(Error::Drive)?;
+
+                    Ok(SuccessfulPaidExecution(
+                        None,
+                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                    ))
+                } else {
+                    Ok(UnpaidConsensusExecutionError(consensus_errors))
+                }
+            }
+            ExecutionEvent::PaidFromShieldedPool {
                 operations,
                 fees_to_add_to_pool,
                 ..

@@ -344,14 +344,6 @@ where
             platform_version,
         )?;
 
-        // Store nullifiers inserted during this block to recent block storage
-        self.store_nullifiers_to_recent_block_storage(
-            &state_transitions_result.nullifiers_inserted,
-            &block_info,
-            transaction,
-            platform_version,
-        )?;
-
         // Clean up expired compacted nullifier entries
         self.cleanup_recent_block_storage_nullifiers(&block_info, transaction, platform_version)?;
 

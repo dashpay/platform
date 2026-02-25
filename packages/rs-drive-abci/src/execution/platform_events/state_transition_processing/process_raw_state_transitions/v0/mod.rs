@@ -368,9 +368,6 @@ where
                 }
             })?;
 
-        // Extract nullifiers before the execution event is consumed
-        let nullifiers = execution_event.nullifiers().to_vec();
-
         let mut address_balances = BTreeMap::new();
         let event_execution_result = self
             .execute_event(
@@ -407,7 +404,6 @@ where
                     estimated_fees,
                     fee_result: actual_fees,
                     address_balance_changes: address_balances,
-                    nullifiers_inserted: nullifiers,
                 }
             }
             EventExecutionResult::UnsuccessfulPaidExecution(
@@ -454,7 +450,6 @@ where
                     estimated_fees: None,
                     fee_result: FeeResult::default(),
                     address_balance_changes: BTreeMap::new(),
-                    nullifiers_inserted: nullifiers,
                 }
             }
             EventExecutionResult::UnpaidConsensusExecutionError(mut errors) => {
