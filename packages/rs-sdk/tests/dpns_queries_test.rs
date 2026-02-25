@@ -1,12 +1,9 @@
 use dash_sdk::SdkBuilder;
 use dpp::dashcore::Network;
 
-// Test values from wasm-sdk docs.html (testnet DPNS integration test fixtures)
-/// Base58-encoded testnet identity ID used for DPNS query testing (source: wasm-sdk docs.html)
+// Test values from wasm-sdk docs.html
 const TEST_IDENTITY_ID: &str = "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk";
-/// Known testnet DPNS username for integration testing (source: wasm-sdk docs.html)
 const TEST_USERNAME: &str = "alice";
-/// Search prefix for DPNS name search testing (source: wasm-sdk docs.html)
 const TEST_PREFIX: &str = "ali";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -24,7 +21,6 @@ async fn test_dpns_queries_from_docs() {
     .expect("Failed to create context provider");
 
     // Initialize SDK for testnet with trusted context provider
-    // Dash Platform testnet node address (DAPI endpoint)
     let address_list = "https://52.12.176.90:1443"
         .parse()
         .expect("Failed to parse address");
@@ -34,17 +30,25 @@ async fn test_dpns_queries_from_docs() {
         .build()
         .expect("Failed to create SDK");
 
-    // Test 1: Check availability of "alice"
-    let _is_available = sdk
+    // Test 1: Check availability of "alice" — should be taken (registered name)
+    let is_available = sdk
         .check_dpns_name_availability(TEST_USERNAME)
         .await
         .expect("check availability should succeed");
+    assert!(
+        !is_available,
+        "well-known test name 'alice' should not be available"
+    );
 
-    // Test 2: Resolve "alice" to identity ID
-    let _maybe_identity = sdk
+    // Test 2: Resolve "alice" to identity ID — should resolve to some identity
+    let maybe_identity = sdk
         .resolve_dpns_name_to_identity(TEST_USERNAME)
         .await
         .expect("resolve should succeed");
+    assert!(
+        maybe_identity.is_some(),
+        "'alice' should resolve to an identity"
+    );
 
     // Test 3: Get DPNS usernames for identity
     // Parse the identity ID from base58
@@ -54,16 +58,24 @@ async fn test_dpns_queries_from_docs() {
     )
     .expect("identity id should parse");
 
-    let _usernames = sdk
+    let usernames = sdk
         .get_dpns_usernames_by_identity(identity_id, Some(10))
         .await
         .expect("get usernames by identity should succeed");
+    assert!(
+        !usernames.is_empty(),
+        "known test identity should own at least one username"
+    );
 
     // Test 4: Search DPNS names by prefix "ali"
-    let _search_results = sdk
+    let search_results = sdk
         .search_dpns_names(TEST_PREFIX, Some(10))
         .await
         .expect("search should succeed");
+    assert!(
+        !search_results.is_empty(),
+        "search for prefix 'ali' should return at least one result"
+    );
 
     // Test with a name that's more likely to exist on testnet
     let maybe_identity = sdk
@@ -72,10 +84,14 @@ async fn test_dpns_queries_from_docs() {
         .expect("resolve should succeed");
 
     if let Some(identity_id) = maybe_identity {
-        let _usernames = sdk
+        let usernames = sdk
             .get_dpns_usernames_by_identity(identity_id, Some(5))
             .await
             .expect("get usernames by identity should succeed");
+        assert!(
+            !usernames.is_empty(),
+            "resolved identity should own at least one username"
+        );
     }
 }
 
@@ -93,7 +109,6 @@ async fn test_dpns_search_variations() {
     )
     .expect("Failed to create context provider");
 
-    // Dash Platform testnet node address (DAPI endpoint)
     let address_list = "https://52.12.176.90:1443"
         .parse()
         .expect("Failed to parse address");
@@ -106,9 +121,14 @@ async fn test_dpns_search_variations() {
     let test_prefixes = vec!["a", "test", "d", "dash", "demo", "user"];
 
     for prefix in test_prefixes {
-        let _results = sdk
+        // Verify search returns without error; results may vary by prefix on testnet
+        let results = sdk
             .search_dpns_names(prefix, Some(5))
             .await
             .expect("search should succeed");
+        assert!(
+            results.len() <= 5,
+            "search for '{prefix}' should respect the limit of 5"
+        );
     }
 }
