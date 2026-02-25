@@ -89,6 +89,7 @@ jobs:
             --exclude strategy-tests \
             --locked
         env:
+          RUSTUP_TOOLCHAIN: stable
           RUSTDOCFLAGS: "--default-theme ayu --extend-css ${{ github.workspace }}/docs/rust-extra.css"
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
