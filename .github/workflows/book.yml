@@ -78,9 +78,11 @@ jobs:
         run: |
           # Clean stale search index to avoid rustdoc corruption
           rm -rf target/doc
+          # Use -j1 to avoid parallel rustdoc search index race condition
           cargo doc \
             --workspace \
             --no-deps \
+            -j1 \
             --exclude wasm-sdk \
             --exclude wasm-dpp \
             --exclude wasm-dpp2 \
@@ -139,7 +141,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: ./.github/actions/nodejs
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies (skip native builds)
+        run: YARN_ENABLE_SCRIPTS=false yarn install --inline-builds
 
       - name: Generate TypeDoc
         run: |
