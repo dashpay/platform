@@ -1,0 +1,23 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPointStrategy": "resolve",
+  "entryPoints": [
+    "packages/js-dash-sdk/src/index.ts",
+    "packages/wasm-dpp/lib/index.ts",
+    "packages/wasm-sdk/dist/raw/wasm_sdk.d.ts"
+  ],
+  "tsconfig": "packages/js-dash-sdk/tsconfig.json",
+  "name": "Dash Platform JavaScript SDK",
+  "includeVersion": true,
+  "readme": "none",
+  "theme": "default",
+  "darkHighlightTheme": "github-dark",
+  "lightHighlightTheme": "github-light",
+  "hideGenerator": true,
+  "searchInComments": true,
+  "categorizeByGroup": true,
+  "navigation": {
+    "includeCategories": true,
+    "includeGroups": true
+  }
+}
