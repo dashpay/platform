@@ -1,4 +1,4 @@
-name: Deploy Book
+name: Deploy Book & API Docs
 
 on:
   push:
@@ -6,6 +6,15 @@ on:
       - 'v*-dev'
     paths:
       - 'book/**'
+      - 'docs/**'
+      - 'Cargo.toml'
+      - 'packages/**/Cargo.toml'
+      - 'packages/**/*.rs'
+      - 'packages/dapi-grpc/protos/**'
+      - 'packages/js-dash-sdk/src/**'
+      - 'packages/js-dash-sdk/package.json'
+      - 'packages/wasm-dpp/lib/**'
+      - 'packages/wasm-sdk/dist/**/*.d.ts'
       - '.github/workflows/book.yml'
 
   workflow_dispatch:
@@ -16,11 +25,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  # ── mdBook ───────────────────────────────────────────────────────────
+  build-book:
     name: Build book
     runs-on: ubuntu-24.04
     steps:
@@ -38,18 +48,153 @@ jobs:
         run: mdbook build book
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
+          name: book-output
           path: book/book
+          retention-days: 1
 
+  # ── Rust API docs ────────────────────────────────────────────────────
+  build-rust-docs:
+    name: Build Rust API docs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (stable)
+        uses: ./.github/actions/rust
+        with:
+          toolchain: stable
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Build Rust docs
+        run: |
+          rm -rf target/doc
+          cargo doc \
+            --workspace \
+            --no-deps \
+            --exclude wasm-sdk \
+            --exclude wasm-dpp \
+            --exclude wasm-dpp2 \
+            --exclude wasm-drive-verify \
+            --exclude strategy-tests \
+            --locked
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          RUSTDOCFLAGS: "--default-theme ayu --extend-css ${{ github.workspace }}/docs/rust-extra.css"
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-docs
+          path: target/doc
+          retention-days: 1
+
+  # ── gRPC API docs ────────────────────────────────────────────────────
+  build-grpc-docs:
+    name: Build gRPC API docs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate gRPC documentation
+        run: |
+          mkdir -p /tmp/grpc-out
+          docker run --rm \
+            -v "${{ github.workspace }}/packages/dapi-grpc/protos:/protos:ro" \
+            -v "${{ github.workspace }}/docs/grpc/template.html:/templates/template.html:ro" \
+            -v "/tmp/grpc-out:/out" \
+            pseudomuto/protoc-gen-doc@sha256:779263a6dc01fbe375298c4e556d784640539e7b2bd433a50588285da88b74d5 \
+            --doc_opt=/templates/template.html,index.html \
+            -I/protos \
+            platform/v0/platform.proto \
+            core/v0/core.proto \
+            drive/v0/drive.proto
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grpc-docs
+          path: /tmp/grpc-out
+          retention-days: 1
+
+  # ── JS/TS API docs ──────────────────────────────────────────────────
+  build-js-docs:
+    name: Build JS/TS API docs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies (skip native builds)
+        run: YARN_ENABLE_SCRIPTS=false yarn install --inline-builds
+
+      - name: Generate TypeDoc
+        run: yarn typedoc --options docs/typedoc.json --out /tmp/js-out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-docs
+          path: /tmp/js-out
+          retention-days: 1
+
+  # ── Assemble & Deploy ───────────────────────────────────────────────
   deploy:
     name: Deploy to GitHub Pages
-    needs: build
+    needs: [build-book, build-rust-docs, build-grpc-docs, build-js-docs]
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/api/rust _site/api/grpc _site/api/js
+
+          # mdBook at root
+          cp -r /tmp/artifacts/book-output/. _site/
+
+          # API docs in subdirectories
+          cp -r /tmp/artifacts/rust-docs/. _site/api/rust/
+          cp -r /tmp/artifacts/grpc-docs/. _site/api/grpc/
+          cp -r /tmp/artifacts/js-docs/. _site/api/js/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
