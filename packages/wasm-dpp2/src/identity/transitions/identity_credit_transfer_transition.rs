@@ -79,7 +79,8 @@ struct IdentityCreditTransferOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "IdentityCreditTransfer")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]

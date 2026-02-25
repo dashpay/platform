@@ -55,6 +55,8 @@ extern "C" {
 }
 
 #[wasm_bindgen(js_name = "DataContractCreateTransition")]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct DataContractCreateTransitionWasm(DataContractCreateTransition);
 
 #[wasm_bindgen(js_class = DataContractCreateTransition)]

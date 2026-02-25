@@ -24,6 +24,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
+        insight: {
+          port: 13001,
+        },
         p2p: {
           port: 19999,
         },
@@ -37,16 +40,48 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
       },
+      dashmate: {
+        helper: {
+          api: {
+            port: 19100,
+          },
+        },
+      },
       platform: {
+        quorumList: {
+          api: {
+            port: 12444,
+          },
+        },
         gateway: {
+          metrics: {
+            port: 19090,
+          },
+          admin: {
+            port: 19901,
+          },
           listeners: {
             dapiAndDrive: {
               port: 1443,
             },
           },
+          rateLimiter: {
+            metrics: {
+              port: 19102,
+            },
+          },
         },
         drive: {
           abci: {
+            tokioConsole: {
+              port: 16669,
+            },
+            metrics: {
+              port: 39090,
+            },
+            grovedbVisualizer: {
+              port: 18083,
+            },
             epochTime: 3600,
             validatorSet: {
               quorum: {

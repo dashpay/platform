@@ -105,7 +105,8 @@ extern "C" {
 
 impl_from_for_extern_type!(BlockProposersMapJs, Map);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "FinalizedEpochInfo")]
 pub struct FinalizedEpochInfoWasm(FinalizedEpochInfo);
 

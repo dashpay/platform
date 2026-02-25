@@ -97,6 +97,8 @@ struct IdentityCreditWithdrawalTransitionOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditWithdrawalTransition)]

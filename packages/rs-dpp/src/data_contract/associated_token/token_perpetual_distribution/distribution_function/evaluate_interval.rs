@@ -1979,6 +1979,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens per epoch. \
@@ -2009,6 +2010,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens per epoch. \
@@ -2049,6 +2051,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 500_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 50,000 tokens and decreases by 7.0% every 210,000 epochs. \
@@ -2086,6 +2089,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 10_500);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
@@ -2123,6 +2127,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 65_500);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 5,000 tokens and increases by 100/1 tokens per epoch. \
@@ -2163,6 +2168,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 21_850);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token follows a polynomial distribution that increases at an accelerating rate with a base amount of 1,000 tokens. \
@@ -2203,6 +2209,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 5_276);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token grows exponentially starting from a base of 500 tokens with scaling factor 100. \
@@ -2243,6 +2250,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 25_355);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2,000 tokens. \
@@ -2283,6 +2291,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 450_211);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
@@ -2766,6 +2775,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 1_217);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 500 tokens and 1,500 tokens per block. \
@@ -2806,6 +2816,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 100_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 10,000 tokens and decreases by 10.0% every 100 blocks. \
@@ -2847,6 +2858,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 50_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token follows a polynomial distribution that starts high and gradually declines with a base amount of 5,000 tokens. \
@@ -2902,6 +2914,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens per block. \
@@ -2932,6 +2945,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens per block. \
@@ -2969,6 +2983,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 10_500);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
@@ -3006,6 +3021,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 42_250);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 5,000 tokens and decreases by 50/1 tokens per block. \
@@ -3046,6 +3062,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 5_276);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token grows exponentially starting from a base of 500 tokens with scaling factor 100. \
@@ -3086,6 +3103,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 5_032);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token decays exponentially starting from a base of 500 tokens with scaling factor 100. \
@@ -3126,6 +3144,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 25_355);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token follows a logarithmic distribution that increases at a slowing rate with a base amount of 2,000 tokens. \
@@ -3166,6 +3185,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 14_635);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token follows a logarithmic distribution that decreases at a slowing rate with a base amount of 2,000 tokens. \
@@ -3206,6 +3226,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 450_211);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
@@ -3246,6 +3267,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 450_211);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts with high rewards that gradually decrease following an inverted logarithmic curve. \
@@ -3516,6 +3538,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 17_550);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 1,000 tokens and increases by 25/1 tokens at each interval. \
@@ -3555,6 +3578,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 5_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 2,000 tokens from interval 0, 1,500 tokens from interval 5, 1,000 tokens from interval 10, and 1 more step. \
@@ -3617,6 +3641,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
@@ -3649,6 +3674,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 2_826);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes a random amount between 100 tokens and 500 tokens at each interval. \
@@ -3691,6 +3717,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 500_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 50,000 tokens and decreases by 7.0% every 210,000 intervals. \
@@ -3733,6 +3760,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 100_000);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts distributing 10,000 tokens and decreases by 10.0% every 100 intervals. \
@@ -3772,6 +3800,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 10_500);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token distributes tokens in predefined steps: 1,000 tokens from interval 0, 500 tokens from interval 10, 250 tokens from interval 20. \
@@ -3811,6 +3840,7 @@ mod tests {
                 )
                 .unwrap();
 
+            assert_eq!(result.total_amount, 42_250);
             let actual = result.short_explanation(0, PlatformVersion::latest(), "UTC");
             let expected = format!(
                 "This token starts at 5,000 tokens and decreases by 50/1 tokens at each interval. \

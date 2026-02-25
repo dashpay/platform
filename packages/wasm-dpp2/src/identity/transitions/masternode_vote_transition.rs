@@ -84,7 +84,8 @@ struct MasternodeVoteTransitionOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct MasternodeVoteTransitionWasm(MasternodeVoteTransition);
 
 impl From<MasternodeVoteTransition> for MasternodeVoteTransitionWasm {

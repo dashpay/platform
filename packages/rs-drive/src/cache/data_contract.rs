@@ -77,11 +77,11 @@ impl DataContractCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::version::PlatformVersion;
 
     mod get {
         use super::*;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_get_from_global_cache_when_block_cache_is_not_requested() {
@@ -163,6 +163,104 @@ mod tests {
                 .expect("should be present");
 
             assert_eq!(fetch_info_from_cache, fetch_info_block)
+        }
+    }
+
+    mod remove {
+        use super::*;
+
+        #[test]
+        fn test_remove_clears_global_cache_entry() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let protocol_version = PlatformVersion::latest().protocol_version;
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert(fetch_info, false);
+            data_contract_cache.remove(contract_id);
+
+            assert!(data_contract_cache.get(contract_id, false).is_none());
+        }
+
+        #[test]
+        fn test_remove_clears_entry_from_both_caches() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let protocol_version = PlatformVersion::latest().protocol_version;
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+            let contract_id = fetch_info_global.contract.id().to_buffer();
+            let fetch_info_block = Arc::clone(&fetch_info_global);
+
+            data_contract_cache.insert(fetch_info_global, false);
+            data_contract_cache.insert(fetch_info_block, true);
+            data_contract_cache.remove(contract_id);
+
+            assert!(data_contract_cache.block_cache.get(&contract_id).is_none());
+            assert!(data_contract_cache.global_cache.get(&contract_id).is_none());
+        }
+    }
+
+    mod merge_and_clear_block_cache {
+        use super::*;
+
+        #[test]
+        fn test_merge_moves_block_items_to_global_cache() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let protocol_version = PlatformVersion::latest().protocol_version;
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert(fetch_info, true);
+            data_contract_cache.merge_and_clear_block_cache();
+
+            assert!(data_contract_cache.global_cache.get(&contract_id).is_some());
+        }
+
+        #[test]
+        fn test_merge_clears_block_cache() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let protocol_version = PlatformVersion::latest().protocol_version;
+            let fetch_info = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert(fetch_info, true);
+            data_contract_cache.merge_and_clear_block_cache();
+
+            assert!(data_contract_cache.block_cache.get(&contract_id).is_none());
+        }
+    }
+
+    mod clear {
+        use super::*;
+
+        #[test]
+        fn test_clear_empties_global_and_block_caches() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+
+            let protocol_version = PlatformVersion::latest().protocol_version;
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+            let contract_id = fetch_info_global.contract.id().to_buffer();
+            let fetch_info_block = Arc::clone(&fetch_info_global);
+
+            data_contract_cache.insert(fetch_info_global, false);
+            data_contract_cache.insert(fetch_info_block, true);
+            data_contract_cache.clear();
+
+            assert!(data_contract_cache.get(contract_id, false).is_none());
+            assert!(data_contract_cache.block_cache.get(&contract_id).is_none());
         }
     }
 }

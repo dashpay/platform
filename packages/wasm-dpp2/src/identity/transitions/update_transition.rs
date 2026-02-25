@@ -88,7 +88,8 @@ struct IdentityUpdateTransitionOptionsInput {
 }
 
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]

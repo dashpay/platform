@@ -15,7 +15,7 @@ The quorum list sidecar exposes the local LLMQ list over HTTP for SDKs and funct
 | `platform.quorumList.enabled`              | `false`                            | Enable the quorum list service                                   |
 | `platform.quorumList.docker.image`         | `dashpay/quorum-list-server:latest`| Docker image to use                                              |
 | `platform.quorumList.api.host`             | `127.0.0.1`                        | Host interface to bind the API                                   |
-| `platform.quorumList.api.port`             | `2444`                             | Port for the HTTP API                                            |
+| `platform.quorumList.api.port`             | `2444` (mainnet), `12444` (testnet), `22444` (local) | Port for the HTTP API                                            |
 | `platform.quorumList.previousBlocksOffset` | `8`                                | Number of previous blocks to consider for quorum lookups         |
 | `platform.quorumList.versionCheckHost`     | `""`                               | Host for version checking (set to `host.docker.internal` locally)|
 | `platform.quorumList.addressHostOverride`  | `""`                               | Override for address host (set to `127.0.0.1` locally)           |
@@ -23,7 +23,7 @@ The quorum list sidecar exposes the local LLMQ list over HTTP for SDKs and funct
 ## Image and ports
 
 - Image: `dashpay/quorum-list-server:latest`
-- API port: `platform.quorumList.api.port` (default `2444`)
+- API port: `platform.quorumList.api.port` (default `2444` mainnet, `12444` testnet, `22444` local)
 - Host binding: `platform.quorumList.api.host` (default `127.0.0.1`)
 - Container bind address is `0.0.0.0` inside the compose network.
 
@@ -59,7 +59,7 @@ import * as sdk from '@dashevo/wasm-sdk';
 await init();
 
 // Prefetch quorum information from local quorum list service
-// Uses http://127.0.0.1:2444 by default
+// Uses http://127.0.0.1:22444 by default (local preset)
 await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
 
 // Build a trusted client for local network (verifies proofs)
@@ -82,7 +82,7 @@ The service:
 1. Connects to the local Core node via RPC
 2. Fetches active quorum information using `quorum listextended` and `quorum info`
 3. Retrieves masternode list with `masternode list`
-4. Exposes this data over HTTP at `http://127.0.0.1:2444`
+4. Exposes this data over HTTP at `http://127.0.0.1:22444` (local preset, port varies by network)
 
 ### Verifying the service is running
 
@@ -91,7 +91,7 @@ The service:
 docker ps | grep quorum_list
 
 # Test the API endpoint
-curl http://127.0.0.1:2444/quorums
+curl http://127.0.0.1:22444/quorums
 
 # View service logs
 docker logs <quorum_list_container_id>
@@ -107,7 +107,7 @@ docker logs <quorum_list_container_id>
 
 **SDK cannot connect:**
 
-- Verify port 2444 is accessible from the host
+- Verify the quorum list port is accessible from the host (22444 for local preset)
 - Check that `platform.quorumList.api.host` allows connections from your client
 - Ensure no firewall is blocking the port
 
