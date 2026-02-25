@@ -51,6 +51,35 @@ key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "a05d256f
 key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "a05d256f59743c69df912462dd77dd487e1ff5b2" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a05d256f59743c69df912462dd77dd487e1ff5b2" }
 
+# Optimize heavy crypto crates even in dev/test builds so that
+# Halo 2 proof generation and verification run at near-release speed.
+# Without this, ZK operations are 10-100x slower (debug field arithmetic).
+[profile.dev.package.halo2_proofs]
+opt-level = 3
+[profile.dev.package.halo2_gadgets]
+opt-level = 3
+[profile.dev.package.halo2_poseidon]
+opt-level = 3
+[profile.dev.package.orchard]
+opt-level = 3
+[profile.dev.package.pasta_curves]
+opt-level = 3
+[profile.dev.package.grovedb-commitment-tree]
+opt-level = 3
+
+[profile.test.package.halo2_proofs]
+opt-level = 3
+[profile.test.package.halo2_gadgets]
+opt-level = 3
+[profile.test.package.halo2_poseidon]
+opt-level = 3
+[profile.test.package.orchard]
+opt-level = 3
+[profile.test.package.pasta_curves]
+opt-level = 3
+[profile.test.package.grovedb-commitment-tree]
+opt-level = 3
+
 [workspace.package]
 
 version = "3.1.0-dev.1"

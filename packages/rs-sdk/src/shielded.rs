@@ -126,6 +126,8 @@ pub struct ShieldedSyncResult {
     pub next_start_index: u64,
     /// Total number of notes scanned in this sync.
     pub total_notes_scanned: u64,
+    /// Platform block height at the time of the most recent chunk response.
+    pub block_height: u64,
 }
 
 /// Fetch all shielded encrypted notes starting from `start_index`, query
@@ -177,10 +179,10 @@ pub async fn sync_shielded_notes(
     let settings = config.request_settings;
 
     type ChunkFuture =
-        Pin<Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>), Error>> + Send>>;
+        Pin<Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>, u64), Error>> + Send>>;
 
     // Sliding-window parallel fetch using FuturesUnordered.
-    // Each future fetches one chunk and returns (chunk_start_index, notes).
+    // Each future fetches one chunk and returns (chunk_start_index, notes, block_height).
     let mut futures: FuturesUnordered<ChunkFuture> = FuturesUnordered::new();
     let mut next_chunk_index = start_index;
     let mut reached_end = false;
@@ -197,11 +199,13 @@ pub async fn sync_shielded_notes(
 
     // Collect results keyed by chunk start_index for ordered reassembly
     let mut chunk_results: BTreeMap<u64, Vec<ShieldedEncryptedNote>> = BTreeMap::new();
+    let mut max_block_height: u64 = 0;
 
     while let Some(result) = futures.next().await {
-        let (chunk_idx, notes) = result?;
+        let (chunk_idx, notes, block_height) = result?;
         let is_partial = (notes.len() as u64) < chunk_size;
         chunk_results.insert(chunk_idx, notes);
+        max_block_height = max_block_height.max(block_height);
 
         if is_partial {
             reached_end = true;
@@ -268,19 +272,20 @@ pub async fn sync_shielded_notes(
         all_notes,
         next_start_index,
         total_notes_scanned,
+        block_height: max_block_height,
     })
 }
 
 /// Fetch a single chunk of encrypted notes from the network.
 ///
-/// Returns `(chunk_start_index, notes)`. An empty vec means no notes exist
-/// at this position (past end of tree).
+/// Returns `(chunk_start_index, notes, block_height)`. An empty vec means no
+/// notes exist at this position (past end of tree).
 async fn fetch_chunk(
     sdk: &Sdk,
     chunk_start: u64,
     chunk_size: u64,
     settings: RequestSettings,
-) -> Result<(u64, Vec<ShieldedEncryptedNote>), Error> {
+) -> Result<(u64, Vec<ShieldedEncryptedNote>, u64), Error> {
     let query = ShieldedEncryptedNotesQuery {
         start_index: chunk_start,
         count: chunk_size as u32,
@@ -288,7 +293,8 @@ async fn fetch_chunk(
 
     debug!(chunk_start, chunk_size, "fetching shielded notes chunk");
 
-    let result = ShieldedEncryptedNotes::fetch_with_settings(sdk, query, settings).await?;
+    let (result, metadata) =
+        ShieldedEncryptedNotes::fetch_with_metadata(sdk, query, Some(settings)).await?;
 
     let notes = match result {
         Some(ShieldedEncryptedNotes(notes)) => notes,
@@ -298,8 +304,9 @@ async fn fetch_chunk(
     debug!(
         chunk_start,
         notes_returned = notes.len(),
+        block_height = metadata.height,
         "shielded notes chunk fetched"
     );
 
-    Ok((chunk_start, notes))
+    Ok((chunk_start, notes, metadata.height))
 }
