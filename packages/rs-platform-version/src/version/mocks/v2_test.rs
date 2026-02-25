@@ -504,6 +504,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_withdrawal_amount: 50_000_000_000_000,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
+        max_shielded_transition_actions: 100,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

@@ -733,4 +733,190 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // RETURN PROOF TESTS
+    // ==========================================
+
+    mod return_proof {
+        use super::*;
+        use dpp::asset_lock::StoredAssetLockInfo;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use drive::drive::Drive;
+        use grovedb_commitment_tree::{
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
+            Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        #[test]
+        fn test_shield_from_asset_lock_prove_and_verify() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            // --- Build a valid Orchard bundle (shield = outputs only) ---
+            let mut orchard_rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5_000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
+            let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
+
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            assert!(value_balance < 0);
+
+            // --- Build and sign the transition ---
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                0,
+            );
+
+            // --- Serialize and process with manual transaction so we can commit before proving ---
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // Commit the transaction so prove_state_transition can read committed state
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Generate proof ---
+            let proof_result = platform
+                .drive
+                .prove_state_transition(&transition, None, platform_version)
+                .expect("expected to generate proof for shield_from_asset_lock");
+
+            let proof_bytes = proof_result
+                .into_data()
+                .expect("expected proof data, not an error");
+
+            // --- Verify proof ---
+            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof_bytes,
+                &|_| Ok(None),
+                platform_version,
+            )
+            .expect("expected to verify shield_from_asset_lock proof");
+
+            assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+            // --- Assert result is VerifiedAssetLockConsumed ---
+            let StateTransitionProofResult::VerifiedAssetLockConsumed(info) = proof_result else {
+                panic!("expected VerifiedAssetLockConsumed, got {:?}", proof_result);
+            };
+
+            // ShieldFromAssetLock always fully consumes the asset lock
+            // (remaining_credit_value is set to 0 in action-to-operations conversion).
+            assert!(
+                matches!(info, StoredAssetLockInfo::FullyConsumed),
+                "expected FullyConsumed, got {:?}",
+                info
+            );
+        }
+    }
 }

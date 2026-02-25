@@ -973,4 +973,281 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // RETURN PROOF TESTS (prove + verify round-trip)
+    // ==========================================
+
+    mod return_proof {
+        use super::*;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::data_contracts::withdrawals_contract;
+        use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+        use dpp::document::Document;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use drive::drive::Drive;
+        use grovedb_commitment_tree::{
+            Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, Note,
+            NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::collections::BTreeMap;
+        use std::sync::{Arc, OnceLock};
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        #[test]
+        fn test_shielded_withdrawal_prove_and_verify_nullifiers_and_document() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note with value 10,000 ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            // --- Build bundle: spend 10,000 -> output 5,000 (value_balance = 5,000) ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            // Compute platform sighash binding transparent fields (output_script, amount)
+            let output_script = create_output_script();
+            let amount = 5_000u64; // = value_balance (no fee difference)
+            let mut extra_sighash_data = output_script.as_bytes().to_vec();
+            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            // --- Extract serialized fields ---
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            // value_balance should be 5000 (10,000 spent - 5,000 output)
+            assert_eq!(value_balance, 5_000);
+
+            // --- Set up platform state ---
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000);
+
+            // --- Create and process transition ---
+            let transition = create_shielded_withdrawal_transition(
+                amount,
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                1,              // core_fee_per_byte
+                Pooling::Never, // pooling strategy
+                output_script.clone(),
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            // --- Process with manual transaction so we can commit before proving ---
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // Commit the transaction so prove_state_transition can read committed state
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Generate proof ---
+            let proof_result = platform
+                .drive
+                .prove_state_transition(&transition, None, platform_version)
+                .expect("expected to generate proof for shielded withdrawal");
+
+            let proof_bytes = proof_result
+                .into_data()
+                .expect("expected proof data, not an error");
+
+            // --- Verify proof ---
+            // ShieldedWithdrawal verification requires the withdrawals system data contract
+            // to look up the withdrawal document type.
+            let withdrawals_data_contract =
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("should load withdrawals contract");
+
+            let withdrawals_data_contract = Arc::new(withdrawals_data_contract);
+
+            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof_bytes,
+                &|id| {
+                    if *id == withdrawals_contract::ID {
+                        Ok(Some(Arc::clone(&withdrawals_data_contract)))
+                    } else {
+                        Ok(None)
+                    }
+                },
+                platform_version,
+            )
+            .expect("expected to verify shielded withdrawal proof");
+
+            assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+            // --- Assert result is VerifiedShieldedNullifiersWithWithdrawalDocument ---
+            let StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(
+                statuses,
+                documents,
+            ) = proof_result
+            else {
+                panic!(
+                    "expected VerifiedShieldedNullifiersWithWithdrawalDocument, got {:?}",
+                    proof_result
+                );
+            };
+
+            // Extract expected nullifiers from the transition
+            let StateTransition::ShieldedWithdrawal(ref st) = transition else {
+                unreachable!();
+            };
+            let expected_nullifiers: Vec<Vec<u8>> = st.nullifiers();
+
+            assert_eq!(
+                statuses.len(),
+                expected_nullifiers.len(),
+                "should have one status per nullifier"
+            );
+
+            // All nullifiers must be marked as spent
+            for (nf, is_spent) in &statuses {
+                assert!(is_spent, "nullifier {} should be spent", hex::encode(nf));
+                assert!(
+                    expected_nullifiers.contains(nf),
+                    "proved nullifier {} should be one of the transition's nullifiers",
+                    hex::encode(nf)
+                );
+            }
+
+            // Compute the expected withdrawal document ID (same logic as prove/verify sides)
+            let first_nullifier = expected_nullifiers
+                .first()
+                .expect("should have at least one nullifier");
+            let mut entropy = Vec::new();
+            entropy.extend_from_slice(first_nullifier);
+            entropy.extend_from_slice(output_script.as_bytes());
+            let expected_document_id = Document::generate_document_id_v0(
+                &withdrawals_contract::ID,
+                &withdrawals_contract::OWNER_ID,
+                withdrawal::NAME,
+                &entropy,
+            );
+
+            // The documents map should contain exactly one entry with the expected document_id
+            assert_eq!(
+                documents.len(),
+                1,
+                "should have exactly one withdrawal document entry"
+            );
+            assert!(
+                documents.contains_key(&expected_document_id),
+                "documents map should contain the expected withdrawal document id {}",
+                expected_document_id
+            );
+
+            // The document should exist (Some) — it was created during processing
+            let maybe_doc = documents.get(&expected_document_id).unwrap();
+            assert!(
+                maybe_doc.is_some(),
+                "withdrawal document should be present (not absent)"
+            );
+        }
+    }
 }

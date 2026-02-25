@@ -6,6 +6,7 @@ pub type PastAssetLockStateTransitionHashes = Vec<Vec<u8>>;
 
 /// An enumeration of the possible states when querying platform to get the stored state of an outpoint
 /// representing if the asset lock was already used or not.
+#[derive(Debug)]
 pub enum StoredAssetLockInfo {
     /// The asset lock was fully consumed in the past
     FullyConsumed,

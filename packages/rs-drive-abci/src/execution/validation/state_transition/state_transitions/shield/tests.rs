@@ -1058,4 +1058,238 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // RETURN PROOF TESTS (prove + verify round-trip)
+    // ==========================================
+
+    mod return_proof {
+        use super::*;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use drive::drive::Drive;
+        use grovedb_commitment_tree::{
+            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
+            Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        /// Extract serialized fields from an authorized Orchard bundle into the
+        /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
+        /// Returns `i64` for value_balance (shield bundles have negative value_balance).
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        #[test]
+        fn test_shield_prove_and_verify_address_balances() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            // --- Build valid Orchard bundle (shield = outputs only, no spends) ---
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5_000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            // Shield sighash extra_data is empty (no transparent output fields)
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            // --- Extract serialized fields from the authorized bundle ---
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            // value_balance should be negative for shield (money going into pool)
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // --- Set up input address with enough balance ---
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let input_amount = shield_amount + dash_to_credits!(0.01);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            // --- Build and sign the shield transition ---
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_amount));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                flags,
+                value_balance,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let witnesses: Vec<AddressWitness> = inputs
+                .keys()
+                .map(|address| {
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .expect("should sign")
+                })
+                .collect();
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            // --- Serialize and process with manual transaction so we can commit before proving ---
+            let transition_bytes = st
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // Commit the transaction so prove_state_transition can read committed state
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Generate proof ---
+            let proof_result = platform
+                .drive
+                .prove_state_transition(&st, None, platform_version)
+                .expect("expected to generate proof for shield");
+
+            let proof_bytes = proof_result
+                .into_data()
+                .expect("expected proof data, not an error");
+
+            // --- Verify proof ---
+            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+                &st,
+                &BlockInfo::default(),
+                &proof_bytes,
+                &|_| Ok(None),
+                platform_version,
+            )
+            .expect("expected to verify shield proof");
+
+            assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+            // --- Assert result is VerifiedAddressInfos containing the input address ---
+            let StateTransitionProofResult::VerifiedAddressInfos(address_infos) = proof_result
+            else {
+                panic!("expected VerifiedAddressInfos, got {:?}", proof_result);
+            };
+
+            assert!(
+                address_infos.contains_key(&input_address),
+                "proof result should contain the input address"
+            );
+
+            // The address should have a balance entry (Some) after the shield
+            let address_info = address_infos
+                .get(&input_address)
+                .expect("input address should be in result");
+
+            assert!(
+                address_info.is_some(),
+                "input address should have balance info after shield"
+            );
+
+            let (nonce_after, balance_after) = address_info.unwrap();
+
+            // Nonce should have been incremented
+            assert_eq!(nonce_after, 1, "nonce should be 1 after first shield");
+
+            // Balance should be less than original (shield_amount + fees were deducted)
+            assert!(
+                balance_after < dash_to_credits!(1.0),
+                "balance should be less than original after shield"
+            );
+        }
+    }
 }

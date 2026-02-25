@@ -1,17 +1,27 @@
 use crate::consensus::basic::state_transition::{
-    ShieldedEmptyProofError, ShieldedNoActionsError, ShieldedZeroAnchorError,
+    ShieldedEmptyProofError, ShieldedNoActionsError, ShieldedTooManyActionsError,
+    ShieldedZeroAnchorError,
 };
 use crate::consensus::basic::BasicError;
 use crate::shielded::SerializedAction;
 use crate::validation::SimpleConsensusValidationResult;
 
-/// Validate that the actions list is not empty.
-pub fn validate_actions_not_empty(
+/// Validate that the actions list is not empty and does not exceed the maximum.
+pub fn validate_actions_count(
     actions: &[SerializedAction],
+    max_actions: u16,
 ) -> Option<SimpleConsensusValidationResult> {
     if actions.is_empty() {
         Some(SimpleConsensusValidationResult::new_with_error(
             BasicError::ShieldedNoActionsError(ShieldedNoActionsError::new()).into(),
+        ))
+    } else if actions.len() > max_actions as usize {
+        Some(SimpleConsensusValidationResult::new_with_error(
+            BasicError::ShieldedTooManyActionsError(ShieldedTooManyActionsError::new(
+                actions.len().min(u16::MAX as usize) as u16,
+                max_actions,
+            ))
+            .into(),
         ))
     } else {
         None

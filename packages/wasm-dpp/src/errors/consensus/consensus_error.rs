@@ -88,8 +88,8 @@ use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
-use dpp::consensus::state::shielded::{InsufficientPoolNotesError, InvalidAnchorError, InvalidShieldedProofError, NullifierAlreadySpentError};
-use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError};
+use dpp::consensus::state::shielded::{InsufficientPoolNotesError, InsufficientShieldedFeeError, InvalidAnchorError, InvalidShieldedProofError, NullifierAlreadySpentError};
+use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -453,6 +453,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InsufficientPoolNotesError(e) => {
             generic_consensus_error!(InsufficientPoolNotesError, e).into()
+        }
+        StateError::InsufficientShieldedFeeError(e) => {
+            generic_consensus_error!(InsufficientShieldedFeeError, e).into()
         }
     }
 }
@@ -936,6 +939,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ShieldedNoActionsError(e) => {
             generic_consensus_error!(ShieldedNoActionsError, e).into()
+        }
+        BasicError::ShieldedTooManyActionsError(e) => {
+            generic_consensus_error!(ShieldedTooManyActionsError, e).into()
         }
         BasicError::ShieldedEmptyProofError(e) => {
             generic_consensus_error!(ShieldedEmptyProofError, e).into()

@@ -78,10 +78,10 @@ use crate::consensus::basic::state_transition::{
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError, ShieldedInvalidValueBalanceError,
-    ShieldedNoActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
-    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
-    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, UnshieldAmountZeroError,
-    UnshieldValueBalanceBelowAmountError, WithdrawalBalanceMismatchError,
+    ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
+    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
@@ -662,6 +662,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedNoActionsError(ShieldedNoActionsError),
+
+    #[error(transparent)]
+    ShieldedTooManyActionsError(ShieldedTooManyActionsError),
 
     #[error(transparent)]
     ShieldedEmptyProofError(ShieldedEmptyProofError),

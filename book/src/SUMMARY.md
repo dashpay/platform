@@ -21,6 +21,7 @@
 - [Validation Pipeline](state-transitions/validation-pipeline.md)
 - [Transform Into Action](state-transitions/transform-into-action.md)
 - [Drive Operations](state-transitions/drive-operations.md)
+- [Return Proofs](state-transitions/return-proofs.md)
 
 # Fees
 

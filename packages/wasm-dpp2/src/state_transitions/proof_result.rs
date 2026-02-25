@@ -58,7 +58,7 @@ export type StateTransitionProofResultType =
   | VerifiedAddressInfos
   | VerifiedIdentityFullWithAddressInfos
   | VerifiedIdentityWithAddressInfos
-  | VerifiedShieldedPoolState;
+  | VerifiedAssetLockConsumed;
 "#;
 
 #[wasm_bindgen]
@@ -735,25 +735,23 @@ fn action_status_to_string(status: dpp::group::group_action_status::GroupActionS
     }
 }
 
-// --- VerifiedShieldedPoolState ---
+// --- VerifiedAssetLockConsumed ---
 
-#[wasm_bindgen(js_name = "VerifiedShieldedPoolState")]
+#[wasm_bindgen(js_name = "VerifiedAssetLockConsumed")]
 #[derive(Clone, Serialize, Deserialize)]
-pub struct VerifiedShieldedPoolStateWasm {
-    pool_balance: Option<u64>,
+pub struct VerifiedAssetLockConsumedWasm {
+    /// "FullyConsumed", "PartiallyConsumed", or "NotPresent"
+    status: String,
 }
 
-impl_wasm_type_info!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
-impl_wasm_conversions!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
+impl_wasm_type_info!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
+impl_wasm_conversions!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
 
-#[wasm_bindgen(js_class = VerifiedShieldedPoolState)]
-impl VerifiedShieldedPoolStateWasm {
-    #[wasm_bindgen(getter, js_name = "poolBalance")]
-    pub fn pool_balance(&self) -> JsValue {
-        match self.pool_balance {
-            Some(b) => BigInt::from(b).into(),
-            None => JsValue::undefined(),
-        }
+#[wasm_bindgen(js_class = VerifiedAssetLockConsumed)]
+impl VerifiedAssetLockConsumedWasm {
+    #[wasm_bindgen(getter)]
+    pub fn status(&self) -> String {
+        self.status.clone()
     }
 }
 
@@ -918,11 +916,23 @@ pub fn convert_proof_result(
             .into()
         }
 
-        StateTransitionProofResult::VerifiedShieldedPoolState(maybe_balance) => {
-            VerifiedShieldedPoolStateWasm {
-                pool_balance: maybe_balance,
-            }
-            .into()
+        StateTransitionProofResult::VerifiedShieldedNullifiers(..)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(..)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(..) => {
+            return Err(WasmDppError::generic(
+                "Shielded nullifier proof results are not yet supported in WASM",
+            )
+            .into());
+        }
+
+        StateTransitionProofResult::VerifiedAssetLockConsumed(info) => {
+            use dpp::asset_lock::StoredAssetLockInfo;
+            let status = match info {
+                StoredAssetLockInfo::FullyConsumed => "FullyConsumed".to_string(),
+                StoredAssetLockInfo::PartiallyConsumed(_) => "PartiallyConsumed".to_string(),
+                StoredAssetLockInfo::NotPresent => "NotPresent".to_string(),
+            };
+            VerifiedAssetLockConsumedWasm { status }.into()
         }
     };
 

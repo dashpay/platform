@@ -1,4 +1,5 @@
 use crate::address_funds::PlatformAddress;
+use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
@@ -55,5 +56,15 @@ pub enum StateTransitionProofResult {
         PartialIdentity,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
-    VerifiedShieldedPoolState(Option<u64>),
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
+    VerifiedAssetLockConsumed(StoredAssetLockInfo),
+    VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
+    VerifiedShieldedNullifiersWithAddressInfos(
+        Vec<(Vec<u8>, bool)>,
+        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    ),
+    VerifiedShieldedNullifiersWithWithdrawalDocument(
+        Vec<(Vec<u8>, bool)>,
+        BTreeMap<Identifier, Option<Document>>,
+    ),
 }

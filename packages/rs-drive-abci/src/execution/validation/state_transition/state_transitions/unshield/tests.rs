@@ -795,4 +795,241 @@ mod tests {
             );
         }
     }
+
+    // ==========================================
+    // PROOF GENERATION & VERIFICATION TESTS
+    // ==========================================
+
+    mod return_proof {
+        use super::*;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
+        use drive::drive::Drive;
+        use grovedb_commitment_tree::{
+            Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, Note,
+            NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+            let flags = bundle.flags().to_byte();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+            (actions, flags, value_balance, anchor, proof, binding_sig)
+        }
+
+        #[test]
+        fn test_unshield_prove_and_verify_nullifiers_and_address() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let spend_amount = 10_000u64;
+            let output_amount = 5_000u64;
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            // --- Build bundle: spend 10,000 -> output 5,000 (value_balance = 5,000) ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            // Compute platform sighash binding transparent fields (output_address, amount)
+            let output_address = create_output_address();
+            let amount = 5_000u64; // = value_balance (no fee difference)
+            let mut extra_sighash_data = output_address.to_bytes();
+            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            // --- Extract serialized fields ---
+            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            // value_balance should be 5000 (10,000 spent - 5,000 output)
+            assert_eq!(value_balance, 5_000);
+
+            // --- Set up platform state ---
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000);
+
+            // --- Build and serialize the transition ---
+            let transition = create_unshield_transition(
+                output_address.clone(),
+                amount,
+                actions,
+                flags,
+                value_balance,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            // --- Process with manual transaction so we can commit before proving ---
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // Commit the transaction so prove_state_transition can read committed state
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Generate proof ---
+            let proof_result = platform
+                .drive
+                .prove_state_transition(&transition, None, platform_version)
+                .expect("expected to generate proof for unshield");
+
+            let grovedb_proof_bytes = proof_result
+                .into_data()
+                .expect("expected proof data, not an error");
+
+            // --- Verify proof ---
+            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &grovedb_proof_bytes,
+                &|_| Ok(None),
+                platform_version,
+            )
+            .expect("expected to verify unshield proof");
+
+            assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+            // --- Assert result is VerifiedShieldedNullifiersWithAddressInfos ---
+            let StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
+                statuses,
+                balances,
+            ) = proof_result
+            else {
+                panic!(
+                    "expected VerifiedShieldedNullifiersWithAddressInfos, got {:?}",
+                    proof_result
+                );
+            };
+
+            // Extract expected nullifiers from the transition
+            let StateTransition::Unshield(ref st) = transition else {
+                unreachable!();
+            };
+            let expected_nullifiers: Vec<Vec<u8>> = st.nullifiers();
+
+            assert_eq!(
+                statuses.len(),
+                expected_nullifiers.len(),
+                "should have one status per nullifier"
+            );
+
+            for (nf, is_spent) in &statuses {
+                assert!(is_spent, "nullifier {} should be spent", hex::encode(nf));
+                assert!(
+                    expected_nullifiers.contains(nf),
+                    "proved nullifier {} should be one of the transition's nullifiers",
+                    hex::encode(nf)
+                );
+            }
+
+            // Assert the output address appears in the address balances map
+            assert!(
+                balances.contains_key(&output_address),
+                "output address {:?} should be present in address balances",
+                output_address
+            );
+        }
+    }
 }

@@ -3,7 +3,7 @@ use crate::consensus::basic::state_transition::{
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::state_transitions::shielded::common_validation::{
-    validate_actions_not_empty, validate_anchor_not_zero, validate_proof_not_empty,
+    validate_actions_count, validate_anchor_not_zero, validate_proof_not_empty,
 };
 use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use crate::state_transition::StateTransitionStructureValidation;
@@ -13,10 +13,15 @@ use platform_version::version::PlatformVersion;
 impl StateTransitionStructureValidation for UnshieldTransitionV0 {
     fn validate_structure(
         &self,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        // Actions must not be empty
-        if let Some(err) = validate_actions_not_empty(&self.actions) {
+        // Actions count must be in [1, max]
+        if let Some(err) = validate_actions_count(
+            &self.actions,
+            platform_version
+                .system_limits
+                .max_shielded_transition_actions,
+        ) {
             return err;
         }
 
