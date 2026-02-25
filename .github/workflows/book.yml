@@ -22,8 +22,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ── mdBook ───────────────────────────────────────────────────────────
@@ -59,8 +59,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Setup Rust (stable)
         uses: ./.github/actions/rust
+        with:
+          toolchain: stable
 
       - name: Setup sccache
         uses: ./.github/actions/sccache
@@ -76,13 +78,10 @@ jobs:
 
       - name: Build Rust docs
         run: |
-          # Clean stale search index to avoid rustdoc corruption
           rm -rf target/doc
-          # Use -j1 to avoid parallel rustdoc search index race condition
           cargo doc \
             --workspace \
             --no-deps \
-            -j1 \
             --exclude wasm-sdk \
             --exclude wasm-dpp \
             --exclude wasm-dpp2 \
