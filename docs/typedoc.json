@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPointStrategy": "resolve",
   "entryPoints": [
-    "../packages/js-dash-sdk/src/index.ts"
+    "../packages/js-dash-sdk/src/SDK/SDK.ts"
   ],
   "tsconfig": "tsconfig.typedoc.json",
   "name": "Dash Platform JavaScript SDK",

@@ -13,14 +13,14 @@ Key crates:
 
 | Crate | Description |
 |-------|-------------|
-| `dash-sdk` | High-level client SDK with builder pattern and fetch traits |
-| `dpp` | Dash Platform Protocol — data contracts, documents, identities, state transitions |
-| `drive` | Decentralized storage engine built on GroveDB |
-| `drive-abci` | ABCI application connecting Tenderdash to Drive |
-| `dapi-grpc` | Rust types generated from the gRPC protocol definitions |
-| `rs-dapi-client` | Low-level DAPI client with retries and load balancing |
-| `platform-value` | Cross-language value representation |
-| `platform-version` | Protocol versioning and feature version dispatch |
+| [`dash-sdk`](api/rust/dash_sdk/index.html) | High-level client SDK with builder pattern and fetch traits |
+| [`dpp`](api/rust/dpp/index.html) | Dash Platform Protocol — data contracts, documents, identities, state transitions |
+| [`drive`](api/rust/drive/index.html) | Decentralized storage engine built on GroveDB |
+| [`drive-abci`](api/rust/drive_abci/index.html) | ABCI application connecting Tenderdash to Drive |
+| [`dapi-grpc`](api/rust/dapi_grpc/index.html) | Rust types generated from the gRPC protocol definitions |
+| [`rs-dapi-client`](api/rust/rs_dapi_client/index.html) | Low-level DAPI client with retries and load balancing |
+| [`platform-value`](api/rust/platform_value/index.html) | Cross-language value representation |
+| [`platform-version`](api/rust/platform_version/index.html) | Protocol versioning and feature version dispatch |
 
 ## [gRPC API](api/grpc/index.html)
 
