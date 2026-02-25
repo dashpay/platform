@@ -39,8 +39,11 @@ describe('subscribeToNewTransactions', () => {
   let emitInstantLockToFilterCollection;
 
   beforeEach(() => {
-    const address = new PrivateKey().toAddress();
-    const anotherAddress = new PrivateKey().toAddress();
+    // Use deterministic private keys to avoid intermittent bloom filter false positives.
+    // Random keys can occasionally produce addresses that collide in the bloom filter,
+    // causing anotherAddress transactions to incorrectly match the filter.
+    const address = new PrivateKey('b221d9dbb083a7f33428d7c2a3c3198ae925614d70210e28716ccaa7cd4ddb79').toAddress();
+    const anotherAddress = new PrivateKey('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7a8b9c0d1e2f3').toAddress();
 
     transactions = [];
     transactions.push(new Transaction().to(address, 41));
