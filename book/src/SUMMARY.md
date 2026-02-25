@@ -21,6 +21,7 @@
 - [Validation Pipeline](state-transitions/validation-pipeline.md)
 - [Transform Into Action](state-transitions/transform-into-action.md)
 - [Drive Operations](state-transitions/drive-operations.md)
+- [Shielded Transaction Fees](state-transitions/shielded-fees.md)
 
 # Error Handling
 
