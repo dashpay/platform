@@ -35,6 +35,12 @@ fn get_verifying_key() -> &'static VerifyingKey {
     SHIELDED_VERIFYING_KEY.get_or_init(VerifyingKey::build)
 }
 
+/// Pre-builds the shielded verifying key so that the first shielded
+/// transaction does not pay the ~5-15 s construction cost at check_tx time.
+pub fn warmup_shielded_verifying_key() {
+    get_verifying_key();
+}
+
 const EPK_SIZE: usize = 32;
 const ENC_CIPHERTEXT_SIZE: usize = 104;
 const OUT_CIPHERTEXT_SIZE: usize = 80;
