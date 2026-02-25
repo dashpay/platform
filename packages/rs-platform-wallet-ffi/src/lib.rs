@@ -2,6 +2,7 @@
 // Provides C-compatible FFI bindings for rs-platform-wallet
 
 #![allow(non_camel_case_types)]
+#![allow(clippy::missing_safety_doc)]
 
 pub mod contact;
 pub mod contact_request;

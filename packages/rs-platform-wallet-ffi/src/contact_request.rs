@@ -6,7 +6,6 @@ use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
 use platform_wallet::ContactRequest;
-use std::os::raw::c_char;
 
 // Storage for contact requests
 lazy_static::lazy_static! {
@@ -15,7 +14,7 @@ lazy_static::lazy_static! {
 
 /// Create a new contact request
 #[no_mangle]
-pub extern "C" fn contact_request_create(
+pub unsafe extern "C" fn contact_request_create(
     sender_id: IdentifierBytes,
     recipient_id: IdentifierBytes,
     sender_key_index: u32,
@@ -93,7 +92,7 @@ pub extern "C" fn contact_request_create(
 
 /// Create a contact request handle from a managed identity's sent request
 #[no_mangle]
-pub extern "C" fn managed_identity_get_sent_contact_request(
+pub unsafe extern "C" fn managed_identity_get_sent_contact_request(
     identity_handle: Handle,
     recipient_id: IdentifierBytes,
     out_request_handle: *mut Handle,
@@ -159,7 +158,7 @@ pub extern "C" fn managed_identity_get_sent_contact_request(
 
 /// Create a contact request handle from a managed identity's incoming request
 #[no_mangle]
-pub extern "C" fn managed_identity_get_incoming_contact_request(
+pub unsafe extern "C" fn managed_identity_get_incoming_contact_request(
     identity_handle: Handle,
     sender_id: IdentifierBytes,
     out_request_handle: *mut Handle,
@@ -225,7 +224,7 @@ pub extern "C" fn managed_identity_get_incoming_contact_request(
 
 /// Get sender ID from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_sender_id(
+pub unsafe extern "C" fn contact_request_get_sender_id(
     request_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -262,7 +261,7 @@ pub extern "C" fn contact_request_get_sender_id(
 
 /// Get recipient ID from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_recipient_id(
+pub unsafe extern "C" fn contact_request_get_recipient_id(
     request_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -299,7 +298,7 @@ pub extern "C" fn contact_request_get_recipient_id(
 
 /// Get sender key index from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_sender_key_index(
+pub unsafe extern "C" fn contact_request_get_sender_key_index(
     request_handle: Handle,
     out_index: *mut u32,
     out_error: *mut PlatformWalletFFIError,
@@ -336,7 +335,7 @@ pub extern "C" fn contact_request_get_sender_key_index(
 
 /// Get recipient key index from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_recipient_key_index(
+pub unsafe extern "C" fn contact_request_get_recipient_key_index(
     request_handle: Handle,
     out_index: *mut u32,
     out_error: *mut PlatformWalletFFIError,
@@ -373,7 +372,7 @@ pub extern "C" fn contact_request_get_recipient_key_index(
 
 /// Get account reference from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_account_reference(
+pub unsafe extern "C" fn contact_request_get_account_reference(
     request_handle: Handle,
     out_account_ref: *mut u32,
     out_error: *mut PlatformWalletFFIError,
@@ -410,7 +409,7 @@ pub extern "C" fn contact_request_get_account_reference(
 
 /// Get encrypted public key from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_encrypted_public_key(
+pub unsafe extern "C" fn contact_request_get_encrypted_public_key(
     request_handle: Handle,
     out_bytes: *mut *mut u8,
     out_len: *mut usize,
@@ -455,7 +454,7 @@ pub extern "C" fn contact_request_get_encrypted_public_key(
 
 /// Get creation timestamp from contact request
 #[no_mangle]
-pub extern "C" fn contact_request_get_created_at(
+pub unsafe extern "C" fn contact_request_get_created_at(
     request_handle: Handle,
     out_timestamp: *mut u64,
     out_error: *mut PlatformWalletFFIError,

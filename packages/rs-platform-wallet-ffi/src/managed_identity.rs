@@ -8,7 +8,7 @@ use std::os::raw::c_char;
 
 /// Create a new ManagedIdentity from a DPP Identity serialized bytes
 #[no_mangle]
-pub extern "C" fn managed_identity_create_from_identity_bytes(
+pub unsafe extern "C" fn managed_identity_create_from_identity_bytes(
     identity_bytes: *const std::os::raw::c_uchar,
     identity_len: usize,
     out_handle: *mut Handle,
@@ -56,7 +56,7 @@ pub extern "C" fn managed_identity_create_from_identity_bytes(
 
 /// Get the identity ID
 #[no_mangle]
-pub extern "C" fn managed_identity_get_id(
+pub unsafe extern "C" fn managed_identity_get_id(
     identity_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -93,7 +93,7 @@ pub extern "C" fn managed_identity_get_id(
 
 /// Get the identity balance
 #[no_mangle]
-pub extern "C" fn managed_identity_get_balance(
+pub unsafe extern "C" fn managed_identity_get_balance(
     identity_handle: Handle,
     out_balance: *mut u64,
     out_error: *mut PlatformWalletFFIError,
@@ -130,7 +130,7 @@ pub extern "C" fn managed_identity_get_balance(
 
 /// Get the label
 #[no_mangle]
-pub extern "C" fn managed_identity_get_label(
+pub unsafe extern "C" fn managed_identity_get_label(
     identity_handle: Handle,
     out_label: *mut *mut c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -180,7 +180,7 @@ pub extern "C" fn managed_identity_get_label(
 
 /// Set the label
 #[no_mangle]
-pub extern "C" fn managed_identity_set_label(
+pub unsafe extern "C" fn managed_identity_set_label(
     identity_handle: Handle,
     label: *const c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -224,7 +224,7 @@ pub extern "C" fn managed_identity_set_label(
 
 /// Get last updated balance block time
 #[no_mangle]
-pub extern "C" fn managed_identity_get_last_updated_balance_block_time(
+pub unsafe extern "C" fn managed_identity_get_last_updated_balance_block_time(
     identity_handle: Handle,
     out_block_time: *mut BlockTime,
     out_error: *mut PlatformWalletFFIError,
@@ -273,7 +273,7 @@ pub extern "C" fn managed_identity_get_last_updated_balance_block_time(
 
 /// Set last updated balance block time
 #[no_mangle]
-pub extern "C" fn managed_identity_set_last_updated_balance_block_time(
+pub unsafe extern "C" fn managed_identity_set_last_updated_balance_block_time(
     identity_handle: Handle,
     block_time: BlockTime,
     out_error: *mut PlatformWalletFFIError,
@@ -298,7 +298,7 @@ pub extern "C" fn managed_identity_set_last_updated_balance_block_time(
 
 /// Get last synced keys block time
 #[no_mangle]
-pub extern "C" fn managed_identity_get_last_synced_keys_block_time(
+pub unsafe extern "C" fn managed_identity_get_last_synced_keys_block_time(
     identity_handle: Handle,
     out_block_time: *mut BlockTime,
     out_error: *mut PlatformWalletFFIError,
@@ -351,7 +351,9 @@ pub extern "C" fn managed_identity_get_last_synced_keys_block_time(
 
 /// Destroy ManagedIdentity and free resources
 #[no_mangle]
-pub extern "C" fn managed_identity_destroy(identity_handle: Handle) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn managed_identity_destroy(
+    identity_handle: Handle,
+) -> PlatformWalletFFIResult {
     if MANAGED_IDENTITY_STORAGE.remove(identity_handle).is_some() {
         PlatformWalletFFIResult::Success
     } else {

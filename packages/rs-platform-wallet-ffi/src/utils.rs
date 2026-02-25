@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 /// Serialize any object to JSON bytes
 #[no_mangle]
-pub extern "C" fn platform_wallet_serialize_to_json_bytes(
+pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
     json_string: *const c_char,
     out_bytes: *mut *mut c_uchar,
     out_len: *mut usize,
@@ -51,7 +51,7 @@ pub extern "C" fn platform_wallet_serialize_to_json_bytes(
 
 /// Deserialize JSON bytes to string
 #[no_mangle]
-pub extern "C" fn platform_wallet_deserialize_from_json_bytes(
+pub unsafe extern "C" fn platform_wallet_deserialize_from_json_bytes(
     bytes: *const c_uchar,
     len: usize,
     out_json_string: *mut *mut c_char,
@@ -105,7 +105,7 @@ pub extern "C" fn platform_wallet_deserialize_from_json_bytes(
 
 /// Free bytes allocated by FFI functions
 #[no_mangle]
-pub extern "C" fn platform_wallet_bytes_free(bytes: *mut c_uchar, len: usize) {
+pub unsafe extern "C" fn platform_wallet_bytes_free(bytes: *mut c_uchar, len: usize) {
     if !bytes.is_null() && len > 0 {
         unsafe {
             let _ = Vec::from_raw_parts(bytes, len, len);
@@ -115,7 +115,7 @@ pub extern "C" fn platform_wallet_bytes_free(bytes: *mut c_uchar, len: usize) {
 
 /// Generate random identifier
 #[no_mangle]
-pub extern "C" fn platform_wallet_generate_random_identifier(
+pub unsafe extern "C" fn platform_wallet_generate_random_identifier(
     out_id: *mut crate::types::IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -139,7 +139,7 @@ pub extern "C" fn platform_wallet_generate_random_identifier(
 
 /// Convert identifier to hex string
 #[no_mangle]
-pub extern "C" fn platform_wallet_identifier_to_hex(
+pub unsafe extern "C" fn platform_wallet_identifier_to_hex(
     id: crate::types::IdentifierBytes,
     out_hex: *mut *mut c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -193,7 +193,7 @@ pub extern "C" fn platform_wallet_identifier_to_hex(
 
 /// Convert hex string to identifier
 #[no_mangle]
-pub extern "C" fn platform_wallet_identifier_from_hex(
+pub unsafe extern "C" fn platform_wallet_identifier_from_hex(
     hex: *const c_char,
     out_id: *mut crate::types::IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,

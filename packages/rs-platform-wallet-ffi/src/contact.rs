@@ -2,11 +2,10 @@ use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use std::os::raw::c_char;
 
 /// Get all sent contact request IDs
 #[no_mangle]
-pub extern "C" fn managed_identity_get_sent_contact_request_ids(
+pub unsafe extern "C" fn managed_identity_get_sent_contact_request_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
     out_error: *mut PlatformWalletFFIError,
@@ -46,7 +45,7 @@ pub extern "C" fn managed_identity_get_sent_contact_request_ids(
 
 /// Get all incoming contact request IDs
 #[no_mangle]
-pub extern "C" fn managed_identity_get_incoming_contact_request_ids(
+pub unsafe extern "C" fn managed_identity_get_incoming_contact_request_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
     out_error: *mut PlatformWalletFFIError,
@@ -86,7 +85,7 @@ pub extern "C" fn managed_identity_get_incoming_contact_request_ids(
 
 /// Get all established contact IDs
 #[no_mangle]
-pub extern "C" fn managed_identity_get_established_contact_ids(
+pub unsafe extern "C" fn managed_identity_get_established_contact_ids(
     identity_handle: Handle,
     out_array: *mut IdentifierArray,
     out_error: *mut PlatformWalletFFIError,
@@ -126,7 +125,7 @@ pub extern "C" fn managed_identity_get_established_contact_ids(
 
 /// Check if a contact is established
 #[no_mangle]
-pub extern "C" fn managed_identity_is_contact_established(
+pub unsafe extern "C" fn managed_identity_is_contact_established(
     identity_handle: Handle,
     contact_id: IdentifierBytes,
     out_is_established: *mut bool,
@@ -181,7 +180,7 @@ pub extern "C" fn managed_identity_is_contact_established(
 /// The request will be added to sent_contact_requests
 /// If there's already an incoming request from the recipient, the contact will be automatically established
 #[no_mangle]
-pub extern "C" fn managed_identity_send_contact_request(
+pub unsafe extern "C" fn managed_identity_send_contact_request(
     identity_handle: Handle,
     request_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -225,7 +224,7 @@ pub extern "C" fn managed_identity_send_contact_request(
 /// This will add the request to incoming_contact_requests
 /// If there's already a sent request to the sender, the contact will be automatically established
 #[no_mangle]
-pub extern "C" fn managed_identity_accept_contact_request(
+pub unsafe extern "C" fn managed_identity_accept_contact_request(
     identity_handle: Handle,
     request_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -268,7 +267,7 @@ pub extern "C" fn managed_identity_accept_contact_request(
 /// Reject an incoming contact request
 /// This will remove the request from incoming_contact_requests
 #[no_mangle]
-pub extern "C" fn managed_identity_reject_contact_request(
+pub unsafe extern "C" fn managed_identity_reject_contact_request(
     identity_handle: Handle,
     sender_id: IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,

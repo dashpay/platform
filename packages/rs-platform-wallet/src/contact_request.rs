@@ -69,12 +69,12 @@ impl ContactRequest {
 
     /// Check if this is an outgoing request for the given identity
     pub fn is_outgoing(&self, identity_id: &Identifier) -> bool {
-        &self.sender_id == identity_id
+        self.sender_id == *identity_id
     }
 
     /// Check if this is an incoming request for the given identity
     pub fn is_incoming(&self, identity_id: &Identifier) -> bool {
-        &self.recipient_id == identity_id
+        self.recipient_id == *identity_id
     }
 }
 

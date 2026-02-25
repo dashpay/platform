@@ -44,15 +44,6 @@ pub type OnAddressAbsentFn =
 /// Optional destructor for cleanup
 pub type DestroyProviderFn = unsafe extern "C" fn(context: *mut c_void);
 
-/// Helper to check if a function pointer is null (for optional callbacks)
-#[inline]
-pub(crate) fn fn_ptr_is_null<T>(f: T) -> bool {
-    // SAFETY: Function pointers have the same size as *const ()
-    // A null function pointer has address 0
-    let ptr: *const () = unsafe { std::mem::transmute_copy(&f) };
-    ptr.is_null()
-}
-
 /// VTable for address provider callbacks
 ///
 /// Note: Optional function pointers (has_pending, highest_found_index, destroy)
@@ -73,14 +64,14 @@ pub struct AddressProviderVTable {
 
     /// Check if there are still pending addresses (optional, can be NULL)
     /// If null, the default implementation (pending_addresses is non-empty) is used
-    pub has_pending: HasPendingFn,
+    pub has_pending: Option<HasPendingFn>,
 
     /// Get the highest found index (optional, can be NULL)
     /// If null, returns None
-    pub highest_found_index: GetHighestFoundIndexFn,
+    pub highest_found_index: Option<GetHighestFoundIndexFn>,
 
     /// Optional destructor for cleanup (can be NULL)
-    pub destroy: DestroyProviderFn,
+    pub destroy: Option<DestroyProviderFn>,
 }
 
 /// FFI-compatible address provider using callbacks
@@ -163,8 +154,8 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     fn has_pending(&self) -> bool {
         unsafe {
             let vtable = &*self.ffi.vtable;
-            if !fn_ptr_is_null(vtable.has_pending) {
-                (vtable.has_pending)(self.ffi.context)
+            if let Some(has_pending) = vtable.has_pending {
+                has_pending(self.ffi.context)
             } else {
                 // Default implementation
                 !self.pending_addresses().is_empty()
@@ -175,8 +166,8 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     fn highest_found_index(&self) -> Option<AddressIndex> {
         unsafe {
             let vtable = &*self.ffi.vtable;
-            if !fn_ptr_is_null(vtable.highest_found_index) {
-                let index = (vtable.highest_found_index)(self.ffi.context);
+            if let Some(highest_found_index) = vtable.highest_found_index {
+                let index = highest_found_index(self.ffi.context);
                 if index == u32::MAX {
                     None
                 } else {
@@ -247,22 +238,14 @@ mod tests {
     ) {
     }
 
-    /// Create a null function pointer for optional callbacks in tests
-    /// SAFETY: This creates a null function pointer which must only be used
-    /// with code that checks for null before calling
-    const unsafe fn null_fn<T>() -> T {
-        std::mem::transmute_copy(&std::ptr::null::<()>())
-    }
-
     static TEST_VTABLE: AddressProviderVTable = AddressProviderVTable {
         gap_limit: test_gap_limit,
         pending_addresses: test_pending_addresses,
         on_address_found: test_on_found,
         on_address_absent: test_on_absent,
-        // SAFETY: Our implementation checks for null before calling these
-        has_pending: unsafe { null_fn() },
-        highest_found_index: unsafe { null_fn() },
-        destroy: unsafe { null_fn() },
+        has_pending: None,
+        highest_found_index: None,
+        destroy: None,
     };
 
     #[test]
