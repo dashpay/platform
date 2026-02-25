@@ -32,7 +32,10 @@ impl PlatformWalletInfo {
         tx: &dashcore::Transaction,
     ) -> Result<Option<Identifier>, PlatformWalletError> {
         let result = self
-            .fetch_contact_requests_for_identities_after_asset_locks(wallet, &[tx.clone()])
+            .fetch_contact_requests_for_identities_after_asset_locks(
+                wallet,
+                std::slice::from_ref(tx),
+            )
             .await?;
 
         Ok(result.first().copied())

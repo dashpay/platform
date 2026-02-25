@@ -8,7 +8,7 @@ use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes
 #[no_mangle]
-pub extern "C" fn platform_wallet_info_create_from_seed(
+pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
     network: Network,
     seed_bytes: *const c_uchar,
     seed_len: usize,
@@ -78,7 +78,7 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
 
 /// Create a new PlatformWalletInfo from mnemonic
 #[no_mangle]
-pub extern "C" fn platform_wallet_info_create_from_mnemonic(
+pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     network: Network,
     mnemonic: *const c_char,
     passphrase: *const c_char,
@@ -204,7 +204,7 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
 
 /// Get the identity manager
 #[no_mangle]
-pub extern "C" fn platform_wallet_info_get_identity_manager(
+pub unsafe extern "C" fn platform_wallet_info_get_identity_manager(
     wallet_handle: Handle,
     out_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -242,7 +242,7 @@ pub extern "C" fn platform_wallet_info_get_identity_manager(
 
 /// Set the identity manager
 #[no_mangle]
-pub extern "C" fn platform_wallet_info_set_identity_manager(
+pub unsafe extern "C" fn platform_wallet_info_set_identity_manager(
     wallet_handle: Handle,
     manager_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -287,7 +287,7 @@ pub extern "C" fn platform_wallet_info_set_identity_manager(
 /// TODO: Requires serde support on PlatformWalletInfo
 #[allow(dead_code)]
 fn platform_wallet_info_to_json(
-    wallet_handle: Handle,
+    _wallet_handle: Handle,
     out_json: *mut *mut c_char,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -317,7 +317,9 @@ fn platform_wallet_info_to_json(
 
 /// Destroy PlatformWalletInfo and free resources
 #[no_mangle]
-pub extern "C" fn platform_wallet_info_destroy(wallet_handle: Handle) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn platform_wallet_info_destroy(
+    wallet_handle: Handle,
+) -> PlatformWalletFFIResult {
     if WALLET_INFO_STORAGE.remove(wallet_handle).is_some() {
         PlatformWalletFFIResult::Success
     } else {

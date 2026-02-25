@@ -4,6 +4,7 @@ use super::ManagedIdentity;
 use crate::EstablishedContact;
 use dpp::prelude::Identifier;
 
+#[allow(dead_code)]
 impl ManagedIdentity {
     /// Add an established contact
     pub(crate) fn add_established_contact(&mut self, contact: EstablishedContact) {

@@ -1508,7 +1508,7 @@ dependencies = [
  "hex",
  "hickory-resolver",
  "indexmap 2.13.0",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "key-wallet-manager",
  "log",
  "rand 0.8.5",
@@ -1536,7 +1536,7 @@ dependencies = [
  "env_logger 0.10.2",
  "futures",
  "hex",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "key-wallet-ffi",
  "key-wallet-manager",
  "libc",
@@ -1629,7 +1629,7 @@ dependencies = [
  "bincode",
  "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "hex",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "serde",
  "serde_json",
  "serde_repr",
@@ -1856,7 +1856,7 @@ dependencies = [
  "itertools 0.13.0",
  "json-schema-compatibility-validator",
  "jsonschema",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "key-wallet-manager",
  "lazy_static",
  "log",
@@ -3486,29 +3486,6 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04#2bd764fdc071828939d9dc8dd872c39bae906b04"
-dependencies = [
- "async-trait",
- "base58ck",
- "bip39",
- "bitflags 2.11.0",
- "dash-network 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
- "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
- "dashcore-private 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
- "dashcore_hashes 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
- "getrandom 0.2.17",
- "hex",
- "hkdf",
- "rand 0.8.5",
- "secp256k1",
- "sha2",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "key-wallet"
-version = "0.42.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2#a05d256f59743c69df912462dd77dd487e1ff5b2"
 dependencies = [
  "aes",
@@ -3545,7 +3522,7 @@ dependencies = [
  "dash-network 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "hex",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "key-wallet-manager",
  "libc",
  "secp256k1",
@@ -3561,7 +3538,7 @@ dependencies = [
  "bincode",
  "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "dashcore_hashes 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "rayon",
  "secp256k1",
  "tokio",
@@ -4467,7 +4444,7 @@ dependencies = [
  "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "dpp",
  "indexmap 2.13.0",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
+ "key-wallet",
  "key-wallet-manager",
  "platform-encryption",
  "rand 0.8.5",
@@ -4478,9 +4455,9 @@ dependencies = [
 name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
- "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
+ "dashcore 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=a05d256f59743c69df912462dd77dd487e1ff5b2)",
  "dpp",
- "key-wallet 0.42.0 (git+https://github.com/dashpay/rust-dashcore?rev=2bd764fdc071828939d9dc8dd872c39bae906b04)",
+ "key-wallet",
  "lazy_static",
  "once_cell",
  "parking_lot",

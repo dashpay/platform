@@ -97,8 +97,7 @@ impl PlatformWalletInfo {
             .wallet_info
             .accounts()
             .dashpay_receival_accounts
-            .get(&account_key)
-            .is_some();
+            .contains_key(&account_key);
 
         if managed_has_account {
             return Err(PlatformWalletError::DashpayReceivingAccountAlreadyExists {
@@ -142,6 +141,7 @@ impl PlatformWalletInfo {
 
     /// Add an incoming contact request for a specific identity
     /// If there's already a sent request to the sender, automatically establish the contact
+    #[allow(dead_code)]
     pub(crate) fn add_incoming_contact_request(
         &mut self,
         wallet: &mut Wallet,
@@ -242,8 +242,7 @@ impl PlatformWalletInfo {
             .wallet_info
             .accounts()
             .dashpay_external_accounts
-            .get(&account_key)
-            .is_some();
+            .contains_key(&account_key);
 
         if managed_has_account {
             return Err(PlatformWalletError::DashpayExternalAccountAlreadyExists {
@@ -306,6 +305,7 @@ impl PlatformWalletInfo {
     /// # Returns
     ///
     /// Returns the document ID and recipient ID on success
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_contact_request<S, F, Fut, G, Gut>(
         &mut self,
         wallet: &mut Wallet,

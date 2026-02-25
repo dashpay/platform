@@ -14,7 +14,7 @@ lazy_static::lazy_static! {
 
 /// Get an established contact by ID from a managed identity
 #[no_mangle]
-pub extern "C" fn managed_identity_get_established_contact(
+pub unsafe extern "C" fn managed_identity_get_established_contact(
     identity_handle: Handle,
     contact_id: IdentifierBytes,
     out_contact_handle: *mut Handle,
@@ -83,7 +83,7 @@ pub extern "C" fn managed_identity_get_established_contact(
 
 /// Get the contact identity ID from an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_get_contact_id(
+pub unsafe extern "C" fn established_contact_get_contact_id(
     contact_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -120,7 +120,7 @@ pub extern "C" fn established_contact_get_contact_id(
 
 /// Get a handle to the outgoing contact request from an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_get_outgoing_request(
+pub unsafe extern "C" fn established_contact_get_outgoing_request(
     contact_handle: Handle,
     out_request_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -159,7 +159,7 @@ pub extern "C" fn established_contact_get_outgoing_request(
 
 /// Get a handle to the incoming contact request from an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_get_incoming_request(
+pub unsafe extern "C" fn established_contact_get_incoming_request(
     contact_handle: Handle,
     out_request_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -198,7 +198,7 @@ pub extern "C" fn established_contact_get_incoming_request(
 
 /// Get the contact identity ID from an established contact (alias for established_contact_get_contact_id)
 #[no_mangle]
-pub extern "C" fn established_contact_get_contact_identity_id(
+pub unsafe extern "C" fn established_contact_get_contact_identity_id(
     contact_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -208,7 +208,7 @@ pub extern "C" fn established_contact_get_contact_identity_id(
 
 /// Get the alias for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_get_alias(
+pub unsafe extern "C" fn established_contact_get_alias(
     contact_handle: Handle,
     out_alias: *mut *mut std::os::raw::c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -258,7 +258,7 @@ pub extern "C" fn established_contact_get_alias(
 
 /// Set the alias for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_set_alias(
+pub unsafe extern "C" fn established_contact_set_alias(
     contact_handle: Handle,
     alias: *const std::os::raw::c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -304,7 +304,7 @@ pub extern "C" fn established_contact_set_alias(
 
 /// Clear the alias for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_clear_alias(
+pub unsafe extern "C" fn established_contact_clear_alias(
     contact_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -328,7 +328,7 @@ pub extern "C" fn established_contact_clear_alias(
 
 /// Get the note for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_get_note(
+pub unsafe extern "C" fn established_contact_get_note(
     contact_handle: Handle,
     out_note: *mut *mut std::os::raw::c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -378,7 +378,7 @@ pub extern "C" fn established_contact_get_note(
 
 /// Set the note for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_set_note(
+pub unsafe extern "C" fn established_contact_set_note(
     contact_handle: Handle,
     note: *const std::os::raw::c_char,
     out_error: *mut PlatformWalletFFIError,
@@ -424,7 +424,7 @@ pub extern "C" fn established_contact_set_note(
 
 /// Clear the note for an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_clear_note(
+pub unsafe extern "C" fn established_contact_clear_note(
     contact_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -448,7 +448,7 @@ pub extern "C" fn established_contact_clear_note(
 
 /// Check if an established contact is hidden
 #[no_mangle]
-pub extern "C" fn established_contact_is_hidden(
+pub unsafe extern "C" fn established_contact_is_hidden(
     contact_handle: Handle,
     out_is_hidden: *mut bool,
     out_error: *mut PlatformWalletFFIError,
@@ -485,7 +485,7 @@ pub extern "C" fn established_contact_is_hidden(
 
 /// Hide an established contact from the contact list
 #[no_mangle]
-pub extern "C" fn established_contact_hide(
+pub unsafe extern "C" fn established_contact_hide(
     contact_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -509,7 +509,7 @@ pub extern "C" fn established_contact_hide(
 
 /// Unhide an established contact
 #[no_mangle]
-pub extern "C" fn established_contact_unhide(
+pub unsafe extern "C" fn established_contact_unhide(
     contact_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -533,7 +533,9 @@ pub extern "C" fn established_contact_unhide(
 
 /// Destroy an established contact handle and free resources
 #[no_mangle]
-pub extern "C" fn established_contact_destroy(contact_handle: Handle) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn established_contact_destroy(
+    contact_handle: Handle,
+) -> PlatformWalletFFIResult {
     if ESTABLISHED_CONTACT_STORAGE.remove(contact_handle).is_some() {
         PlatformWalletFFIResult::Success
     } else {

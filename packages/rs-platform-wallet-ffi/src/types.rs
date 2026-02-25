@@ -19,6 +19,7 @@ impl IdentifierBytes {
         Some(Self { bytes })
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn to_identifier(&self) -> Result<dpp::prelude::Identifier, dpp::ProtocolError> {
         dpp::prelude::Identifier::from_bytes(&self.bytes)
             .map_err(|_| dpp::ProtocolError::Generic("Invalid identifier bytes".to_string()))
@@ -104,7 +105,7 @@ impl IdentifierArray {
 
 /// Free identifier array
 #[no_mangle]
-pub extern "C" fn platform_wallet_identifier_array_free(array: IdentifierArray) {
+pub unsafe extern "C" fn platform_wallet_identifier_array_free(array: IdentifierArray) {
     if !array.items.is_null() && array.count > 0 {
         unsafe {
             let _ = Vec::from_raw_parts(array.items, array.count, array.count);
@@ -114,7 +115,7 @@ pub extern "C" fn platform_wallet_identifier_array_free(array: IdentifierArray) 
 
 /// Free a C string
 #[no_mangle]
-pub extern "C" fn platform_wallet_string_free(s: *mut c_char) {
+pub unsafe extern "C" fn platform_wallet_string_free(s: *mut c_char) {
     if !s.is_null() {
         unsafe {
             let _ = std::ffi::CString::from_raw(s);

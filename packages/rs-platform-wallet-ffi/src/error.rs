@@ -48,7 +48,7 @@ impl PlatformWalletFFIError {
 
 /// Free error message
 #[no_mangle]
-pub extern "C" fn platform_wallet_ffi_error_free(error: PlatformWalletFFIError) {
+pub unsafe extern "C" fn platform_wallet_ffi_error_free(error: PlatformWalletFFIError) {
     if !error.message.is_null() {
         unsafe {
             let _ = CString::from_raw(error.message);

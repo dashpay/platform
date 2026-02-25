@@ -2,11 +2,10 @@ use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
 use platform_wallet::identity_manager::IdentityManager;
-use std::os::raw::c_char;
 
 /// Create a new empty IdentityManager
 #[no_mangle]
-pub extern "C" fn identity_manager_create(
+pub unsafe extern "C" fn identity_manager_create(
     out_handle: *mut Handle,
     out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
@@ -31,7 +30,7 @@ pub extern "C" fn identity_manager_create(
 
 /// Add a managed identity to the manager
 #[no_mangle]
-pub extern "C" fn identity_manager_add_identity(
+pub unsafe extern "C" fn identity_manager_add_identity(
     manager_handle: Handle,
     identity_handle: Handle,
     out_error: *mut PlatformWalletFFIError,
@@ -76,7 +75,7 @@ pub extern "C" fn identity_manager_add_identity(
 
 /// Remove an identity from the manager
 #[no_mangle]
-pub extern "C" fn identity_manager_remove_identity(
+pub unsafe extern "C" fn identity_manager_remove_identity(
     manager_handle: Handle,
     identity_id: IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -127,7 +126,7 @@ pub extern "C" fn identity_manager_remove_identity(
 
 /// Get an identity by ID
 #[no_mangle]
-pub extern "C" fn identity_manager_get_identity(
+pub unsafe extern "C" fn identity_manager_get_identity(
     manager_handle: Handle,
     identity_id: IdentifierBytes,
     out_handle: *mut Handle,
@@ -196,7 +195,7 @@ pub extern "C" fn identity_manager_get_identity(
 
 /// Get all identity IDs
 #[no_mangle]
-pub extern "C" fn identity_manager_get_all_identity_ids(
+pub unsafe extern "C" fn identity_manager_get_all_identity_ids(
     manager_handle: Handle,
     out_array: *mut IdentifierArray,
     out_error: *mut PlatformWalletFFIError,
@@ -235,7 +234,7 @@ pub extern "C" fn identity_manager_get_all_identity_ids(
 
 /// Get the primary identity ID
 #[no_mangle]
-pub extern "C" fn identity_manager_get_primary_identity_id(
+pub unsafe extern "C" fn identity_manager_get_primary_identity_id(
     manager_handle: Handle,
     out_id: *mut IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -284,7 +283,7 @@ pub extern "C" fn identity_manager_get_primary_identity_id(
 
 /// Set the primary identity
 #[no_mangle]
-pub extern "C" fn identity_manager_set_primary_identity(
+pub unsafe extern "C" fn identity_manager_set_primary_identity(
     manager_handle: Handle,
     identity_id: IdentifierBytes,
     out_error: *mut PlatformWalletFFIError,
@@ -306,7 +305,7 @@ pub extern "C" fn identity_manager_set_primary_identity(
 
     IDENTITY_MANAGER_STORAGE
         .with_item_mut(manager_handle, |manager| {
-            manager.set_primary_identity(id);
+            let _ = manager.set_primary_identity(id);
             PlatformWalletFFIResult::Success
         })
         .unwrap_or_else(|| {
@@ -324,7 +323,7 @@ pub extern "C" fn identity_manager_set_primary_identity(
 
 /// Get the count of identities
 #[no_mangle]
-pub extern "C" fn identity_manager_get_identity_count(
+pub unsafe extern "C" fn identity_manager_get_identity_count(
     manager_handle: Handle,
     out_count: *mut usize,
     out_error: *mut PlatformWalletFFIError,
@@ -361,7 +360,9 @@ pub extern "C" fn identity_manager_get_identity_count(
 
 /// Destroy IdentityManager and free resources
 #[no_mangle]
-pub extern "C" fn identity_manager_destroy(manager_handle: Handle) -> PlatformWalletFFIResult {
+pub unsafe extern "C" fn identity_manager_destroy(
+    manager_handle: Handle,
+) -> PlatformWalletFFIResult {
     if IDENTITY_MANAGER_STORAGE.remove(manager_handle).is_some() {
         PlatformWalletFFIResult::Success
     } else {
