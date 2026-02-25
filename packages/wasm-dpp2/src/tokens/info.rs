@@ -1,9 +1,11 @@
+use crate::impl_wasm_type_info;
 use dpp::tokens::info::IdentityTokenInfo;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "IdentityTokenInfo")]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct IdentityTokenInfoWasm(IdentityTokenInfo);
 
 impl From<IdentityTokenInfo> for IdentityTokenInfoWasm {
@@ -20,10 +22,12 @@ impl From<IdentityTokenInfoWasm> for IdentityTokenInfo {
 
 #[wasm_bindgen(js_class = IdentityTokenInfo)]
 impl IdentityTokenInfoWasm {
-    #[wasm_bindgen(getter = "frozen")]
-    pub fn frozen(&self) -> bool {
+    #[wasm_bindgen(getter = "isFrozen")]
+    pub fn is_frozen(&self) -> bool {
         match &self.0 {
             IdentityTokenInfo::V0(v0) => v0.frozen(),
         }
     }
 }
+
+impl_wasm_type_info!(IdentityTokenInfoWasm, IdentityTokenInfo);

@@ -133,6 +133,28 @@ impl DapiClient {
     pub fn address_list(&self) -> &AddressList {
         &self.address_list
     }
+
+    /// Get all non-banned addresses from the address list.
+    ///
+    /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
+    /// This is useful for diagnostics, monitoring, or when you need to know which DAPI nodes are
+    /// currently available for making requests.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use rs_dapi_client::{DapiClient, AddressList, RequestSettings};
+    ///
+    /// let address_list = "http://127.0.0.1:3000,http://127.0.0.1:3001".parse().unwrap();
+    /// let client = DapiClient::new(address_list, RequestSettings::default());
+    ///
+    /// // Get all currently available (non-banned) addresses
+    /// let live_addresses = client.get_live_addresses();
+    /// println!("Available DAPI nodes: {}", live_addresses.len());
+    /// ```
+    pub fn get_live_addresses(&self) -> Vec<crate::Address> {
+        self.address_list.get_live_addresses()
+    }
 }
 
 /// Ban address in case of retryable error or unban it

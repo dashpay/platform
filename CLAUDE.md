@@ -12,6 +12,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Memory management across Swift/Rust boundaries
 - Refactoring Swift code to properly wrap FFI functions
 
+## Pull Requests
+
+PR titles match the Conventional Commits spec, using types specified in `.github/workflows/pr.yml`.
+PR descriptions must follow the template in `.github/PULL_REQUEST_TEMPLATE.md`.
+
 ## Commands
 
 ### Build and Development

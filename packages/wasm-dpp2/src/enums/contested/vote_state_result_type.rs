@@ -12,12 +12,12 @@ pub enum VoteStateResultTypeWasm {
     DocumentsAndVoteTally = 2,
 }
 
-impl TryFrom<JsValue> for VoteStateResultTypeWasm {
+impl TryFrom<&JsValue> for VoteStateResultTypeWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<VoteStateResultTypeWasm, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
+        if value.is_string() {
+            match value.as_string() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -27,8 +27,9 @@ impl TryFrom<JsValue> for VoteStateResultTypeWasm {
                     "documentsandvotetally" => Ok(VoteStateResultTypeWasm::DocumentsAndVoteTally),
                     _ => Err(WasmDppError::invalid_argument("unknown result type")),
                 },
-            },
-            false => match value.as_f64() {
+            }
+        } else {
+            match value.as_f64() {
                 None => Err(WasmDppError::invalid_argument(
                     "cannot read value from enum",
                 )),
@@ -38,8 +39,16 @@ impl TryFrom<JsValue> for VoteStateResultTypeWasm {
                     2 => Ok(VoteStateResultTypeWasm::DocumentsAndVoteTally),
                     _ => Err(WasmDppError::invalid_argument("unknown action type")),
                 },
-            },
+            }
         }
+    }
+}
+
+impl TryFrom<JsValue> for VoteStateResultTypeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

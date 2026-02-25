@@ -1,16 +1,69 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
-use crate::utils::{IntoWasm, JsValueExt};
+use crate::impl_wasm_type_info;
+use crate::serialization;
+use crate::utils::{
+    JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
+    try_to_array, try_to_object, try_to_u32, try_to_u64,
+};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
+use dpp::platform_value;
 use dpp::prelude::Revision;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const PARTIAL_IDENTITY_OPTIONS_TS: &str = r#"
+export interface PartialIdentityOptions {
+    id: IdentifierLike;
+    loadedPublicKeys: Record<number, IdentityPublicKey>;
+    balance?: bigint;
+    revision?: bigint;
+    notFoundPublicKeys?: number[];
+}
+
+/**
+ * PartialIdentity serialized as a plain object.
+ */
+export interface PartialIdentityObject {
+    id: Uint8Array;
+    loadedPublicKeys: Record<string, IdentityPublicKeyObject>;
+    balance?: bigint;
+    revision?: bigint;
+    notFoundPublicKeys: number[];
+}
+
+/**
+ * PartialIdentity serialized as JSON.
+ * Note: JSON uses null for missing optional fields (JSON standard).
+ */
+export interface PartialIdentityJSON {
+    id: string;
+    loadedPublicKeys: Record<string, IdentityPublicKeyJSON>;
+    balance: number | null;
+    revision: number | null;
+    notFoundPublicKeys: number[];
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PartialIdentityOptions")]
+    pub type PartialIdentityOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "PartialIdentityObject")]
+    pub type PartialIdentityObjectJs;
+
+    #[wasm_bindgen(typescript_type = "PartialIdentityJSON")]
+    pub type PartialIdentityJSONJs;
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "PartialIdentity")]
 pub struct PartialIdentityWasm(PartialIdentity);
 
@@ -23,25 +76,31 @@ impl From<PartialIdentity> for PartialIdentityWasm {
 #[wasm_bindgen(js_class = PartialIdentity)]
 impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
-        js_loaded_public_keys: &JsValue,
-        balance: Option<Credits>,
-        revision: Option<Revision>,
-        js_not_found_public_keys: Option<Array>,
-    ) -> WasmDppResult<Self> {
-        let id = IdentifierWasm::try_from(js_id)?.into();
-        let loaded_public_keys = js_value_to_loaded_public_keys(js_loaded_public_keys)?;
+    pub fn constructor(options: PartialIdentityOptionsJs) -> WasmDppResult<Self> {
+        let id: IdentifierWasm = try_from_options(&options, "id")?;
 
-        let not_found_public_keys: BTreeSet<KeyID> =
-            option_array_to_not_found(js_not_found_public_keys)?;
+        let loaded_public_keys = try_from_options_with(&options, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys(v)
+        })?;
+
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&options, "balance", |v| try_to_u64(v, "balance"))?;
+
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&options, "revision", |v| try_to_u64(v, "revision"))?;
+
+        let not_found_public_keys: Option<Array> =
+            try_from_options_optional_with(&options, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
+        let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
-            id,
+            id: id.into(),
             loaded_public_keys,
             balance,
             revision,
-            not_found_public_keys,
+            not_found_public_keys: not_found_keys,
         }))
     }
 
@@ -94,20 +153,18 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identifier = IdentifierWasm::try_from(js_id)?.into();
-
-        self.0.id = identifier;
-
+    pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.id = id.try_into()?;
         Ok(())
     }
 
     #[wasm_bindgen(setter = "loadedPublicKeys")]
-    pub fn set_loaded_public_keys(&mut self, loaded_public_keys: &JsValue) -> WasmDppResult<()> {
-        self.0.loaded_public_keys = js_value_to_loaded_public_keys(loaded_public_keys)?;
+    pub fn set_loaded_public_keys(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<number, IdentityPublicKey>")]
+        loaded_public_keys: &JsValue,
+    ) -> WasmDppResult<()> {
+        self.0.loaded_public_keys = value_to_loaded_public_keys(loaded_public_keys)?;
 
         Ok(())
     }
@@ -130,140 +187,125 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let obj = Object::new();
-
-        Reflect::set(&obj, &"id".into(), &self.id().to_base58().into())
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-
-        // Serialize loaded public keys as object with string keys and JSON values
-        let loaded_keys_obj = Object::new();
-        for (k, v) in self.0.loaded_public_keys.clone() {
-            let key_wasm = IdentityPublicKeyWasm::from(v);
-            Reflect::set(
-                &loaded_keys_obj,
-                &k.to_string().into(),
-                &key_wasm.to_json()?,
-            )
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-        }
-        Reflect::set(&obj, &"loadedPublicKeys".into(), &loaded_keys_obj.into())
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-
-        match self.0.balance {
-            Some(b) => Reflect::set(&obj, &"balance".into(), &JsValue::from(b as f64))
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-            None => Reflect::set(&obj, &"balance".into(), &JsValue::NULL)
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-        };
-
-        match self.0.revision {
-            Some(r) => Reflect::set(&obj, &"revision".into(), &JsValue::from(r as f64))
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-            None => Reflect::set(&obj, &"revision".into(), &JsValue::NULL)
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-        };
-
-        let not_found_arr = Array::new();
-        for k in self.0.not_found_public_keys.iter() {
-            not_found_arr.push(&JsValue::from(*k));
-        }
-        Reflect::set(&obj, &"notFoundPublicKeys".into(), &not_found_arr.into())
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
-
-        Ok(obj.into())
+    pub fn to_json(&self) -> WasmDppResult<PartialIdentityJSONJs> {
+        // Convert to platform_value, which handles integer map keys by converting to strings
+        let value = platform_value::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
+        // platform_value_to_json converts Identifier to base58, bytes to base64
+        let js_value = serialization::platform_value_to_json(&value)?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let obj = Object::new();
+    pub fn to_object(&self) -> WasmDppResult<PartialIdentityObjectJs> {
+        // Convert to platform_value, which handles integer map keys by converting to strings
+        let value = platform_value::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
+        // platform_value_to_object keeps bytes as Uint8Array, u64 as BigInt
+        let js_value = serialization::platform_value_to_object(&value)?;
+        Ok(js_value.into())
+    }
 
-        Reflect::set(&obj, &"id".into(), &JsValue::from(self.id()))
-            .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(obj: PartialIdentityObjectJs) -> WasmDppResult<PartialIdentityWasm> {
+        let obj: JsValue = obj.into();
 
-        Reflect::set(
-            &obj,
-            &"loadedPublicKeys".into(),
-            &self.loaded_public_keys()?.into(),
-        )
-        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        // id - can be Uint8Array or Identifier
+        let id: IdentifierWasm = try_from_options(&obj, "id")?;
 
-        match self.0.balance {
-            Some(b) => Reflect::set(&obj, &"balance".into(), &js_sys::BigInt::from(b).into())
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-            None => Reflect::set(&obj, &"balance".into(), &JsValue::NULL)
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-        };
+        // loadedPublicKeys - values are plain objects
+        let loaded_public_keys = try_from_options_with(&obj, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys_from_object(v)
+        })?;
 
-        match self.0.revision {
-            Some(r) => Reflect::set(&obj, &"revision".into(), &js_sys::BigInt::from(r).into())
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-            None => Reflect::set(&obj, &"revision".into(), &JsValue::NULL)
-                .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?,
-        };
+        // balance - can be BigInt, number, or undefined
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&obj, "balance", |v| try_to_u64(v, "balance"))?;
 
-        Reflect::set(
-            &obj,
-            &"notFoundPublicKeys".into(),
-            &self.not_found_public_keys().into(),
-        )
-        .map_err(|e| WasmDppError::serialization(format!("{:?}", e)))?;
+        // revision - can be BigInt, number, or undefined
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&obj, "revision", |v| try_to_u64(v, "revision"))?;
 
-        Ok(obj.into())
+        // notFoundPublicKeys
+        let not_found_public_keys: Option<Array> =
+            try_from_options_optional_with(&obj, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
+        let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
+
+        Ok(PartialIdentityWasm(PartialIdentity {
+            id: id.into(),
+            loaded_public_keys,
+            balance,
+            revision,
+            not_found_public_keys: not_found_keys,
+        }))
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(json: PartialIdentityJSONJs) -> WasmDppResult<PartialIdentityWasm> {
+        let json: JsValue = json.into();
+
+        // id - base58 string
+        let id: IdentifierWasm = try_from_options(&json, "id")?;
+
+        // loadedPublicKeys - values are JSON objects
+        let loaded_public_keys = try_from_options_with(&json, "loadedPublicKeys", |v| {
+            value_to_loaded_public_keys_from_json(v)
+        })?;
+
+        // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)
+        let balance: Option<Credits> =
+            try_from_options_optional_with(&json, "balance", |v| try_to_u64(v, "balance"))?;
+
+        // revision - can be BigInt, number, or string (JSON doesn't support BigInt natively)
+        let revision: Option<Revision> =
+            try_from_options_optional_with(&json, "revision", |v| try_to_u64(v, "revision"))?;
+
+        // notFoundPublicKeys
+        let not_found_public_keys: Option<Array> =
+            try_from_options_optional_with(&json, "notFoundPublicKeys", |v| {
+                try_to_array(v, "notFoundPublicKeys")
+            })?;
+        let not_found_keys: BTreeSet<KeyID> = option_array_to_not_found(not_found_public_keys)?;
+
+        Ok(PartialIdentityWasm(PartialIdentity {
+            id: id.into(),
+            loaded_public_keys,
+            balance,
+            revision,
+            not_found_public_keys: not_found_keys,
+        }))
     }
 }
 
-pub fn js_value_to_loaded_public_keys(
-    js_loaded_public_keys: &JsValue,
+impl_wasm_type_info!(PartialIdentityWasm, PartialIdentity);
+
+pub fn value_to_loaded_public_keys(
+    loaded_public_keys: &JsValue,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
-    match js_loaded_public_keys.is_object() {
-        false => Err(WasmDppError::invalid_argument(
-            "loaded_public_keys must be an object",
-        )),
-        true => {
-            let mut map = BTreeMap::new();
+    let mut map = BTreeMap::new();
 
-            let pub_keys_object = Object::from(js_loaded_public_keys.clone());
-            let keys = Object::keys(&pub_keys_object);
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
+    let keys = Object::keys(&pub_keys_object);
 
-            for key in keys.iter() {
-                let key_val = key.as_f64().ok_or_else(|| {
-                    WasmDppError::invalid_argument("Key identifier must be numeric")
-                })?;
+    for key in keys.iter() {
+        // Object.keys() returns strings, try_to_u32 handles string parsing
+        let key_id = KeyID::from(try_to_u32(&key, "key identifier")?);
 
-                if key_val > u32::MAX as f64 {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "Key id '{:?}' exceeds the maximum limit for u32.",
-                        key.as_string()
-                    )));
-                }
+        let public_key: IdentityPublicKeyWasm =
+            try_from_options(&pub_keys_object.clone().into(), &key_id.to_string())?;
 
-                let key_id = KeyID::from(key_val as u32);
-
-                let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
-                    let message = err.error_message();
-                    WasmDppError::invalid_argument(format!(
-                        "unable to access loaded public key '{}': {}",
-                        key_val as u32, message
-                    ))
-                })?;
-
-                let key = js_key
-                    .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
-                    .clone();
-
-                map.insert(key_id, IdentityPublicKey::from(key));
-            }
-
-            Ok(map)
-        }
+        map.insert(key_id, public_key.into());
     }
+
+    Ok(map)
 }
 
 pub fn option_array_to_not_found(
-    js_not_found_public_keys: Option<Array>,
+    not_found_public_keys: Option<Array>,
 ) -> WasmDppResult<BTreeSet<KeyID>> {
-    match js_not_found_public_keys {
+    match not_found_public_keys {
         None => Ok(BTreeSet::new()),
         Some(keys) => {
             let keys_iter: Vec<KeyID> = keys
@@ -288,4 +330,86 @@ pub fn option_array_to_not_found(
             Ok(keys_iter.into_iter().collect())
         }
     }
+}
+
+/// Parse loaded public keys from an object (where values are plain objects from toObject)
+pub fn value_to_loaded_public_keys_from_object(
+    loaded_public_keys: &JsValue,
+) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
+    let mut map = BTreeMap::new();
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
+    let keys = Object::keys(&pub_keys_object);
+
+    for key in keys.iter() {
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
+        let key_val: f64 = key_str.parse().map_err(|_| {
+            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
+        })?;
+
+        if key_val > u32::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Key id '{}' exceeds the maximum limit for u32.",
+                key_str
+            )));
+        }
+
+        let key_id = KeyID::from(key_val as u32);
+
+        let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "unable to access loaded public key '{}': {}",
+                key_val as u32, message
+            ))
+        })?;
+
+        // fromObject receives plain objects, use IdentityPublicKeyWasm::from_object
+        let pub_key = IdentityPublicKeyWasm::from_object(js_key.into())?;
+        map.insert(key_id, IdentityPublicKey::from(pub_key));
+    }
+
+    Ok(map)
+}
+
+/// Parse loaded public keys from JSON (where values are JSON objects from toJSON)
+pub fn value_to_loaded_public_keys_from_json(
+    loaded_public_keys: &JsValue,
+) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
+    let mut map = BTreeMap::new();
+    let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
+    let keys = Object::keys(&pub_keys_object);
+
+    for key in keys.iter() {
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Key identifier must be a string"))?;
+        let key_val: f64 = key_str.parse().map_err(|_| {
+            WasmDppError::invalid_argument(format!("Key identifier '{}' must be numeric", key_str))
+        })?;
+
+        if key_val > u32::MAX as f64 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "Key id '{}' exceeds the maximum limit for u32.",
+                key_str
+            )));
+        }
+
+        let key_id = KeyID::from(key_val as u32);
+
+        let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "unable to access loaded public key '{}': {}",
+                key_val as u32, message
+            ))
+        })?;
+
+        // fromJSON receives JSON objects, use IdentityPublicKeyWasm::from_json
+        let pub_key = IdentityPublicKeyWasm::from_json(js_key.into())?;
+        map.insert(key_id, IdentityPublicKey::from(pub_key));
+    }
+
+    Ok(map)
 }

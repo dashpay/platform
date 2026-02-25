@@ -58,7 +58,7 @@ export default async function broadcastStateTransition(
     await client.getDAPIClient().platform.broadcastStateTransition(serializedStateTransition);
   } catch (error) {
     if (error instanceof ResponseError) {
-      let cause = error;
+      let cause: any = error;
 
       // Pass DPP consensus error directly to avoid
       // additional wrappers

@@ -1,4 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
 use dpp::dashcore::key::constants;
 use dpp::dashcore::{PublicKey, secp256k1};
 use std::convert::TryInto;
@@ -21,52 +22,38 @@ impl From<PublicKeyWasm> for PublicKey {
 
 #[wasm_bindgen(js_class = PublicKey)]
 impl PublicKeyWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PublicKey".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PublicKey".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
-        let inner = match compressed {
-            true => {
-                if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "compressed public key size must be equal to {}",
-                        constants::PUBLIC_KEY_SIZE
-                    )));
-                }
-
-                let bytes: [u8; constants::PUBLIC_KEY_SIZE] =
-                    public_key_bytes.try_into().map_err(|_| {
-                        WasmDppError::invalid_argument(
-                            "compressed public key must contain 33 bytes",
-                        )
-                    })?;
-                secp256k1::PublicKey::from_byte_array_compressed(&bytes)
+    pub fn constructor(
+        compressed: bool,
+        #[wasm_bindgen(js_name = "publicKeyBytes")] public_key_bytes: Vec<u8>,
+    ) -> WasmDppResult<PublicKeyWasm> {
+        let inner = if compressed {
+            if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "compressed public key size must be equal to {}",
+                    constants::PUBLIC_KEY_SIZE
+                )));
             }
-            false => {
-                if public_key_bytes.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
-                    return Err(WasmDppError::invalid_argument(format!(
-                        "uncompressed public key size must be equal to {}",
-                        constants::UNCOMPRESSED_PUBLIC_KEY_SIZE
-                    )));
-                }
 
-                let bytes: [u8; constants::UNCOMPRESSED_PUBLIC_KEY_SIZE] =
-                    public_key_bytes.try_into().map_err(|_| {
-                        WasmDppError::invalid_argument(
-                            "uncompressed public key must contain 65 bytes",
-                        )
-                    })?;
-
-                secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
+            let bytes: [u8; constants::PUBLIC_KEY_SIZE] =
+                public_key_bytes.try_into().map_err(|_| {
+                    WasmDppError::invalid_argument("compressed public key must contain 33 bytes")
+                })?;
+            secp256k1::PublicKey::from_byte_array_compressed(&bytes)
+        } else {
+            if public_key_bytes.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "uncompressed public key size must be equal to {}",
+                    constants::UNCOMPRESSED_PUBLIC_KEY_SIZE
+                )));
             }
+
+            let bytes: [u8; constants::UNCOMPRESSED_PUBLIC_KEY_SIZE] =
+                public_key_bytes.try_into().map_err(|_| {
+                    WasmDppError::invalid_argument("uncompressed public key must contain 65 bytes")
+                })?;
+
+            secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
         }
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
@@ -80,9 +67,10 @@ impl PublicKeyWasm {
 
     #[wasm_bindgen(getter = "inner")]
     pub fn inner(&self) -> Vec<u8> {
-        match self.0.compressed {
-            true => self.0.inner.serialize().into(),
-            false => self.0.inner.serialize_uncompressed().into(),
+        if self.0.compressed {
+            self.0.inner.serialize().into()
+        } else {
+            self.0.inner.serialize_uncompressed().into()
         }
     }
 
@@ -122,7 +110,7 @@ impl PublicKeyWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name = getPublicKeyHash)]
+    #[wasm_bindgen(js_name = "getPublicKeyHash")]
     pub fn get_public_key_hash(&self) -> String {
         self.0.pubkey_hash().to_hex()
     }
@@ -140,3 +128,5 @@ impl PublicKeyWasm {
         ))
     }
 }
+
+impl_wasm_type_info!(PublicKeyWasm, PublicKey);

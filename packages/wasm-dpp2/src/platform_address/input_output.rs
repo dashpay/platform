@@ -1,5 +1,6 @@
-use super::PlatformAddressWasm;
-use crate::error::{WasmDppError, WasmDppResult};
+use super::{PlatformAddressLikeJs, PlatformAddressWasm};
+use crate::error::WasmDppResult;
+use crate::utils::try_to_u64;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -21,13 +22,6 @@ pub struct PlatformAddressInputWasm {
     amount: Credits,
 }
 
-/// Helper to convert BigInt to u64
-fn bigint_to_u64(value: BigInt) -> Result<u64, WasmDppError> {
-    value
-        .try_into()
-        .map_err(|_| WasmDppError::invalid_argument("value must be a valid u64"))
-}
-
 #[wasm_bindgen(js_class = PlatformAddressInput)]
 impl PlatformAddressInputWasm {
     /// Creates a new PlatformAddressInput.
@@ -36,13 +30,13 @@ impl PlatformAddressInputWasm {
     /// @param nonce - The current nonce of the address (will be incremented for the transaction)
     /// @param amount - The amount of credits to spend from this address
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
+    pub fn constructor(
+        address: PlatformAddressLikeJs,
         nonce: u32,
         amount: BigInt,
     ) -> WasmDppResult<PlatformAddressInputWasm> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
-        let amount_u64 = bigint_to_u64(amount)?;
+        let platform_address: PlatformAddressWasm = address.try_into()?;
+        let amount_u64 = try_to_u64(&amount.into(), "amount")?;
 
         Ok(PlatformAddressInputWasm {
             address: platform_address,
@@ -99,12 +93,14 @@ impl PlatformAddressOutputWasm {
     /// @param address - The Platform address (PlatformAddress, Uint8Array, or bech32m string)
     /// @param amount - The amount of credits to send to this address (optional for asset lock funding)
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
+    pub fn constructor(
+        address: PlatformAddressLikeJs,
         amount: Option<BigInt>,
     ) -> WasmDppResult<PlatformAddressOutputWasm> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
-        let amount_u64 = amount.map(bigint_to_u64).transpose()?;
+        let platform_address: PlatformAddressWasm = address.try_into()?;
+        let amount_u64 = amount
+            .map(|v| try_to_u64(&v.into(), "amount"))
+            .transpose()?;
 
         Ok(PlatformAddressOutputWasm {
             address: platform_address,

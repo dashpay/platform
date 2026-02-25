@@ -14,14 +14,30 @@ pub use level::LogLevel;
 pub use logger::LogBuilder;
 pub use logger::Loggers;
 
+fn should_emit_test_logs_to_stdout() -> bool {
+    let step_debug = std::env::var("ACTIONS_STEP_DEBUG")
+        .map(|value| value == "true")
+        .unwrap_or(false);
+    let runner_debug = std::env::var("ACTIONS_RUNNER_DEBUG")
+        .map(|value| value == "true")
+        .unwrap_or(false);
+
+    step_debug || runner_debug
+}
+
 /// Helper that initializes logging in unit tests
 ///
 ///
 /// For verbosity, see drive-abci --help or use 0 or 5
 pub fn init_for_tests(level: LogLevel) {
     let mut logger_builder = LogBuilder::new();
+    let destination = if should_emit_test_logs_to_stdout() {
+        LogDestination::StdOut
+    } else {
+        LogDestination::TestWriter
+    };
     let config = LogConfig {
-        destination: LogDestination::StdOut,
+        destination,
         level,
         color: None,
         format: LogFormat::Full,

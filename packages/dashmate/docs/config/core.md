@@ -269,7 +269,7 @@ Insight provides a block explorer for Dash Core:
 |--------|-------------|---------|---------|
 | `core.insight.enabled` | Enable Insight API | `false` | `true` |
 | `core.insight.ui.enabled` | Enable Insight UI | `false` | `true` |
-| `core.insight.port` | Port for Insight API/UI | `3001` | `3002` |
+| `core.insight.port` | Port for Insight API/UI | `3001` (mainnet), `13001` (testnet), `23001` (local) | `3002` |
 
 
 ## Devnet

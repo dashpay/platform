@@ -64,8 +64,8 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.17" }
-wasm-bindgen = { version = "=0.2.103" }
-wasm-bindgen-futures = { version = "0.4.49" }
+wasm-bindgen = { version = "=0.2.108" }
+wasm-bindgen-futures = { version = "0.4.58" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = [
@@ -93,6 +93,7 @@ wasm-dpp2 = { path = "../wasm-dpp2" }
 
 [dev-dependencies]
 wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 
 [profile.release]
 opt-level = "z"

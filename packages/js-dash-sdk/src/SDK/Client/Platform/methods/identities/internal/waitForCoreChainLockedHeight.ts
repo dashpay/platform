@@ -15,7 +15,7 @@ export async function waitForCoreChainLockedHeight(
 
   let coreChainLockedHeight = 0;
 
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<void>((resolve, reject) => {
     async function obtainCoreChainLockedHeight() {
       try {
         const response = await platform.client.getDAPIClient().platform.getEpochsInfo(0, 1);

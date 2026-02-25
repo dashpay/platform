@@ -48,7 +48,7 @@ pub struct WasmSdkError {
     /// Optional numeric code for some errors (e.g., broadcast error code).
     code: i32,
     /// Indicates if the operation can be retried safely.
-    retriable: bool,
+    is_retriable: bool,
 }
 
 // wasm-bindgen getters defined below in the second impl block
@@ -58,13 +58,13 @@ impl WasmSdkError {
         kind: WasmSdkErrorKind,
         message: M,
         code: Option<i32>,
-        retriable: bool,
+        is_retriable: bool,
     ) -> Self {
         Self {
             kind,
             message: message.into(),
             code: code.unwrap_or(-1),
-            retriable,
+            is_retriable,
         }
     }
 
@@ -273,8 +273,8 @@ impl WasmSdkError {
     }
 
     /// Whether the error is retryable
-    #[wasm_bindgen(getter)]
-    pub fn retriable(&self) -> bool {
-        self.retriable
+    #[wasm_bindgen(getter = "isRetriable")]
+    pub fn is_retriable(&self) -> bool {
+        self.is_retriable
     }
 }

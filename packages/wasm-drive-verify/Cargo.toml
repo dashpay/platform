@@ -27,7 +27,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 ] }
 
 bincode = { version = "=2.0.1" }
-wasm-bindgen = { version = "=0.2.103" }
+wasm-bindgen = { version = "=0.2.108" }
 serde = { version = "1.0.193", default-features = false, features = [
     "alloc",
     "derive",
@@ -47,7 +47,7 @@ bs58 = { version = "0.5.1" }
 indexmap = { version = "2.11.4" }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.53"
+wasm-bindgen-test = "0.3.58"
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
     "random-public-keys",

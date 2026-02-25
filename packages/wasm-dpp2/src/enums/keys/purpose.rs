@@ -3,6 +3,38 @@ use dpp::identity::Purpose;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * Flexible input type for Purpose - accepts the enum, string name, or numeric value.
+ */
+export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | 0 | 1 | 2 | 3 | 4 | 5 | 6;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "PurposeLike")]
+    pub type PurposeLikeJs;
+}
+
+impl TryFrom<PurposeLikeJs> for PurposeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: PurposeLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        PurposeWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<PurposeLikeJs> for Purpose {
+    type Error = WasmDppError;
+
+    fn try_from(value: PurposeLikeJs) -> Result<Self, Self::Error> {
+        let wasm: PurposeWasm = value.try_into()?;
+        Ok(Purpose::from(wasm))
+    }
+}
+
 #[wasm_bindgen(js_name = "Purpose")]
 pub enum PurposeWasm {
     AUTHENTICATION = 0,
@@ -14,9 +46,10 @@ pub enum PurposeWasm {
     OWNER = 6,
 }
 
-impl TryFrom<JsValue> for PurposeWasm {
+impl TryFrom<&JsValue> for PurposeWasm {
     type Error = WasmDppError;
-    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "authentication" => Ok(PurposeWasm::AUTHENTICATION),
@@ -52,6 +85,14 @@ impl TryFrom<JsValue> for PurposeWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from purpose enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for PurposeWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

@@ -23,6 +23,12 @@ use tracing::{debug, error, info};
 /// using privacy-preserving chunk queries. It supports HD wallet gap limit behavior
 /// where finding a used address extends the search range.
 ///
+/// The `last_sync_timestamp` parameter controls incremental vs full-scan behavior:
+/// - Pass 0 to force a full tree scan (first sync, or when no previous timestamp exists).
+/// - Pass a non-zero unix timestamp (seconds since epoch) from the previous sync to
+///   enable incremental-only mode when the elapsed time is within
+///   `config.full_rescan_after_time_s`.
+///
 /// # Safety
 /// - `sdk_handle` must be a valid SDK handle created by this SDK
 /// - `provider` must be a valid pointer to an AddressProviderFFI structure
@@ -33,6 +39,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
     sdk_handle: *const SDKHandle,
     provider: *mut AddressProviderFFI,
     config: *const DashSDKAddressSyncConfig,
+    last_sync_timestamp: u64,
 ) -> *mut DashSDKAddressSyncResult {
     info!("dash_sdk_sync_address_balances: called");
 
@@ -57,13 +64,21 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            full_rescan_after_time_s: (*config).full_rescan_after_time_s,
             request_settings: RequestSettings::default(),
         })
     };
 
+    // Convert timestamp: 0 means no previous sync (full scan)
+    let last_sync_ts = if last_sync_timestamp == 0 {
+        None
+    } else {
+        Some(last_sync_timestamp)
+    };
+
     debug!(
-        "dash_sdk_sync_address_balances: running sync with config: {:?}",
-        rust_config
+        "dash_sdk_sync_address_balances: running sync with config: {:?}, last_sync_timestamp: {:?}",
+        rust_config, last_sync_ts
     );
 
     // Create the callback-based provider wrapper
@@ -73,7 +88,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
     let result = wrapper.runtime.block_on(async {
         wrapper
             .sdk
-            .sync_address_balances(&mut callback_provider, rust_config)
+            .sync_address_balances(&mut callback_provider, rust_config, last_sync_ts)
             .await
     });
 
@@ -97,6 +112,12 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
 ///
 /// This is an alternative version that returns a DashSDKResult for better error handling.
 ///
+/// The `last_sync_timestamp` parameter controls incremental vs full-scan behavior:
+/// - Pass 0 to force a full tree scan (first sync, or when no previous timestamp exists).
+/// - Pass a non-zero unix timestamp (seconds since epoch) from the previous sync to
+///   enable incremental-only mode when the elapsed time is within
+///   `config.full_rescan_after_time_s`.
+///
 /// # Safety
 /// - `sdk_handle` must be a valid SDK handle created by this SDK
 /// - `provider` must be a valid pointer to an AddressProviderFFI structure
@@ -106,6 +127,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
     sdk_handle: *const SDKHandle,
     provider: *mut AddressProviderFFI,
     config: *const DashSDKAddressSyncConfig,
+    last_sync_timestamp: u64,
 ) -> DashSDKResult {
     info!("dash_sdk_sync_address_balances_with_result: called");
 
@@ -136,8 +158,16 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
             min_privacy_count: (*config).min_privacy_count,
             max_concurrent_requests: (*config).max_concurrent_requests as usize,
             max_iterations: (*config).max_iterations as usize,
+            full_rescan_after_time_s: (*config).full_rescan_after_time_s,
             request_settings: RequestSettings::default(),
         })
+    };
+
+    // Convert timestamp: 0 means no previous sync (full scan)
+    let last_sync_ts = if last_sync_timestamp == 0 {
+        None
+    } else {
+        Some(last_sync_timestamp)
     };
 
     // Create the callback-based provider wrapper
@@ -147,7 +177,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances_with_result(
     let result = wrapper.runtime.block_on(async {
         wrapper
             .sdk
-            .sync_address_balances(&mut callback_provider, rust_config)
+            .sync_address_balances(&mut callback_provider, rust_config, last_sync_ts)
             .await
     });
 
@@ -224,6 +254,8 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         absent_count,
         highest_found_index: result.highest_found_index.unwrap_or(u32::MAX),
         has_highest_found_index: result.highest_found_index.is_some(),
+        new_sync_height: result.new_sync_height,
+        new_sync_timestamp: result.new_sync_timestamp,
         metrics,
     }
 }
@@ -367,6 +399,7 @@ mod tests {
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_concurrent_requests, 10);
         assert_eq!(config.max_iterations, 50);
+        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
     }
 
     #[test]

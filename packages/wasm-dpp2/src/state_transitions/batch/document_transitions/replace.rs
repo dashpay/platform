@@ -1,11 +1,12 @@
+use crate::data_contract::document::DocumentWasm;
+use crate::error::WasmDppResult;
+use crate::impl_wasm_type_info;
+use crate::serialization;
 use crate::state_transitions::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::generators::generate_replace_transition;
 use crate::state_transitions::batch::token_payment_info::TokenPaymentInfoWasm;
-use crate::data_contract::document::DocumentWasm;
-use crate::error::WasmDppResult;
-use crate::serialization;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_with, try_to_u64, ToSerdeJSONExt};
 use dpp::prelude::{IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -13,6 +14,24 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::DocumentReplaceTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOCUMENT_REPLACE_OPTIONS_TS: &str = r#"
+export interface DocumentReplaceTransitionOptions {
+    document: Document;
+    identityContractNonce: bigint;
+    tokenPaymentInfo?: TokenPaymentInfo;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DocumentReplaceTransitionOptions")]
+    pub type DocumentReplaceTransitionOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "Record<string, unknown>")]
+    pub type DocumentTransitionDataJs;
+}
 
 #[wasm_bindgen(js_name = "DocumentReplaceTransition")]
 pub struct DocumentReplaceTransitionWasm(DocumentReplaceTransition);
@@ -31,36 +50,24 @@ impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
 
 #[wasm_bindgen(js_class = DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "DocumentReplaceTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "DocumentReplaceTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        document: &DocumentWasm,
-        identity_contract_nonce: IdentityNonce,
-        js_token_payment_info: &JsValue,
+    pub fn constructor(
+        options: DocumentReplaceTransitionOptionsJs,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
-        let token_payment_info =
-            match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
-                true => None,
-                false => Some(
-                    js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
-                        .clone(),
-                ),
-            };
+        let document: DocumentWasm = try_from_options(&options, "document")?;
+
+        let identity_contract_nonce: IdentityNonce =
+            try_from_options_with(&options, "identityContractNonce", |v| {
+                try_to_u64(v, "identityContractNonce")
+            })?;
+
+        let token_payment_info: Option<TokenPaymentInfoWasm> =
+            try_from_options_optional(&options, "tokenPaymentInfo")?;
 
         let rs_update_transition = generate_replace_transition(
-            document,
+            &document,
             identity_contract_nonce,
-            document.get_document_type_name().to_string(),
+            document.document_type_name().to_string(),
             token_payment_info,
         );
 
@@ -68,23 +75,27 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "data")]
-    pub fn get_data(&self) -> WasmDppResult<JsValue> {
-        serialization::to_object(self.0.data())
+    pub fn data(&self) -> WasmDppResult<DocumentTransitionDataJs> {
+        let js_value = serialization::to_object(self.0.data())?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
+    pub fn base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> Revision {
+    pub fn revision(&self) -> Revision {
         self.0.revision()
     }
 
     #[wasm_bindgen(setter = "data")]
-    pub fn set_data(&mut self, js_data: JsValue) -> WasmDppResult<()> {
-        let data = js_data.with_serde_to_platform_value_map()?;
+    pub fn set_data(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Record<string, unknown>")] data: JsValue,
+    ) -> WasmDppResult<()> {
+        let data = data.with_serde_to_platform_value_map()?;
 
         self.0.set_data(data);
         Ok(())
@@ -96,8 +107,10 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: Revision) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        self.0.set_revision(try_to_u64(&revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
@@ -109,8 +122,10 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWasm,
+        transition: &DocumentTransitionWasm,
     ) -> WasmDppResult<DocumentReplaceTransitionWasm> {
-        js_transition.get_replace_transition()
+        transition.replace_transition()
     }
 }
+
+impl_wasm_type_info!(DocumentReplaceTransitionWasm, DocumentReplaceTransition);

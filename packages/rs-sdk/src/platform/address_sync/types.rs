@@ -53,6 +53,18 @@ pub struct AddressSyncConfig {
     /// Default: 50
     pub max_iterations: usize,
 
+    /// Maximum age in seconds before a full tree rescan is forced.
+    ///
+    /// When `last_sync_timestamp` is passed to [`sync_address_balances`], the
+    /// function compares `now - last_sync_timestamp` against this threshold.
+    /// If the elapsed time exceeds this value, a full tree rescan is performed
+    /// instead of incremental-only catch-up.
+    ///
+    /// Set to `0` to always do a full tree scan regardless of the timestamp.
+    ///
+    /// Default: 604800 (7 days)
+    pub full_rescan_after_time_s: u64,
+
     /// Request settings for undergoing address sync queries.
     pub request_settings: RequestSettings,
 }
@@ -63,6 +75,7 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
+            full_rescan_after_time_s: 7 * 24 * 60 * 60, // 7 days
             request_settings: RequestSettings::default(),
         }
     }
@@ -89,11 +102,28 @@ pub struct AddressSyncResult {
     /// Metrics about the sync process.
     pub metrics: AddressSyncMetrics,
 
-    /// The checkpoint height at which balances were synced.
+    /// The checkpoint height from the trunk/branch tree scan.
     ///
-    /// This is the block height from which terminal balance updates should start
-    /// to catch any changes that occurred after the checkpoint.
+    /// This is the block height at which the tree snapshot was taken.
+    /// Only meaningful when a full tree scan was performed.
     pub checkpoint_height: u64,
+
+    /// The highest block height seen from the incremental phase
+    /// (or the checkpoint height if no incremental phase ran).
+    ///
+    /// After each sync the caller should persist two values:
+    /// 1. This `new_sync_height` — return it from
+    ///    [`AddressProvider::last_sync_height`] on the next call.
+    /// 2. [`new_sync_timestamp`](Self::new_sync_timestamp) — pass it as the
+    ///    `last_sync_timestamp` parameter of [`sync_address_balances`].
+    pub new_sync_height: u64,
+
+    /// Platform block time (Unix seconds) at the point of the latest response.
+    ///
+    /// Store this value and pass it back as `last_sync_timestamp` on the next
+    /// call to [`sync_address_balances`]. The function compares it against the
+    /// current wall-clock time to decide whether a full tree rescan is needed.
+    pub new_sync_timestamp: u64,
 }
 
 impl AddressSyncResult {
@@ -105,6 +135,8 @@ impl AddressSyncResult {
             highest_found_index: None,
             metrics: AddressSyncMetrics::default(),
             checkpoint_height: 0,
+            new_sync_height: 0,
+            new_sync_timestamp: 0,
         }
     }
 
@@ -131,7 +163,7 @@ impl Default for AddressSyncResult {
 /// Metrics about the synchronization process.
 #[derive(Debug, Default, Clone)]
 pub struct AddressSyncMetrics {
-    /// Number of trunk queries (always 1 for a successful sync).
+    /// Number of trunk queries (0 for incremental-only, 1 for full scan).
     pub trunk_queries: usize,
 
     /// Number of branch queries.
@@ -148,12 +180,18 @@ pub struct AddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds).
     pub iterations: usize,
+
+    /// Number of compacted incremental queries.
+    pub compacted_queries: usize,
+
+    /// Number of recent incremental queries.
+    pub recent_queries: usize,
 }
 
 impl AddressSyncMetrics {
-    /// Get total number of queries (trunk + branch).
+    /// Get total number of queries (trunk + branch + incremental).
     pub fn total_queries(&self) -> usize {
-        self.trunk_queries + self.branch_queries
+        self.trunk_queries + self.branch_queries + self.compacted_queries + self.recent_queries
     }
 
     /// Get average proof size in bytes.
