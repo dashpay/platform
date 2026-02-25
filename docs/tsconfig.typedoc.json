@@ -13,13 +13,13 @@
     "declaration": true,
     "noEmit": true,
     "moduleResolution": "node",
-    "baseUrl": ".",
+    "baseUrl": "..",
     "paths": {
       "@dashevo/wasm-dpp": ["packages/wasm-dpp/lib"],
       "@dashevo/wasm-dpp/*": ["packages/wasm-dpp/lib/*"]
     }
   },
   "include": [
-    "packages/js-dash-sdk/src/**/*"
+    "../packages/js-dash-sdk/src/**/*"
   ]
 }
