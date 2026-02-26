@@ -20,7 +20,7 @@ use drive::error::proof::ProofError;
 /// - `time_ms`: The timestamp of the block in milliseconds.
 /// - `height`: The height of the block.
 /// - `core_height`: The core chain locked height, indicating the height of the block in the core blockchain that is considered final and securely linked to this block.
-/// - `epoch`: The epoch number, converted to an `Epoch` struct via a 16-bit index.
+/// - `epoch`: The epoch number, converted to an `Epoch` struct via a 16-bit number.
 ///
 /// # Errors
 /// Returns an error if:
