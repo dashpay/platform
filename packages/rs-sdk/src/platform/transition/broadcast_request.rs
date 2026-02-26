@@ -28,6 +28,23 @@ use crate::error::Error;
 /// Implementors of this trait will typically be responsible for serializing a state transition
 /// and preparing it for transport to Platform.
 ///
+/// ## Example
+///
+/// Given a [`StateTransition`](dpp::state_transition::StateTransition), you can create a broadcast
+/// request using the `broadcast_request_for_state_transition` method:
+///
+/// ```rust,ignore
+/// use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
+/// use dpp::state_transition::StateTransition;
+///
+/// // Assume `state_transition` is an already-constructed and signed StateTransition
+/// let broadcast_request = state_transition
+///     .broadcast_request_for_state_transition()
+///     .expect("failed to serialize state transition");
+///
+/// // The broadcast_request can now be sent to Platform via DAPI.
+/// ```
+///
 /// As [`BroadcastRequestForStateTransition`] is a trait, it can be implemented for any type that represents
 /// a state transition, allowing for flexibility in how state transitions are broadcasted.
 pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
