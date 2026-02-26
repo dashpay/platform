@@ -61,7 +61,7 @@ mod tests {
             1000, // amount being unshielded
             vec![create_dummy_serialized_action()],
             0x03,           // spends_enabled | outputs_enabled
-            1000,           // value_balance = amount (no fee for simplicity)
+            111_549_800,    // amount (1000) + minimum fee for 1 action (111_548_800)
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -437,7 +437,7 @@ mod tests {
             let recipient = fvk.address_at(0u32, Scope::External);
             let ask = SpendAuthorizingKey::from(&sk);
 
-            // --- Create a spendable note with value 10,000 ---
+            // --- Create a spendable note with value 500M ---
             let rho_bytes: [u8; 32] = {
                 let mut b = [0u8; 32];
                 b[0] = 1;
@@ -446,7 +446,7 @@ mod tests {
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
             let note =
-                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
 
             // --- Build commitment tree and get anchor + merkle path ---
             let cmx = ExtractedNoteCommitment::from(note.commitment());
@@ -456,7 +456,7 @@ mod tests {
             let anchor = tree.anchor().unwrap();
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
-            // --- Build bundle: spend 10,000 → output 5,000 (value_balance = 5,000) ---
+            // --- Build bundle: spend 500M → output 5K (value_balance = 499,995,000) ---
             let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
@@ -467,7 +467,7 @@ mod tests {
 
             // Compute platform sighash binding transparent fields (output_address, amount)
             let output_address = create_output_address();
-            let amount = 5_000u64; // = value_balance (no fee difference)
+            let amount = 5_000u64;
             let mut extra_sighash_data = output_address.to_bytes();
             extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
@@ -480,18 +480,17 @@ mod tests {
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
-            // value_balance should be 5000 (10,000 spent - 5,000 output)
-            assert_eq!(value_balance, 5_000);
+            // value_balance should be 499,995,000 (500M spent - 5K output)
+            assert_eq!(value_balance, 499_995_000);
 
             // --- Set up platform state ---
             // Insert anchor so anchor validation passes
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             // Set pool total balance so the unshield has sufficient funds
-            set_pool_total_balance(&platform, 10_000);
+            set_pool_total_balance(&platform, 500_000_000);
 
             // --- Create and process transition ---
-            // amount = value_balance (no fee difference)
             let transition = create_unshield_transition(
                 output_address,
                 amount, // amount = 5000
@@ -531,7 +530,7 @@ mod tests {
                 1000,
                 vec![bad_action],
                 0x03,
-                1000,
+                111_549_800, // amount (1000) + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -622,7 +621,7 @@ mod tests {
             let rho = Rho::from_bytes(&rho_bytes).unwrap();
             let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
             let note =
-                Note::from_parts(recipient, NoteValue::from_raw(10_000), rho, rseed).unwrap();
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
 
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let mut tree = ClientMemoryCommitmentTree::new(100);
@@ -631,7 +630,7 @@ mod tests {
             let anchor = tree.anchor().unwrap();
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
-            // Spend 10,000 → output 5,000 → value_balance = 5,000
+            // Spend 500M → output 5K → value_balance = 499,995,000
             let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
@@ -672,21 +671,21 @@ mod tests {
             let signed_amount = 5_000u64;
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_unshield_bundle(&output_address, signed_amount);
-            assert_eq!(value_balance, 5_000);
+            assert_eq!(value_balance, 499_995_000);
 
-            // ATTACK: Inflate value_balance from 5000 to 9000
-            let mutated_value_balance = 9_000i64;
+            // ATTACK: Inflate value_balance from 499,995,000 to 999,000,000
+            let mutated_value_balance = 999_000_000i64;
 
             // Set pool balance high enough for the inflated amount
-            set_pool_total_balance(&platform, 20_000);
+            set_pool_total_balance(&platform, 1_000_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_unshield_transition(
                 output_address,
-                mutated_value_balance as u64, // amount = 9000 (inflated)
+                500_000_000, // amount = 500M (inflated from original 5K)
                 actions,
                 flags,
-                mutated_value_balance, // MUTATED: was 5000, now 9000
+                mutated_value_balance, // MUTATED: was 499,995,000, now 999,000,000
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -723,9 +722,9 @@ mod tests {
             let amount = 5_000u64;
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_unshield_bundle(&original_address, amount);
-            assert_eq!(value_balance, 5_000);
+            assert_eq!(value_balance, 499_995_000);
 
-            set_pool_total_balance(&platform, 20_000);
+            set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             // ATTACK: Use a completely different output address
@@ -777,7 +776,7 @@ mod tests {
                 1000,
                 vec![action1, action2], // Both have nullifier [1u8; 32]
                 0x03,
-                1000,
+                123_098_600, // amount (1000) + minimum fee for 2 actions (123_097_600)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -859,7 +858,7 @@ mod tests {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
-            let spend_amount = 10_000u64;
+            let spend_amount = 500_000_000u64;
             let output_amount = 5_000u64;
 
             // --- Create keys ---
@@ -887,7 +886,7 @@ mod tests {
             let anchor = tree.anchor().unwrap();
             let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
 
-            // --- Build bundle: spend 10,000 -> output 5,000 (value_balance = 5,000) ---
+            // --- Build bundle: spend 500M -> output 5K (value_balance = 499,995,000) ---
             let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
             builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
             builder
@@ -903,7 +902,7 @@ mod tests {
 
             // Compute platform sighash binding transparent fields (output_address, amount)
             let output_address = create_output_address();
-            let amount = 5_000u64; // = value_balance (no fee difference)
+            let amount = 5_000u64;
             let mut extra_sighash_data = output_address.to_bytes();
             extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
@@ -916,12 +915,12 @@ mod tests {
             let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
-            // value_balance should be 5000 (10,000 spent - 5,000 output)
-            assert_eq!(value_balance, 5_000);
+            // value_balance should be 499,995,000 (500M spent - 5K output)
+            assert_eq!(value_balance, 499_995_000);
 
             // --- Set up platform state ---
             insert_anchor_into_state(&platform, &anchor_bytes);
-            set_pool_total_balance(&platform, 500_000);
+            set_pool_total_balance(&platform, 500_000_000);
 
             // --- Build and serialize the transition ---
             let transition = create_unshield_transition(

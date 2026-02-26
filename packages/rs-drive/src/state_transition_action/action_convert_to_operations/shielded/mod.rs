@@ -26,10 +26,7 @@ pub(super) fn insert_nullifiers<'a>(
 ///
 /// Each action's nullifier is stored alongside the note so light clients can derive
 /// Rho for trial decryption.
-pub(super) fn insert_notes<'a>(
-    ops: &mut Vec<DriveOperation<'a>>,
-    notes: &[ShieldedActionNote],
-) {
+pub(super) fn insert_notes<'a>(ops: &mut Vec<DriveOperation<'a>>, notes: &[ShieldedActionNote]) {
     for note in notes {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::InsertNote {
