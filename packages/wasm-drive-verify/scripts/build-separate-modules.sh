@@ -4,6 +4,8 @@ set -euo pipefail
 # Always run from the package root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 
 echo "Building separate WASM modules for wasm-drive-verify..."
 
@@ -29,7 +31,7 @@ build_module() {
     mkdir -p "${out_dir}"
     
     # Run wasm-bindgen
-    wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
+    wasm-bindgen "$CARGO_OUT_DIR/wasm32-unknown-unknown/release/wasm_drive_verify.wasm" \
         --out-dir "${out_dir}" \
         --target web \
         --out-name "wasm_drive_verify_${module_name}"
