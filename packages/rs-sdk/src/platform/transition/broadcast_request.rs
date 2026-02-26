@@ -30,7 +30,7 @@ use crate::error::Error;
 ///
 /// ## Example
 ///
-/// To broadcast a [`StateTransition`](dpp::state_transition::StateTransition) and wait for
+/// To broadcast a [`StateTransition`] and wait for
 /// Platform to confirm it, use the higher-level
 /// [`BroadcastStateTransition`](super::broadcast::BroadcastStateTransition) trait which wraps
 /// this trait with retry logic, error handling, and proof verification:
