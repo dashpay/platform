@@ -371,6 +371,7 @@ COPY --parents \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
@@ -472,6 +473,7 @@ COPY --parents \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
@@ -585,6 +587,7 @@ COPY --parents \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
@@ -812,6 +815,7 @@ COPY --parents \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
