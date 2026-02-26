@@ -4,6 +4,7 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::shielded::shield::v0::ShieldTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
@@ -32,16 +33,10 @@ impl ShieldTransitionAction {
             ShieldTransitionAction::V0(transition) => transition.shield_amount,
         }
     }
-    /// Get note commitments
-    pub fn note_commitments(&self) -> &[[u8; 32]] {
+    /// Get notes
+    pub fn notes(&self) -> &[ShieldedActionNote] {
         match self {
-            ShieldTransitionAction::V0(transition) => &transition.note_commitments,
-        }
-    }
-    /// Get encrypted notes
-    pub fn encrypted_notes(&self) -> &[Vec<u8>] {
-        match self {
-            ShieldTransitionAction::V0(transition) => &transition.encrypted_notes,
+            ShieldTransitionAction::V0(transition) => &transition.notes,
         }
     }
     /// fee multiplier

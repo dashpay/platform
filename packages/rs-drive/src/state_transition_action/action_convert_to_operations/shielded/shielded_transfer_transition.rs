@@ -25,15 +25,10 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                     // 1. Insert each nullifier (InsertOnly to prevent double-spend)
-                    insert_nullifiers(&mut ops, &v0.nullifiers);
+                    insert_nullifiers(&mut ops, &v0.notes);
 
                     // 2. Insert notes into CommitmentTree
-                    insert_notes(
-                        &mut ops,
-                        &v0.nullifiers,
-                        &v0.note_commitments,
-                        &v0.encrypted_notes,
-                    );
+                    insert_notes(&mut ops, &v0.notes);
 
                     // 3. Update total balance (pool decreases by fee_amount)
                     let new_total_balance = v0
@@ -48,7 +43,7 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                     update_balance(&mut ops, new_total_balance);
 
                     // 4. Store nullifiers to recent block storage for catch-up sync
-                    store_nullifiers_for_block(&mut ops, &v0.nullifiers);
+                    store_nullifiers_for_block(&mut ops, &v0.notes);
 
                     Ok(ops)
                 }

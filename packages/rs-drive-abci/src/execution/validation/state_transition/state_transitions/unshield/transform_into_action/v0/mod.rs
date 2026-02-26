@@ -14,6 +14,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
+use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::unshield) trait UnshieldStateTransitionTransformIntoActionValidationV0
@@ -37,18 +38,16 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Extract nullifiers, note commitments, and encrypted notes from serialized actions
-        let nullifiers: Vec<[u8; 32]> = match self {
-            UnshieldTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
-        };
-        let note_commitments: Vec<[u8; 32]> = match self {
-            UnshieldTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
-        };
-        let encrypted_notes: Vec<Vec<u8>> = match self {
+        // Extract notes from serialized actions
+        let notes: Vec<ShieldedActionNote> = match self {
             UnshieldTransition::V0(v0) => v0
                 .actions
                 .iter()
-                .map(|a| a.encrypted_note.clone())
+                .map(|a| ShieldedActionNote {
+                    nullifier: a.nullifier,
+                    cmx: a.cmx,
+                    encrypted_note: a.encrypted_note.clone(),
+                })
                 .collect(),
         };
 
@@ -84,6 +83,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         }
 
         // Validate nullifiers: intra-bundle duplicates + already-spent in state
+        let nullifiers: Vec<[u8; 32]> = notes.iter().map(|n| n.nullifier).collect();
         if let Some(err) = validate_nullifiers(
             drive,
             &nullifiers,
@@ -126,9 +126,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
 
         let result = UnshieldTransitionAction::try_from_transition(
             self,
-            nullifiers,
-            note_commitments,
-            encrypted_notes,
+            notes,
             anchor,
             current_total_balance,
         );

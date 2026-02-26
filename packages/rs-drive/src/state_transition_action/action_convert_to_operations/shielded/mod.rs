@@ -4,15 +4,19 @@ mod shielded_transfer_transition;
 mod shielded_withdrawal_transition;
 mod unshield_transition;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
 use crate::util::batch::DriveOperation;
 
 /// Insert each nullifier (InsertOnly to prevent double-spend).
-pub(super) fn insert_nullifiers<'a>(ops: &mut Vec<DriveOperation<'a>>, nullifiers: &[[u8; 32]]) {
-    for nullifier in nullifiers.iter() {
+pub(super) fn insert_nullifiers<'a>(
+    ops: &mut Vec<DriveOperation<'a>>,
+    notes: &[ShieldedActionNote],
+) {
+    for note in notes {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::InsertNullifier {
-                nullifier: *nullifier,
+                nullifier: note.nullifier,
             },
         ));
     }
@@ -24,20 +28,14 @@ pub(super) fn insert_nullifiers<'a>(ops: &mut Vec<DriveOperation<'a>>, nullifier
 /// Rho for trial decryption.
 pub(super) fn insert_notes<'a>(
     ops: &mut Vec<DriveOperation<'a>>,
-    nullifiers: &[[u8; 32]],
-    note_commitments: &[[u8; 32]],
-    encrypted_notes: &[Vec<u8>],
+    notes: &[ShieldedActionNote],
 ) {
-    for ((nullifier, cmx), encrypted_note) in nullifiers
-        .iter()
-        .zip(note_commitments.iter())
-        .zip(encrypted_notes.iter())
-    {
+    for note in notes {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::InsertNote {
-                nullifier: *nullifier,
-                cmx: *cmx,
-                encrypted_note: encrypted_note.clone(),
+                nullifier: note.nullifier,
+                cmx: note.cmx,
+                encrypted_note: note.encrypted_note.clone(),
             },
         ));
     }
@@ -53,12 +51,12 @@ pub(super) fn update_balance<'a>(ops: &mut Vec<DriveOperation<'a>>, new_total_ba
 /// Store nullifiers to recent block storage for catch-up sync RPCs.
 pub(super) fn store_nullifiers_for_block<'a>(
     ops: &mut Vec<DriveOperation<'a>>,
-    nullifiers: &[[u8; 32]],
+    notes: &[ShieldedActionNote],
 ) {
-    if !nullifiers.is_empty() {
+    if !notes.is_empty() {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::StoreNullifiersForBlock {
-                nullifiers: nullifiers.to_vec(),
+                nullifiers: notes.iter().map(|n| n.nullifier).collect(),
             },
         ));
     }

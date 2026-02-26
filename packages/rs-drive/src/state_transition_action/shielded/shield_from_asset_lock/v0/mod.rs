@@ -1,5 +1,6 @@
 mod transformer;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::fee::Credits;
 use dpp::prelude::UserFeeIncrease;
 
@@ -14,12 +15,8 @@ pub struct ShieldFromAssetLockTransitionActionV0 {
     pub signable_bytes_hasher: [u8; 32],
     /// Amount going into shielded pool (|value_balance|)
     pub shield_amount: Credits,
-    /// Nullifiers from the orchard bundle actions (needed for Rho derivation in trial decryption)
-    pub nullifiers: Vec<[u8; 32]>,
-    /// Note commitments from the orchard bundle (cmx values)
-    pub note_commitments: Vec<[u8; 32]>,
-    /// Encrypted notes from the orchard bundle
-    pub encrypted_notes: Vec<Vec<u8>>,
+    /// Notes from the orchard bundle actions
+    pub notes: Vec<ShieldedActionNote>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
     /// Current total balance of the shielded pool

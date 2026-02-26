@@ -1,5 +1,6 @@
 mod transformer;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
@@ -12,12 +13,8 @@ pub struct ShieldTransitionActionV0 {
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// The amount being shielded (sent into the shielded pool)
     pub shield_amount: Credits,
-    /// Nullifiers from the orchard bundle actions (needed for Rho derivation in trial decryption)
-    pub nullifiers: Vec<[u8; 32]>,
-    /// Note commitments from the orchard bundle (cmx values)
-    pub note_commitments: Vec<[u8; 32]>,
-    /// Encrypted notes from the orchard bundle
-    pub encrypted_notes: Vec<Vec<u8>>,
+    /// Notes from the orchard bundle actions
+    pub notes: Vec<ShieldedActionNote>,
     /// fee strategy
     pub fee_strategy: AddressFundsFeeStrategy,
     /// fee multiplier

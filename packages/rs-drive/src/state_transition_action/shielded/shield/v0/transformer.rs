@@ -1,4 +1,5 @@
 use crate::state_transition_action::shielded::shield::v0::ShieldTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
@@ -11,17 +12,13 @@ impl ShieldTransitionActionV0 {
         value: &ShieldTransitionV0,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         shield_amount: Credits,
-        nullifiers: Vec<[u8; 32]>,
-        note_commitments: Vec<[u8; 32]>,
-        encrypted_notes: Vec<Vec<u8>>,
+        notes: Vec<ShieldedActionNote>,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(ShieldTransitionActionV0 {
             inputs_with_remaining_balance,
             shield_amount,
-            nullifiers,
-            note_commitments,
-            encrypted_notes,
+            notes,
             fee_strategy: value.fee_strategy.clone(),
             user_fee_increase: value.user_fee_increase,
             current_total_balance,

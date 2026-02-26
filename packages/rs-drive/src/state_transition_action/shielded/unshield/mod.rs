@@ -4,6 +4,7 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::shielded::unshield::v0::UnshieldTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -28,22 +29,10 @@ impl UnshieldTransitionAction {
             UnshieldTransitionAction::V0(transition) => transition.amount,
         }
     }
-    /// Get nullifiers
-    pub fn nullifiers(&self) -> &[[u8; 32]] {
+    /// Get notes
+    pub fn notes(&self) -> &[ShieldedActionNote] {
         match self {
-            UnshieldTransitionAction::V0(transition) => &transition.nullifiers,
-        }
-    }
-    /// Get note commitments
-    pub fn note_commitments(&self) -> &[[u8; 32]] {
-        match self {
-            UnshieldTransitionAction::V0(transition) => &transition.note_commitments,
-        }
-    }
-    /// Get encrypted notes
-    pub fn encrypted_notes(&self) -> &[Vec<u8>] {
-        match self {
-            UnshieldTransitionAction::V0(transition) => &transition.encrypted_notes,
+            UnshieldTransitionAction::V0(transition) => &transition.notes,
         }
     }
     /// Get anchor

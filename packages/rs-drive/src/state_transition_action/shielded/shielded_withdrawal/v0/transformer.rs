@@ -1,4 +1,5 @@
 use crate::state_transition_action::shielded::shielded_withdrawal::v0::ShieldedWithdrawalTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0};
@@ -11,17 +12,15 @@ impl ShieldedWithdrawalTransitionActionV0 {
     /// Transforms the shielded withdrawal transition into an action
     pub fn try_from_transition(
         value: &ShieldedWithdrawalTransitionV0,
-        nullifiers: Vec<[u8; 32]>,
-        note_commitments: Vec<[u8; 32]>,
-        encrypted_notes: Vec<Vec<u8>>,
+        notes: Vec<ShieldedActionNote>,
         anchor: [u8; 32],
         current_total_balance: Credits,
         creation_time_ms: u64,
     ) -> ConsensusValidationResult<Self> {
         // Generate entropy from first nullifier + output_script for document ID
         let mut entropy = Vec::new();
-        if let Some(first_nullifier) = nullifiers.first() {
-            entropy.extend_from_slice(first_nullifier);
+        if let Some(first_note) = notes.first() {
+            entropy.extend_from_slice(&first_note.nullifier);
         }
         entropy.extend_from_slice(value.output_script.as_bytes());
 
@@ -68,9 +67,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
 
         ConsensusValidationResult::new_with_data(ShieldedWithdrawalTransitionActionV0 {
             amount: value.amount,
-            nullifiers,
-            note_commitments,
-            encrypted_notes,
+            notes,
             anchor,
             core_fee_per_byte: value.core_fee_per_byte,
             pooling: value.pooling,

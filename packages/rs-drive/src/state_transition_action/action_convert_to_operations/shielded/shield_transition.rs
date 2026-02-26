@@ -37,12 +37,7 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
                     }
 
                     // 2. Insert notes into CommitmentTree
-                    insert_notes(
-                        &mut ops,
-                        &v0.nullifiers,
-                        &v0.note_commitments,
-                        &v0.encrypted_notes,
-                    );
+                    insert_notes(&mut ops, &v0.notes);
 
                     // 3. Update total balance
                     let new_total_balance = v0

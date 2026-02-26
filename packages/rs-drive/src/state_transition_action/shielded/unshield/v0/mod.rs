@@ -1,5 +1,6 @@
 mod transformer;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
@@ -10,12 +11,8 @@ pub struct UnshieldTransitionActionV0 {
     pub output_address: PlatformAddress,
     /// Amount being unshielded
     pub amount: Credits,
-    /// Nullifiers from spent notes
-    pub nullifiers: Vec<[u8; 32]>,
-    /// Note commitments for change outputs
-    pub note_commitments: Vec<[u8; 32]>,
-    /// Encrypted notes for change outputs
-    pub encrypted_notes: Vec<Vec<u8>>,
+    /// Notes from the orchard bundle actions
+    pub notes: Vec<ShieldedActionNote>,
     /// The anchor used for verification
     pub anchor: [u8; 32],
     /// Fee amount (value_balance - amount), paid to proposers

@@ -34,6 +34,7 @@ use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransiti
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
+use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -65,20 +66,16 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        // Extract nullifiers, note commitments, and encrypted notes from serialized actions
-        let nullifiers: Vec<[u8; 32]> = match self {
-            ShieldFromAssetLockTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.nullifier).collect()
-            }
-        };
-        let note_commitments: Vec<[u8; 32]> = match self {
-            ShieldFromAssetLockTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
-        };
-        let encrypted_notes: Vec<Vec<u8>> = match self {
+        // Extract notes from serialized actions
+        let notes: Vec<ShieldedActionNote> = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0
                 .actions
                 .iter()
-                .map(|a| a.encrypted_note.clone())
+                .map(|a| ShieldedActionNote {
+                    nullifier: a.nullifier,
+                    cmx: a.cmx,
+                    encrypted_note: a.encrypted_note.clone(),
+                })
                 .collect(),
         };
 
@@ -354,9 +351,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
             asset_lock_value_credits,
             signable_bytes_hash,
             shield_amount,
-            nullifiers,
-            note_commitments,
-            encrypted_notes,
+            notes,
             current_total_balance,
         );
 

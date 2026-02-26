@@ -26,7 +26,7 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                     // 1. Insert each nullifier (InsertOnly to prevent double-spend)
-                    insert_nullifiers(&mut ops, &v0.nullifiers);
+                    insert_nullifiers(&mut ops, &v0.notes);
 
                     // 2. Credit the output address with the unshielded amount
                     ops.push(DriveOperation::AddressFundsOperation(
@@ -37,12 +37,7 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     ));
 
                     // 3. Insert notes into CommitmentTree (change outputs)
-                    insert_notes(
-                        &mut ops,
-                        &v0.nullifiers,
-                        &v0.note_commitments,
-                        &v0.encrypted_notes,
-                    );
+                    insert_notes(&mut ops, &v0.notes);
 
                     // 4. Update total balance
                     // Pool decreases by amount (to output address) + fee_amount (to proposers)
@@ -64,7 +59,7 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                     update_balance(&mut ops, new_total_balance);
 
                     // 5. Store nullifiers to recent block storage for catch-up sync
-                    store_nullifiers_for_block(&mut ops, &v0.nullifiers);
+                    store_nullifiers_for_block(&mut ops, &v0.notes);
 
                     Ok(ops)
                 }

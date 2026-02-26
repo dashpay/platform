@@ -4,6 +4,7 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
 use dpp::fee::Credits;
 use dpp::prelude::UserFeeIncrease;
@@ -44,16 +45,10 @@ impl ShieldFromAssetLockTransitionAction {
             ShieldFromAssetLockTransitionAction::V0(transition) => transition.shield_amount,
         }
     }
-    /// Get note commitments
-    pub fn note_commitments(&self) -> &[[u8; 32]] {
+    /// Get notes
+    pub fn notes(&self) -> &[ShieldedActionNote] {
         match self {
-            ShieldFromAssetLockTransitionAction::V0(transition) => &transition.note_commitments,
-        }
-    }
-    /// Get encrypted notes
-    pub fn encrypted_notes(&self) -> &[Vec<u8>] {
-        match self {
-            ShieldFromAssetLockTransitionAction::V0(transition) => &transition.encrypted_notes,
+            ShieldFromAssetLockTransitionAction::V0(transition) => &transition.notes,
         }
     }
     /// fee multiplier

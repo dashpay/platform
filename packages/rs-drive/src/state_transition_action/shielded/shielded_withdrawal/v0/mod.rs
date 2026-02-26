@@ -1,5 +1,6 @@
 mod transformer;
 
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
@@ -10,12 +11,8 @@ use dpp::withdrawal::Pooling;
 pub struct ShieldedWithdrawalTransitionActionV0 {
     /// Withdrawal amount in credits
     pub amount: Credits,
-    /// Nullifiers from spent notes
-    pub nullifiers: Vec<[u8; 32]>,
-    /// Note commitments for change outputs
-    pub note_commitments: Vec<[u8; 32]>,
-    /// Encrypted change notes
-    pub encrypted_notes: Vec<Vec<u8>>,
+    /// Notes from the orchard bundle actions
+    pub notes: Vec<ShieldedActionNote>,
     /// Merkle root used for spends
     pub anchor: [u8; 32],
     /// Core transaction fee rate

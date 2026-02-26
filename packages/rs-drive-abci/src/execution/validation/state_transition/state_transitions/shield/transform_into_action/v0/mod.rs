@@ -15,6 +15,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
+use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -41,18 +42,16 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Extract nullifiers, note commitments, and encrypted notes from serialized actions
-        let nullifiers: Vec<[u8; 32]> = match self {
-            ShieldTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
-        };
-        let note_commitments: Vec<[u8; 32]> = match self {
-            ShieldTransition::V0(v0) => v0.actions.iter().map(|a| a.cmx).collect(),
-        };
-        let encrypted_notes: Vec<Vec<u8>> = match self {
+        // Extract notes from serialized actions
+        let notes: Vec<ShieldedActionNote> = match self {
             ShieldTransition::V0(v0) => v0
                 .actions
                 .iter()
-                .map(|a| a.encrypted_note.clone())
+                .map(|a| ShieldedActionNote {
+                    nullifier: a.nullifier,
+                    cmx: a.cmx,
+                    encrypted_note: a.encrypted_note.clone(),
+                })
                 .collect(),
         };
 
@@ -102,9 +101,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             self,
             inputs_with_remaining_balance,
             shield_amount,
-            nullifiers,
-            note_commitments,
-            encrypted_notes,
+            notes,
             current_total_balance,
         );
 

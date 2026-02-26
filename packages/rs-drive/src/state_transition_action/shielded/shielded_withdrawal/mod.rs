@@ -4,6 +4,7 @@ pub mod transformer;
 pub mod v0;
 
 use crate::state_transition_action::shielded::shielded_withdrawal::v0::ShieldedWithdrawalTransitionActionV0;
+use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
 use dpp::document::Document;
 use dpp::fee::Credits;
@@ -24,22 +25,10 @@ impl ShieldedWithdrawalTransitionAction {
             ShieldedWithdrawalTransitionAction::V0(transition) => transition.amount,
         }
     }
-    /// Get nullifiers
-    pub fn nullifiers(&self) -> &[[u8; 32]] {
+    /// Get notes
+    pub fn notes(&self) -> &[ShieldedActionNote] {
         match self {
-            ShieldedWithdrawalTransitionAction::V0(transition) => &transition.nullifiers,
-        }
-    }
-    /// Get note commitments
-    pub fn note_commitments(&self) -> &[[u8; 32]] {
-        match self {
-            ShieldedWithdrawalTransitionAction::V0(transition) => &transition.note_commitments,
-        }
-    }
-    /// Get encrypted notes
-    pub fn encrypted_notes(&self) -> &[Vec<u8>] {
-        match self {
-            ShieldedWithdrawalTransitionAction::V0(transition) => &transition.encrypted_notes,
+            ShieldedWithdrawalTransitionAction::V0(transition) => &transition.notes,
         }
     }
     /// Get anchor

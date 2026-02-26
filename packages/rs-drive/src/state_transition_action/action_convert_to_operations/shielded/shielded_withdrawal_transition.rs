@@ -27,15 +27,10 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                     // 1. Insert nullifiers (prevent double-spend)
-                    insert_nullifiers(&mut ops, &v0.nullifiers);
+                    insert_nullifiers(&mut ops, &v0.notes);
 
                     // 2. Insert change notes into CommitmentTree
-                    insert_notes(
-                        &mut ops,
-                        &v0.nullifiers,
-                        &v0.note_commitments,
-                        &v0.encrypted_notes,
-                    );
+                    insert_notes(&mut ops, &v0.notes);
 
                     // 3. Update total balance: subtract withdrawal amount + fee (both leave the pool)
                     let total_deduction =
@@ -75,7 +70,7 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
                     ));
 
                     // 6. Store nullifiers to recent block storage for catch-up sync
-                    store_nullifiers_for_block(&mut ops, &v0.nullifiers);
+                    store_nullifiers_for_block(&mut ops, &v0.notes);
 
                     Ok(ops)
                 }
