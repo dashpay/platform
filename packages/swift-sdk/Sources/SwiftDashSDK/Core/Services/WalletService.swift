@@ -554,9 +554,9 @@ public class WalletService: ObservableObject {
             SDKLogger.log("Sync started for manager: \(manager)", minimumLevel: .medium)
         }
     
-        func onComplete(_ headerTip: UInt32) {
+        func onComplete(_ headerTip: UInt32, _ cycle: UInt32) {
             Task { @MainActor in
-                SDKLogger.log("Sync completed, header tip: \(headerTip)", minimumLevel: .medium)
+                SDKLogger.log("Sync completed, header tip: \(headerTip), cycle: \(cycle)", minimumLevel: .medium)
     
                 if let wm = walletService.walletManager {
                     for wallet in wm.wallets {

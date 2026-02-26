@@ -88,7 +88,7 @@ private final class DummySPVProgressUpdateEventHandler: SPVProgressUpdateEventHa
 
 protocol SPVSyncEventsHandler: AnyObject {
     func onStart(_ manager: SPVSyncManager)
-    func onComplete(_ headerTip: UInt32)
+    func onComplete(_ headerTip: UInt32, _ cycle: UInt32)
     func onBlockHeadersStored(_ tipHeight: UInt32)
     func onBlockHeadersSyncCompleted(_ tipHeight: UInt32)
     func onFilterHeadersStored(_ startHeight: UInt32, _ endHeight: UInt32, _ tipHeight: UInt32)
@@ -141,9 +141,10 @@ private func onSpvSyncStartCallbackC(
 
 private func onSpvSyncCompleteCallbackC(
     headerTip: UInt32,
+    cycle: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
-    rawPtrIntoSpvSyncEventsHandler(userData).onComplete(headerTip)
+    rawPtrIntoSpvSyncEventsHandler(userData).onComplete(headerTip, cycle)
 }
 
 private func onSpvBlockHeadersStoredCallbackC(
@@ -287,7 +288,7 @@ private func rawPtrIntoSpvSyncEventsHandler(_ ptr: UnsafeMutableRawPointer?) -> 
 
 private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
     func onStart(_: SPVSyncManager) {}
-    func onComplete(_: UInt32) {}
+    func onComplete(_: UInt32, _: UInt32) {}
     func onBlockHeadersStored(_: UInt32) {}
     func onBlockHeadersSyncCompleted(_: UInt32) {}
     func onFilterHeadersStored(_: UInt32, _: UInt32, _: UInt32) {}
