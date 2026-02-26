@@ -69,7 +69,7 @@ where
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement [`TransportRequest`] and [`MockRequest`].
+    /// This type must implement [`TransportRequest`].
     type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from Platform.

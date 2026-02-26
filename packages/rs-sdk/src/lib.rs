@@ -2,8 +2,7 @@
 //!
 //! This is the official Rust SDK for the Dash Platform. Dash Platform is a Layer 2 cryptocurrency technology that
 //! builds upon the Dash layer 1 network. This SDK provides an abstraction layer to simplify usage of the Dash
-//! Platform along with data models based on the Dash Platform Protocol (DPP), a CRUD interface, and bindings
-//! for other technologies such as C.
+//! Platform along with data models based on the Dash Platform Protocol (DPP) and a CRUD interface.
 //!
 //!
 //! ## Dash Platform Protocol Data Model
@@ -12,21 +11,21 @@
 //! types are supported:
 //!
 //! 1. [`Identity`](crate::platform::Identity)
-//! 2. [`Data Contract`](crate::platform::DataContract)
+//! 2. [`DataContract`](crate::platform::DataContract)
 //! 3. [`Document`](crate::platform::Document)
 //!
-//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveDocumentQuery) and convert it
+//! To define document search conditions, you can use [`DriveDocumentQuery`](crate::platform::DriveDocumentQuery) and convert it
 //! to [`DocumentQuery`](crate::platform::DocumentQuery) with the [`From`] trait.
 //!
 //! Basic DPP objects are re-exported in the [`platform`] module.
 //!
 //! ## CRUD Interface
 //!
-//! Operations on data model objects can be executing using traits following CRUD (Create, Read, Update, and Delete)
+//! Operations on data model objects can be executed using traits following CRUD (Create, Read, Update, and Delete)
 //! approach. The following traits are already implemented:
 //!
-//! 1. [`Fetch`](crate::platform::Fetch)
-//! 2. [`FetchMany`](crate::platform::FetchMany)
+//! 1. [`Fetch`](crate::platform::Fetch) - fetch a single object from Platform
+//! 2. [`FetchMany`](crate::platform::FetchMany) - fetch multiple objects from Platform
 //!
 //! Fetch and FetchMany traits return objects based on provided queries. Some example queries include:
 //!
@@ -34,17 +33,17 @@
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
 //!    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
 //!    for more details.
-//! 3. [`DriveQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
+//! 3. [`DriveDocumentQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
 //!
 //! ## Testability
 //!
 //! SDK operations can be mocked using [Sdk::new_mock()].
 //!
-//! Examples can be found in `tests/mock_*.rs`.
+//! Examples can be found in `tests/fetch/mock_fetch.rs` and `tests/fetch/mock_fetch_many.rs`.
 //!
 //! ## Error handling
 //!
-//! Errors of type [Error] are returned by the dash-platform-sdk. Note that missing objects ("not found") are not
+//! Errors of type [Error] are returned by the SDK. Note that missing objects ("not found") are not
 //! treated as errors; `Ok(None)` is returned instead.
 //!
 //! Mocking functions often panic instead of returning an error.
@@ -55,7 +54,7 @@
 //! flexible framework for adding structured, context-aware logs to your program.
 //!
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
-//! An example can be found in `tests/common.rs:setup_logs()`.
+//! An example can be found in `tests/fetch/common.rs:setup_logs()`.
 //!
 // TODO re-enable when docs are complete
 // #![warn(missing_docs)]

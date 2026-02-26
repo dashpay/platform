@@ -60,7 +60,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 ///
 /// Some examples of queries include:
 ///
-/// 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier; implemented for
+/// 1. [`Identifier`] - fetches an object by its identifier; implemented for
 ///    [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
 /// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search conditions; see
 ///    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
@@ -68,7 +68,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 ///
 /// ## Example
 ///
-/// To fetch individual [Identity](dpp::prelude::Identity) object by its [Identifier](crate::platform::Identifier),
+/// To fetch individual [Identity](dpp::prelude::Identity) object by its [`Identifier`],
 /// you just need to create it and use [Fetch](crate::platform::Fetch)
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
@@ -81,7 +81,7 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// let identity = Identity::fetch(&sdk, query);
 /// ```
 ///
-/// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
+/// As [`Identifier`] implements [Query], the `query` variable in the code
 /// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
 /// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
 pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {

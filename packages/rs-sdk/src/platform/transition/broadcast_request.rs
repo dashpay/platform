@@ -1,10 +1,10 @@
-//! Broadcast trait representing the action of broadcasting a new identity state transition to Platform.
+//! Broadcast trait representing the action of broadcasting a state transition to Platform.
 //!
-//! The [BroadcastRequestForNewIdentity] trait is designed for the creation and broadcasting of new identity state transitions.
+//! The [`BroadcastRequestForStateTransition`] trait is designed for the creation and broadcasting of state transitions.
 //! This involves the generation of a state transition object, signing it, and then broadcasting it to Platform.
 //!
 //! This trait is expected to be implemented by objects that encapsulate the necessary data and logic to perform
-//! these operations, including the handling of asset lock proof and signing operations.
+//! these operations, including the handling of signing operations.
 use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
@@ -22,7 +22,7 @@ use crate::error::Error;
 
 /// Trait implemented by objects that can be used to broadcast new identity state transitions.
 ///
-/// [BroadcastRequestForNewIdentity] trait is used when a new identity needs to be created and broadcasted on Platform.
+/// [`BroadcastRequestForStateTransition`] trait is used when a state transition needs to be broadcasted on Platform.
 /// It encapsulates the data, the signing process, and the logic required to perform the broadcast operation.
 ///
 /// Implementors of this trait will typically be responsible for creating an identity state transition,
@@ -60,8 +60,8 @@ use crate::error::Error;
 /// }
 /// ```
 ///
-/// As [BroadcastRequestForStateTransition] is a trait, it can be implemented for any type that represents
-/// a new identity creation operation, allowing for flexibility in how new identities are broadcasted.
+/// As [`BroadcastRequestForStateTransition`] is a trait, it can be implemented for any type that represents
+/// a state transition, allowing for flexibility in how state transitions are broadcasted.
 pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type, ready for broadcasting.
     ///

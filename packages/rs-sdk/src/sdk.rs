@@ -972,7 +972,7 @@ impl SdkBuilder {
     ///
     /// This is a convenience method that configures the SDK to use Dash Core as a wallet and context provider.
     ///
-    /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
+    /// For more control over the configuration, use [`SdkBuilder::with_context_provider()`].
     ///
     /// This is temporary implementation, intended for development purposes.
     pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
