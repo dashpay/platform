@@ -30,37 +30,16 @@ use crate::error::Error;
 ///
 /// ## Example
 ///
-/// Given a [`StateTransition`](dpp::state_transition::StateTransition), you can create a broadcast
-/// request and send it to Platform:
-///
-/// ```rust,ignore
-/// use dash_sdk::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
-/// use rs_dapi_client::DapiRequest;
-/// use dpp::state_transition::StateTransition;
-///
-/// // Assume `sdk` is a connected Sdk instance and
-/// // `state_transition` is an already-constructed and signed StateTransition.
-///
-/// // Step 1: Serialize the state transition into a transport request
-/// let request = state_transition
-///     .broadcast_request_for_state_transition()
-///     .expect("failed to serialize state transition");
-///
-/// // Step 2: Send the request to Platform via DAPI
-/// let response = request
-///     .execute(&sdk, sdk.dapi_client_settings)
-///     .await
-///     .expect("broadcast failed");
-/// ```
-///
-/// For most use cases, prefer the higher-level
+/// To broadcast a [`StateTransition`](dpp::state_transition::StateTransition) and wait for
+/// Platform to confirm it, use the higher-level
 /// [`BroadcastStateTransition`](super::broadcast::BroadcastStateTransition) trait which wraps
-/// this trait with retry logic, error handling, and optional proof verification:
+/// this trait with retry logic, error handling, and proof verification:
 ///
 /// ```rust,ignore
 /// use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 ///
-/// // Broadcast and wait for Platform to confirm the state transition
+/// // Assume `sdk` is a connected Sdk instance and
+/// // `state_transition` is an already-constructed and signed StateTransition.
 /// state_transition.broadcast_and_wait(&sdk, None).await?;
 /// ```
 ///
