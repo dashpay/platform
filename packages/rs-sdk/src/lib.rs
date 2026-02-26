@@ -2,13 +2,13 @@
 //!
 //! This is the official Rust SDK for the Dash Platform. Dash Platform is a Layer 2 cryptocurrency technology that
 //! builds upon the Dash layer 1 network. This SDK provides an abstraction layer to simplify usage of the Dash
-//! Platform along with data models based on the Dash Platform Protocol (DPP) and a CRUD interface.
+//! Platform along with data models based on the Dash Platform Protocol (DPP), query traits for reading data, and
+//! state transition traits for writing data.
 //!
 //!
 //! ## Dash Platform Protocol Data Model
 //!
-//! SDK data model uses types defined in [Dash Platform Protocol (DPP)](crate::platform::dpp). At this point, the following
-//! types are supported:
+//! SDK data model uses types defined in [Dash Platform Protocol (DPP)](crate::platform::dpp). The core types are:
 //!
 //! 1. [`Identity`](crate::platform::Identity)
 //! 2. [`DataContract`](crate::platform::DataContract)
@@ -19,21 +19,39 @@
 //!
 //! Basic DPP objects are re-exported in the [`platform`] module.
 //!
-//! ## CRUD Interface
+//! ## Querying (Reading Data)
 //!
-//! Operations on data model objects can be executed using traits following CRUD (Create, Read, Update, and Delete)
-//! approach. The following traits are already implemented:
+//! Data can be read from Platform using the following traits:
 //!
-//! 1. [`Fetch`](crate::platform::Fetch) - fetch a single object from Platform
-//! 2. [`FetchMany`](crate::platform::FetchMany) - fetch multiple objects from Platform
+//! 1. [`Fetch`](crate::platform::Fetch) - fetch a single object from Platform with proof verification
+//! 2. [`FetchMany`](crate::platform::FetchMany) - fetch multiple objects from Platform with proof verification
+//! 3. [`FetchUnproved`](crate::platform::FetchUnproved) - fetch a single object without proof verification
+//!    (e.g., for node status queries)
+//! 4. [`FetchCurrent`](crate::platform::fetch_current_no_parameters::FetchCurrent) - fetch current
+//!    state for parameter-free queries (e.g., current epoch, total credits)
 //!
-//! Fetch and FetchMany traits return objects based on provided queries. Some example queries include:
+//! These traits return objects based on provided queries. Some example queries include:
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
 //!    [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
 //!    for more details.
 //! 3. [`DriveDocumentQuery`](crate::platform::DriveDocumentQuery) - can be used to build more complex queries
+//!
+//! ## State Transitions (Writing Data)
+//!
+//! Data is written to Platform by broadcasting state transitions. The SDK provides traits for common
+//! write operations:
+//!
+//! - [`PutIdentity`](crate::platform::transition::put_identity::PutIdentity) - register a new identity
+//! - [`PutContract`](crate::platform::transition::put_contract::PutContract) - publish a data contract
+//! - [`PutDocument`](crate::platform::transition::put_document::PutDocument) - create or replace a document
+//! - [`TransferToIdentity`](crate::platform::transition::transfer::TransferToIdentity) - transfer credits between identities
+//! - [`WithdrawFromIdentity`](crate::platform::transition::withdraw_from_identity::WithdrawFromIdentity) - withdraw credits
+//! - [`TopUpIdentity`](crate::platform::transition::top_up_identity::TopUpIdentity) - add credits to an identity
+//! - [`PutVote`](crate::platform::transition::vote::PutVote) - cast a masternode vote
+//!
+//! For document operations, builder-based APIs are also available (see [`platform::documents::transitions`]).
 //!
 //! ## Testability
 //!

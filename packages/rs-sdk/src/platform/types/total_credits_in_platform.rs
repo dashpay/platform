@@ -1,4 +1,4 @@
-//! Epoch-related types and helpers
+//! Total credits in platform types and helpers
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::{platform::Fetch, Error, Sdk};
 use async_trait::async_trait;

@@ -50,7 +50,7 @@ use std::fmt::Debug;
 
 /// Default limit of epoch records returned by Platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
-/// Default limit of epoch records returned by Platform.
+/// Default limit of masternode voting records returned by Platform.
 pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 
 /// Trait implemented by objects that can be used as queries.
