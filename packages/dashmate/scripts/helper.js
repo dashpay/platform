@@ -1,6 +1,13 @@
 import dotenv from 'dotenv';
 import { asValue } from 'awilix';
+import graceful from 'node-graceful';
 import createDIContainer from '../src/createDIContainer.js';
+
+// Container names that may be left orphaned from failed SSL renewal attempts
+const EPHEMERAL_SSL_CONTAINERS = [
+  'dashmate-zerossl-validation',
+  'dashmate-letsencrypt-lego',
+];
 
 (async function main() {
   // Read environment variables from .env file
@@ -18,6 +25,43 @@ import createDIContainer from '../src/createDIContainer.js';
   console.info('Starting dashmate helper');
 
   const container = await createDIContainer(process.env);
+
+  // Set up graceful shutdown to clean up any containers started during
+  // SSL certificate renewal (e.g. the ZeroSSL verification server on port 80)
+  const stopAllContainers = container.resolve('stopAllContainers');
+  const startedContainers = container.resolve('startedContainers');
+
+  graceful.exitOnDouble = false;
+  graceful.on('exit', async () => {
+    // eslint-disable-next-line no-console
+    console.log('Shutting down dashmate helper, cleaning up containers...');
+
+    await stopAllContainers(
+      startedContainers.getContainers(),
+      { remove: true },
+    );
+  });
+
+  // Clean up any orphaned ephemeral SSL containers left from previous
+  // failed renewal attempts (e.g. if the helper crashed or was killed
+  // while a verification server was running on port 80)
+  const docker = container.resolve('docker');
+
+  await Promise.all(EPHEMERAL_SSL_CONTAINERS.map(async (name) => {
+    try {
+      const orphanedContainer = docker.getContainer(name);
+      await orphanedContainer.remove({ force: true });
+
+      // eslint-disable-next-line no-console
+      console.log(`Removed orphaned container: ${name}`);
+    } catch (e) {
+      // 404 means container doesn't exist — that's the normal case
+      if (e.statusCode !== 404) {
+        // eslint-disable-next-line no-console
+        console.error(`Failed to remove orphaned container ${name}: ${e.message}`);
+      }
+    }
+  }));
 
   // Load configs
   /**
