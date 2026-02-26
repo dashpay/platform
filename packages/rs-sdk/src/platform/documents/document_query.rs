@@ -41,7 +41,7 @@ use crate::platform::Fetch;
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
-    /// Data contract ID
+    /// Data contract
     pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
     pub document_type_name: String,

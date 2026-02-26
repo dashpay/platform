@@ -77,7 +77,7 @@ impl Sdk {
                 Ok(UnfreezeResult::IdentityInfo(owner_id_result, info))
             }
             StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
-                // This means the token keeps freezing history
+                // This means the token keeps unfreezing history
                 Ok(UnfreezeResult::HistoricalDocument(doc))
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {

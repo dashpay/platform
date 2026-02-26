@@ -132,7 +132,7 @@ impl FetchMany<Identifier, GroupActions> for GroupAction {
 }
 
 #[derive(Debug, Clone)]
-/// Query to fetch available signatures of specific data contract and group action
+/// Query to fetch signers of a specific data contract group action
 pub struct GroupActionSignersQuery {
     /// Data contract ID
     pub contract_id: Identifier,
