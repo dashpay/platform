@@ -164,7 +164,7 @@ impl LowLevelDashCoreClient {
             ))
     }
 
-    /// Request list of masternodes from Core.
+    /// Request list of Platform validators from Core.
     ///
     /// See also [Dash Core documentation](https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-evo.html#protx-list)
     #[allow(unused)]
