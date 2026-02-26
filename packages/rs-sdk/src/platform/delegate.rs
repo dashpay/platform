@@ -131,7 +131,7 @@ macro_rules! delegate_from_proof_variant {
 /// and [FromProof](drive_proof_verifier::FromProof) to the appropriate variant.
 ///
 /// This macro creates enums for requests (`$request`) and responses (`$response`) and variants  (`$variant`) for
-/// each request (`$req`) /response (`$req`) pair. Variant name in request and response enums are the same.
+/// each request (`$req`) /response (`$resp`) pair. Variant name in request and response enums are the same.
 ///
 /// It also calls [delegate_transport_request_variant!](crate::delegate_transport_request_variant!) and
 /// [delegate_from_proof_variant!](crate::delegate_from_proof_variant!) to delegate

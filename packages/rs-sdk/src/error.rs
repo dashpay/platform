@@ -28,7 +28,7 @@ pub enum Error {
     /// Drive error
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
-    /// Drive error
+    /// Drive proof error with associated proof bytes and block info
     #[error("Drive error with associated proof: {0}")]
     DriveProofError(drive::error::proof::ProofError, Vec<u8>, BlockInfo),
     /// DPP error

@@ -229,7 +229,7 @@ fn get_current_time_seconds() -> u64 {
 }
 
 impl Sdk {
-    /// Initialize Dash Platform  SDK in mock mode.
+    /// Initialize Dash Platform SDK in mock mode.
     ///
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
     ///
@@ -596,7 +596,7 @@ impl Sdk {
         self.cancel_token.cancelled()
     }
 
-    /// Request shutdown of the Sdk and all related operation.
+    /// Request shutdown of the Sdk and all related operations.
     pub fn shutdown(&self) {
         self.cancel_token.cancel();
     }
@@ -867,7 +867,7 @@ impl SdkBuilder {
         )
     }
 
-    /// Create a new SdkBuilder instance preconfigured mainnet (production network). NOT IMPLEMENTED YET.
+    /// Create a new SdkBuilder instance preconfigured for mainnet (production network). NOT IMPLEMENTED YET.
     ///
     /// This is a helper method that preconfigures [SdkBuilder] for production use.
     /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
@@ -927,7 +927,7 @@ impl SdkBuilder {
     ///
     /// Tune request settings used to connect to the Dash Platform.
     ///
-    /// Defaults to [RequestSettings::default()].
+    /// Defaults to [`DEFAULT_REQUEST_SETTINGS`], which sets retries to 3.
     ///
     /// See [`RequestSettings`] for more information.
     pub fn with_settings(mut self, settings: RequestSettings) -> Self {

@@ -22,18 +22,17 @@ pub trait ProposedBlockCountEx<K: Ord> {
     /// Fetches the proposed block counts for proposers within a given range.
     ///
     /// This asynchronous method retrieves the number of blocks proposed by various proposers,
-    /// starting from an optional proposer transaction hash (`ProTxHash`) and returning a limited
-    /// number of results if specified. If a proposer transaction hash is provided, the query will
-    /// start at that hash. The optional boolean flag determines whether to include the proposer
-    /// identified by the `ProTxHash` in the results.
+    /// optionally filtered to a specific epoch, and returning a limited number of results if
+    /// specified. If start info is provided, the query will start at that key, and the
+    /// `start_included` flag determines whether to include the starting proposer in the results.
     ///
     /// ## Parameters
     ///
     /// * `sdk`: A reference to the `Sdk` instance, which handles the platform interaction.
-    /// * `limit`: An optional `u16` representing the maximum number of proposer block counts to retrieve.
-    /// * `start_pro_tx_hash`: An optional tuple where the first element is a `ProTxHash` to start
-    ///    from, and the second element is a boolean indicating whether to include the starting proposer
-    ///    in the results.
+    /// * `epoch`: An optional [`EpochIndex`] to filter results to a specific epoch.
+    /// * `limit`: An optional `u32` representing the maximum number of proposer block counts to retrieve.
+    /// * `start_pro_tx_hash`: An optional [`QueryStartInfo`] specifying
+    ///    the key to start from and whether to include the starting proposer in the results.
     ///
     /// ## Returns
     ///
