@@ -4735,41 +4735,38 @@ mod tests {
             proof_contract.expect("expected contract, not None - retry must work")
         );
 
-        // Test 2: Some(true) - explicit historical path must be handled without panic
-        let result_true = Drive::verify_contract(
+        // Test 2: Some(true) - direct historical, must succeed since proof was generated
+        // for a historical contract
+        let (proof_root_hash_2, proof_contract_2) = Drive::verify_contract(
             contract_proof.as_slice(),
             Some(true),
             false,
             false,
             latest_contract.id().into_buffer(),
             platform_version,
+        )
+        .expect("verification with Some(true) should succeed for historical contract");
+        assert_eq!(root_hash, proof_root_hash_2);
+        assert_eq!(
+            latest_contract,
+            proof_contract_2.expect("expected contract with explicit history flag")
         );
-        match result_true {
-            Ok((proof_root_hash_2, Some(proof_contract_2))) => {
-                assert_eq!(root_hash, proof_root_hash_2);
-                assert_eq!(latest_contract, proof_contract_2);
-            }
-            Ok((_, None)) => {}
-            Err(_) => {}
-        }
 
-        // Test 3: Some(false) - explicit non-historical path must be handled without panic
-        let result_false = Drive::verify_contract(
+        // Test 3: Some(false) - contract still exists regardless of history-flag hint.
+        let (proof_root_hash_3, proof_contract_3) = Drive::verify_contract(
             contract_proof.as_slice(),
             Some(false),
             false,
             false,
             latest_contract.id().into_buffer(),
             platform_version,
+        )
+        .expect("verification with Some(false) should still return the existing contract");
+        assert_eq!(root_hash, proof_root_hash_3);
+        assert_eq!(
+            latest_contract,
+            proof_contract_3.expect("expected contract with explicit non-history flag")
         );
-        match result_false {
-            Ok((proof_root_hash_3, Some(proof_contract_3))) => {
-                assert_eq!(root_hash, proof_root_hash_3);
-                assert_eq!(latest_contract, proof_contract_3);
-            }
-            Ok((_, None)) => {}
-            Err(_) => {}
-        }
 
         // Test 4: verify_contract_return_serialization with None
         let (proof_root_hash_4, proof_contract_4) = Drive::verify_contract_return_serialization(
