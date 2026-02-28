@@ -44,10 +44,49 @@ impl Drive {
         contract_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<VerifyContractReturn, Error> {
-        let path_query = match (
+        let keeps_history = contract_known_keeps_history.unwrap_or(false);
+
+        let result = Self::verify_contract_return_serialization_v0_given_history(
+            proof,
+            keeps_history,
+            is_proof_subset,
             in_multiple_contract_proof_form,
-            contract_known_keeps_history.unwrap_or_default(),
-        ) {
+            contract_id,
+            platform_version,
+        );
+
+        if contract_known_keeps_history.is_none() {
+            match &result {
+                Ok((_, Some(_))) => result,
+                _ => {
+                    tracing::debug!(
+                        ?contract_id,
+                        "retrying contract verification with history enabled"
+                    );
+                    Self::verify_contract_return_serialization_v0_given_history(
+                        proof,
+                        true,
+                        is_proof_subset,
+                        in_multiple_contract_proof_form,
+                        contract_id,
+                        platform_version,
+                    )
+                }
+            }
+        } else {
+            result
+        }
+    }
+
+    fn verify_contract_return_serialization_v0_given_history(
+        proof: &[u8],
+        keeps_history: bool,
+        is_proof_subset: bool,
+        in_multiple_contract_proof_form: bool,
+        contract_id: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<VerifyContractReturn, Error> {
+        let path_query = match (in_multiple_contract_proof_form, keeps_history) {
             (true, true) => Self::fetch_historical_contracts_query(&[contract_id]),
             (true, false) => Self::fetch_non_historical_contracts_query(&[contract_id]),
             (false, true) => Self::fetch_contract_with_history_latest_query(contract_id, true),
@@ -69,25 +108,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
         };
-        let (root_hash, mut proved_key_values) = match result.map_err(Error::from) {
-            Ok(ok_result) => ok_result,
-            Err(e) => {
-                return if contract_known_keeps_history.is_none() {
-                    tracing::debug!(?path_query,error=?e, "retrying contract verification with history enabled");
-                    // most likely we are trying to prove a historical contract
-                    Self::verify_contract_return_serialization_v0(
-                        proof,
-                        Some(true),
-                        is_proof_subset,
-                        in_multiple_contract_proof_form,
-                        contract_id,
-                        platform_version,
-                    )
-                } else {
-                    Err(e)
-                };
-            }
-        };
+        let (root_hash, mut proved_key_values) = result.map_err(Error::from)?;
         if proved_key_values.is_empty() {
             return Err(Error::Proof(ProofError::WrongElementCount {
                 expected: 1,
@@ -96,7 +117,7 @@ impl Drive {
         }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
-            if contract_known_keeps_history.unwrap_or_default() {
+            if keeps_history {
                 if path != contract_keeping_history_root_path(&contract_id) {
                     return Err(Error::Proof(ProofError::CorruptedProof(
                         "we did not get back an element for the correct path for the historical contract".to_string(),
@@ -134,26 +155,9 @@ impl Drive {
                             ))
                         })
                 })
-                .transpose();
-            match contract {
-                Ok(contract) => Ok((root_hash, contract)),
-                Err(e) => {
-                    if contract_known_keeps_history.is_some() {
-                        // just return error
-                        Err(e)
-                    } else {
-                        tracing::debug!(?path_query,error=?e, "retry contract verification with history enabled");
-                        Self::verify_contract_return_serialization_v0(
-                            proof,
-                            Some(true),
-                            is_proof_subset,
-                            in_multiple_contract_proof_form,
-                            contract_id,
-                            platform_version,
-                        )
-                    }
-                }
-            }
+                .transpose()?;
+
+            Ok((root_hash, contract))
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one contract id",

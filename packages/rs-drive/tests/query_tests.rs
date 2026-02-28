@@ -59,6 +59,7 @@ use base64::Engine;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -4685,6 +4686,104 @@ mod tests {
             contract,
             proof_returned_contract.expect("expected to get a contract")
         );
+    }
+
+    #[test]
+    fn test_contract_keeps_history_verify_with_unknown_history_flag() {
+        // Regression test: when contract_known_keeps_history is None,
+        // verification must still succeed for historical contracts.
+        let (drive, contract) = setup_references_tests(10, 3334);
+        let platform_version = PlatformVersion::latest();
+
+        // Apply an update so the contract has an actual history entry and latest historical path.
+        let mut latest_contract = contract.clone();
+        latest_contract.set_version(contract.version() + 1);
+        drive
+            .apply_contract(
+                &latest_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("contract update should be applied");
+
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let contract_proof = drive
+            .prove_contract(latest_contract.id().into_buffer(), None, platform_version)
+            .expect("expected to get proof");
+
+        // Test 1: None (unknown) - MUST succeed via retry
+        let (proof_root_hash, proof_contract) = Drive::verify_contract(
+            contract_proof.as_slice(),
+            None,
+            false,
+            false,
+            latest_contract.id().into_buffer(),
+            platform_version,
+        )
+        .expect("verification with None should succeed for historical contract");
+        assert_eq!(root_hash, proof_root_hash);
+        assert_eq!(
+            latest_contract,
+            proof_contract.expect("expected contract, not None - retry must work")
+        );
+
+        // Test 2: Some(true) - explicit historical path must be handled without panic
+        let result_true = Drive::verify_contract(
+            contract_proof.as_slice(),
+            Some(true),
+            false,
+            false,
+            latest_contract.id().into_buffer(),
+            platform_version,
+        );
+        match result_true {
+            Ok((proof_root_hash_2, Some(proof_contract_2))) => {
+                assert_eq!(root_hash, proof_root_hash_2);
+                assert_eq!(latest_contract, proof_contract_2);
+            }
+            Ok((_, None)) => {}
+            Err(_) => {}
+        }
+
+        // Test 3: Some(false) - explicit non-historical path must be handled without panic
+        let result_false = Drive::verify_contract(
+            contract_proof.as_slice(),
+            Some(false),
+            false,
+            false,
+            latest_contract.id().into_buffer(),
+            platform_version,
+        );
+        match result_false {
+            Ok((proof_root_hash_3, Some(proof_contract_3))) => {
+                assert_eq!(root_hash, proof_root_hash_3);
+                assert_eq!(latest_contract, proof_contract_3);
+            }
+            Ok((_, None)) => {}
+            Err(_) => {}
+        }
+
+        // Test 4: verify_contract_return_serialization with None
+        let (proof_root_hash_4, proof_contract_4) = Drive::verify_contract_return_serialization(
+            contract_proof.as_slice(),
+            None,
+            false,
+            false,
+            latest_contract.id().into_buffer(),
+            platform_version,
+        )
+        .expect("return_serialization with None should succeed for historical contract");
+        assert_eq!(root_hash, proof_root_hash_4);
+        let (deserialized, _bytes) = proof_contract_4.expect("expected contract+bytes, not None");
+        assert_eq!(latest_contract, deserialized);
     }
 
     #[cfg(feature = "server")]
