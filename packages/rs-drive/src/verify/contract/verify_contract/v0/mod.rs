@@ -56,7 +56,10 @@ impl Drive {
         if contract_known_keeps_history.is_none() {
             match &result {
                 Ok((_, Some(_))) => result,
-                _ => {
+                // Ok(None) is a valid absence proof — contract genuinely doesn't exist.
+                // Don't retry; the server builds a non-historical query for missing contracts.
+                Ok((_, None)) => result,
+                Err(_) => {
                     tracing::debug!(
                         ?contract_id,
                         "retrying contract verification with history enabled"
