@@ -53,30 +53,52 @@ impl Drive {
             platform_version,
         );
 
+        // When the caller doesn't know whether the contract keeps history, retry with
+        // history enabled to recover historical contracts whose non-historical attempt
+        // either errored or produced an absence proof. A successful retry returning a
+        // contract supersedes both cases. If the retry does not produce a contract,
+        // the original outcome is preserved: Ok((_, None)) absence proofs remain valid
+        // for genuinely missing contracts, and original errors are returned unchanged.
         if contract_known_keeps_history.is_none() {
             match &result {
-                Ok((_, Some(_))) => result,
-                // Ok(None) is a valid absence proof — contract genuinely doesn't exist.
-                // Don't retry; the server builds a non-historical query for missing contracts.
-                Ok((_, None)) => result,
-                Err(_) => {
+                Ok((_, Some(_))) => return result,
+                Ok((_, None)) => {
                     tracing::debug!(
                         ?contract_id,
-                        "retrying contract verification with history enabled"
+                        "retrying contract verification with history enabled after absence"
                     );
-                    Self::verify_contract_v0_given_history(
+                    let retry = Self::verify_contract_v0_given_history(
                         proof,
                         true,
                         is_proof_subset,
                         in_multiple_contract_proof_form,
                         contract_id,
                         platform_version,
-                    )
+                    );
+                    if let Ok((_, Some(_))) = retry {
+                        return retry;
+                    }
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        ?contract_id,
+                        "retrying contract verification with history enabled after error"
+                    );
+                    let retry = Self::verify_contract_v0_given_history(
+                        proof,
+                        true,
+                        is_proof_subset,
+                        in_multiple_contract_proof_form,
+                        contract_id,
+                        platform_version,
+                    );
+                    if retry.is_ok() {
+                        return retry;
+                    }
                 }
             }
-        } else {
-            result
         }
+        result
     }
 
     fn verify_contract_v0_given_history(

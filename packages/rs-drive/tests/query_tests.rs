@@ -4733,7 +4733,10 @@ mod tests {
             .prove_contract(latest_contract.id().into_buffer(), None, platform_version)
             .expect("expected to get proof");
 
-        // Test 1: None (unknown) - verification must succeed, and may use retry behavior.
+        // Test 1: None (unknown) on a historical contract.
+        // Verification must transparently retry with history enabled and return the
+        // updated historical contract — callers do not need to know the keeps_history
+        // flag in advance.
         let (proof_root_hash, proof_contract) = Drive::verify_contract(
             contract_proof.as_slice(),
             None,
@@ -4742,11 +4745,14 @@ mod tests {
             latest_contract.id().into_buffer(),
             platform_version,
         )
-        .expect("verification with None should succeed");
+        .expect("verification with None should succeed for a historical contract");
         assert_eq!(root_hash, proof_root_hash);
-        if let Some(contract) = proof_contract {
-            assert_eq!(latest_contract, contract);
-        }
+        assert_eq!(
+            latest_contract,
+            proof_contract.expect(
+                "historical contract should be recovered via retry when keeps_history is unknown",
+            ),
+        );
 
         // Test 2: Some(true) - direct historical, must succeed since proof was generated
         // for a historical contract
@@ -4795,7 +4801,9 @@ mod tests {
             proof_contract_3.expect("expected contract with explicit non-history flag")
         );
 
-        // Test 4: verify_contract_return_serialization with None
+        // Test 4: verify_contract_return_serialization with None on a historical contract
+        // mirrors Test 1 — the historical contract must be recovered via retry when the
+        // keeps_history flag is unknown.
         let (proof_root_hash_4, proof_contract_4) = Drive::verify_contract_return_serialization(
             contract_proof.as_slice(),
             None,
@@ -4804,11 +4812,59 @@ mod tests {
             latest_contract.id().into_buffer(),
             platform_version,
         )
-        .expect("return_serialization with None should succeed for historical contract");
+        .expect("return_serialization with None should succeed for a historical contract");
         assert_eq!(root_hash, proof_root_hash_4);
-        if let Some((deserialized, _bytes)) = proof_contract_4 {
-            assert_eq!(latest_contract, deserialized);
-        }
+        let (proof_contract_4_data, _proof_contract_4_bytes) = proof_contract_4.expect(
+            "return_serialization should recover the historical contract when keeps_history is unknown",
+        );
+        assert_eq!(latest_contract, proof_contract_4_data);
+
+        // Test 5: None (unknown) for a non-existent contract — verify_contract must
+        // return Ok((root_hash, None)) for a genuine absence proof rather than retrying
+        // with history and turning it into an error.
+        let non_existent_id = [0xffu8; 32];
+        let non_existent_proof = drive
+            .prove_contract(non_existent_id, None, platform_version)
+            .expect("expected to get proof for non-existent contract");
+
+        let (proof_root_hash_5, proof_contract_5) = Drive::verify_contract(
+            non_existent_proof.as_slice(),
+            None,
+            false,
+            false,
+            non_existent_id,
+            platform_version,
+        )
+        .expect("verify_contract with None must succeed for a non-existent contract");
+        assert_eq!(
+            root_hash, proof_root_hash_5,
+            "absence proof must report the same root hash"
+        );
+        assert!(
+            proof_contract_5.is_none(),
+            "verify_contract with None must return Ok((_, None)) for a non-existent contract"
+        );
+
+        // Test 6: same coverage for verify_contract_return_serialization.
+        let (proof_root_hash_6, proof_contract_6) = Drive::verify_contract_return_serialization(
+            non_existent_proof.as_slice(),
+            None,
+            false,
+            false,
+            non_existent_id,
+            platform_version,
+        )
+        .expect(
+            "verify_contract_return_serialization with None must succeed for a non-existent contract",
+        );
+        assert_eq!(
+            root_hash, proof_root_hash_6,
+            "absence proof must report the same root hash for return_serialization"
+        );
+        assert!(
+            proof_contract_6.is_none(),
+            "verify_contract_return_serialization with None must return Ok((_, None)) for a non-existent contract"
+        );
     }
 
     #[cfg(feature = "server")]
