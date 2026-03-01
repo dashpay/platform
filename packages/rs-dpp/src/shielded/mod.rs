@@ -10,9 +10,9 @@ use crate::fee::Credits;
 use platform_version::version::PlatformVersion;
 
 /// Permanent storage bytes per shielded action:
-/// 280 bytes in BulkAppendTree (32 cmx + 32 nullifier + 216 encrypted note)
-/// + 32 bytes in nullifier tree = 312 bytes total.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+/// 248 bytes in BulkAppendTree (32 cmx + 216 encrypted note)
+/// + 32 bytes in nullifier tree = 280 bytes total.
+pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 280;
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";

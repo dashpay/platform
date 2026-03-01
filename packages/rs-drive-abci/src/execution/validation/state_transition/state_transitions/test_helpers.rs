@@ -411,7 +411,7 @@ pub fn create_dummy_serialized_action() -> SerializedAction {
         nullifier: [1u8; 32],
         rk: [2u8; 32],
         cmx: [3u8; 32],
-        encrypted_note: vec![4u8; 692], // epk(32) + enc(580) + out(80)
+        encrypted_note: vec![4u8; 216], // epk(32) + enc(104) + out(80)
         cv_net: [5u8; 32],
         spend_auth_sig: [6u8; 64],
     }
@@ -559,6 +559,8 @@ pub fn set_pool_total_balance(platform: &TempPlatform<MockCoreRPCLike>, balance:
 /// notes threshold for outgoing transitions.
 /// Uses `commitment_tree_insert` to properly update the Sinsemilla frontier.
 pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, count: u64) {
+    use grovedb_commitment_tree::{DashMemo, NoteBytesData, TransmittedNoteCiphertext};
+
     let platform_version = PlatformVersion::latest();
     let grove_version = &platform_version.drive.grove_version;
     let pool_path = shielded_credit_pool_path();
@@ -568,7 +570,14 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
         // Use a valid Pallas base field element (just set it to a small value).
         let mut cmx = [0u8; 32];
         cmx[..8].copy_from_slice(&(i + 1).to_le_bytes());
-        let dummy_payload = vec![0u8; 32]; // minimal dummy payload
+
+        // Build a dummy TransmittedNoteCiphertext<DashMemo> (216 bytes total)
+        let mut epk_bytes = [0u8; 32];
+        epk_bytes[..8].copy_from_slice(&(i + 1).to_le_bytes());
+        let enc_ciphertext = NoteBytesData([0u8; 104]);
+        let out_ciphertext = [0u8; 80];
+        let ciphertext: TransmittedNoteCiphertext<DashMemo> =
+            TransmittedNoteCiphertext::from_parts(epk_bytes, enc_ciphertext, out_ciphertext);
 
         let transaction = platform.drive.grove.start_transaction();
         platform
@@ -578,7 +587,7 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
                 &pool_path,
                 &[SHIELDED_NOTES_KEY],
                 cmx,
-                dummy_payload,
+                ciphertext,
                 Some(&transaction),
                 grove_version,
             )

@@ -332,7 +332,11 @@ impl fmt::Display for GroveDbOpBatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for op in &self.operations {
             let (path_string, known_path) = readable_path(&op.path);
-            let (key_string, _) = readable_key_info(known_path, &op.key);
+            let (key_string, _) = if let Some(ref key) = op.key {
+                readable_key_info(known_path, key)
+            } else {
+                ("(none)".to_string(), None)
+            };
             writeln!(f, "{{")?;
             writeln!(f, "   Path: {}", path_string)?;
             writeln!(f, "   Key: {}", key_string)?;
@@ -622,7 +626,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         );
 
         self.operations.iter().find_map(|op| {
-            if op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()) {
+            if op.path == path && op.key == Some(KeyInfo::KnownKey(key.to_vec())) {
                 Some(&op.op)
             } else {
                 None
@@ -654,7 +658,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == Some(KeyInfo::KnownKey(key.to_vec())))
         {
             Some(self.operations.remove(index).op)
         } else {
@@ -684,7 +688,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
         if let Some(index) = self
             .operations
             .iter()
-            .position(|op| op.path == path && op.key == KeyInfo::KnownKey(key.to_vec()))
+            .position(|op| op.path == path && op.key == Some(KeyInfo::KnownKey(key.to_vec())))
         {
             let op = &self.operations[index].op;
             let op = if matches!(
