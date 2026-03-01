@@ -1,4 +1,4 @@
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
 use crate::voting::vote_poll::VotePollWasm;
@@ -13,7 +13,7 @@ const TS_TYPES: &str = r#"
  * ResourceVote serialized as a plain object.
  */
 export interface ResourceVoteObject {
-    $version: string;
+    $formatVersion: string;
     votePoll: VotePollObject;
     resourceVoteChoice: ResourceVoteChoiceObject;
 }
@@ -22,7 +22,7 @@ export interface ResourceVoteObject {
  * ResourceVote serialized as JSON.
  */
 export interface ResourceVoteJSON {
-    $version: string;
+    $formatVersion: string;
     votePoll: VotePollJSON;
     resourceVoteChoice: ResourceVoteChoiceJSON;
 }
@@ -98,10 +98,5 @@ impl ResourceVoteWasm {
     }
 }
 
-impl_wasm_conversions!(
-    ResourceVoteWasm,
-    ResourceVote,
-    ResourceVoteObjectJs,
-    ResourceVoteJSONJs
-);
+impl_wasm_conversions_inner!(ResourceVoteWasm, ResourceVote, ResourceVote, ResourceVoteObjectJs, ResourceVoteJSONJs);
 impl_wasm_type_info!(ResourceVoteWasm, ResourceVote);

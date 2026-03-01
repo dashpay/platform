@@ -218,7 +218,8 @@ validation = [
 ]
 # TODO: Tring to remove regexp
 create-contested-document = []
-platform-value-json = ["platform-value/json"]
+json-conversion = []
+platform-value-json = ["platform-value/json", "json-conversion"]
 platform-value-cbor = ["platform-value/cbor"]
 json-schema-validation = [
   "jsonschema",

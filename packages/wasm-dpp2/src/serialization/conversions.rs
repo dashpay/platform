@@ -29,6 +29,64 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
+const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
+/// Recursively stringify JSON numbers that exceed JS Number.MAX_SAFE_INTEGER (2^53-1).
+/// This ensures safe round-tripping through JavaScript where large numbers lose precision.
+pub fn stringify_large_numbers(value: JsonValue) -> JsonValue {
+    match value {
+        JsonValue::Number(ref n) => {
+            if let Some(u) = n.as_u64() {
+                if u > JS_MAX_SAFE_INTEGER {
+                    return JsonValue::String(u.to_string());
+                }
+            } else if let Some(i) = n.as_i64() {
+                if i > JS_MAX_SAFE_INTEGER as i64 || i < -(JS_MAX_SAFE_INTEGER as i64) {
+                    return JsonValue::String(i.to_string());
+                }
+            }
+            value
+        }
+        JsonValue::Array(arr) => {
+            JsonValue::Array(arr.into_iter().map(stringify_large_numbers).collect())
+        }
+        JsonValue::Object(map) => JsonValue::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, stringify_large_numbers(v)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// Recursively parse JSON strings back to numbers if they represent values above
+/// JS Number.MAX_SAFE_INTEGER. This is the reverse of [`stringify_large_numbers`].
+pub fn unstringify_large_numbers(value: JsonValue) -> JsonValue {
+    match value {
+        JsonValue::String(ref s) => {
+            if let Ok(n) = s.parse::<u64>() {
+                if n > JS_MAX_SAFE_INTEGER {
+                    return JsonValue::Number(serde_json::Number::from(n));
+                }
+            } else if let Ok(n) = s.parse::<i64>() {
+                if n < -(JS_MAX_SAFE_INTEGER as i64) {
+                    return JsonValue::Number(serde_json::Number::from(n));
+                }
+            }
+            value
+        }
+        JsonValue::Array(arr) => {
+            JsonValue::Array(arr.into_iter().map(unstringify_large_numbers).collect())
+        }
+        JsonValue::Object(map) => JsonValue::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, unstringify_large_numbers(v)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 /// Try to call toJSON() on a WASM object if it has one.
 ///
 /// Returns Some(result) if the object has a toJSON method and it succeeds,
@@ -248,35 +306,44 @@ fn normalize_map_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
 
 /// Serialize to JsValue as a JS object (non-human-readable).
 ///
-/// Uses the serde-wasm-bindgen serializer with `is_human_readable() -> false`,
-/// so types like OutPoint serialize as bytes (Uint8Array).
-/// Uses `serialize_large_number_types_as_bigints(true)` for u64/i64 -> BigInt.
+/// Serializes through platform_value (non-human-readable) then converts to JsValue.
+/// Identifiers become Uint8Array, u64/i64 become BigInt.
 pub fn to_object<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
-    let serializer = serde_wasm_bindgen::Serializer::new()
-        .serialize_maps_as_objects(true)
-        .serialize_bytes_as_arrays(false)
-        .serialize_large_number_types_as_bigints(true);
-    value
-        .serialize(&serializer)
-        .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))
+    let pv = platform_value::to_value(value)
+        .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
+    platform_value_to_object(&pv)
 }
 
 /// Deserialize from JsValue (non-human-readable).
 ///
-/// Uses the serde-wasm-bindgen deserializer with `is_human_readable() -> false`,
-/// so types like OutPoint expect bytes (Uint8Array).
+/// Converts JsValue to platform_value then deserializes.
+/// Expects Identifiers as Uint8Array, u64/i64 as BigInt.
 pub fn from_object<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
-    serde_wasm_bindgen::from_value(value)
+    let pv = platform_value_from_object(&value)?;
+    platform_value::from_value(pv)
         .map_err(|e| WasmDppError::serialization(format!("fromObject: {}", e)))
 }
 
 /// Serialize to JsValue as JSON-compatible (human-readable).
 ///
-/// Uses `serialize_human_readable(true)` so types like Identifier serialize as base58 strings,
-/// BinaryData as base64 strings, etc.
+/// Uses serde_json (human-readable) so types like Identifier serialize as base58 strings,
+/// BinaryData as base64 strings, etc. Then `stringify_large_numbers()` converts
+/// u64/i64 values above JS MAX_SAFE_INTEGER to strings for safe round-tripping.
 pub fn to_json<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
-    let serializer =
-        serde_wasm_bindgen::Serializer::json_compatible().serialize_human_readable(true);
+    let json = serde_json::to_value(value)
+        .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
+    let json = stringify_large_numbers(json);
+    json_to_js_value(&json)
+}
+
+/// Serialize serde_json::Value to JsValue as JSON-compatible (human-readable).
+///
+/// Like `to_json` but WITHOUT `serialize_large_number_types_as_strings` because
+/// serde_json::Value routes ALL integers (even u8/u16/u32) through serialize_u64/i64,
+/// which would incorrectly stringify small numbers.
+pub fn json_value_to_js(value: &serde_json::Value) -> WasmDppResult<JsValue> {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible()
+        .serialize_human_readable(true);
     value
         .serialize(&serializer)
         .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))
@@ -284,10 +351,12 @@ pub fn to_json<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
 
 /// Deserialize from JsValue (human-readable JSON).
 ///
-/// Uses the human-readable deserializer with `is_human_readable() -> true`,
-/// so types like BinaryData expect base64 strings.
+/// Converts JsValue to serde_json::Value then deserializes with string-to-number
+/// support for large numbers that were stringified by `to_json`.
 pub fn from_json<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
-    serde_wasm_bindgen::from_value_json(value)
+    let json = js_value_to_json(&value)?;
+    let json = unstringify_large_numbers(json);
+    serde_json::from_value(json)
         .map_err(|e| WasmDppError::serialization(format!("fromJSON: {}", e)))
 }
 
@@ -309,12 +378,13 @@ pub fn platform_value_to_object(value: &platform_value::Value) -> WasmDppResult<
 /// Serialize platform_value::Value to JsValue as JSON-compatible (human-readable).
 ///
 /// Converts Value::Identifier and Value::Bytes to base58/base64 strings for JSON compatibility.
+/// Large numbers (> JS MAX_SAFE_INTEGER) are stringified for JavaScript safety.
 pub fn platform_value_to_json(value: &platform_value::Value) -> WasmDppResult<JsValue> {
     let converted = convert_value_for_json(value);
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    converted
-        .serialize(&serializer)
-        .map_err(|e| WasmDppError::serialization(format!("platform_value_to_json: {}", e)))
+    let json = serde_json::to_value(&converted)
+        .map_err(|e| WasmDppError::serialization(format!("platform_value_to_json: {}", e)))?;
+    let json = stringify_large_numbers(json);
+    json_to_js_value(&json)
 }
 
 /// Convert platform_value::Value for JSON serialization.
@@ -486,22 +556,134 @@ pub fn test_js_value_to_json(value: &JsValue) -> Result<JsValue, WasmDppError> {
 }
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
+/// for a wasm_bindgen newtype that wraps an rs-dpp type with `JsonConvertible + ValueConvertible`.
+///
+/// Delegates to the **inner** type's trait methods, then handles JS boundary concerns
+/// (large number stringification, platform_value ↔ JsValue conversion).
+///
+/// Use [`impl_wasm_conversions_serde!`] instead when the inner type does NOT have
+/// `JsonConvertible + ValueConvertible` trait impls.
+///
+/// # Usage
+///
+/// ```ignore
+/// // Basic form: WasmType(InnerType), JsClassName
+/// impl_wasm_conversions_inner!(MyTypeWasm, MyInnerType, MyType);
+///
+/// // With typed return types for better TypeScript support:
+/// impl_wasm_conversions_inner!(MyTypeWasm, MyInnerType, MyType, MyTypeObjectJs, MyTypeJSONJs);
+/// ```
+#[macro_export]
+macro_rules! impl_wasm_conversions_inner {
+    // Three-argument form: returns JsValue
+    ($wasm_ty:ty, $inner_ty:ty, $js_class:ident) => {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
+        impl $wasm_ty {
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
+            pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
+                use dpp::serialization::ValueConvertible;
+                let pv = self.0.to_object()
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toObject: {}", e)))?;
+                $crate::serialization::conversions::platform_value_to_object(&pv)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromObject")]
+            pub fn from_object(
+                obj: wasm_bindgen::JsValue,
+            ) -> Result<$wasm_ty, $crate::error::WasmDppError> {
+                use dpp::serialization::ValueConvertible;
+                let pv = $crate::serialization::conversions::platform_value_from_object(&obj)?;
+                let inner = <$inner_ty>::from_object(pv)
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromObject: {}", e)))?;
+                Ok(Self(inner))
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
+            pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
+                use dpp::serialization::JsonConvertible;
+                let json = self.0.to_json()
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toJSON: {}", e)))?;
+                let json = $crate::serialization::conversions::stringify_large_numbers(json);
+                $crate::serialization::conversions::json_to_js_value(&json)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromJSON")]
+            pub fn from_json(
+                js: wasm_bindgen::JsValue,
+            ) -> Result<$wasm_ty, $crate::error::WasmDppError> {
+                use dpp::serialization::JsonConvertible;
+                let json = $crate::serialization::conversions::js_value_to_json(&js)?;
+                let json = $crate::serialization::conversions::unstringify_large_numbers(json);
+                let inner = <$inner_ty>::from_json(json)
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+                Ok(Self(inner))
+            }
+        }
+    };
+
+    // Five-argument form: with typed Object and JSON return types
+    ($wasm_ty:ty, $inner_ty:ty, $js_class:ident, $object_type:ty, $json_type:ty) => {
+        #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
+        impl $wasm_ty {
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
+            pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
+                use dpp::serialization::ValueConvertible;
+                let pv = self.0.to_object()
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toObject: {}", e)))?;
+                $crate::serialization::conversions::platform_value_to_object(&pv).map(Into::into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromObject")]
+            pub fn from_object(obj: $object_type) -> Result<$wasm_ty, $crate::error::WasmDppError> {
+                use dpp::serialization::ValueConvertible;
+                let pv = $crate::serialization::conversions::platform_value_from_object(&obj.into())?;
+                let inner = <$inner_ty>::from_object(pv)
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromObject: {}", e)))?;
+                Ok(Self(inner))
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
+            pub fn to_json(&self) -> Result<$json_type, $crate::error::WasmDppError> {
+                use dpp::serialization::JsonConvertible;
+                let json = self.0.to_json()
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toJSON: {}", e)))?;
+                let json = $crate::serialization::conversions::stringify_large_numbers(json);
+                $crate::serialization::conversions::json_to_js_value(&json).map(Into::into)
+            }
+
+            #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromJSON")]
+            pub fn from_json(js: $json_type) -> Result<$wasm_ty, $crate::error::WasmDppError> {
+                use dpp::serialization::JsonConvertible;
+                let json = $crate::serialization::conversions::js_value_to_json(&js.into())?;
+                let json = $crate::serialization::conversions::unstringify_large_numbers(json);
+                let inner = <$inner_ty>::from_json(json)
+                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+                Ok(Self(inner))
+            }
+        }
+    };
+}
+
+/// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
 /// for a wasm_bindgen type that implements `Serialize` and `DeserializeOwned`.
 ///
-/// For newtype wrappers (e.g., `struct FooWasm(Foo)`), add `#[serde(transparent)]`
-/// so serde serializes through the inner type automatically.
+/// Serializes the wasm wrapper directly via **serde** (`#[serde(transparent)]`).
+/// Use this as a fallback when the inner type does NOT have
+/// `JsonConvertible + ValueConvertible` trait impls.
+///
+/// Prefer [`impl_wasm_conversions_inner!`] when trait impls are available.
 ///
 /// # Usage
 ///
 /// ```ignore
 /// // Basic form: returns JsValue for all methods
-/// impl_wasm_conversions!(MyTypeWasm, MyType);
+/// impl_wasm_conversions_serde!(MyTypeWasm, MyType);
 ///
 /// // With typed return types for better TypeScript support:
-/// impl_wasm_conversions!(MyTypeWasm, MyType, MyTypeObjectJs, MyTypeJSONJs);
+/// impl_wasm_conversions_serde!(MyTypeWasm, MyType, MyTypeObjectJs, MyTypeJSONJs);
 /// ```
 #[macro_export]
-macro_rules! impl_wasm_conversions {
+macro_rules! impl_wasm_conversions_serde {
     // Two-argument form: returns JsValue
     ($ty:ty, $js_class:ident) => {
         #[wasm_bindgen::prelude::wasm_bindgen(js_class = $js_class)]
@@ -558,3 +740,4 @@ macro_rules! impl_wasm_conversions {
         }
     };
 }
+

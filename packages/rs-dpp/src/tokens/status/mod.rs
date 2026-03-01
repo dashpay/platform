@@ -1,5 +1,8 @@
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::Encode;
 use derive_more::From;
 use platform_serialization::de::Decode;
@@ -22,12 +25,25 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize)
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenStatus {
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "0")
+    )]
     V0(TokenStatusV0),
 }
+
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
+impl JsonConvertible for TokenStatus {}
+#[cfg(feature = "state-transition-serde-conversion")]
+impl ValueConvertible for TokenStatus {}
 
 impl TokenStatus {
     pub fn new(paused: bool, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {

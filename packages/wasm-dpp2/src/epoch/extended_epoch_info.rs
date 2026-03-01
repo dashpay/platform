@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
-use crate::{impl_wasm_conversions, impl_wasm_type_info};
+use crate::impl_wasm_conversions_inner;
+use crate::impl_wasm_type_info;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::BigInt;
@@ -32,13 +33,14 @@ export interface ExtendedEpochInfoObject {
 
 /**
  * ExtendedEpochInfo serialized as JSON.
+ * u64 values within JS safe integer range are numbers, otherwise strings.
  */
 export interface ExtendedEpochInfoJSON {
     index: number;
-    firstBlockTime: string;
-    firstBlockHeight: string;
+    firstBlockTime: number | string;
+    firstBlockHeight: number | string;
     firstCoreBlockHeight: number;
-    feeMultiplierPermille: string;
+    feeMultiplierPermille: number | string;
     protocolVersion: number;
 }
 "#;
@@ -200,10 +202,5 @@ impl ExtendedEpochInfoWasm {
     }
 }
 
-impl_wasm_conversions!(
-    ExtendedEpochInfoWasm,
-    ExtendedEpochInfo,
-    ExtendedEpochInfoObjectJs,
-    ExtendedEpochInfoJSONJs
-);
+impl_wasm_conversions_inner!(ExtendedEpochInfoWasm, ExtendedEpochInfo, ExtendedEpochInfo, ExtendedEpochInfoObjectJs, ExtendedEpochInfoJSONJs);
 impl_wasm_type_info!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

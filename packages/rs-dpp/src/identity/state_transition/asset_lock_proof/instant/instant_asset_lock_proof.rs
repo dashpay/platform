@@ -14,6 +14,9 @@ use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::prelude::Identifier;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_double;
@@ -191,6 +194,10 @@ impl InstantAssetLockProof {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for InstantAssetLockProof {}
+impl ValueConvertible for InstantAssetLockProof {}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]

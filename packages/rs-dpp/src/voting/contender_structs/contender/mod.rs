@@ -3,6 +3,9 @@ pub mod v0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::Document;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;
 use crate::voting::contender_structs::ContenderWithSerializedDocumentV0;
@@ -34,13 +37,19 @@ pub enum Contender {
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "camelCase")
+    serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)]
 pub enum ContenderWithSerializedDocument {
     /// V0
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(ContenderWithSerializedDocumentV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+impl JsonConvertible for ContenderWithSerializedDocument {}
+#[cfg(feature = "state-transition-serde-conversion")]
+impl ValueConvertible for ContenderWithSerializedDocument {}
 
 impl Contender {
     pub fn identity_id(&self) -> Identifier {

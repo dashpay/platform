@@ -480,7 +480,7 @@ mod test {
                     ("$id", Value::Identifier([0_u8; 32])),
                     ("id", Value::Identifier([0_u8; 32])),
                     ("$schema", Value::Text("schema".to_string())),
-                    ("$format_version", Value::Text("0".to_string())),
+                    ("$formatVersion", Value::Text("0".to_string())),
                     ("version", Value::U32(0)),
                     ("documentSchemas", documents),
                     ("ownerId", Value::Identifier([0_u8; 32])),

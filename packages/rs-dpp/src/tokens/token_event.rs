@@ -10,6 +10,9 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -145,6 +148,11 @@ pub enum TokenEvent {
     /// - `Credits`: The number of credits paid.
     DirectPurchase(TokenAmount, Credits),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+impl JsonConvertible for TokenEvent {}
+#[cfg(feature = "state-transition-serde-conversion")]
+impl ValueConvertible for TokenEvent {}
 
 impl fmt::Display for TokenEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

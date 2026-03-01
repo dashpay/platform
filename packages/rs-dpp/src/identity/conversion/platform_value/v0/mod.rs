@@ -2,10 +2,10 @@ use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use platform_value::Value;
 
-pub trait IdentityPlatformValueConversionMethodsV0<'a>: ValueConvertible<'a> {
+pub trait IdentityPlatformValueConversionMethodsV0: ValueConvertible {
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
         self.to_object()
     }

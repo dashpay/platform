@@ -6859,7 +6859,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let contract_value = platform_value!({
-            "$format_version": "0",
+            "$formatVersion": "0",
             "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
             "version": 1,
             "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",

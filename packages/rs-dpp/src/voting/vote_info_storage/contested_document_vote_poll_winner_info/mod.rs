@@ -1,3 +1,6 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -22,3 +25,7 @@ impl fmt::Display for ContestedDocumentVotePollWinnerInfo {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for ContestedDocumentVotePollWinnerInfo {}
+impl ValueConvertible for ContestedDocumentVotePollWinnerInfo {}

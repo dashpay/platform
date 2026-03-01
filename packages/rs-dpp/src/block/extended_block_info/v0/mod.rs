@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Extended Block information
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtendedBlockInfoV0 {
     /// Basic block info
     pub basic_info: BlockInfo,

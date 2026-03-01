@@ -52,7 +52,7 @@ use std::fmt::Formatter;
         feature = "state-transition-serde-conversion"
     ),
     derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 pub enum Document {
     #[cfg_attr(

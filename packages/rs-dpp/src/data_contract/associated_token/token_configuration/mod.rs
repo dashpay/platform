@@ -1,4 +1,7 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
@@ -10,7 +13,7 @@ mod methods;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum TokenConfiguration {
     #[serde(rename = "0")]
     V0(TokenConfigurationV0),
@@ -22,6 +25,10 @@ impl TokenConfiguration {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for TokenConfiguration {}
+impl ValueConvertible for TokenConfiguration {}
 
 impl fmt::Display for TokenConfiguration {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

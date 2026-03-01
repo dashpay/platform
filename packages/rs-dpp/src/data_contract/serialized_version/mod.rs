@@ -95,7 +95,7 @@ impl fmt::Display for DataContractMismatch {
 #[cfg_attr(
     feature = "data-contract-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$format_version")
+    serde(tag = "$formatVersion")
 )]
 pub enum DataContractInSerializationFormat {
     #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]

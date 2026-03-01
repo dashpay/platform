@@ -569,7 +569,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let contract = platform_value!({
-            "$format_version": "0",
+            "$formatVersion": "0",
             "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
             "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
             "version": 1,

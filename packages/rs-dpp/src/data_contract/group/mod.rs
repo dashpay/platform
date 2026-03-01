@@ -3,6 +3,9 @@ use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::v0::GroupV0;
 use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -33,7 +36,7 @@ pub type GroupRequiredPower = u32;
     Eq,
 )]
 #[platform_serialize(unversioned)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum Group {
     #[serde(rename = "0")]
     V0(GroupV0),
@@ -101,3 +104,7 @@ impl GroupMethodsV0 for Group {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for Group {}
+impl ValueConvertible for Group {}

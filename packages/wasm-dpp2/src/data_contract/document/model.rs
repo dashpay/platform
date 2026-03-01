@@ -516,7 +516,11 @@ impl DocumentWasm {
 
     /// Create a Document from a JS object.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: DocumentObjectJs) -> WasmDppResult<DocumentWasm> {
+    pub fn from_object(
+        value: DocumentObjectJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<DocumentWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
 
         let Value::Map(mut map) = platform_value else {
@@ -549,7 +553,7 @@ impl DocumentWasm {
         });
 
         // Create Document from remaining fields
-        let document = Document::from_platform_value(Value::Map(map), PlatformVersion::latest())?;
+        let document = Document::from_platform_value(Value::Map(map), &platform_version)?;
 
         Ok(DocumentWasm::new(
             document,
@@ -561,9 +565,10 @@ impl DocumentWasm {
 
     /// Convert to a JSON-compatible JS object with binary fields as strings.
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<DocumentJSONJs> {
+    pub fn to_json(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<DocumentJSONJs> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         // Get document fields as JSON
-        let mut json_value = self.document.to_json(PlatformVersion::latest())?;
+        let mut json_value = self.document.to_json(&platform_version)?;
 
         // Serialize wrapper fields using serde and merge into document JSON
         let wrapper_json =
@@ -586,7 +591,11 @@ impl DocumentWasm {
     /// Create a Document from a JSON object.
     /// JSON format has identifiers as base58 strings.
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(value: DocumentJSONJs) -> WasmDppResult<DocumentWasm> {
+    pub fn from_json(
+        value: DocumentJSONJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<DocumentWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let mut json_value = serialization::js_value_to_json(&value.into())?;
 
         // Deserialize wrapper fields using serde
@@ -602,7 +611,7 @@ impl DocumentWasm {
 
         // Create Document from remaining fields
         wrapper.document =
-            Document::from_json_value::<String, _>(json_value, PlatformVersion::latest())?;
+            Document::from_json_value::<String, _>(json_value, &platform_version)?;
 
         Ok(wrapper)
     }

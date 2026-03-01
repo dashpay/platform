@@ -6,6 +6,9 @@ use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
@@ -14,7 +17,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
+#[serde(tag = "$formatVersion")]
 pub enum ChangeControlRules {
+    #[serde(rename = "0")]
     V0(ChangeControlRulesV0),
 }
 
@@ -126,6 +131,10 @@ impl ChangeControlRules {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for ChangeControlRules {}
+impl ValueConvertible for ChangeControlRules {}
 
 impl fmt::Display for ChangeControlRules {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

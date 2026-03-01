@@ -2,6 +2,9 @@ use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::{
     Abstain, Lock, TowardsIdentity,
 };
 use crate::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
@@ -41,6 +44,11 @@ impl fmt::Display for ResourceVoteChoice {
         }
     }
 }
+
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+impl JsonConvertible for ResourceVoteChoice {}
+#[cfg(feature = "vote-serde-conversion")]
+impl ValueConvertible for ResourceVoteChoice {}
 
 impl TryFrom<(i32, Option<Vec<u8>>)> for ResourceVoteChoice {
     type Error = ProtocolError;

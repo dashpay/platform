@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg_attr(
    any( feature = "identity-serde-conversion" ,feature = "state-transition-serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version"),
+    serde(tag = "$formatVersion"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
 #[cfg_attr(

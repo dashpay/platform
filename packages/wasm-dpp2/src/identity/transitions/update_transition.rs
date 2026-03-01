@@ -3,7 +3,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u32, try_to_u64};
@@ -55,8 +55,8 @@ export interface IdentityUpdateTransitionObject {
  */
 export interface IdentityUpdateTransitionJSON {
     identityId: string;
-    revision: string;
-    nonce: string;
+    revision: number | string;
+    nonce: number | string;
     addPublicKeys: IdentityPublicKeyInCreationJSON[];
     disablePublicKeys: number[];
     userFeeIncrease: number;
@@ -91,6 +91,18 @@ struct IdentityUpdateTransitionOptionsInput {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
+
+impl From<IdentityUpdateTransition> for IdentityUpdateTransitionWasm {
+    fn from(val: IdentityUpdateTransition) -> Self {
+        IdentityUpdateTransitionWasm(val)
+    }
+}
+
+impl From<IdentityUpdateTransitionWasm> for IdentityUpdateTransition {
+    fn from(val: IdentityUpdateTransitionWasm) -> Self {
+        val.0
+    }
+}
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
@@ -334,10 +346,5 @@ impl IdentityUpdateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
-    IdentityUpdateTransitionWasm,
-    IdentityUpdateTransition,
-    IdentityUpdateTransitionObjectJs,
-    IdentityUpdateTransitionJSONJs
-);
+impl_wasm_conversions_inner!(IdentityUpdateTransitionWasm, IdentityUpdateTransition, IdentityUpdateTransition, IdentityUpdateTransitionObjectJs, IdentityUpdateTransitionJSONJs);
 impl_wasm_type_info!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

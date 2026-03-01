@@ -44,7 +44,7 @@ pub type AddressFundingFromAssetLockTransitionLatest = AddressFundingFromAssetLo
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(

@@ -8,9 +8,9 @@ use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
 pub use v0::IdentityPlatformValueConversionMethodsV0;
 
-impl ValueConvertible<'_> for Identity {}
+impl ValueConvertible for Identity {}
 
-impl IdentityPlatformValueConversionMethodsV0<'_> for Identity {}
+impl IdentityPlatformValueConversionMethodsV0 for Identity {}
 
 impl TryFromPlatformVersioned<Value> for Identity {
     type Error = ProtocolError;

@@ -9,9 +9,16 @@ use crate::state_transition::identity_credit_withdrawal_transition::IdentityCred
 use crate::state_transition::state_transitions::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for IdentityCreditWithdrawalTransition {}
+impl ValueConvertible for IdentityCreditWithdrawalTransition {}
 
 impl StateTransitionValueConvert<'_> for IdentityCreditWithdrawalTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

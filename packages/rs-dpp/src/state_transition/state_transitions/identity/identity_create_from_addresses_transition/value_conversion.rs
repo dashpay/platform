@@ -13,7 +13,7 @@ use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl ValueConvertible<'_> for IdentityCreateFromAddressesTransition {}
+impl ValueConvertible for IdentityCreateFromAddressesTransition {}
 
 impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

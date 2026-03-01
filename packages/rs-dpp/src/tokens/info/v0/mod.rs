@@ -1,5 +1,6 @@
 use bincode::{Decode, Encode};
 use derive_more::From;
+
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 #[cfg_attr(
     any(
@@ -30,3 +31,4 @@ impl IdentityTokenInfoV0Accessors for IdentityTokenInfoV0 {
         self.frozen = frozen;
     }
 }
+

@@ -283,6 +283,101 @@ describe('IdentityPublicKey', () => {
     });
   });
 
+  describe('toJSON()', () => {
+    it('should serialize to JSON with expected fixture values', () => {
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+      });
+
+      const json = pubKey.toJSON();
+
+      expect(json.id).to.equal(keyId);
+      expect(json.purpose).to.equal(0); // AUTHENTICATION
+      expect(json.securityLevel).to.equal(1); // CRITICAL
+      expect(json.contractBounds).to.be.null();
+      expect(json.type).to.equal(0); // ECDSA_SECP256K1
+      expect(json.readOnly).to.equal(false);
+      expect(Array.from(json.data)).to.deep.equal(Array.from(binaryData));
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should deserialize from JSON and verify all fields via getters', () => {
+      const jsonFixture = {
+        $formatVersion: '0',
+        id: keyId,
+        purpose: 0,
+        securityLevel: 1,
+        contractBounds: null,
+        type: 0,
+        readOnly: false,
+        data: 'A2o5QxLkDoHZKP3iveeIAHDk+pwdHZsWjacH6kaK+itI',
+      };
+
+      const pubKey = wasm.IdentityPublicKey.fromJSON(jsonFixture);
+
+      expect(pubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
+      expect(pubKey.keyId).to.equal(keyId);
+      expect(pubKey.purpose).to.equal('AUTHENTICATION');
+      expect(pubKey.securityLevel).to.equal('CRITICAL');
+      expect(pubKey.keyType).to.equal('ECDSA_SECP256K1');
+      expect(pubKey.isReadOnly).to.equal(false);
+      expect(pubKey.data).to.equal(binaryDataHex);
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should serialize to Object with expected fixture values', () => {
+      const pubKey = new wasm.IdentityPublicKey({
+        keyId,
+        purpose,
+        securityLevel,
+        keyType,
+        isReadOnly: false,
+        data: binaryData,
+      });
+
+      const obj = pubKey.toObject();
+
+      expect(obj.id).to.equal(keyId);
+      expect(obj.purpose).to.equal(0); // AUTHENTICATION
+      expect(obj.securityLevel).to.equal(1); // CRITICAL
+      expect(obj.type).to.equal(0); // ECDSA_SECP256K1
+      expect(obj.readOnly).to.equal(false);
+      expect(obj.data).to.be.an.instanceof(Uint8Array);
+      expect(obj.data).to.deep.equal(binaryData);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should deserialize from Object and verify all fields via getters', () => {
+      const objectFixture = {
+        $formatVersion: '0',
+        id: keyId,
+        purpose: 0,
+        securityLevel: 1,
+        type: 0,
+        readOnly: false,
+        data: binaryData,
+      };
+
+      const pubKey = wasm.IdentityPublicKey.fromObject(objectFixture);
+
+      expect(pubKey).to.be.an.instanceof(wasm.IdentityPublicKey);
+      expect(pubKey.keyId).to.equal(keyId);
+      expect(pubKey.purpose).to.equal('AUTHENTICATION');
+      expect(pubKey.securityLevel).to.equal('CRITICAL');
+      expect(pubKey.keyType).to.equal('ECDSA_SECP256K1');
+      expect(pubKey.isReadOnly).to.equal(false);
+      expect(pubKey.data).to.equal(binaryDataHex);
+    });
+  });
+
   describe('validatePrivateKey()', () => {
     it('should validate private key against public key', () => {
       const pubKey = new wasm.IdentityPublicKey({

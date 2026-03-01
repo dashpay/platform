@@ -27,7 +27,7 @@ mod version;
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]

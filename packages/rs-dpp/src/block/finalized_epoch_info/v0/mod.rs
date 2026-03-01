@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 /// Finalized Epoch information
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FinalizedEpochInfoV0 {
     /// First block time
     pub first_block_time: TimestampMillis,

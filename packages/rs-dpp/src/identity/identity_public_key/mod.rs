@@ -48,7 +48,7 @@ pub type TimestampMillis = u64;
     PartialOrd,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
-#[serde(tag = "$version")]
+#[serde(tag = "$formatVersion")]
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),

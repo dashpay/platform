@@ -33,14 +33,14 @@
 //! ```
 //!
 //! Deserialization from a platform `BTreeMap<String, Value>` requires a
-//! `$format_version` key. For V0 the map may contain:
+//! `$formatVersion` key. For V0 the map may contain:
 //! - `paymentTokenContractId` (`Identifier` as bytes)
 //! - `tokenContractPosition` (`u16`)
 //! - `minimumTokenCost` (`u64`)
 //! - `maximumTokenCost` (`u64`)
 //! - `gasFeesPaidBy` (one of: `"DocumentOwner"`, `"ContractOwner"`, `"PreferContractOwner"`)
 //!
-//! Unknown `$format_version` values yield an `UnknownVersionMismatch` error.
+//! Unknown `$formatVersion` values yield an `UnknownVersionMismatch` error.
 //!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
@@ -181,10 +181,10 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     type Error = ProtocolError;
 
     fn try_from(map: BTreeMap<String, Value>) -> Result<Self, Self::Error> {
-        // Expect a `$format_version` discriminator and dispatch to the
+        // Expect a `$formatVersion` discriminator and dispatch to the
         // corresponding versioned structure. This allows backward-compatible
         // support for older serialized payloads.
-        let format_version = map.get_str("$format_version")?;
+        let format_version = map.get_str("$formatVersion")?;
         match format_version {
             "0" => {
                 let token_payment_info: TokenPaymentInfoV0 = map.try_into()?;
@@ -208,7 +208,7 @@ impl TryFrom<TokenPaymentInfo> for Value {
     /// Serialize the versioned token payment info into a platform `Value`.
     ///
     /// This mirrors the map format accepted by `TryFrom<BTreeMap<String, Value>>`,
-    /// including the `$format_version` discriminator.
+    /// including the `$formatVersion` discriminator.
     fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }

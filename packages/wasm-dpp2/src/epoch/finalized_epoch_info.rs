@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::impl_from_for_extern_type;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::{JsMapExt, try_from_options_with, try_to_map, try_to_u64};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
@@ -71,19 +72,20 @@ export interface FinalizedEpochInfoObject {
 
 /**
  * FinalizedEpochInfo serialized as JSON.
+ * u64 values within JS safe integer range are numbers, otherwise strings.
  */
 export interface FinalizedEpochInfoJSON {
-    firstBlockTime: string;
-    firstBlockHeight: string;
-    totalBlocksInEpoch: string;
+    firstBlockTime: number | string;
+    firstBlockHeight: number | string;
+    totalBlocksInEpoch: number | string;
     firstCoreBlockHeight: number;
     nextEpochStartCoreBlockHeight: number;
-    totalProcessingFees: string;
-    totalDistributedStorageFees: string;
-    totalCreatedStorageFees: string;
-    coreBlockRewards: string;
-    blockProposers: Record<string, string>;
-    feeMultiplierPermille: string;
+    totalProcessingFees: number | string;
+    totalDistributedStorageFees: number | string;
+    totalCreatedStorageFees: number | string;
+    coreBlockRewards: number | string;
+    blockProposers: Record<string, number | string>;
+    feeMultiplierPermille: number | string;
     protocolVersion: number;
 }
 "#;
@@ -371,10 +373,5 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-crate::impl_wasm_conversions!(
-    FinalizedEpochInfoWasm,
-    FinalizedEpochInfo,
-    FinalizedEpochInfoObjectJs,
-    FinalizedEpochInfoJSONJs
-);
+impl_wasm_conversions_inner!(FinalizedEpochInfoWasm, FinalizedEpochInfo, FinalizedEpochInfo, FinalizedEpochInfoObjectJs, FinalizedEpochInfoJSONJs);
 impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

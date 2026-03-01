@@ -2,6 +2,9 @@ use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
 };
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -18,13 +21,13 @@ pub type ContractBoundsType = u8;
 #[derive(
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]
     SingleContract { id: Identifier } = 0,
     /// this key can only be used within a specific contract and for a specific document type
-    #[serde(rename = "documentType")]
+    #[serde(rename = "documentType", rename_all = "camelCase")]
     SingleContractDocumentType {
         id: Identifier,
         document_type_name: String,
@@ -156,3 +159,7 @@ impl ContractBounds {
     //     )
     // }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for ContractBounds {}
+impl ValueConvertible for ContractBounds {}

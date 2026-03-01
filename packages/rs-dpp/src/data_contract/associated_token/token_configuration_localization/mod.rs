@@ -1,4 +1,7 @@
 use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::Encode;
 use derive_more::From;
 use platform_serialization::de::Decode;
@@ -17,7 +20,7 @@ pub mod v0;
 /// This structure is used to map language codes to localized token names in a flexible,
 /// forward-compatible manner.
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum TokenConfigurationLocalization {
     /// Version 0 of the token localization schema.
     ///
@@ -26,6 +29,10 @@ pub enum TokenConfigurationLocalization {
     #[serde(rename = "0")]
     V0(TokenConfigurationLocalizationV0),
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for TokenConfigurationLocalization {}
+impl ValueConvertible for TokenConfigurationLocalization {}
 
 impl fmt::Display for TokenConfigurationLocalization {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

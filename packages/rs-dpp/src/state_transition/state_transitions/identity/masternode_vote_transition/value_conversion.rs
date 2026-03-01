@@ -9,11 +9,15 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::masternode_vote_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl ValueConvertible<'_> for MasternodeVoteTransition {}
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for MasternodeVoteTransition {}
+impl ValueConvertible for MasternodeVoteTransition {}
 
 impl StateTransitionValueConvert<'_> for MasternodeVoteTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

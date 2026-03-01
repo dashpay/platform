@@ -1,5 +1,5 @@
 use crate::group::token_event::TokenEventWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -83,10 +83,5 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(
-    GroupActionEventWasm,
-    GroupActionEvent,
-    GroupActionEventObjectJs,
-    GroupActionEventJSONJs
-);
+impl_wasm_conversions_inner!(GroupActionEventWasm, GroupActionEvent, GroupActionEvent, GroupActionEventObjectJs, GroupActionEventJSONJs);
 impl_wasm_type_info!(GroupActionEventWasm, GroupActionEvent);

@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 pub use v0::*;
 
-impl ValueConvertible<'_> for IdentityPublicKey {}
+impl ValueConvertible for IdentityPublicKey {}
 
 impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
     fn to_object(&self) -> Result<Value, ProtocolError> {

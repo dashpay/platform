@@ -6,7 +6,7 @@ pub mod accessors;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum TokenKeepsHistoryRules {
     #[serde(rename = "0")]
     V0(TokenKeepsHistoryRulesV0),

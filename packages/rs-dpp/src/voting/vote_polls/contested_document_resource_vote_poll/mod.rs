@@ -1,4 +1,7 @@
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -22,6 +25,11 @@ pub struct ContestedDocumentResourceVotePoll {
     pub index_name: String,
     pub index_values: Vec<Value>,
 }
+
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+impl JsonConvertible for ContestedDocumentResourceVotePoll {}
+#[cfg(feature = "vote-serde-conversion")]
+impl ValueConvertible for ContestedDocumentResourceVotePoll {}
 
 impl fmt::Display for ContestedDocumentResourceVotePoll {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

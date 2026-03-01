@@ -6,7 +6,7 @@ pub mod accessors;
 pub mod v0;
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum TokenMarketplaceRules {
     #[serde(rename = "0")]
     V0(TokenMarketplaceRulesV0),

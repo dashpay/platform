@@ -1,3 +1,5 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
@@ -9,7 +11,9 @@ use platform_value::Value;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::collections::BTreeMap;
 
-impl ValueConvertible<'_> for IdentityPublicKeyInCreation {}
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for IdentityPublicKeyInCreation {}
+impl ValueConvertible for IdentityPublicKeyInCreation {}
 
 impl StateTransitionValueConvert<'_> for IdentityPublicKeyInCreation {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

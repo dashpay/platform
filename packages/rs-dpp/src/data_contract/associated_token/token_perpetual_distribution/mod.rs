@@ -27,7 +27,7 @@ pub mod v0;
     PartialOrd,
     From,
 )]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 #[platform_serialize(unversioned)]
 pub enum TokenPerpetualDistribution {
     #[serde(rename = "0")]

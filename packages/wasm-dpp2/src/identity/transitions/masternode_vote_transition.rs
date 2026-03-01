@@ -2,7 +2,7 @@ use crate::VoteWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_to_u32, try_to_u64};
@@ -54,7 +54,7 @@ export interface MasternodeVoteTransitionJSON {
     proTxHash: string;
     voterIdentityId: string;
     vote: VoteJSON;
-    nonce: string;
+    nonce: number | string;
     signaturePublicKeyId?: number;
     signature?: string;
 }
@@ -299,8 +299,9 @@ impl MasternodeVoteTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     MasternodeVoteTransitionWasm,
+    MasternodeVoteTransition,
     MasternodeVoteTransition,
     MasternodeVoteTransitionObjectJs,
     MasternodeVoteTransitionJSONJs

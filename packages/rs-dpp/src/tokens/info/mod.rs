@@ -1,5 +1,8 @@
 use crate::tokens::info::v0::IdentityTokenInfoV0;
 use crate::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::Encode;
 use derive_more::From;
 use platform_serialization::de::Decode;
@@ -26,11 +29,33 @@ pub mod v0;
         feature = "fixtures-and-mocks",
         feature = "state-transition-serde-conversion"
     ),
-    derive(serde::Serialize, serde::Deserialize)
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "$formatVersion")
 )]
 pub enum IdentityTokenInfo {
+    #[cfg_attr(
+        any(
+            feature = "fixtures-and-mocks",
+            feature = "state-transition-serde-conversion"
+        ),
+        serde(rename = "0")
+    )]
     V0(IdentityTokenInfoV0),
 }
+
+#[cfg(all(
+    feature = "json-conversion",
+    any(
+        feature = "fixtures-and-mocks",
+        feature = "state-transition-serde-conversion"
+    )
+))]
+impl JsonConvertible for IdentityTokenInfo {}
+#[cfg(any(
+    feature = "fixtures-and-mocks",
+    feature = "state-transition-serde-conversion"
+))]
+impl ValueConvertible for IdentityTokenInfo {}
 
 impl IdentityTokenInfo {
     pub fn new(frozen: bool, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {

@@ -407,7 +407,7 @@ mod test {
                 ("version", Value::U32(0)),
                 ("ownerId", Value::Identifier([0_u8; 32])),
                 ("documentSchemas", documents),
-                ("$format_version", Value::Text("0".to_string())),
+                ("$formatVersion", Value::Text("0".to_string())),
             ]),
             true,
             platform_version,

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Extended Epoch information
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtendedEpochInfoV0 {
     /// The index of the epoch
     pub index: EpochIndex,

@@ -57,7 +57,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(

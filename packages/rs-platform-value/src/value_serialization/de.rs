@@ -446,6 +446,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.0 {
+            // Existing CBOR enum types — keep for backward compatibility
             Value::EnumU8(x) => {
                 let enum_variant = x.first().ok_or_else(|| {
                     de::Error::invalid_length(0, &"at least one variant expected")
@@ -460,7 +461,33 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
                     .clone();
                 visitor.visit_enum(variant_name.into_deserializer())
             }
-            _ => Err(de::Error::invalid_type((&self.0).into(), &"enum")),
+
+            // String → unit variant (e.g., "Abstain", "Lock", "NoWinner")
+            Value::Text(variant) => visitor.visit_enum(ValueEnumDeserializer {
+                variant,
+                value: None,
+            }),
+
+            // Single-key map → externally tagged variant
+            // e.g., {"TowardsIdentity": <data>} or {"ResourceVote": {...}}
+            Value::Map(entries) if entries.len() == 1 => {
+                let (key, value) = entries.into_iter().next().unwrap();
+                let variant = match key {
+                    Value::Text(s) => s,
+                    other => {
+                        return Err(de::Error::invalid_type(
+                            (&other).into(),
+                            &"string variant name",
+                        ))
+                    }
+                };
+                visitor.visit_enum(ValueEnumDeserializer {
+                    variant,
+                    value: Some(value),
+                })
+            }
+
+            other => Err(de::Error::invalid_type((&other).into(), &"enum")),
         }
     }
 
@@ -513,6 +540,83 @@ impl<'de> de::MapAccess<'de> for ValueMapDeserializer<'_> {
             .1
             .clone(); // TODO
         seed.deserialize(Deserializer(map_value))
+    }
+}
+
+/// EnumAccess for deserializing externally-tagged enums from Value.
+struct ValueEnumDeserializer {
+    variant: String,
+    value: Option<Value>,
+}
+
+impl<'de> de::EnumAccess<'de> for ValueEnumDeserializer {
+    type Error = Error;
+    type Variant = ValueVariantDeserializer;
+
+    fn variant_seed<V: de::DeserializeSeed<'de>>(
+        self,
+        seed: V,
+    ) -> Result<(V::Value, Self::Variant), Self::Error> {
+        let variant = seed.deserialize(self.variant.into_deserializer())?;
+        Ok((variant, ValueVariantDeserializer { value: self.value }))
+    }
+}
+
+/// VariantAccess that delegates to Deserializer<Value> for variant data.
+struct ValueVariantDeserializer {
+    value: Option<Value>,
+}
+
+impl<'de> de::VariantAccess<'de> for ValueVariantDeserializer {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        match self.value {
+            None => Ok(()),
+            Some(Value::Null) => Ok(()),
+            Some(other) => Err(de::Error::invalid_type((&other).into(), &"unit variant")),
+        }
+    }
+
+    fn newtype_variant_seed<T: de::DeserializeSeed<'de>>(
+        self,
+        seed: T,
+    ) -> Result<T::Value, Self::Error> {
+        match self.value {
+            Some(value) => seed.deserialize(Deserializer(value)),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"newtype variant",
+            )),
+        }
+    }
+
+    fn tuple_variant<V: de::Visitor<'de>>(
+        self,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        match self.value {
+            Some(value) => Deserializer(value).deserialize_seq(visitor),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"tuple variant",
+            )),
+        }
+    }
+
+    fn struct_variant<V: de::Visitor<'de>>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        match self.value {
+            Some(value) => Deserializer(value).deserialize_map(visitor),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"struct variant",
+            )),
+        }
     }
 }
 

@@ -9,11 +9,15 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 use crate::state_transition::state_transitions::identity_update_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl ValueConvertible<'_> for IdentityUpdateTransition {}
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for IdentityUpdateTransition {}
+impl ValueConvertible for IdentityUpdateTransition {}
 impl StateTransitionValueConvert<'_> for IdentityUpdateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {

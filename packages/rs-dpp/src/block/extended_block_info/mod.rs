@@ -3,6 +3,9 @@ use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
 use crate::protocol_error::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 
 use crate::version::FeatureVersion;
 use bincode::{Decode, Encode};
@@ -27,7 +30,9 @@ pub mod v0;
     From,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
+#[serde(tag = "$formatVersion")]
 pub enum ExtendedBlockInfo {
+    #[serde(rename = "0")]
     V0(ExtendedBlockInfoV0),
 }
 
@@ -138,6 +143,10 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for ExtendedBlockInfo {}
+impl ValueConvertible for ExtendedBlockInfo {}
 
 #[cfg(test)]
 mod tests {

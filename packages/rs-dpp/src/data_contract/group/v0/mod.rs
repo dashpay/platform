@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
     PartialEq,
     Eq,
 )]
+#[serde(rename_all = "camelCase")]
 #[platform_serialize(unversioned)]
 pub struct GroupV0 {
     pub members: BTreeMap<Identifier, GroupMemberPower>,

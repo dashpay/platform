@@ -39,12 +39,13 @@ describe('ChangeControlRules', () => {
   });
 
   describe('authorizedToMakeChange', () => {
-    it('should return authorizedToMakeChange', () => {
+    it('should return authorizedToMakeChange with correct value', () => {
       const noOne = wasm.AuthorizedActionTakers.NoOne();
 
       const changeRules = createChangeControlRules(noOne, noOne);
 
-      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakers');
+      expect(changeRules.authorizedToMakeChange).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.authorizedToMakeChange.takerType).to.equal('NoOne');
     });
 
     it('should set authorizedToMakeChange', () => {
@@ -56,19 +57,19 @@ describe('ChangeControlRules', () => {
 
       changeRules.authorizedToMakeChange = newActionTaker;
 
-      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakers');
-      expect(changeRules.authorizedToMakeChange.takerType).to.deep.equal('ContractOwner');
-      expect(newActionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.authorizedToMakeChange).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.authorizedToMakeChange.takerType).to.equal('ContractOwner');
     });
   });
 
   describe('adminActionTakers', () => {
-    it('should return adminActionTakers', () => {
+    it('should return adminActionTakers with correct value', () => {
       const noOne = wasm.AuthorizedActionTakers.NoOne();
 
       const changeRules = createChangeControlRules(noOne, noOne);
 
-      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakers');
+      expect(changeRules.adminActionTakers).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.adminActionTakers.takerType).to.equal('NoOne');
     });
 
     it('should set adminActionTakers', () => {
@@ -80,9 +81,8 @@ describe('ChangeControlRules', () => {
 
       changeRules.adminActionTakers = newActionTaker;
 
-      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakers');
-      expect(changeRules.adminActionTakers.takerType).to.deep.equal('ContractOwner');
-      expect(newActionTaker).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.adminActionTakers).to.be.an.instanceof(wasm.AuthorizedActionTakers);
+      expect(changeRules.adminActionTakers.takerType).to.equal('ContractOwner');
     });
   });
 
@@ -132,7 +132,7 @@ describe('ChangeControlRules', () => {
 
       const changeRules = createChangeControlRules(noOne, noOne);
 
-      expect(changeRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(true);
+      expect(changeRules.isSelfChangingAdminActionTakersAllowed).to.equal(true);
     });
 
     it('should set isSelfChangingAdminActionTakersAllowed', () => {
@@ -142,7 +142,7 @@ describe('ChangeControlRules', () => {
 
       changeRules.isSelfChangingAdminActionTakersAllowed = false;
 
-      expect(changeRules.isSelfChangingAdminActionTakersAllowed).to.deep.equal(false);
+      expect(changeRules.isSelfChangingAdminActionTakersAllowed).to.equal(false);
     });
   });
 });

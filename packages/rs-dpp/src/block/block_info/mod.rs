@@ -1,5 +1,8 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -16,6 +19,7 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // @immutable
 /// Block information
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: TimestampMillis,
@@ -97,3 +101,7 @@ impl BlockInfo {
         }
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for BlockInfo {}
+impl ValueConvertible for BlockInfo {}

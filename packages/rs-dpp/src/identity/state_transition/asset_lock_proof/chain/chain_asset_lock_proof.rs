@@ -2,6 +2,9 @@ use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::{identifier::Identifier, ProtocolError};
 use dashcore::OutPoint;
@@ -50,3 +53,7 @@ impl ChainAssetLockProof {
         Identifier::new(hash)
     }
 }
+
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for ChainAssetLockProof {}
+impl ValueConvertible for ChainAssetLockProof {}

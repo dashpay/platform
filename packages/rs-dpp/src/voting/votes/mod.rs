@@ -3,6 +3,9 @@ pub mod resource_vote;
 use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use crate::voting::votes::resource_vote::ResourceVote;
 use crate::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -20,6 +23,11 @@ use serde::{Deserialize, Serialize};
 pub enum Vote {
     ResourceVote(ResourceVote),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+impl JsonConvertible for Vote {}
+#[cfg(feature = "vote-serde-conversion")]
+impl ValueConvertible for Vote {}
 
 impl Default for Vote {
     fn default() -> Self {

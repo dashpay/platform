@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -111,10 +111,5 @@ impl ChainAssetLockProofWasm {
     }
 }
 
-impl_wasm_conversions!(
-    ChainAssetLockProofWasm,
-    ChainAssetLockProof,
-    ChainAssetLockProofObjectJs,
-    ChainAssetLockProofJSONJs
-);
+impl_wasm_conversions_inner!(ChainAssetLockProofWasm, ChainAssetLockProof, ChainAssetLockProof, ChainAssetLockProofObjectJs, ChainAssetLockProofJSONJs);
 impl_wasm_type_info!(ChainAssetLockProofWasm, ChainAssetLockProof);

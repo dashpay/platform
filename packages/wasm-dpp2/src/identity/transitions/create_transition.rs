@@ -2,7 +2,7 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u16};
@@ -256,10 +256,5 @@ impl IdentityCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
-    IdentityCreateTransitionWasm,
-    IdentityCreateTransition,
-    IdentityCreateTransitionObjectJs,
-    IdentityCreateTransitionJSONJs
-);
+impl_wasm_conversions_inner!(IdentityCreateTransitionWasm, IdentityCreateTransition, IdentityCreateTransition, IdentityCreateTransitionObjectJs, IdentityCreateTransitionJSONJs);
 impl_wasm_type_info!(IdentityCreateTransitionWasm, IdentityCreateTransition);

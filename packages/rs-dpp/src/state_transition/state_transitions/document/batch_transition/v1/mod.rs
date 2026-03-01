@@ -24,7 +24,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
 #[derive(Default)]
 pub struct BatchTransitionV1 {

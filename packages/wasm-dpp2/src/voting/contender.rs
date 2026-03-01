@@ -1,6 +1,6 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::prelude::Identifier;
 use dpp::voting::contender_structs::{
@@ -15,22 +15,20 @@ const TS_TYPES: &str = r#"
  * ContenderWithSerializedDocument serialized as a plain object.
  */
 export interface ContenderWithSerializedDocumentObject {
-    v0: {
-        identityId: Uint8Array;
-        serializedDocument: Uint8Array | null;
-        voteTally: number | null;
-    };
+    $formatVersion: string;
+    identityId: Uint8Array;
+    serializedDocument: Uint8Array | null;
+    voteTally: number | null;
 }
 
 /**
  * ContenderWithSerializedDocument serialized as JSON.
  */
 export interface ContenderWithSerializedDocumentJSON {
-    v0: {
-        identityId: string;
-        serializedDocument: string | null;
-        voteTally: number | null;
-    };
+    $formatVersion: string;
+    identityId: string;
+    serializedDocument: string | null;
+    voteTally: number | null;
 }
 "#;
 
@@ -108,12 +106,7 @@ impl ContenderWithSerializedDocumentWasm {
     }
 }
 
-impl_wasm_conversions!(
-    ContenderWithSerializedDocumentWasm,
-    ContenderWithSerializedDocument,
-    ContenderWithSerializedDocumentObjectJs,
-    ContenderWithSerializedDocumentJSONJs
-);
+impl_wasm_conversions_inner!(ContenderWithSerializedDocumentWasm, ContenderWithSerializedDocument, ContenderWithSerializedDocument, ContenderWithSerializedDocumentObjectJs, ContenderWithSerializedDocumentJSONJs);
 
 impl_wasm_type_info!(
     ContenderWithSerializedDocumentWasm,

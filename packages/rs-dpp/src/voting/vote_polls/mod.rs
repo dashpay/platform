@@ -1,5 +1,8 @@
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -21,6 +24,11 @@ pub mod contested_document_resource_vote_poll;
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+impl JsonConvertible for VotePoll {}
+#[cfg(feature = "vote-serde-conversion")]
+impl ValueConvertible for VotePoll {}
 
 impl fmt::Display for VotePoll {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
