@@ -1,4 +1,98 @@
 {
   "name": "Dash Platform Dev Container",
-  "image": "ghcr.io/dashpay/platform/devcontainer:0.1.0"
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "..",
+    "args": {
+      "TZ": "${localEnv:TZ:UTC}",
+      "GIT_DELTA_VERSION": "0.18.2"
+    }
+  },
+  "init": true,
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "anthropic.claude-code",
+        "arcanis.vscode-zipfs",
+        "chrmarti.regex",
+        "davidanson.vscode-markdownlint",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vadimcn.vscode-lldb",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "mounts": [
+    {
+      "source": "devcontainer-platform-cargo-registry-${devcontainerId}",
+      "target": "/home/vscode/.cargo/registry",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-cargo-git-${devcontainerId}",
+      "target": "/home/vscode/.cargo/git",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-target-${devcontainerId}",
+      "target": "${containerWorkspaceFolder}/target",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-claude-config-${devcontainerId}",
+      "target": "/home/vscode/.claude",
+      "type": "volume"
+    },
+    {
+      "source": "devcontainer-platform-bashhistory-${devcontainerId}",
+      "target": "/commandhistory",
+      "type": "volume"
+    },
+    {
+      "source": "${localWorkspaceFolder}/.devcontainer/.main-git-resolved",
+      "target": "/workspace/.host-main-git",
+      "type": "bind"
+    }
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": "true",
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000",
+      "upgradePackages": "true"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": "false"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
+    },
+    "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "containerEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "DEVCONTAINER": "true"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/platform,type=bind,consistency=delegated",
+  "workspaceFolder": "/workspace/platform",
+  "initializeCommand": "bash .devcontainer/init-host.sh",
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
 }

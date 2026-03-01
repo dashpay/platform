@@ -8,6 +8,10 @@
 # ignore VSCode project specific files
 .vscode
 
+# Devcontainer host-resolved symlink (machine-specific)
+.devcontainer/.main-git-resolved
+.devcontainer/.claude-host-config
+
 # Env file
 .env
 

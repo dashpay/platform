@@ -46,9 +46,28 @@ this repository may be used on the following networks:
 
 ### How to build and set up a node from the code in this repo?
 
+#### Using Dev Container (recommended)
+
+The easiest way to get started is with a [Dev Container](.devcontainer/README.md)
+which provides a pre-configured environment with all dependencies and
+[Claude Code](https://claude.ai/code) sandboxed for autonomous development.
+
+Open this repo in VS Code and select **Dev Containers: Reopen in Container**, or
+use the CLI:
+
+```bash
+npm install -g @devcontainers/cli
+devcontainer up --workspace-folder .
+devcontainer exec --workspace-folder . bash
+```
+
+See [.devcontainer/README.md](.devcontainer/README.md) for full details.
+
+#### Manual setup
+
 - Clone the repo
 - Install prerequisites:
-  - [node.js](https://nodejs.org/) v20
+  - [node.js](https://nodejs.org/) v24
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.92+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v32.0+
@@ -60,7 +79,7 @@ this repository may be used on the following networks:
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
       - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
-    - `cargo install wasm-bindgen-cli@0.2.103`
+    - `cargo install wasm-bindgen-cli@0.2.108`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
   - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
