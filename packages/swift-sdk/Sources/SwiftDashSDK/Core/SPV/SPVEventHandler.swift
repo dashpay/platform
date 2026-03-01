@@ -1,7 +1,7 @@
 import DashSDKFFI
 import Foundation
 
-enum SPVSyncManager: UInt32, Sendable {
+public enum SPVSyncManager: UInt32, Sendable {
     case headers = 0
     case filterHeaders = 1
     case filters = 2
@@ -38,10 +38,8 @@ private typealias Byte96 = (
 
 // MARK: - Progress callback
 
-protocol SPVProgressUpdateEventHandler: AnyObject {
+public protocol SPVProgressUpdateEventHandler: AnyObject {
     func onProgressUpdate(_ progress: SPVSyncProgress)
-
-    func intoFFIProgressCallback() -> FFIProgressCallback
 }
 
 extension SPVProgressUpdateEventHandler {
@@ -86,7 +84,7 @@ private final class DummySPVProgressUpdateEventHandler: SPVProgressUpdateEventHa
 
 // MARK: - Sync event callbacks
 
-protocol SPVSyncEventsHandler: AnyObject {
+public protocol SPVSyncEventsHandler: AnyObject {
     func onStart(_ manager: SPVSyncManager)
     func onComplete(_ headerTip: UInt32)
     func onBlockHeadersStored(_ tipHeight: UInt32)
@@ -101,8 +99,6 @@ protocol SPVSyncEventsHandler: AnyObject {
     func onChainLockReceived(_ height: UInt32, _ hash: Data, _ signature: Data, _ validated: Bool)
     func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool)
     func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String)
-
-    func intoFFISyncEventCallbacks() -> FFISyncEventCallbacks
 }
 
 extension SPVSyncEventsHandler {
@@ -308,12 +304,10 @@ private final class DummySPVSyncEventsHandler: SPVSyncEventsHandler {
 
 // MARK: - Network event callbacks
 
-protocol SPVNetworkEventsHandler: AnyObject {
+public protocol SPVNetworkEventsHandler: AnyObject {
     func onPeerConnected(_ address: String)
     func onPeerDisconnected(_ address: String)
     func onPeersUpdated(_ connectedCount: UInt32, _ bestHeight: UInt32)
-
-    func intoFFINetworkEventCallbacks() -> FFINetworkEventCallbacks
 }
 
 extension SPVNetworkEventsHandler {
@@ -394,7 +388,7 @@ private final class DummySPVNetworkEventsHandler: SPVNetworkEventsHandler {
 
 // MARK: - Wallet event callbacks
 
-protocol SPVWalletEventsHandler: AnyObject {
+public protocol SPVWalletEventsHandler: AnyObject {
     func onTransactionReceived(
         _ walletId: String,
         _ accountIndex: UInt32,
@@ -410,8 +404,6 @@ protocol SPVWalletEventsHandler: AnyObject {
         _ immature: UInt64,
         _ locked: UInt64
     )
-
-    func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks
 }
 
 extension SPVWalletEventsHandler {
