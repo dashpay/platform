@@ -66,7 +66,7 @@ mod tests {
             1000, // amount in credits
             vec![create_dummy_serialized_action()],
             0x03,                   // spends_enabled | outputs_enabled
-            110_673_000,            // amount (1000) + minimum fee for 1 action (110_672_000)
+            111_549_800,            // amount (1000) + minimum fee for 1 action (111_548_800)
             [42u8; 32],             // non-zero anchor
             vec![0u8; 100],         // dummy proof bytes
             [0u8; 64],              // dummy binding signature
@@ -568,7 +568,7 @@ mod tests {
                 1000,
                 vec![bad_action],
                 0x03,
-                110_673_000, // amount (1000) + minimum fee for 1 action
+                111_549_800, // amount (1000) + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -952,7 +952,7 @@ mod tests {
                 1000,
                 vec![action1, action2], // Both have nullifier [1u8; 32]
                 0x03,
-                121_345_000, // amount (1000) + minimum fee for 2 actions (121_344_000)
+                123_098_600, // amount (1000) + minimum fee for 2 actions (123_097_600)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

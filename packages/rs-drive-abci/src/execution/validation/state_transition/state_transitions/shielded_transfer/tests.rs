@@ -44,12 +44,12 @@ mod tests {
 
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// transfer transition. Has a non-zero anchor, valid field sizes, but random data.
-    /// Includes sufficient fee to pass the minimum shielded fee check (1 action = 110,672,000).
+    /// Includes sufficient fee to pass the minimum shielded fee check (1 action = 111,548,800).
     fn create_default_shielded_transfer_transition() -> StateTransition {
         create_shielded_transfer_transition(
             vec![create_dummy_serialized_action()],
             0x03,           // spends_enabled | outputs_enabled
-            110_672_000,    // minimum fee for 1 action
+            111_548_800,    // minimum fee for 1 action
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -300,7 +300,7 @@ mod tests {
         }
 
         /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 121_344_000;
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
 
         #[test]
         fn test_valid_shielded_transfer_proof_succeeds() {
@@ -400,7 +400,7 @@ mod tests {
             let transition = create_shielded_transfer_transition(
                 vec![bad_action],
                 0x03,
-                110_672_000, // minimum fee for 1 action (fee check runs before proof reconstruction)
+                111_548_800, // minimum fee for 1 action (fee check runs before proof reconstruction)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -427,13 +427,13 @@ mod tests {
     // With current constants:
     //   proof_verification_fee     = 100_000_000
     //   per_action_processing_fee  =   3_000_000
-    //   per_action_storage_fee     = 280 × (27_000 + 400) = 7_672_000
-    //   per_action_total           = 10_672_000
+    //   per_action_storage_fee     = 312 × (27_000 + 400) = 8_548_800
+    //   per_action_total           = 11_548_800
     //
     // Minimum fees by action count:
-    //   2 actions: 100_000_000 + 2 × 10_672_000 = 121_344_000
-    //   3 actions: 100_000_000 + 3 × 10_672_000 = 132_016_000
-    //   4 actions: 100_000_000 + 4 × 10_672_000 = 142_688_000
+    //   2 actions: 100_000_000 + 2 × 11_548_800 = 123_097_600
+    //   3 actions: 100_000_000 + 3 × 11_548_800 = 134_646_400
+    //   4 actions: 100_000_000 + 4 × 11_548_800 = 146_195_200
 
     mod fee_validation {
         use super::*;
@@ -446,9 +446,9 @@ mod tests {
         use rand::rngs::OsRng;
         use std::sync::OnceLock;
 
-        const MINIMUM_FEE_2_ACTIONS: u64 = 121_344_000;
-        const MINIMUM_FEE_3_ACTIONS: u64 = 132_016_000;
-        const MINIMUM_FEE_4_ACTIONS: u64 = 142_688_000;
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
+        const MINIMUM_FEE_3_ACTIONS: u64 = 134_646_400;
+        const MINIMUM_FEE_4_ACTIONS: u64 = 146_195_200;
 
         static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
         fn get_proving_key() -> &'static ProvingKey {
@@ -750,7 +750,7 @@ mod tests {
         use std::sync::OnceLock;
 
         /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 121_344_000;
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
 
         static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
         fn get_proving_key() -> &'static ProvingKey {
@@ -1020,7 +1020,7 @@ mod tests {
         use rand::rngs::OsRng;
         use std::sync::OnceLock;
 
-        const MINIMUM_FEE_2_ACTIONS: u64 = 121_344_000;
+        const MINIMUM_FEE_2_ACTIONS: u64 = 123_097_600;
 
         static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
         fn get_proving_key() -> &'static ProvingKey {

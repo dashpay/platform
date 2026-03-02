@@ -10,10 +10,10 @@ use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
-/// Average size of a note value: 32 cmx + 216 encrypted note = 248 bytes
+/// Average size of a note value: 32 cmx + 32 rho + 216 encrypted note = 280 bytes
 /// (encrypted note = 32 epk + 104 enc_ciphertext + 80 out_ciphertext, using DashMemo 36-byte memos)
-/// The cmx is prepended by GroveDB's commitment_tree_insert_op for client retrieval.
-const AVERAGE_NOTE_VALUE_SIZE: u32 = 248;
+/// The cmx and rho are prepended by GroveDB's commitment_tree_insert_op for client retrieval.
+const AVERAGE_NOTE_VALUE_SIZE: u32 = 280;
 
 /// Size of a nullifier key (32 bytes)
 const NULLIFIER_KEY_SIZE: u8 = 32;

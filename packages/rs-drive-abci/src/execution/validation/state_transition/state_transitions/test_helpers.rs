@@ -579,6 +579,8 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
         let ciphertext: TransmittedNoteCiphertext<DashMemo> =
             TransmittedNoteCiphertext::from_parts(epk_bytes, enc_ciphertext, out_ciphertext);
 
+        let dummy_rho = [0u8; 32]; // dummy nullifier for rho derivation
+
         let transaction = platform.drive.grove.start_transaction();
         platform
             .drive
@@ -587,6 +589,7 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
                 &pool_path,
                 &[SHIELDED_NOTES_KEY],
                 cmx,
+                dummy_rho,
                 ciphertext,
                 Some(&transaction),
                 grove_version,

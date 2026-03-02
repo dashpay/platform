@@ -22,11 +22,15 @@ pub(super) fn insert_nullifiers<'a>(
     }
 }
 
-/// Insert notes into the CommitmentTree (appends cmx to frontier + stores cmx||encrypted_note).
+/// Insert notes into the CommitmentTree (appends cmx to frontier + stores cmx||rho||encrypted_note).
+///
+/// Each action's nullifier (rho) is stored alongside the note so light clients can derive
+/// Rho for trial decryption.
 pub(super) fn insert_notes<'a>(ops: &mut Vec<DriveOperation<'a>>, notes: &[ShieldedActionNote]) {
     for note in notes {
         ops.push(DriveOperation::ShieldedPoolOperation(
             ShieldedPoolOperationType::InsertNote {
+                nullifier: note.nullifier,
                 cmx: note.cmx,
                 encrypted_note: note.encrypted_note.clone(),
             },

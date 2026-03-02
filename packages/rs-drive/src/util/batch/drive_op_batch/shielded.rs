@@ -17,8 +17,11 @@ use std::collections::HashMap;
 /// Operations on the Shielded Pool
 #[derive(Clone, Debug)]
 pub enum ShieldedPoolOperationType {
-    /// Insert a note into the CommitmentTree (appends cmx to frontier + stores cmx||encrypted_note as item)
+    /// Insert a note into the CommitmentTree (appends cmx to frontier + stores cmx||rho||encrypted_note as item)
     InsertNote {
+        /// The 32-byte nullifier (rho) of the spent note in this action, stored alongside
+        /// the ciphertext so light clients can derive Rho for trial decryption
+        nullifier: [u8; 32],
         /// The 32-byte note commitment (cmx)
         cmx: [u8; 32],
         /// The encrypted note payload (216 bytes)
@@ -59,12 +62,18 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
 
         match self {
             ShieldedPoolOperationType::InsertNote {
+                nullifier,
                 cmx,
                 encrypted_note,
             } => {
                 let notes_path = shielded_credit_pool_notes_path_vec();
                 Ok(vec![GroveOperation(
-                    QualifiedGroveDbOp::commitment_tree_insert_op(notes_path, cmx, encrypted_note),
+                    QualifiedGroveDbOp::commitment_tree_insert_op(
+                        notes_path,
+                        cmx,
+                        nullifier,
+                        encrypted_note,
+                    ),
                 )])
             }
             ShieldedPoolOperationType::InsertNullifier { nullifier } => {
