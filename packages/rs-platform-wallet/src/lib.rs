@@ -15,14 +15,10 @@ use key_wallet::account::ManagedAccountCollection;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
-use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::transaction_building::{
-    AccountTypePreference, TransactionError,
-};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, TransactionRecord};
-use key_wallet::{Address, Network, Utxo, Wallet, WalletCoreBalance};
+use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 use std::collections::BTreeSet;
 pub mod identity_manager;
 pub mod managed_identity;
@@ -293,25 +289,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.wallet_info.immature_transactions()
-    }
-
-    fn create_unsigned_payment_transaction(
-        &mut self,
-        wallet: &Wallet,
-        account_index: u32,
-        account_type_pref: Option<AccountTypePreference>,
-        recipients: Vec<(Address, u64)>,
-        fee_level: FeeLevel,
-        current_block_height: u32,
-    ) -> Result<Transaction, TransactionError> {
-        self.wallet_info.create_unsigned_payment_transaction(
-            wallet,
-            account_index,
-            account_type_pref,
-            recipients,
-            fee_level,
-            current_block_height,
-        )
     }
 
     fn synced_height(&self) -> CoreBlockHeight {
