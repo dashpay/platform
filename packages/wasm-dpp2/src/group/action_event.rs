@@ -10,16 +10,16 @@ const TS_TYPES: &str = r#"
  * GroupActionEvent serialized as a plain object.
  */
 export interface GroupActionEventObject {
-    variant: GroupActionEventVariant;
-    tokenEvent?: TokenEventObject;
+    type: "tokenEvent";
+    data: TokenEventObject;
 }
 
 /**
  * GroupActionEvent serialized as JSON.
  */
 export interface GroupActionEventJSON {
-    variant: number;
-    tokenEvent?: TokenEventJSON;
+    type: "tokenEvent";
+    data: TokenEventJSON;
 }
 "#;
 

@@ -15,7 +15,8 @@ const TS_TYPES: &str = r#"
  * Vote serialized as a plain object.
  */
 export interface VoteObject {
-    resourceVote: {
+    type: "resourceVote";
+    data: {
         $formatVersion: string;
         votePoll: VotePollObject;
         resourceVoteChoice: ResourceVoteChoiceObject;
@@ -26,7 +27,8 @@ export interface VoteObject {
  * Vote serialized as JSON.
  */
 export interface VoteJSON {
-    resourceVote: {
+    type: "resourceVote";
+    data: {
         $formatVersion: string;
         votePoll: VotePollJSON;
         resourceVoteChoice: ResourceVoteChoiceJSON;

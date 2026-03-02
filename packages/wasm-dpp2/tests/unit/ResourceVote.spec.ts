@@ -28,20 +28,21 @@ describe('ResourceVote', () => {
 
       expect(json.$formatVersion).to.equal('0');
       expect(json.votePoll).to.exist();
-      expect(json.votePoll.contestedDocumentResourceVotePoll.contractId).to.equal(testContractId);
+      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.data.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
       vote.free();
     });
 
-    it('should serialize Abstain choice as string', () => {
+    it('should serialize Abstain choice as object with type', () => {
       const poll = createPoll();
       const choice = wasm.ResourceVoteChoice.Abstain();
       const vote = new wasm.ResourceVote(poll, choice);
 
       const json = vote.toJSON();
 
-      expect(json.resourceVoteChoice).to.equal('abstain');
+      expect(json.resourceVoteChoice).to.deep.equal({ type: 'abstain' });
 
       vote.free();
     });
@@ -74,8 +75,9 @@ describe('ResourceVote', () => {
 
       expect(obj.$formatVersion).to.equal('0');
       expect(obj.votePoll).to.exist();
-      expect(obj.votePoll.contestedDocumentResourceVotePoll.contractId).to.be.instanceOf(Uint8Array);
-      expect(obj.resourceVoteChoice).to.equal('lock');
+      expect(obj.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.votePoll.data.contractId).to.be.instanceOf(Uint8Array);
+      expect(obj.resourceVoteChoice).to.deep.equal({ type: 'lock' });
 
       vote.free();
     });

@@ -16,16 +16,16 @@ describe('VotePoll', () => {
   };
 
   describe('toJSON()', () => {
-    it('should serialize with contestedDocumentResourceVotePoll wrapper', () => {
+    it('should serialize with type tag and data', () => {
       const poll = new wasm.VotePoll(votePollOptions);
       const json = poll.toJSON();
 
-      const inner = json.contestedDocumentResourceVotePoll;
-      expect(inner).to.exist();
-      expect(inner.contractId).to.equal(testContractId);
-      expect(inner.documentTypeName).to.equal('domain');
-      expect(inner.indexName).to.equal('parentNameAndLabel');
-      expect(inner.indexValues).to.deep.equal(['dash', 'alice']);
+      expect(json.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.data).to.exist();
+      expect(json.data.contractId).to.equal(testContractId);
+      expect(json.data.documentTypeName).to.equal('domain');
+      expect(json.data.indexName).to.equal('parentNameAndLabel');
+      expect(json.data.indexValues).to.deep.equal(['dash', 'alice']);
 
       poll.free();
     });
@@ -34,7 +34,8 @@ describe('VotePoll', () => {
   describe('fromJSON()', () => {
     it('should deserialize from JSON fixture', () => {
       const fixture = {
-        contestedDocumentResourceVotePoll: {
+        type: 'contestedDocumentResourceVotePoll',
+        data: {
           contractId: testContractId,
           documentTypeName: 'domain',
           indexName: 'parentNameAndLabel',
@@ -66,15 +67,15 @@ describe('VotePoll', () => {
   });
 
   describe('toObject()', () => {
-    it('should serialize with Uint8Array contractId in wrapper', () => {
+    it('should serialize with type tag and Uint8Array contractId in data', () => {
       const poll = new wasm.VotePoll(votePollOptions);
       const obj = poll.toObject();
 
-      const inner = obj.contestedDocumentResourceVotePoll;
-      expect(inner).to.exist();
-      expect(inner.contractId).to.be.instanceOf(Uint8Array);
-      expect(inner.documentTypeName).to.equal('domain');
-      expect(inner.indexName).to.equal('parentNameAndLabel');
+      expect(obj.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.data).to.exist();
+      expect(obj.data.contractId).to.be.instanceOf(Uint8Array);
+      expect(obj.data.documentTypeName).to.equal('domain');
+      expect(obj.data.indexName).to.equal('parentNameAndLabel');
 
       poll.free();
     });

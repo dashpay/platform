@@ -19,17 +19,19 @@ describe('Vote', () => {
   }
 
   describe('toJSON()', () => {
-    it('should serialize with resourceVote wrapper', () => {
+    it('should serialize with resourceVote type tag', () => {
       const poll = createPoll();
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(testIdentityId);
       const vote = new wasm.Vote(poll, choice);
 
       const json = vote.toJSON();
 
-      expect(json.resourceVote).to.exist();
-      expect(json.resourceVote.$formatVersion).to.equal('0');
-      expect(json.resourceVote.votePoll.contestedDocumentResourceVotePoll.contractId).to.equal(testContractId);
-      expect(json.resourceVote.resourceVoteChoice).to.exist();
+      expect(json.type).to.equal('resourceVote');
+      expect(json.data).to.exist();
+      expect(json.data.$formatVersion).to.equal('0');
+      expect(json.data.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.data.votePoll.data.contractId).to.equal(testContractId);
+      expect(json.data.resourceVoteChoice).to.exist();
 
       vote.free();
     });
@@ -53,16 +55,18 @@ describe('Vote', () => {
   });
 
   describe('toObject()', () => {
-    it('should serialize with resourceVote wrapper containing Uint8Array', () => {
+    it('should serialize with resourceVote type tag containing Uint8Array', () => {
       const poll = createPoll(['dash', 'eve']);
       const choice = wasm.ResourceVoteChoice.Lock();
       const vote = new wasm.Vote(poll, choice);
 
       const obj = vote.toObject();
 
-      expect(obj.resourceVote).to.exist();
-      expect(obj.resourceVote.$formatVersion).to.equal('0');
-      expect(obj.resourceVote.votePoll.contestedDocumentResourceVotePoll.contractId).to.be.instanceOf(Uint8Array);
+      expect(obj.type).to.equal('resourceVote');
+      expect(obj.data).to.exist();
+      expect(obj.data.$formatVersion).to.equal('0');
+      expect(obj.data.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.data.votePoll.data.contractId).to.be.instanceOf(Uint8Array);
 
       vote.free();
     });

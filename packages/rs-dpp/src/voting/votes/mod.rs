@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(limit = 15000, unversioned)]
 pub enum Vote {

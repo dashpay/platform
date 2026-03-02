@@ -11,21 +11,22 @@ describe('Vote Conversions', () => {
 
   describe('ResourceVoteChoice', () => {
     describe('TowardsIdentity', () => {
-      it('should serialize to JSON with Base58 value', () => {
+      it('should serialize to JSON with type tag and Base58 data', () => {
         const choice = sdk.ResourceVoteChoice.TowardsIdentity(testIdentityId);
         const json = choice.toJSON();
 
-        // Serde externally tagged enum format
-        expect(json).to.deep.equal({ towardsIdentity: testIdentityId });
+        // Serde adjacently tagged enum format
+        expect(json).to.deep.equal({ type: 'towardsIdentity', data: testIdentityId });
 
         choice.free();
       });
 
-      it('should serialize to Object with Uint8Array value', () => {
+      it('should serialize to Object with type tag and Uint8Array data', () => {
         const choice = sdk.ResourceVoteChoice.TowardsIdentity(testIdentityId);
         const obj = choice.toObject();
 
-        expect(obj.towardsIdentity).to.be.instanceOf(Uint8Array);
+        expect(obj.type).to.equal('towardsIdentity');
+        expect(obj.data).to.be.instanceOf(Uint8Array);
 
         choice.free();
       });
@@ -56,11 +57,11 @@ describe('Vote Conversions', () => {
     });
 
     describe('Abstain', () => {
-      it('should serialize to JSON as string', () => {
+      it('should serialize to JSON as object with type', () => {
         const choice = sdk.ResourceVoteChoice.Abstain();
         const json = choice.toJSON();
 
-        expect(json).to.equal('abstain');
+        expect(json).to.deep.equal({ type: 'abstain' });
 
         choice.free();
       });
@@ -76,11 +77,11 @@ describe('Vote Conversions', () => {
     });
 
     describe('Lock', () => {
-      it('should serialize to JSON as string', () => {
+      it('should serialize to JSON as object with type', () => {
         const choice = sdk.ResourceVoteChoice.Lock();
         const json = choice.toJSON();
 
-        expect(json).to.equal('lock');
+        expect(json).to.deep.equal({ type: 'lock' });
 
         choice.free();
       });
@@ -105,16 +106,16 @@ describe('Vote Conversions', () => {
     };
 
     describe('toJSON()', () => {
-      it('should serialize with contestedDocumentResourceVotePoll wrapper', () => {
+      it('should serialize with type tag and data', () => {
         const poll = new sdk.VotePoll(votePollOptions);
         const json = poll.toJSON();
 
-        const inner = json.contestedDocumentResourceVotePoll;
-        expect(inner).to.exist();
-        expect(inner.contractId).to.equal(testContractId);
-        expect(inner.documentTypeName).to.equal('domain');
-        expect(inner.indexName).to.equal('parentNameAndLabel');
-        expect(inner.indexValues).to.deep.equal(['dash', 'alice']);
+        expect(json.type).to.equal('contestedDocumentResourceVotePoll');
+        expect(json.data).to.exist();
+        expect(json.data.contractId).to.equal(testContractId);
+        expect(json.data.documentTypeName).to.equal('domain');
+        expect(json.data.indexName).to.equal('parentNameAndLabel');
+        expect(json.data.indexValues).to.deep.equal(['dash', 'alice']);
 
         poll.free();
       });
@@ -123,7 +124,8 @@ describe('Vote Conversions', () => {
     describe('fromJSON()', () => {
       it('should deserialize from JSON fixture', () => {
         const fixture = {
-          contestedDocumentResourceVotePoll: {
+          type: 'contestedDocumentResourceVotePoll',
+          data: {
             contractId: testContractId,
             documentTypeName: 'domain',
             indexName: 'parentNameAndLabel',
@@ -155,15 +157,15 @@ describe('Vote Conversions', () => {
     });
 
     describe('toObject()', () => {
-      it('should serialize with Uint8Array contractId in wrapper', () => {
+      it('should serialize with type tag and Uint8Array contractId in data', () => {
         const poll = new sdk.VotePoll(votePollOptions);
         const obj = poll.toObject();
 
-        const inner = obj.contestedDocumentResourceVotePoll;
-        expect(inner).to.exist();
-        expect(inner.contractId).to.be.instanceOf(Uint8Array);
-        expect(inner.documentTypeName).to.equal('domain');
-        expect(inner.indexName).to.equal('parentNameAndLabel');
+        expect(obj.type).to.equal('contestedDocumentResourceVotePoll');
+        expect(obj.data).to.exist();
+        expect(obj.data.contractId).to.be.instanceOf(Uint8Array);
+        expect(obj.data.documentTypeName).to.equal('domain');
+        expect(obj.data.indexName).to.equal('parentNameAndLabel');
 
         poll.free();
       });
@@ -201,7 +203,8 @@ describe('Vote Conversions', () => {
 
       expect(json.$formatVersion).to.equal('0');
       expect(json.votePoll).to.exist();
-      expect(json.votePoll.contestedDocumentResourceVotePoll.contractId).to.equal(testContractId);
+      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.data.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
       vote.free();
@@ -249,7 +252,7 @@ describe('Vote Conversions', () => {
   });
 
   describe('Vote', () => {
-    it('should serialize to JSON with resourceVote wrapper', () => {
+    it('should serialize to JSON with resourceVote type tag', () => {
       const poll = new sdk.VotePoll({
         contractId: testContractId,
         documentTypeName: 'domain',
@@ -261,10 +264,12 @@ describe('Vote Conversions', () => {
 
       const json = vote.toJSON();
 
-      expect(json.resourceVote).to.exist();
-      expect(json.resourceVote.$formatVersion).to.equal('0');
-      expect(json.resourceVote.votePoll.contestedDocumentResourceVotePoll.contractId).to.equal(testContractId);
-      expect(json.resourceVote.resourceVoteChoice).to.exist();
+      expect(json.type).to.equal('resourceVote');
+      expect(json.data).to.exist();
+      expect(json.data.$formatVersion).to.equal('0');
+      expect(json.data.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.data.votePoll.data.contractId).to.equal(testContractId);
+      expect(json.data.resourceVoteChoice).to.exist();
 
       vote.free();
     });

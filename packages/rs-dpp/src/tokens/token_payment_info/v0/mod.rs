@@ -28,7 +28,8 @@ use std::collections::BTreeMap;
             feature = "data-contract-serde-conversion"
         ),
     ),
-    derive(Serialize, Deserialize)
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
 #[display(
     "Contract ID: {:?}, Token Position: {:?}, Min Cost: {:?}, Max Cost: {:?}, Gas Fees Paid By: {}",

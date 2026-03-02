@@ -18,8 +18,10 @@ describe('GroupAction', () => {
     proposer_id: proposerIdBase58,
     token_contract_position: 0,
     event: {
-      TokenEvent: {
-        Mint: [1000, recipientIdBase58, 'test mint note'],
+      type: 'tokenEvent',
+      data: {
+        type: 'mint',
+        data: [1000, recipientIdBase58, 'test mint note'],
       },
     },
   };
@@ -88,15 +90,19 @@ describe('GroupActionEvent', () => {
 
   // TokenEvent::Freeze(frozenIdentifier, publicNote)
   const freezeEventFixture = {
-    TokenEvent: {
-      Freeze: [recipientIdBase58, 'freeze note'],
+    type: 'tokenEvent',
+    data: {
+      type: 'freeze',
+      data: [recipientIdBase58, 'freeze note'],
     },
   };
 
   // TokenEvent::Mint(amount, recipientId, publicNote)
   const mintEventFixture = {
-    TokenEvent: {
-      Mint: [500, recipientIdBase58, null],
+    type: 'tokenEvent',
+    data: {
+      type: 'mint',
+      data: [500, recipientIdBase58, null],
     },
   };
 
@@ -173,17 +179,20 @@ describe('TokenEvent', () => {
 
   // TokenEvent::Mint(amount, recipientId, publicNote)
   const mintFixture = {
-    Mint: [1000, recipientIdBase58, 'mint note'],
+    type: 'mint',
+    data: [1000, recipientIdBase58, 'mint note'],
   };
 
   // TokenEvent::Burn(amount, burnFromId, publicNote)
   const burnFixture = {
-    Burn: [500, recipientIdBase58, null],
+    type: 'burn',
+    data: [500, recipientIdBase58, null],
   };
 
   // TokenEvent::Freeze(frozenId, publicNote)
   const freezeFixture = {
-    Freeze: [recipientIdBase58, 'frozen'],
+    type: 'freeze',
+    data: [recipientIdBase58, 'frozen'],
   };
 
   describe('fromJSON()', () => {

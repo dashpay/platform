@@ -12,18 +12,18 @@ const TS_TYPES: &str = r#"
 /**
  * ResourceVoteChoice serialized as a plain object.
  */
-export interface ResourceVoteChoiceObject {
-    voteType: "TowardsIdentity" | "Abstain" | "Lock";
-    value?: Uint8Array;
-}
+export type ResourceVoteChoiceObject =
+    | { type: "towardsIdentity"; data: Uint8Array }
+    | { type: "abstain" }
+    | { type: "lock" };
 
 /**
  * ResourceVoteChoice serialized as JSON.
  */
-export interface ResourceVoteChoiceJSON {
-    voteType: "TowardsIdentity" | "Abstain" | "Lock";
-    value?: string;
-}
+export type ResourceVoteChoiceJSON =
+    | { type: "towardsIdentity"; data: string }
+    | { type: "abstain" }
+    | { type: "lock" };
 "#;
 
 #[wasm_bindgen]

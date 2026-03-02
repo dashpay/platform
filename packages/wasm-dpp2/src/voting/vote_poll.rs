@@ -33,20 +33,26 @@ export interface VotePollOptions {
  * VotePoll serialized as a plain object.
  */
 export interface VotePollObject {
-    contractId: Uint8Array;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
+    type: "contestedDocumentResourceVotePoll";
+    data: {
+        contractId: Uint8Array;
+        documentTypeName: string;
+        indexName: string;
+        indexValues: any[];
+    };
 }
 
 /**
  * VotePoll serialized as JSON.
  */
 export interface VotePollJSON {
-    contractId: string;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
+    type: "contestedDocumentResourceVotePoll";
+    data: {
+        contractId: string;
+        documentTypeName: string;
+        indexName: string;
+        indexValues: any[];
+    };
 }
 "#;
 

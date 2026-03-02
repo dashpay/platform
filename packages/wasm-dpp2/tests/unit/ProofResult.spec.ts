@@ -302,23 +302,25 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedMasternodeVote', () => {
     it('should construct from object with Abstain vote', () => {
-      // Vote: rename_all = "camelCase" -> resourceVote
+      // Vote: tag = "type", content = "data", rename_all = "camelCase"
       // ResourceVote: tag = "$formatVersion", V0 renamed to "0"
-      // VotePoll: rename_all = "camelCase" -> contestedDocumentResourceVotePoll
-      // Inside internally-tagged enum, Identifier expects base58 string
+      // VotePoll: tag = "type", content = "data", rename_all = "camelCase"
+      // ResourceVoteChoice: tag = "type", content = "data", rename_all = "camelCase"
       const data = {
         vote: {
-          resourceVote: {
+          type: 'resourceVote',
+          data: {
             $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -326,8 +328,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });
@@ -335,20 +335,21 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedNextDistribution', () => {
     it('should construct from object with Abstain vote', () => {
-      // Inside internally-tagged enum, Identifier expects base58 string
       const data = {
         vote: {
-          resourceVote: {
+          type: 'resourceVote',
+          data: {
             $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -356,8 +357,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });

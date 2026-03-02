@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
     NoWinner,

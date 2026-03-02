@@ -12,18 +12,18 @@ const TS_TYPES: &str = r#"
  * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
  */
 export type ContestedDocumentVotePollWinnerInfoObject =
-    | "NoWinner"
-    | "Locked"
-    | { WonByIdentity: Uint8Array };
+    | { type: "noWinner" }
+    | { type: "locked" }
+    | { type: "wonByIdentity"; data: Uint8Array };
 
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as JSON.
- * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
+ * Uses adjacently tagged format with type discriminator.
  */
 export type ContestedDocumentVotePollWinnerInfoJSON =
-    | "NoWinner"
-    | "Locked"
-    | { WonByIdentity: string };
+    | { type: "noWinner" }
+    | { type: "locked" }
+    | { type: "wonByIdentity"; data: string };
 "#;
 
 #[wasm_bindgen]

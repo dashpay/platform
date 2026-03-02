@@ -24,7 +24,7 @@ use std::fmt;
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 pub enum ResourceVoteChoice {
     TowardsIdentity(Identifier),

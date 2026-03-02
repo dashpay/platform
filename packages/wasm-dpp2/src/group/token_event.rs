@@ -9,16 +9,16 @@ const TS_TYPES: &str = r#"
  * TokenEvent serialized as a plain object.
  */
 export interface TokenEventObject {
-    variant: TokenEventVariant;
-    [key: string]: unknown;
+    type: string;
+    data?: unknown;
 }
 
 /**
  * TokenEvent serialized as JSON.
  */
 export interface TokenEventJSON {
-    variant: number;
-    [key: string]: unknown;
+    type: string;
+    data?: unknown;
 }
 "#;
 

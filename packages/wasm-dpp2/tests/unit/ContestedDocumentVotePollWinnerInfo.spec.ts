@@ -61,7 +61,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
       const json = info.toJSON();
-      expect(json).to.equal('NoWinner');
+      expect(json).to.deep.equal({ type: 'noWinner' });
     });
 
     it('should serialize WonByIdentity to JSON matching fixture', () => {
@@ -70,20 +70,20 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('WonByIdentity', identityId);
 
       const json = info.toJSON();
-      expect(json).to.deep.equal({ WonByIdentity: identityIdBase58 });
+      expect(json).to.deep.equal({ type: 'wonByIdentity', data: identityIdBase58 });
     });
 
     it('should serialize Locked to JSON matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('Locked');
 
       const json = info.toJSON();
-      expect(json).to.equal('Locked');
+      expect(json).to.deep.equal({ type: 'locked' });
     });
   });
 
   describe('fromJSON()', () => {
     it('should create NoWinner from JSON fixture and verify getters', () => {
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON('NoWinner');
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON({ type: 'noWinner' });
 
       expect(restored.kind).to.equal('NoWinner');
       expect(restored.isNoWinner).to.be.true();
@@ -96,7 +96,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const identityId = wasm.Identifier.fromHex(identityIdHex);
       const identityIdBase58 = identityId.toBase58();
 
-      const fixture = { WonByIdentity: identityIdBase58 };
+      const fixture = { type: 'wonByIdentity', data: identityIdBase58 };
 
       const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(fixture);
       expect(restored.kind).to.equal('WonByIdentity');
@@ -108,7 +108,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
     });
 
     it('should create Locked from JSON fixture and verify getters', () => {
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON('Locked');
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON({ type: 'locked' });
 
       expect(restored.kind).to.equal('Locked');
       expect(restored.isLocked).to.be.true();
@@ -123,7 +123,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
       const obj = info.toObject();
-      expect(obj).to.equal('NoWinner');
+      expect(obj).to.deep.equal({ type: 'noWinner' });
     });
 
     it('should serialize WonByIdentity to Object with Uint8Array', () => {
@@ -132,21 +132,22 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
 
       const obj = info.toObject();
       expect(obj).to.be.an('object');
-      expect(obj.WonByIdentity).to.be.instanceOf(Uint8Array);
-      expect(Buffer.from(obj.WonByIdentity).toString('hex')).to.equal(identityIdHex);
+      expect(obj.type).to.equal('wonByIdentity');
+      expect(obj.data).to.be.instanceOf(Uint8Array);
+      expect(Buffer.from(obj.data).toString('hex')).to.equal(identityIdHex);
     });
 
     it('should serialize Locked to Object matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('Locked');
 
       const obj = info.toObject();
-      expect(obj).to.equal('Locked');
+      expect(obj).to.deep.equal({ type: 'locked' });
     });
   });
 
   describe('fromObject()', () => {
     it('should create NoWinner from Object fixture and verify getters', () => {
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject('NoWinner');
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject({ type: 'noWinner' });
 
       expect(restored.kind).to.equal('NoWinner');
       expect(restored.isNoWinner).to.be.true();
@@ -156,7 +157,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
     it('should create WonByIdentity from Object fixture and verify getters', () => {
       const identityIdBytes = new Uint8Array(Buffer.from(identityIdHex, 'hex'));
 
-      const fixture = { WonByIdentity: identityIdBytes };
+      const fixture = { type: 'wonByIdentity', data: identityIdBytes };
 
       const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(fixture);
       expect(restored.kind).to.equal('WonByIdentity');
@@ -166,7 +167,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
     });
 
     it('should create Locked from Object fixture and verify getters', () => {
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject('Locked');
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject({ type: 'locked' });
 
       expect(restored.kind).to.equal('Locked');
       expect(restored.isLocked).to.be.true();

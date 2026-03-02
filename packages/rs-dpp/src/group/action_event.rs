@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
+    derive(Serialize, Deserialize),
+    serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum GroupActionEvent {

@@ -89,7 +89,8 @@ pub mod v0;
             feature = "data-contract-serde-conversion"
         ),
     ),
-    derive(Serialize, Deserialize)
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
 )]
 /// Versioned container describing how a client intends to pay with tokens.
 ///
@@ -102,6 +103,16 @@ pub mod v0;
 /// See [`v0::TokenPaymentInfoV0`] for the current set of fields and semantics.
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
+    #[cfg_attr(
+        any(
+            feature = "state-transition-serde-conversion",
+            all(
+                feature = "document-serde-conversion",
+                feature = "data-contract-serde-conversion"
+            ),
+        ),
+        serde(rename = "0")
+    )]
     V0(TokenPaymentInfoV0),
 }
 

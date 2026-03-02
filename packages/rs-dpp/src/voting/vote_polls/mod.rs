@@ -17,7 +17,7 @@ pub mod contested_document_resource_vote_poll;
 #[cfg_attr(
     feature = "vote-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
 #[platform_serialize(limit = 100000)]
