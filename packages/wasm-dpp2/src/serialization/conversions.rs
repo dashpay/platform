@@ -40,10 +40,10 @@ pub fn stringify_large_numbers(value: JsonValue) -> JsonValue {
                 if u > JS_MAX_SAFE_INTEGER {
                     return JsonValue::String(u.to_string());
                 }
-            } else if let Some(i) = n.as_i64() {
-                if i > JS_MAX_SAFE_INTEGER as i64 || i < -(JS_MAX_SAFE_INTEGER as i64) {
-                    return JsonValue::String(i.to_string());
-                }
+            } else if let Some(i) = n.as_i64()
+                && (i > JS_MAX_SAFE_INTEGER as i64 || i < -(JS_MAX_SAFE_INTEGER as i64))
+            {
+                return JsonValue::String(i.to_string());
             }
             value
         }
@@ -68,10 +68,10 @@ pub fn unstringify_large_numbers(value: JsonValue) -> JsonValue {
                 if n > JS_MAX_SAFE_INTEGER {
                     return JsonValue::Number(serde_json::Number::from(n));
                 }
-            } else if let Ok(n) = s.parse::<i64>() {
-                if n < -(JS_MAX_SAFE_INTEGER as i64) {
-                    return JsonValue::Number(serde_json::Number::from(n));
-                }
+            } else if let Ok(n) = s.parse::<i64>()
+                && n < -(JS_MAX_SAFE_INTEGER as i64)
+            {
+                return JsonValue::Number(serde_json::Number::from(n));
             }
             value
         }
@@ -631,6 +631,7 @@ macro_rules! impl_wasm_conversions_inner {
         impl $wasm_ty {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
             pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
+                #[allow(unused_imports)]
                 use dpp::serialization::ValueConvertible;
                 let pv = self.0.to_object().map_err(|e| {
                     $crate::error::WasmDppError::serialization(format!("toObject: {}", e))
