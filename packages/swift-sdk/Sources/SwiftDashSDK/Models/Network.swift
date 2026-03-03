@@ -13,7 +13,6 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
         case .testnet: self = .testnet  // Testnet = 1
         case .regtest: self = .regtest  // Regtest = 2
         case .devnet: self = .devnet   // Devnet = 3
-        default: self = .mainnet
         }
     }
 
