@@ -327,14 +327,8 @@ impl Sdk {
         }
     }
 
-    /// Updates or fetches the nonce for a given identity from the cache,
-    /// querying Platform if the cached value is stale or absent. Optionally
-    /// increments the nonce before storing it, based on the provided settings.
-    ///
-    /// # First-time interactions
-    ///
-    /// If Platform returns no nonce for the identity (first interaction or
-    /// stale node), the cache defaults to nonce `0`.
+    /// Get or fetch identity nonce, querying Platform when stale or absent.
+    /// Returns `0` for first-time interactions (no nonce on Platform yet).
     pub async fn get_identity_nonce(
         &self,
         identity_id: Identifier,
@@ -357,15 +351,8 @@ impl Sdk {
         Ok(nonce)
     }
 
-    /// Updates or fetches the nonce for a given identity and contract pair from
-    /// the cache, querying Platform if the cached value is stale or absent.
-    /// Optionally increments the nonce before storing it, based on the provided
-    /// settings.
-    ///
-    /// # First-time interactions
-    ///
-    /// If Platform returns no nonce for the identity–contract pair (first
-    /// interaction or stale node), the cache defaults to nonce `0`.
+    /// Get or fetch identity-contract nonce, querying Platform when stale or absent.
+    /// Returns `0` for first-time interactions (no nonce on Platform yet).
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,

@@ -70,10 +70,7 @@ pub(crate) struct IdentityContractPair {
 ///
 /// # First-time interactions
 ///
-/// A `None` response from Platform simply means the identity has not
-/// yet interacted with the given contract (or Platform at all).  The
-/// fetch closure defaults to nonce `0` in that case, allowing first
-/// document creations to succeed without special-casing by callers.
+/// `None` from Platform → nonce `0` (matches Drive's `unwrap_or_default()`).
 pub(crate) struct NonceCache {
     identity_nonces: Mutex<LruCache<Identifier, NonceCacheEntry>>,
     contract_nonces: Mutex<LruCache<IdentityContractPair, NonceCacheEntry>>,
@@ -143,15 +140,8 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
-                // `None` means the nonce path does not exist in GroveDB.
-                // This is indistinguishable from "identity does not exist"
-                // because GroveDB proofs only attest presence/absence of a
-                // leaf — they cannot tell us *which* ancestor is missing.
-                // Drive's own non-proven query handler applies the same
-                // `unwrap_or_default()` logic, so defaulting to 0 here
-                // keeps the SDK consistent with the server.  Callers that
-                // need to verify the identity exists should do so before
-                // requesting a nonce.
+                // None = first interaction (or missing identity — GroveDB
+                // can't distinguish). Matches Drive's unwrap_or_default().
                 let nonce =
                     IdentityNonceFetcher::fetch_with_settings(sdk, identity_id, request_settings)
                         .await?
@@ -191,10 +181,7 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
-                // See the comment in `get_identity_nonce` — the same
-                // GroveDB limitation applies: `None` can mean "no nonce
-                // yet", "identity missing", or "contract missing".
-                // Drive defaults to 0 in all three cases; we do the same.
+                // Same as get_identity_nonce: None → 0.
                 let nonce = IdentityContractNonceFetcher::fetch_with_settings(
                     sdk,
                     (identity_id, contract_id),
