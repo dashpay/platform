@@ -150,7 +150,7 @@ impl NonceCache {
                             tracing::debug!(
                                 identity_id = %identity_id,
                                 "Platform returned no nonce for identity; \
-                                 defaulting to 0 (first interaction)"
+                                 defaulting to 0 (unknown identity, node missing data, or first interaction)"
                             );
                             0
                         });
