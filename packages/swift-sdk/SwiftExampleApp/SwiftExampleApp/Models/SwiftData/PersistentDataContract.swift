@@ -12,7 +12,7 @@ extension SwiftDashSDK.PersistentDataContract {
         var tokenConfigs: [TokenConfiguration] = []
         if let tokensDict = tokenConfigurations {
             tokenConfigs = tokensDict.compactMap { (_, value) in
-                guard let _ = value as? [String: Any] else { return nil }
+                guard value is [String: Any] else { return nil }
                 return nil
             }
         }

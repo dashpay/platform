@@ -80,7 +80,6 @@ struct KeysListView: View {
     .navigationTitle("Identity Keys")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(item: $showingPrivateKey) { keyId in
-      let _ = print("🔑 Sheet presenting for keyId: \(keyId.id)")
       PrivateKeyView(
         identity: identity,
         keyId: UInt32(keyId.id),
@@ -181,7 +180,6 @@ struct PrivateKeyView: View {
   @State private var showForgetKeyAlert = false
 
   var body: some View {
-    let _ = print("🔑 PrivateKeyView initialized for keyId: \(keyId)")
     NavigationView {
       VStack(spacing: 20) {
         // Warning

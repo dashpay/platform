@@ -432,7 +432,7 @@ public class Identities {
 
   /// Get an identity by ID
   public func get(id: String) throws -> Identity? {
-    guard let sdk = sdk, let _ = sdk.handle else {
+    guard let sdk = sdk, sdk.handle != nil else {
       throw SDKError.invalidState("SDK not initialized")
     }
 
@@ -618,7 +618,7 @@ public class Contracts {
 
   /// Get a data contract by ID
   public func get(id: String) throws -> DataContract? {
-    guard let sdk = sdk, let _ = sdk.handle else {
+    guard let sdk = sdk, sdk.handle != nil else {
       throw SDKError.invalidState("SDK not initialized")
     }
 
