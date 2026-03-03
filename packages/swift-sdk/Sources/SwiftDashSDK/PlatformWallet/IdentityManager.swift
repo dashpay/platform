@@ -39,7 +39,7 @@ public class IdentityManager {
     /// Remove an identity from the manager
     public func removeIdentity(_ identityId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(identityId)
+        let ffiId = identifierToFFI(identityId)
 
         let result = identity_manager_remove_identity(handle, ffiId, &error)
         guard result == Success else {
@@ -51,7 +51,7 @@ public class IdentityManager {
     public func getIdentity(_ identityId: Identifier) throws -> ManagedIdentity {
         var identityHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(identityId)
+        let ffiId = identifierToFFI(identityId)
 
         let result = identity_manager_get_identity(handle, ffiId, &identityHandle, &error)
         guard result == Success else {
@@ -109,7 +109,7 @@ public class IdentityManager {
     /// Set the primary identity
     public func setPrimaryIdentity(_ identityId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(identityId)
+        let ffiId = identifierToFFI(identityId)
 
         let result = identity_manager_set_primary_identity(handle, ffiId, &error)
         guard result == Success else {
