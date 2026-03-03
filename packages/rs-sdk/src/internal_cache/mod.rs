@@ -143,6 +143,15 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
+                // `None` means the nonce path does not exist in GroveDB.
+                // This is indistinguishable from "identity does not exist"
+                // because GroveDB proofs only attest presence/absence of a
+                // leaf — they cannot tell us *which* ancestor is missing.
+                // Drive's own non-proven query handler applies the same
+                // `unwrap_or_default()` logic, so defaulting to 0 here
+                // keeps the SDK consistent with the server.  Callers that
+                // need to verify the identity exists should do so before
+                // requesting a nonce.
                 let nonce =
                     IdentityNonceFetcher::fetch_with_settings(sdk, identity_id, request_settings)
                         .await?
@@ -182,6 +191,10 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
+                // See the comment in `get_identity_nonce` — the same
+                // GroveDB limitation applies: `None` can mean "no nonce
+                // yet", "identity missing", or "contract missing".
+                // Drive defaults to 0 in all three cases; we do the same.
                 let nonce = IdentityContractNonceFetcher::fetch_with_settings(
                     sdk,
                     (identity_id, contract_id),
