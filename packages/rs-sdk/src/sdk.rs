@@ -328,11 +328,8 @@ impl Sdk {
     }
 
     /// Get or fetch identity nonce, querying Platform when stale or absent.
-    ///
-    /// Returns `0` when Platform has no nonce for this identity, which
-    /// means either the identity has never submitted a state transition,
-    /// or the identity does not exist. This method does **not** verify
-    /// identity existence — callers should do so separately if needed.
+    /// Returns `0` for first interactions **and** non-existent identities
+    /// (GroveDB cannot distinguish the two). Does not verify identity existence.
     pub async fn get_identity_nonce(
         &self,
         identity_id: Identifier,
@@ -356,12 +353,8 @@ impl Sdk {
     }
 
     /// Get or fetch identity-contract nonce, querying Platform when stale or absent.
-    ///
-    /// Returns `0` when Platform has no nonce for the pair, which means
-    /// the identity has never interacted with this contract, or the
-    /// identity/contract does not exist. This method does **not** verify
-    /// identity or contract existence — callers should do so separately
-    /// if needed.
+    /// Returns `0` for first interactions **and** non-existent identity/contract
+    /// (GroveDB cannot distinguish the two). Does not verify existence.
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,
