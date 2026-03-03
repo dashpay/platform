@@ -342,8 +342,8 @@ pub fn to_json<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
 /// serde_json::Value routes ALL integers (even u8/u16/u32) through serialize_u64/i64,
 /// which would incorrectly stringify small numbers.
 pub fn json_value_to_js(value: &serde_json::Value) -> WasmDppResult<JsValue> {
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible()
-        .serialize_human_readable(true);
+    let serializer =
+        serde_wasm_bindgen::Serializer::json_compatible().serialize_human_readable(true);
     value
         .serialize(&serializer)
         .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))
@@ -582,8 +582,9 @@ macro_rules! impl_wasm_conversions_inner {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
             pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
                 use dpp::serialization::ValueConvertible;
-                let pv = self.0.to_object()
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toObject: {}", e)))?;
+                let pv = self.0.to_object().map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("toObject: {}", e))
+                })?;
                 $crate::serialization::conversions::platform_value_to_object(&pv)
             }
 
@@ -593,16 +594,18 @@ macro_rules! impl_wasm_conversions_inner {
             ) -> Result<$wasm_ty, $crate::error::WasmDppError> {
                 use dpp::serialization::ValueConvertible;
                 let pv = $crate::serialization::conversions::platform_value_from_object(&obj)?;
-                let inner = <$inner_ty>::from_object(pv)
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromObject: {}", e)))?;
+                let inner = <$inner_ty>::from_object(pv).map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("fromObject: {}", e))
+                })?;
                 Ok(Self(inner))
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
             pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::error::WasmDppError> {
                 use dpp::serialization::JsonConvertible;
-                let json = self.0.to_json()
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toJSON: {}", e)))?;
+                let json = self.0.to_json().map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("toJSON: {}", e))
+                })?;
                 let json = $crate::serialization::conversions::stringify_large_numbers(json);
                 $crate::serialization::conversions::json_to_js_value(&json)
             }
@@ -614,8 +617,9 @@ macro_rules! impl_wasm_conversions_inner {
                 use dpp::serialization::JsonConvertible;
                 let json = $crate::serialization::conversions::js_value_to_json(&js)?;
                 let json = $crate::serialization::conversions::unstringify_large_numbers(json);
-                let inner = <$inner_ty>::from_json(json)
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+                let inner = <$inner_ty>::from_json(json).map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e))
+                })?;
                 Ok(Self(inner))
             }
         }
@@ -628,25 +632,29 @@ macro_rules! impl_wasm_conversions_inner {
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toObject")]
             pub fn to_object(&self) -> Result<$object_type, $crate::error::WasmDppError> {
                 use dpp::serialization::ValueConvertible;
-                let pv = self.0.to_object()
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toObject: {}", e)))?;
+                let pv = self.0.to_object().map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("toObject: {}", e))
+                })?;
                 $crate::serialization::conversions::platform_value_to_object(&pv).map(Into::into)
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "fromObject")]
             pub fn from_object(obj: $object_type) -> Result<$wasm_ty, $crate::error::WasmDppError> {
                 use dpp::serialization::ValueConvertible;
-                let pv = $crate::serialization::conversions::platform_value_from_object(&obj.into())?;
-                let inner = <$inner_ty>::from_object(pv)
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromObject: {}", e)))?;
+                let pv =
+                    $crate::serialization::conversions::platform_value_from_object(&obj.into())?;
+                let inner = <$inner_ty>::from_object(pv).map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("fromObject: {}", e))
+                })?;
                 Ok(Self(inner))
             }
 
             #[wasm_bindgen::prelude::wasm_bindgen(js_name = "toJSON")]
             pub fn to_json(&self) -> Result<$json_type, $crate::error::WasmDppError> {
                 use dpp::serialization::JsonConvertible;
-                let json = self.0.to_json()
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("toJSON: {}", e)))?;
+                let json = self.0.to_json().map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("toJSON: {}", e))
+                })?;
                 let json = $crate::serialization::conversions::stringify_large_numbers(json);
                 $crate::serialization::conversions::json_to_js_value(&json).map(Into::into)
             }
@@ -656,8 +664,9 @@ macro_rules! impl_wasm_conversions_inner {
                 use dpp::serialization::JsonConvertible;
                 let json = $crate::serialization::conversions::js_value_to_json(&js.into())?;
                 let json = $crate::serialization::conversions::unstringify_large_numbers(json);
-                let inner = <$inner_ty>::from_json(json)
-                    .map_err(|e| $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+                let inner = <$inner_ty>::from_json(json).map_err(|e| {
+                    $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e))
+                })?;
                 Ok(Self(inner))
             }
         }
@@ -740,4 +749,3 @@ macro_rules! impl_wasm_conversions_serde {
         }
     };
 }
-

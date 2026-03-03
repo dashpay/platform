@@ -29,4 +29,3 @@ impl TokenStatusV0Accessors for TokenStatusV0 {
         self.paused = paused;
     }
 }
-

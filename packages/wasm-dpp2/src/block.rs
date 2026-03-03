@@ -123,6 +123,12 @@ impl From<&BlockInfoWasm> for BlockInfo {
     }
 }
 
-impl_wasm_conversions_inner!(BlockInfoWasm, BlockInfo, BlockInfo, BlockInfoObjectJs, BlockInfoJSONJs);
+impl_wasm_conversions_inner!(
+    BlockInfoWasm,
+    BlockInfo,
+    BlockInfo,
+    BlockInfoObjectJs,
+    BlockInfoJSONJs
+);
 
 impl_wasm_type_info!(BlockInfoWasm, BlockInfo);

@@ -565,7 +565,10 @@ impl DocumentWasm {
 
     /// Convert to a JSON-compatible JS object with binary fields as strings.
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self, platform_version: PlatformVersionLikeJs) -> WasmDppResult<DocumentJSONJs> {
+    pub fn to_json(
+        &self,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<DocumentJSONJs> {
         let platform_version: PlatformVersion = platform_version.try_into()?;
         // Get document fields as JSON
         let mut json_value = self.document.to_json(&platform_version)?;
@@ -610,8 +613,7 @@ impl DocumentWasm {
         }
 
         // Create Document from remaining fields
-        wrapper.document =
-            Document::from_json_value::<String, _>(json_value, &platform_version)?;
+        wrapper.document = Document::from_json_value::<String, _>(json_value, &platform_version)?;
 
         Ok(wrapper)
     }

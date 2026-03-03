@@ -32,11 +32,11 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::version::PlatformVersionLikeJs;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
 use wasm_dpp2::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
 use wasm_dpp2::utils::{try_from_options, try_from_options_optional};
+use wasm_dpp2::version::PlatformVersionLikeJs;
 use wasm_dpp2::IdentitySignerWasm;
 
 /// Like `impl_wasm_serde_conversions!` but also handles an `Option<DocumentWasm>` field
@@ -69,7 +69,10 @@ macro_rules! impl_wasm_serde_conversions_with_document {
             }
 
             #[wasm_bindgen(js_name = fromObject)]
-            pub fn from_object(obj: js_sys::Object, platform_version: PlatformVersionLikeJs) -> Result<$ty, WasmSdkError> {
+            pub fn from_object(
+                obj: js_sys::Object,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<$ty, WasmSdkError> {
                 let js_val: JsValue = obj.into();
                 // Note: the `document` key remains in js_val but is safely ignored by serde
                 // because the struct uses #[serde(skip)] on the document field.
@@ -80,14 +83,15 @@ macro_rules! impl_wasm_serde_conversions_with_document {
                             e
                         ))
                     })?;
-                let document = if doc_val.is_object()
-                    && !doc_val.is_null()
-                    && !doc_val.is_undefined()
-                {
-                    Some(DocumentWasm::from_object(doc_val.into(), platform_version).map_err(WasmSdkError::from)?)
-                } else {
-                    None
-                };
+                let document =
+                    if doc_val.is_object() && !doc_val.is_null() && !doc_val.is_undefined() {
+                        Some(
+                            DocumentWasm::from_object(doc_val.into(), platform_version)
+                                .map_err(WasmSdkError::from)?,
+                        )
+                    } else {
+                        None
+                    };
                 let mut result: $ty =
                     wasm_dpp2::serialization::from_object(js_val).map_err(WasmSdkError::from)?;
                 result.document = document;
@@ -95,7 +99,10 @@ macro_rules! impl_wasm_serde_conversions_with_document {
             }
 
             #[wasm_bindgen(js_name = toJSON)]
-            pub fn to_json(&self, platform_version: PlatformVersionLikeJs) -> Result<JsValue, WasmSdkError> {
+            pub fn to_json(
+                &self,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<JsValue, WasmSdkError> {
                 let result = wasm_dpp2::serialization::to_json(self).map_err(WasmSdkError::from)?;
                 if let Some(ref doc) = self.document {
                     let doc_json = doc.to_json(platform_version).map_err(WasmSdkError::from)?;
@@ -111,7 +118,10 @@ macro_rules! impl_wasm_serde_conversions_with_document {
             }
 
             #[wasm_bindgen(js_name = fromJSON)]
-            pub fn from_json(js: js_sys::Object, platform_version: PlatformVersionLikeJs) -> Result<$ty, WasmSdkError> {
+            pub fn from_json(
+                js: js_sys::Object,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<$ty, WasmSdkError> {
                 let js_val: JsValue = js.into();
                 // Note: the `document` key remains in js_val but is safely ignored by serde
                 // because the struct uses #[serde(skip)] on the document field.
@@ -124,7 +134,10 @@ macro_rules! impl_wasm_serde_conversions_with_document {
                     })?;
                 let document =
                     if doc_val.is_object() && !doc_val.is_null() && !doc_val.is_undefined() {
-                        Some(DocumentWasm::from_json(doc_val.into(), platform_version).map_err(WasmSdkError::from)?)
+                        Some(
+                            DocumentWasm::from_json(doc_val.into(), platform_version)
+                                .map_err(WasmSdkError::from)?,
+                        )
                     } else {
                         None
                     };

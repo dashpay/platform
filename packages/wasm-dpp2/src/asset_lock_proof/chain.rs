@@ -111,5 +111,11 @@ impl ChainAssetLockProofWasm {
     }
 }
 
-impl_wasm_conversions_inner!(ChainAssetLockProofWasm, ChainAssetLockProof, ChainAssetLockProof, ChainAssetLockProofObjectJs, ChainAssetLockProofJSONJs);
+impl_wasm_conversions_inner!(
+    ChainAssetLockProofWasm,
+    ChainAssetLockProof,
+    ChainAssetLockProof,
+    ChainAssetLockProofObjectJs,
+    ChainAssetLockProofJSONJs
+);
 impl_wasm_type_info!(ChainAssetLockProofWasm, ChainAssetLockProof);

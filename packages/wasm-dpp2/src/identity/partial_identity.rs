@@ -421,8 +421,10 @@ pub fn value_to_loaded_public_keys_from_json(
             ))
         })?;
 
-        let json_value: serde_json::Value = serde_wasm_bindgen::from_value(js_key)
-            .map_err(|e| WasmDppError::serialization(format!("IdentityPublicKey fromJSON: {}", e)))?;
+        let json_value: serde_json::Value =
+            serde_wasm_bindgen::from_value(js_key).map_err(|e| {
+                WasmDppError::serialization(format!("IdentityPublicKey fromJSON: {}", e))
+            })?;
         let pub_key = IdentityPublicKey::from_json_object(json_value, platform_version)
             .map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);

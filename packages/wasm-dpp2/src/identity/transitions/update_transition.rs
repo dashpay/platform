@@ -346,5 +346,11 @@ impl IdentityUpdateTransitionWasm {
     }
 }
 
-impl_wasm_conversions_inner!(IdentityUpdateTransitionWasm, IdentityUpdateTransition, IdentityUpdateTransition, IdentityUpdateTransitionObjectJs, IdentityUpdateTransitionJSONJs);
+impl_wasm_conversions_inner!(
+    IdentityUpdateTransitionWasm,
+    IdentityUpdateTransition,
+    IdentityUpdateTransition,
+    IdentityUpdateTransitionObjectJs,
+    IdentityUpdateTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityUpdateTransitionWasm, IdentityUpdateTransition);

@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
+use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use js_sys::BigInt;
@@ -202,5 +202,11 @@ impl ExtendedEpochInfoWasm {
     }
 }
 
-impl_wasm_conversions_inner!(ExtendedEpochInfoWasm, ExtendedEpochInfo, ExtendedEpochInfo, ExtendedEpochInfoObjectJs, ExtendedEpochInfoJSONJs);
+impl_wasm_conversions_inner!(
+    ExtendedEpochInfoWasm,
+    ExtendedEpochInfo,
+    ExtendedEpochInfo,
+    ExtendedEpochInfoObjectJs,
+    ExtendedEpochInfoJSONJs
+);
 impl_wasm_type_info!(ExtendedEpochInfoWasm, ExtendedEpochInfo);

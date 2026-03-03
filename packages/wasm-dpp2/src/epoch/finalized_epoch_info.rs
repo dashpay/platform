@@ -373,5 +373,11 @@ impl FinalizedEpochInfoWasm {
     }
 }
 
-impl_wasm_conversions_inner!(FinalizedEpochInfoWasm, FinalizedEpochInfo, FinalizedEpochInfo, FinalizedEpochInfoObjectJs, FinalizedEpochInfoJSONJs);
+impl_wasm_conversions_inner!(
+    FinalizedEpochInfoWasm,
+    FinalizedEpochInfo,
+    FinalizedEpochInfo,
+    FinalizedEpochInfoObjectJs,
+    FinalizedEpochInfoJSONJs
+);
 impl_wasm_type_info!(FinalizedEpochInfoWasm, FinalizedEpochInfo);

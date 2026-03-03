@@ -11,6 +11,7 @@ use crate::serialization;
 use crate::utils::{
     try_from_options, try_from_options_optional, try_to_fixed_bytes, try_to_u32, try_to_u64,
 };
+use crate::version::PlatformVersionLikeJs;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -26,7 +27,6 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use crate::version::PlatformVersionLikeJs;
 use dpp::version::PlatformVersion;
 use hex;
 use serde::Deserialize;

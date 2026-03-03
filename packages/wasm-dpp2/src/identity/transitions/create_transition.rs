@@ -256,5 +256,11 @@ impl IdentityCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions_inner!(IdentityCreateTransitionWasm, IdentityCreateTransition, IdentityCreateTransition, IdentityCreateTransitionObjectJs, IdentityCreateTransitionJSONJs);
+impl_wasm_conversions_inner!(
+    IdentityCreateTransitionWasm,
+    IdentityCreateTransition,
+    IdentityCreateTransition,
+    IdentityCreateTransitionObjectJs,
+    IdentityCreateTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityCreateTransitionWasm, IdentityCreateTransition);

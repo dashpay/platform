@@ -239,5 +239,11 @@ impl IdentityTopUpTransitionWasm {
     }
 }
 
-impl_wasm_conversions_inner!(IdentityTopUpTransitionWasm, IdentityTopUpTransition, IdentityTopUpTransition, IdentityTopUpTransitionObjectJs, IdentityTopUpTransitionJSONJs);
+impl_wasm_conversions_inner!(
+    IdentityTopUpTransitionWasm,
+    IdentityTopUpTransition,
+    IdentityTopUpTransition,
+    IdentityTopUpTransitionObjectJs,
+    IdentityTopUpTransitionJSONJs
+);
 impl_wasm_type_info!(IdentityTopUpTransitionWasm, IdentityTopUpTransition);

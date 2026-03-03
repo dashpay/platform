@@ -1,8 +1,8 @@
-use crate::tokens::token_event::TokenEvent;
-use crate::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
+use crate::tokens::token_event::TokenEvent;
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "state-transition-serde-conversion")]
@@ -21,7 +21,10 @@ pub enum GroupActionEvent {
     TokenEvent(TokenEvent),
 }
 
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
 impl JsonConvertible for GroupActionEvent {}
 #[cfg(feature = "state-transition-serde-conversion")]
 impl ValueConvertible for GroupActionEvent {}

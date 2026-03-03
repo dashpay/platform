@@ -1,8 +1,8 @@
-use crate::tokens::info::v0::IdentityTokenInfoV0;
-use crate::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
+use crate::tokens::info::v0::IdentityTokenInfoV0;
+use crate::ProtocolError;
 use bincode::Encode;
 use derive_more::From;
 use platform_serialization::de::Decode;

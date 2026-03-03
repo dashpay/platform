@@ -98,5 +98,11 @@ impl ResourceVoteWasm {
     }
 }
 
-impl_wasm_conversions_inner!(ResourceVoteWasm, ResourceVote, ResourceVote, ResourceVoteObjectJs, ResourceVoteJSONJs);
+impl_wasm_conversions_inner!(
+    ResourceVoteWasm,
+    ResourceVote,
+    ResourceVote,
+    ResourceVoteObjectJs,
+    ResourceVoteJSONJs
+);
 impl_wasm_type_info!(ResourceVoteWasm, ResourceVote);

@@ -6,13 +6,13 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::try_to_u64;
+use crate::version::PlatformVersionLikeJs;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
-use crate::version::PlatformVersionLikeJs;
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -201,8 +201,7 @@ impl IdentityWasm {
     ) -> WasmDppResult<IdentityWasm> {
         let platform_version: PlatformVersion = platform_version.try_into()?;
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
-        let identity =
-            Identity::try_from_platform_versioned(platform_value, &platform_version)?;
+        let identity = Identity::try_from_platform_versioned(platform_value, &platform_version)?;
         Ok(IdentityWasm(identity))
     }
 

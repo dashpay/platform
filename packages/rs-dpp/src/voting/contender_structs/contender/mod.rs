@@ -46,7 +46,10 @@ pub enum ContenderWithSerializedDocument {
     V0(ContenderWithSerializedDocumentV0),
 }
 
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
 impl JsonConvertible for ContenderWithSerializedDocument {}
 #[cfg(feature = "state-transition-serde-conversion")]
 impl ValueConvertible for ContenderWithSerializedDocument {}

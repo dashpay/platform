@@ -106,7 +106,13 @@ impl ContenderWithSerializedDocumentWasm {
     }
 }
 
-impl_wasm_conversions_inner!(ContenderWithSerializedDocumentWasm, ContenderWithSerializedDocument, ContenderWithSerializedDocument, ContenderWithSerializedDocumentObjectJs, ContenderWithSerializedDocumentJSONJs);
+impl_wasm_conversions_inner!(
+    ContenderWithSerializedDocumentWasm,
+    ContenderWithSerializedDocument,
+    ContenderWithSerializedDocument,
+    ContenderWithSerializedDocumentObjectJs,
+    ContenderWithSerializedDocumentJSONJs
+);
 
 impl_wasm_type_info!(
     ContenderWithSerializedDocumentWasm,

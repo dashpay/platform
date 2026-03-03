@@ -87,5 +87,11 @@ impl TokenEventWasm {
     }
 }
 
-impl_wasm_conversions_inner!(TokenEventWasm, TokenEvent, TokenEvent, TokenEventObjectJs, TokenEventJSONJs);
+impl_wasm_conversions_inner!(
+    TokenEventWasm,
+    TokenEvent,
+    TokenEvent,
+    TokenEventObjectJs,
+    TokenEventJSONJs
+);
 impl_wasm_type_info!(TokenEventWasm, TokenEvent);

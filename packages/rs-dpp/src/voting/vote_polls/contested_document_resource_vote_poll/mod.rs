@@ -1,6 +1,6 @@
-use crate::serialization::PlatformSerializable;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use crate::serialization::PlatformSerializable;
 use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;

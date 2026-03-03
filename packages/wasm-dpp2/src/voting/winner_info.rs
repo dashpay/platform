@@ -119,7 +119,13 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
     }
 }
 
-impl_wasm_conversions_inner!(ContestedDocumentVotePollWinnerInfoWasm, ContestedDocumentVotePollWinnerInfo, ContestedDocumentVotePollWinnerInfo, ContestedDocumentVotePollWinnerInfoObjectJs, ContestedDocumentVotePollWinnerInfoJSONJs);
+impl_wasm_conversions_inner!(
+    ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo,
+    ContestedDocumentVotePollWinnerInfo,
+    ContestedDocumentVotePollWinnerInfoObjectJs,
+    ContestedDocumentVotePollWinnerInfoJSONJs
+);
 
 impl_wasm_type_info!(
     ContestedDocumentVotePollWinnerInfoWasm,

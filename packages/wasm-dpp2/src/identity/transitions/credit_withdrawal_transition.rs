@@ -356,7 +356,13 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 }
 
-impl_wasm_conversions_inner!(IdentityCreditWithdrawalTransitionWasm, IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionObjectJs, IdentityCreditWithdrawalTransitionJSONJs);
+impl_wasm_conversions_inner!(
+    IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition,
+    IdentityCreditWithdrawalTransition,
+    IdentityCreditWithdrawalTransitionObjectJs,
+    IdentityCreditWithdrawalTransitionJSONJs
+);
 
 impl_wasm_type_info!(
     IdentityCreditWithdrawalTransitionWasm,

@@ -31,4 +31,3 @@ impl IdentityTokenInfoV0Accessors for IdentityTokenInfoV0 {
         self.frozen = frozen;
     }
 }
-

@@ -281,8 +281,8 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn extended_epoch_info_json_round_trip() {
-        use crate::block::extended_epoch_info::ExtendedEpochInfo;
         use crate::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+        use crate::block::extended_epoch_info::ExtendedEpochInfo;
 
         let info = ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
             index: 5,
@@ -320,8 +320,8 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn finalized_epoch_info_json_round_trip() {
-        use crate::block::finalized_epoch_info::FinalizedEpochInfo;
         use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+        use crate::block::finalized_epoch_info::FinalizedEpochInfo;
 
         let proposer_id = Identifier::from([1u8; 32]);
         let mut block_proposers = BTreeMap::new();
@@ -358,7 +358,8 @@ mod json_convertible_tests {
             .expect("blockProposers should be an object");
         assert_eq!(proposers.len(), 1);
 
-        let expected_base58 = proposer_id.to_string(platform_value::string_encoding::Encoding::Base58);
+        let expected_base58 =
+            proposer_id.to_string(platform_value::string_encoding::Encoding::Base58);
         assert!(
             proposers.contains_key(&expected_base58),
             "Expected key {} in blockProposers, got keys: {:?}",
@@ -415,10 +416,7 @@ mod json_convertible_tests {
         let json = bounds.to_json().expect("to_json should succeed");
 
         assert!(json["id"].is_string());
-        assert_eq!(
-            json["documentTypeName"].as_str().unwrap(),
-            "myDocument"
-        );
+        assert_eq!(json["documentTypeName"].as_str().unwrap(), "myDocument");
 
         let restored = ContractBounds::from_json(json).expect("from_json should succeed");
         assert_eq!(bounds, restored);
@@ -491,9 +489,7 @@ mod json_convertible_tests {
                     contract_id,
                     document_type_name: "domain".to_string(),
                     index_name: "parentNameAndLabel".to_string(),
-                    index_values: vec![
-                        platform_value::Value::Text("dash".to_string()),
-                    ],
+                    index_values: vec![platform_value::Value::Text("dash".to_string())],
                 },
             ),
             resource_vote_choice: ResourceVoteChoice::TowardsIdentity(towards_id),
@@ -514,9 +510,9 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn change_control_rules_json_round_trip() {
-        use crate::data_contract::change_control_rules::ChangeControlRules;
         use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+        use crate::data_contract::change_control_rules::ChangeControlRules;
 
         let rules = ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
@@ -555,9 +551,9 @@ mod json_convertible_tests {
 
     #[test]
     fn change_control_rules_with_group_json_round_trip() {
-        use crate::data_contract::change_control_rules::ChangeControlRules;
         use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
+        use crate::data_contract::change_control_rules::ChangeControlRules;
 
         let rules = ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: AuthorizedActionTakers::Group(3),
@@ -577,8 +573,8 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn token_configuration_json_round_trip() {
-        use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 
         let config = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
 
@@ -588,15 +584,14 @@ mod json_convertible_tests {
         assert_eq!(json["baseSupply"].as_u64().unwrap(), 100000);
 
         // round-trip
-        let restored =
-            TokenConfiguration::from_json(json).expect("from_json should succeed");
+        let restored = TokenConfiguration::from_json(json).expect("from_json should succeed");
         assert_eq!(config, restored);
     }
 
     #[test]
     fn token_configuration_large_supply_json_round_trip() {
-        use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
         use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 
         let mut config = TokenConfigurationV0::default_most_restrictive();
         config.base_supply = u64::MAX;
@@ -685,7 +680,9 @@ mod json_convertible_tests {
         };
 
         let expected = block_info;
-        let obj = block_info.into_object().expect("into_object should succeed");
+        let obj = block_info
+            .into_object()
+            .expect("into_object should succeed");
         let restored = BlockInfo::from_object(obj).expect("from_object should succeed");
         assert_eq!(expected, restored);
     }
@@ -719,8 +716,8 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn extended_epoch_info_value_round_trip() {
-        use crate::block::extended_epoch_info::ExtendedEpochInfo;
         use crate::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
+        use crate::block::extended_epoch_info::ExtendedEpochInfo;
 
         let info = ExtendedEpochInfo::V0(ExtendedEpochInfoV0 {
             index: 10,
@@ -732,8 +729,7 @@ mod json_convertible_tests {
         });
 
         let obj = info.to_object().expect("to_object should succeed");
-        let restored =
-            ExtendedEpochInfo::from_object(obj).expect("from_object should succeed");
+        let restored = ExtendedEpochInfo::from_object(obj).expect("from_object should succeed");
         assert_eq!(info, restored);
     }
 
@@ -742,8 +738,8 @@ mod json_convertible_tests {
     // -----------------------------------------------------------------------
     #[test]
     fn finalized_epoch_info_value_round_trip_empty_proposers() {
-        use crate::block::finalized_epoch_info::FinalizedEpochInfo;
         use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+        use crate::block::finalized_epoch_info::FinalizedEpochInfo;
 
         // Use empty block_proposers to avoid the Identifier-as-map-key
         // serialization asymmetry (to_value serializes Identifier as base58
@@ -764,8 +760,7 @@ mod json_convertible_tests {
         });
 
         let obj = info.to_object().expect("to_object should succeed");
-        let restored =
-            FinalizedEpochInfo::from_object(obj).expect("from_object should succeed");
+        let restored = FinalizedEpochInfo::from_object(obj).expect("from_object should succeed");
         assert_eq!(info, restored);
     }
 
