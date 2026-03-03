@@ -328,8 +328,9 @@ impl Sdk {
     }
 
     /// Get or fetch identity nonce, querying Platform when stale or absent.
-    /// Returns `0` for first interactions **and** non-existent identities.
-    /// Does not verify identity existence.
+    /// Treats a missing nonce as `0` before applying the optional bump; on first
+    /// interaction this may return `0` or `1` depending on `bump_first`. Does not
+    /// verify identity existence.
     pub async fn get_identity_nonce(
         &self,
         identity_id: Identifier,
