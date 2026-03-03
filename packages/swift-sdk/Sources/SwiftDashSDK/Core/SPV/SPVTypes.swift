@@ -98,6 +98,7 @@ public struct SPVFilterHeadersProgress: Sendable {
 public struct SPVFiltersProgress: Sendable {
     public let state: SPVSyncState
     public let currentHeight: UInt32
+    public let storedHeight: UInt32
     public let targetHeight: UInt32
     public let filterHeaderTipHeight: UInt32
     public let downloaded: UInt32
@@ -108,7 +109,8 @@ public struct SPVFiltersProgress: Sendable {
 
     public init(_ ffi: FFIFiltersProgress) {
         state = SPVSyncState(rawValue: ffi.state.rawValue) ?? .unknown
-        currentHeight = ffi.current_height
+        currentHeight = ffi.committed_height
+        storedHeight = ffi.stored_height
         targetHeight = ffi.target_height
         filterHeaderTipHeight = ffi.filter_header_tip_height
         downloaded = ffi.downloaded

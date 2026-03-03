@@ -281,11 +281,11 @@ class SPVClient: @unchecked Sendable {
     }
 
     func stopSync() {
-        let cancelResult = dash_spv_ffi_client_cancel_sync(client)
+        let cancelResult = dash_spv_ffi_client_stop(client)
         if cancelResult != 0 {
             let message = SPVClient.getLastDashFFIError()
             if swiftLoggingEnabled {
-                print("[SPV][Cancel] cancel_sync failed: \(message)")
+                print("[SPV][Cancel] client stop failed: \(message)")
             }
         }
     }
