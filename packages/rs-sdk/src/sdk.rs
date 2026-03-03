@@ -331,13 +331,10 @@ impl Sdk {
     /// querying Platform if the cached value is stale or absent. Optionally
     /// increments the nonce before storing it, based on the provided settings.
     ///
-    /// # Errors
+    /// # First-time interactions
     ///
-    /// Returns [`Error::IdentityNonceNotFound`] if the queried DAPI node
-    /// does not know the identity (e.g. the node is stale or the identity
-    /// was just created). The worst-case impact is that the caller must
-    /// retry the state transition; the next attempt will re-fetch from
-    /// Platform and likely reach an up-to-date node.
+    /// If Platform returns no nonce for the identity (first interaction or
+    /// stale node), the cache defaults to nonce `0`.
     pub async fn get_identity_nonce(
         &self,
         identity_id: Identifier,
@@ -365,11 +362,10 @@ impl Sdk {
     /// Optionally increments the nonce before storing it, based on the provided
     /// settings.
     ///
-    /// # Errors
+    /// # First-time interactions
     ///
-    /// Returns [`Error::IdentityNonceNotFound`] if the queried DAPI node
-    /// does not know the identity–contract pair. See
-    /// [`get_identity_nonce`](Self::get_identity_nonce) for details.
+    /// If Platform returns no nonce for the identity–contract pair (first
+    /// interaction or stale node), the cache defaults to nonce `0`.
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,
