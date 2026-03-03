@@ -50,23 +50,22 @@ impl Drive {
         if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
             && result.is_ok()
         {
-            let root_hash = self
-                .grove
-                .root_hash(transaction, &drive_version.grove_version)
-                .unwrap()
-                .map_err(Error::from)?;
+            if let Some((path, previous_root_hash)) = maybe_params_for_logs {
+                let root_hash = self
+                    .grove
+                    .root_hash(transaction, &drive_version.grove_version)
+                    .unwrap()
+                    .map_err(Error::from)?;
 
-            let (path, previous_root_hash) =
-                maybe_params_for_logs.expect("log params should be set above");
-
-            tracing::trace!(
-                target: "drive_grovedb_operations",
-                path = ?path.to_vec(),
-                ?root_hash,
-                ?previous_root_hash,
-                is_transactional = transaction.is_some(),
-                "grovedb clear",
-            );
+                tracing::trace!(
+                    target: "drive_grovedb_operations",
+                    path = ?path.to_vec(),
+                    ?root_hash,
+                    ?previous_root_hash,
+                    is_transactional = transaction.is_some(),
+                    "grovedb clear",
+                );
+            }
         }
 
         result

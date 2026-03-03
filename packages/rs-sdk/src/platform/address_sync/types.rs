@@ -55,7 +55,7 @@ pub struct AddressSyncConfig {
 
     /// Maximum age in seconds before a full tree rescan is forced.
     ///
-    /// When `last_sync_timestamp` is passed to [`sync_address_balances`], the
+    /// When `last_sync_timestamp` is passed to [`sync_address_balances`](super::sync_address_balances), the
     /// function compares `now - last_sync_timestamp` against this threshold.
     /// If the elapsed time exceeds this value, a full tree rescan is performed
     /// instead of incremental-only catch-up.
@@ -113,15 +113,15 @@ pub struct AddressSyncResult {
     ///
     /// After each sync the caller should persist two values:
     /// 1. This `new_sync_height` — return it from
-    ///    [`AddressProvider::last_sync_height`] on the next call.
+    ///    [`AddressProvider::last_sync_height`](super::provider::AddressProvider::last_sync_height) on the next call.
     /// 2. [`new_sync_timestamp`](Self::new_sync_timestamp) — pass it as the
-    ///    `last_sync_timestamp` parameter of [`sync_address_balances`].
+    ///    `last_sync_timestamp` parameter of [`sync_address_balances`](super::sync_address_balances).
     pub new_sync_height: u64,
 
     /// Platform block time (Unix seconds) at the point of the latest response.
     ///
     /// Store this value and pass it back as `last_sync_timestamp` on the next
-    /// call to [`sync_address_balances`]. The function compares it against the
+    /// call to [`sync_address_balances`](super::sync_address_balances). The function compares it against the
     /// current wall-clock time to decide whether a full tree rescan is needed.
     pub new_sync_timestamp: u64,
 }

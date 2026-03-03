@@ -53,7 +53,7 @@ use std::fmt::Debug;
 /// and use [FetchMany::fetch_many()] for your object type.
 ///
 /// You can also use convenience methods:
-/// * [FetchMany::fetch_many_by_identifiers()] - to fetch multiple objects by their identifiers,
+/// * [FetchMany::fetch_by_identifiers()] - to fetch multiple objects by their identifiers,
 /// * [FetchMany::fetch_many_with_limit()] - to fetch not more than `limit` objects.
 ///
 /// ## Generic Parameters
@@ -100,7 +100,7 @@ where
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement [`TransportRequest`] and [`MockRequest`](crate::mock::MockRequest).
+    /// This type must implement [`TransportRequest`].
     type Request: TransportRequest
         + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>;
 
@@ -129,7 +129,7 @@ where
     ///
     /// Returns a `Result` containing either:
     ///
-    /// * list of objects matching the [Query] indexed by a key type `K`, where an item can be None of
+    /// * list of objects matching the [Query] indexed by a key type `K`, where an item can be None if
     /// the object was not found for provided key
     /// *  [`Error`](crate::error::Error).
     ///
@@ -270,7 +270,7 @@ where
 ///
 /// ## Supported query types
 ///
-/// * [DriveQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
+/// * [DriveDocumentQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
 /// * [DocumentQuery](crate::platform::documents::document_query::DocumentQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {
@@ -426,14 +426,14 @@ impl FetchMany<ProtocolVersion, ProtocolVersionUpgrades> for ProtocolVersionVote
 /// Fetch information about protocol version upgrade voted by each node.
 ///
 /// Returns list of [MasternodeProtocolVotes](drive_proof_verifier::types::MasternodeProtocolVote)
-/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// indexed by [ProTxHash](dpp::dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
 /// node protxhash and its preferred protocol version.
 ///
 /// ## Supported query types
 ///
-/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
+/// * [ProTxHash](dpp::dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
 ///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
-/// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
+/// * `Option<ProTxHash>` - optional proTxHash; if it is `None`,
 ///   the query will return all objects
 /// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
 ///   to fetch; see also [FetchMany::fetch_many_with_limit()].
@@ -444,17 +444,15 @@ impl FetchMany<ProTxHash, MasternodeProtocolVotes> for MasternodeProtocolVote {
 /// Fetch information about the proposed block count by proposers for a given epoch.
 ///
 /// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
-/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// indexed by [ProTxHash](dpp::dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
 /// node protxhash and the amount of blocks that were proposed.
 ///
 /// ## Supported query types
 ///
-/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of first object to find; will return up to
-///   [DEFAULT_NODES_VOTING_LIMIT](super::query::DEFAULT_NODES_VOTING_LIMIT) objects
-/// * [`Option<ProTxHash>`](dashcore_rpc::dashcore::ProTxHash) - proTxHash that can be and [Option]; if it is `None`,
-///   the query will return all objects
-/// * [`LimitQuery<ProTxHash>`](super::LimitQuery) - limit query that allows to specify maximum number of objects
-///   to fetch; see also [FetchMany::fetch_many_with_limit()].
+/// * [`LimitQuery<Option<EpochIndex>>`](super::LimitQuery) - query specifying an optional epoch index
+///   and a limit on the number of objects to fetch
+/// * [`LimitQuery<GetEvonodesProposedEpochBlocksByRangeRequest>`](super::LimitQuery) - limit query wrapping
+///   a raw request for more fine-grained control
 impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
     type Request = GetEvonodesProposedEpochBlocksByRangeRequest;
 }
@@ -462,12 +460,14 @@ impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountByRange {
 /// Fetch information about the proposed block count by proposers for a given epoch.
 ///
 /// Returns list of [ProposerBlockCounts](drive_proof_verifier::types::ProposerBlockCounts)
-/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
+/// indexed by [ProTxHash](dpp::dashcore_rpc::dashcore::ProTxHash). Each item in this list represents
 /// node pro_tx_hash and the amount of blocks that were proposed.
 ///
 /// ## Supported query types
 ///
-/// * [ProTxHash](dashcore_rpc::dashcore::ProTxHash) - proTxHash of an evonode to find; will return one evonode block count
+/// * [`ProposerBlockCountByIdsQuery`](super::query::ProposerBlockCountByIdsQuery) - query specifying an optional epoch
+///   and a list of evonode ProTxHashes to look up
+/// * [`(EpochIndex, Vec<ProTxHash>)`] - tuple of epoch index and list of evonode ProTxHashes
 impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
     type Request = GetEvonodesProposedEpochBlocksByIdsRequest;
 }
@@ -478,7 +478,7 @@ impl FetchMany<ProTxHash, ProposerBlockCounts> for ProposerBlockCountById {
 ///
 /// ## Supported query types
 ///
-/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of data contracts to fetch
+/// * `Vec<Identifier>` - list of identifiers of data contracts to fetch
 ///
 impl FetchMany<Identifier, DataContracts> for DataContract {
     type Request = GetDataContractsRequest;
@@ -488,27 +488,28 @@ impl FetchMany<Identifier, DataContracts> for DataContract {
 ///
 /// ## Supported query types
 ///
-/// * [VotePollsByDocumentTypeQuery]
+/// * [`VotePollsByDocumentTypeQuery`](drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery)
 impl FetchMany<Identifier, ContestedResources> for ContestedResource {
     type Request = GetContestedResourcesRequest;
 }
 
 /// Fetch multiple contenders for a contested document resource vote poll.
 ///
-/// Returns [Contender](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
+/// Returns [Contenders](drive_proof_verifier::types::Contenders) indexed by [Identifier](dpp::prelude::Identifier).
 ///
 /// ## Supported query types
 ///
-/// * [ContestedDocumentVotePollDriveQuery]
+/// * [`ContestedDocumentVotePollDriveQuery`](drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery)
 #[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
     type Request = GetContestedResourceVoteStateRequest;
 }
 
-///  Fetch voters
+/// Fetch voters for a contested document resource vote poll.
+///
 /// ## Supported query types
 ///
-/// * [ContestedDocumentVotePollVotesDriveQuery]
+/// * [`ContestedDocumentVotePollVotesDriveQuery`](drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery)
 impl FetchMany<usize, Voters> for Voter {
     type Request = GetContestedResourceVotersForIdentityRequest;
 }
@@ -518,7 +519,7 @@ impl FetchMany<usize, Voters> for Voter {
 ///
 /// ## Supported query types
 ///
-/// * [ContestedResourceVotesGivenByIdentityQuery]
+/// * [`ContestedResourceVotesGivenByIdentityQuery`](drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery)
 impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
     type Request = GetContestedResourceIdentityVotesRequest;
 }
@@ -528,7 +529,7 @@ impl FetchMany<Identifier, ResourceVotesByIdentity> for ResourceVote {
 ///
 /// ## Supported query types
 ///
-/// * [VotePollsByEndDateDriveQuery]
+/// * [`VotePollsByEndDateDriveQuery`](drive::query::VotePollsByEndDateDriveQuery)
 impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
     type Request = GetVotePollsByEndDateRequest;
 }
@@ -538,7 +539,7 @@ impl FetchMany<TimestampMillis, VotePollsGroupedByTimestamp> for VotePoll {
 ///
 /// ## Supported query types
 ///
-/// * [Vec<Identifier>](dpp::prelude::Identifier) - list of identifiers of identities whose balance we want to fetch
+/// * `Vec<Identifier>` - list of identifiers of identities whose balance we want to fetch
 impl FetchMany<Identifier, IdentityBalances> for drive_proof_verifier::types::IdentityBalance {
     type Request = GetIdentitiesBalancesRequest;
 }
@@ -552,7 +553,7 @@ impl FetchMany<PlatformAddress, AddressInfos> for drive_proof_verifier::types::A
 ///
 /// ## Supported query types
 ///
-/// * [KeysInPath]
+/// * [`KeysInPath`](drive_proof_verifier::types::KeysInPath)
 impl FetchMany<Key, Elements> for Element {
     type Request = GetPathElementsRequest;
 }

@@ -20,3 +20,6 @@ pub use established_contact::EstablishedContact;
 pub use identity_manager::IdentityManager;
 pub use managed_identity::ManagedIdentity;
 pub use platform_wallet_info::PlatformWalletInfo;
+
+#[cfg(feature = "manager")]
+pub use key_wallet_manager;

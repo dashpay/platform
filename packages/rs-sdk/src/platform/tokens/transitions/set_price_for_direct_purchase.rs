@@ -1,4 +1,4 @@
-//! Token price setting operations for direct purchase functionality.
+//! Token price setting operations for the Dash Platform SDK.
 //!
 //! This module provides functionality to set or update pricing schedules
 //! for tokens that can be purchased directly.

@@ -6,6 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 
 echo "=== Quick Module Size Check ==="
 echo
@@ -53,7 +55,7 @@ for name in "${!COMBOS[@]}"; do
         OUT_DIR="$TEMP_DIR/$name"
         mkdir -p "$OUT_DIR"
         
-        if wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
+        if wasm-bindgen "$CARGO_OUT_DIR/wasm32-unknown-unknown/release/wasm_drive_verify.wasm" \
             --out-dir "$OUT_DIR" \
             --target web \
             --out-name bundle >/dev/null 2>&1; then
