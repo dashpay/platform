@@ -1115,6 +1115,13 @@ impl Drive {
 
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented in verify_state_transition_was_executed_with_proof")
+            }
         }
     }
 }

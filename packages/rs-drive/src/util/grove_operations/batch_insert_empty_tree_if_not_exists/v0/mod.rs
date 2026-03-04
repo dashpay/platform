@@ -11,6 +11,7 @@ use crate::util::object_size_info::PathKeyInfo::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::GroveOp;
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
@@ -49,7 +50,7 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
@@ -116,7 +117,7 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
@@ -181,7 +182,7 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {
@@ -246,7 +247,7 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
                                 && matches!(grove_op.op, GroveOp::DeleteTree(_))
                             {

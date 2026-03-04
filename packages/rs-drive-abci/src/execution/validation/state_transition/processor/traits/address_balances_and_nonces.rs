@@ -175,6 +175,13 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => false,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 
@@ -233,6 +240,13 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => {
                 Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()))
+            }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
             }
         }
     }

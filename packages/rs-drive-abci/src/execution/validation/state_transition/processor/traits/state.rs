@@ -185,6 +185,13 @@ impl StateTransitionStateValidation for StateTransition {
                     "address credit withdrawal should not have state validation",
                 )))
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 
@@ -205,6 +212,13 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::AddressCreditWithdrawal(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => false,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }
