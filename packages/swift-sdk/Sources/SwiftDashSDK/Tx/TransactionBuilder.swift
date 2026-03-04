@@ -25,14 +25,12 @@ public final class SDKTransactionBuilder {
         }
     }
 
-    private let network: Network
     private let feePerKB: UInt64
     private var inputs: [Input] = []
     private var outputs: [Output] = []
     private var changeAddress: String?
 
-    public init(network: Network, feePerKB: UInt64 = 1000) {
-        self.network = network
+    public init(feePerKB: UInt64 = 1000) {
         self.feePerKB = feePerKB
     }
 

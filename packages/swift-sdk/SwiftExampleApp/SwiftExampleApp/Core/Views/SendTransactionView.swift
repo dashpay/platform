@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
