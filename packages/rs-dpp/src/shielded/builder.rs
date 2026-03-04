@@ -76,7 +76,9 @@ pub struct SerializedBundle {
     pub flags: u8,
     /// Net value balance (positive = value leaving the shielded pool).
     pub value_balance: i64,
-    /// Merkle tree anchor (32 bytes).
+    /// Sinsemilla root of the Orchard note commitment tree (32 bytes).
+    /// This is the Orchard `Anchor` — the root hash of the depth-32 Sinsemilla
+    /// Merkle tree over extracted note commitments (cmx values).
     pub anchor: [u8; 32],
     /// Halo 2 proof bytes.
     pub proof: Vec<u8>,
@@ -332,7 +334,7 @@ pub fn build_shield_from_asset_lock_transition(
 /// - `change_address` - Orchard address for change output (if any)
 /// - `fvk` - Full viewing key for spend authorization
 /// - `ask` - Spend authorizing key for RedPallas signatures
-/// - `anchor` - Merkle root of the commitment tree
+/// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
@@ -442,7 +444,7 @@ pub fn build_shielded_transfer_transition(
 /// - `change_address` - Orchard address for change output
 /// - `fvk` - Full viewing key for spend authorization
 /// - `ask` - Spend authorizing key for RedPallas signatures
-/// - `anchor` - Merkle root of the commitment tree
+/// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
@@ -535,7 +537,7 @@ pub fn build_unshield_transition(
 /// - `change_address` - Orchard address for change output
 /// - `fvk` - Full viewing key for spend authorization
 /// - `ask` - Spend authorizing key for RedPallas signatures
-/// - `anchor` - Merkle root of the commitment tree
+/// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.

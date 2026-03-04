@@ -39,7 +39,7 @@ pub struct UnshieldTransitionV0 {
     pub flags: u8,
     /// Net value balance (amount + fee flowing out of shielded pool)
     pub value_balance: i64,
-    /// Merkle root of the commitment tree used for spends
+    /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
