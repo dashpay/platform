@@ -134,6 +134,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub validator_set_update: FeatureVersion,
     pub should_checkpoint: OptionalFeatureVersion,
     pub update_checkpoints: OptionalFeatureVersion,
+    pub record_shielded_pool_anchor: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -177,4 +178,6 @@ pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub validate_fees_of_event: FeatureVersion,
     pub store_address_balances_to_recent_block_storage: OptionalFeatureVersion,
     pub cleanup_recent_block_storage_address_balances: OptionalFeatureVersion,
+    pub store_nullifiers_to_recent_block_storage: OptionalFeatureVersion,
+    pub cleanup_recent_block_storage_nullifiers: OptionalFeatureVersion,
 }

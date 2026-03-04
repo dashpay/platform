@@ -232,6 +232,14 @@ impl ErrorWithCode for BasicError {
             Self::OutputAddressAlsoInputError(_) => 10816,
             Self::InvalidRemainderOutputCountError(_) => 10817,
             Self::WithdrawalBelowMinAmountError(_) => 10818,
+            // Shielded transition errors (10819-10825)
+            Self::ShieldedNoActionsError(_) => 10819,
+            Self::ShieldedEmptyProofError(_) => 10820,
+            Self::ShieldedZeroAnchorError(_) => 10821,
+            Self::ShieldedInvalidValueBalanceError(_) => 10822,
+            Self::UnshieldAmountZeroError(_) => 10823,
+            Self::UnshieldValueBalanceBelowAmountError(_) => 10824,
+            Self::ShieldedTooManyActionsError(_) => 10825,
         }
     }
 }
@@ -370,6 +378,13 @@ impl ErrorWithCode for StateError {
             Self::GroupActionAlreadyCompletedError(_) => 40802,
             Self::GroupActionAlreadySignedByIdentityError(_) => 40803,
             Self::ModificationOfGroupActionMainParametersNotPermittedError(_) => 40804,
+
+            // Shielded errors: 40900-40999
+            Self::InvalidAnchorError(_) => 40900,
+            Self::NullifierAlreadySpentError(_) => 40901,
+            Self::InvalidShieldedProofError(_) => 40902,
+            Self::InsufficientPoolNotesError(_) => 40903,
+            Self::InsufficientShieldedFeeError(_) => 40904,
         }
     }
 }

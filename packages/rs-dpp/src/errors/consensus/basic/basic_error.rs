@@ -77,9 +77,11 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
-    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
-    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
+    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError, ShieldedInvalidValueBalanceError,
+    ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
+    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
@@ -657,6 +659,27 @@ pub enum BasicError {
 
     #[error(transparent)]
     OutputAddressAlsoInputError(OutputAddressAlsoInputError),
+
+    #[error(transparent)]
+    ShieldedNoActionsError(ShieldedNoActionsError),
+
+    #[error(transparent)]
+    ShieldedTooManyActionsError(ShieldedTooManyActionsError),
+
+    #[error(transparent)]
+    ShieldedEmptyProofError(ShieldedEmptyProofError),
+
+    #[error(transparent)]
+    ShieldedZeroAnchorError(ShieldedZeroAnchorError),
+
+    #[error(transparent)]
+    ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
+
+    #[error(transparent)]
+    UnshieldAmountZeroError(UnshieldAmountZeroError),
+
+    #[error(transparent)]
+    UnshieldValueBalanceBelowAmountError(UnshieldValueBalanceBelowAmountError),
 }
 
 impl From<BasicError> for ConsensusError {
