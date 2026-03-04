@@ -26,7 +26,7 @@ Without this, `git push`/`git pull` will fail with `Permission denied (publickey
 
 ### Claude Code authentication
 
-Authenticate using **one or both** methods. OAuth login must be done on the **host** — it does not work inside the container (the OAuth callback can't reach localhost in the container).
+Authenticate using **one or both** methods.
 
 ### Option A: OAuth (recommended)
 
@@ -37,6 +37,12 @@ claude login
 ```
 
 Your OAuth credentials (`~/.claude/.credentials.json`) and enabled plugins are copied into the container. Optionally, agents and skills listed in `.devcontainer/.env` are also copied. No conversation history, project memories, or host settings are transferred. If tokens expire, re-run `claude login` on the host and rebuild.
+
+You can also log in from inside the container using the print-link flow (no browser redirect needed):
+
+```bash
+claude login --print-link
+```
 
 ### Option B: API Key
 
@@ -172,7 +178,8 @@ Git worktrees are supported automatically. The `init-host.sh` script (runs on th
 ### Claude says "not authenticated"
 
 - Ensure `ANTHROPIC_API_KEY` is set in your host shell, **or**
-- Run `claude login` on your host and rebuild the container
+- Run `claude login` on your host and rebuild the container, **or**
+- Run `claude login --print-link` inside the container (no browser redirect needed)
 
 ### `yarn install` fails
 
