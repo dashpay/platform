@@ -83,6 +83,7 @@
   },
   "containerEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "DEVCONTAINER": "true"

@@ -44,7 +44,15 @@ You can also log in from inside the container using the print-link flow (no brow
 claude login --print-link
 ```
 
-### Option B: API Key
+### Option B: OAuth Token
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=<your-token>
+```
+
+Set this in your shell profile. The token is forwarded into the container automatically.
+
+### Option C: API Key
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
