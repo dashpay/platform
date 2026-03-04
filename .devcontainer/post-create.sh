@@ -32,54 +32,68 @@ sudo chown -R vscode:vscode /home/vscode/.cargo "$WORKSPACE/target" 2>/dev/null 
 # --- Enable corepack for yarn ---
 corepack enable 2>/dev/null || true
 
-# --- Claude Code: copy config staged by init-host.sh, then override for sandbox ---
-# init-host.sh copies ~/.claude into .devcontainer/.claude-host-config/ on the host.
-# The workspace bind mount makes it available here. We copy into the persistent
-# volume, then clean up the staging copy (it contains credentials).
+# --- Claude Code: copy config staged by init-host.sh ---
+# init-host.sh stages credentials, plugin list, and optionally agents/skills.
+# We copy into the persistent volume, create a minimal settings.json with
+# plugins merged in, then clean up the staging copy.
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-/home/vscode/.claude}"
 HOST_CONFIG="$WORKSPACE/.devcontainer/.claude-host-config"
 
+mkdir -p "$CLAUDE_DIR"
+
 if [ -d "$HOST_CONFIG" ] && [ "$(ls -A "$HOST_CONFIG" 2>/dev/null)" ]; then
     echo "Copying Claude config from host..."
-    cp -a "$HOST_CONFIG"/. "$CLAUDE_DIR"/ 2>/dev/null || true
-    for item in "$HOST_CONFIG"/.*; do
-        basename="$(basename "$item")"
-        [ "$basename" = "." ] || [ "$basename" = ".." ] && continue
-        cp -a "$item" "$CLAUDE_DIR/$basename" 2>/dev/null || true
-    done
-    chmod 600 "$CLAUDE_DIR/.credentials.json" 2>/dev/null || true
-    # Place ~/.claude.json (onboarding state) at the correct path
+    # OAuth credentials
+    if [ -f "$HOST_CONFIG/.credentials.json" ]; then
+        cp -a "$HOST_CONFIG/.credentials.json" "$CLAUDE_DIR/.credentials.json"
+        chmod 600 "$CLAUDE_DIR/.credentials.json"
+    fi
+    # Onboarding state (prevents setup wizard)
     if [ -f "$HOST_CONFIG/.claude.json.root" ]; then
         cp -a "$HOST_CONFIG/.claude.json.root" /home/vscode/.claude.json
         chown vscode:vscode /home/vscode/.claude.json
     fi
-    # Clean up staged credentials from the workspace
-    rm -rf "$HOST_CONFIG"
-    echo "Host Claude config copied."
+    echo "Host Claude credentials copied."
 else
-    mkdir -p "$CLAUDE_DIR"
-    echo "No host Claude config found. Use ANTHROPIC_API_KEY or 'claude login'."
+    echo "No host Claude credentials found. Use ANTHROPIC_API_KEY or 'claude login'."
+fi
+
+# Write a clean settings.json with bypassPermissions (no host settings leak)
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+cat > "$SETTINGS_FILE" <<'SETTINGS'
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "skipDangerousModePermissionPrompt": true
+}
+SETTINGS
+
+# Merge host's enabledPlugins into settings (plugin IDs only, no secrets)
+if [ -f "$HOST_CONFIG/enabled-plugins.json" ]; then
+    TMP=$(mktemp)
+    jq -s '.[0] * .[1]' "$SETTINGS_FILE" "$HOST_CONFIG/enabled-plugins.json" \
+        > "$TMP" 2>/dev/null && mv "$TMP" "$SETTINGS_FILE" || true
+fi
+
+# Copy host agent definitions
+if [ -d "$HOST_CONFIG/agents" ] && [ "$(ls -A "$HOST_CONFIG/agents" 2>/dev/null)" ]; then
+    mkdir -p "$CLAUDE_DIR/agents"
+    cp -a "$HOST_CONFIG/agents/"* "$CLAUDE_DIR/agents/"
+    echo "Host Claude agents copied."
+fi
+
+# Copy host skill definitions
+if [ -d "$HOST_CONFIG/skills" ] && [ "$(ls -A "$HOST_CONFIG/skills" 2>/dev/null)" ]; then
+    mkdir -p "$CLAUDE_DIR/skills"
+    cp -a "$HOST_CONFIG/skills/"* "$CLAUDE_DIR/skills/"
+    echo "Host Claude skills copied."
 fi
 
 chown -R vscode:vscode "$CLAUDE_DIR"
 
-# Force bypassPermissions on top of whatever settings came from host
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-if [ -f "$SETTINGS_FILE" ]; then
-    TMP=$(mktemp)
-    jq '.permissions.defaultMode = "bypassPermissions" | .skipDangerousModePermissionPrompt = true' \
-        "$SETTINGS_FILE" > "$TMP" 2>/dev/null && mv "$TMP" "$SETTINGS_FILE" || \
-        echo '{"permissions":{"defaultMode":"bypassPermissions"},"skipDangerousModePermissionPrompt":true}' > "$SETTINGS_FILE"
-else
-    echo '{"permissions":{"defaultMode":"bypassPermissions"},"skipDangerousModePermissionPrompt":true}' > "$SETTINGS_FILE"
-fi
-chown vscode:vscode "$SETTINGS_FILE"
-
-# --- Shell history (idempotent) ---
-grep -q 'HISTFILE=/commandhistory/.zsh_history' /home/vscode/.zshrc 2>/dev/null || \
-    echo 'export HISTFILE=/commandhistory/.zsh_history' >> /home/vscode/.zshrc
-grep -q 'HISTFILE=/commandhistory/.bash_history' /home/vscode/.bashrc 2>/dev/null || \
-    echo 'export HISTFILE=/commandhistory/.bash_history' >> /home/vscode/.bashrc
+# Clean up staged config from the workspace
+rm -rf "$HOST_CONFIG"
 
 echo "=== Post-create setup complete ==="
 echo "Claude Code is configured with bypassPermissions mode."

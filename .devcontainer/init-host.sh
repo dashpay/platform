@@ -6,22 +6,52 @@ set -euo pipefail
 test -f "$HOME/.gitconfig" || touch "$HOME/.gitconfig"
 mkdir -p "$HOME/.claude"
 
-# Copy Claude config into the workspace so post-create.sh can access it.
-# Bind mounts of ~/.claude fail on some Docker Desktop setups (virtiofs issues).
-# The workspace mount is reliable, so we copy here and clean up in post-create.
+# Stage ONLY the minimum Claude config needed for authentication.
+# We deliberately skip: conversation history, project memories, debug logs,
+# shell snapshots, plans, scripts, plugins cache, and other data that could
+# leak information from other projects into the sandboxed container.
 CLAUDE_STAGING=".devcontainer/.claude-host-config"
 rm -rf "$CLAUDE_STAGING"
-if [ -d "$HOME/.claude" ] && [ "$(ls -A "$HOME/.claude" 2>/dev/null)" ]; then
+if [ -d "$HOME/.claude" ]; then
     mkdir -p "$CLAUDE_STAGING"
-    cp -a "$HOME/.claude"/. "$CLAUDE_STAGING"/ 2>/dev/null || true
-    # Also copy dotfiles
-    for item in "$HOME/.claude"/.*; do
-        base="$(basename "$item")"
-        [ "$base" = "." ] || [ "$base" = ".." ] && continue
-        cp -a "$item" "$CLAUDE_STAGING/$base" 2>/dev/null || true
-    done
-    # Also copy ~/.claude.json (onboarding state, outside ~/.claude/)
-    [ -f "$HOME/.claude.json" ] && cp -a "$HOME/.claude.json" "$CLAUDE_STAGING/.claude.json.root" 2>/dev/null || true
+    # Credentials (OAuth tokens) — required for authentication
+    [ -f "$HOME/.claude/.credentials.json" ] && \
+        cp -a "$HOME/.claude/.credentials.json" "$CLAUDE_STAGING/.credentials.json" 2>/dev/null || true
+    # Onboarding state — prevents setup wizard
+    [ -f "$HOME/.claude.json" ] && \
+        cp -a "$HOME/.claude.json" "$CLAUDE_STAGING/.claude.json.root" 2>/dev/null || true
+
+    # Plugins: always copy (just IDs, no secrets)
+    if [ -f "$HOME/.claude/settings.json" ]; then
+        jq '{enabledPlugins: .enabledPlugins}' "$HOME/.claude/settings.json" \
+            > "$CLAUDE_STAGING/enabled-plugins.json" 2>/dev/null || true
+    fi
+
+    # Agents & skills: copy only what the user listed in .env
+    CLAUDE_AGENTS=""
+    CLAUDE_SKILLS=""
+    ENV_FILE=".devcontainer/.env"
+    [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+
+    if [ -n "$CLAUDE_AGENTS" ]; then
+        mkdir -p "$CLAUDE_STAGING/agents"
+        IFS=',' read -ra AGENT_LIST <<< "$CLAUDE_AGENTS"
+        for agent in "${AGENT_LIST[@]}"; do
+            agent=$(echo "$agent" | xargs)
+            src="$HOME/.claude/agents/${agent}.md"
+            [ -f "$src" ] && cp -a "$src" "$CLAUDE_STAGING/agents/" 2>/dev/null || true
+        done
+    fi
+
+    if [ -n "$CLAUDE_SKILLS" ]; then
+        mkdir -p "$CLAUDE_STAGING/skills"
+        IFS=',' read -ra SKILL_LIST <<< "$CLAUDE_SKILLS"
+        for skill in "${SKILL_LIST[@]}"; do
+            skill=$(echo "$skill" | xargs)
+            src="$HOME/.claude/skills/${skill}"
+            [ -d "$src" ] && cp -a "$src" "$CLAUDE_STAGING/skills/" 2>/dev/null || true
+        done
+    fi
 fi
 
 # Resolve main .git directory for worktree support.

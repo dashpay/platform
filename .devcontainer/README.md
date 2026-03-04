@@ -36,7 +36,7 @@ Run on your **host machine** before opening the devcontainer:
 claude login
 ```
 
-Your `~/.claude/` config (credentials, skills, plugins) is automatically copied into the container on each rebuild. If tokens expire, re-run `claude login` on the host and rebuild.
+Your OAuth credentials (`~/.claude/.credentials.json`) and enabled plugins are copied into the container. Optionally, agents and skills listed in `.devcontainer/.env` are also copied. No conversation history, project memories, or host settings are transferred. If tokens expire, re-run `claude login` on the host and rebuild.
 
 ### Option B: API Key
 
@@ -103,15 +103,45 @@ devcontainer up --workspace-folder .
 devcontainer exec --workspace-folder . claude -p "run the test suite" --dangerously-skip-permissions
 ```
 
-## Authentication Details
+## Claude Code customization
 
-Your host's `~/.claude/` directory is mounted read-only into the container. On first create, the `post-create.sh` script:
+### Plugins
 
-1. Copies your entire `~/.claude/` config (credentials, skills, plugins, etc.) into a persistent Docker volume
-2. Forces `bypassPermissions` mode on top of your settings
-3. Skips the safety confirmation prompt
+Enabled plugins from your host `~/.claude/settings.json` are automatically synced into the container. No configuration needed — plugin IDs contain no secrets.
 
-Host config items that reference host-specific paths (MCP servers, hooks, etc.) are copied as-is. They will log warnings if the referenced binaries don't exist in the container — this is harmless.
+### Agents & skills
+
+To copy personal agents or skills from `~/.claude/` into the container, create a `.env` file:
+
+```bash
+cp .devcontainer/.env.example .devcontainer/.env
+```
+
+Edit `.env` with comma-separated names:
+
+```bash
+# Agents from ~/.claude/agents/ (without .md extension)
+CLAUDE_AGENTS=blockchain-security-auditor,rust-engineer
+
+# Skills from ~/.claude/skills/ (directory names)
+CLAUDE_SKILLS=my-custom-skill
+```
+
+The `.env` file is gitignored — each developer configures their own.
+
+### Project-level settings
+
+The project's `.claude/` directory (containing `settings.local.json` and `skills/`) is automatically available inside the container via the workspace bind mount. No extra configuration needed.
+
+## Security Model
+
+Claude Code runs with `bypassPermissions` inside the container — it can read, write, and execute anything. The container is the sandbox boundary. To minimize exposure:
+
+- **Only OAuth credentials** are copied from the host (`~/.claude/.credentials.json`). No conversation history, project memories, settings, hooks, scripts, or debug logs are transferred.
+- **Enabled plugins** (just plugin IDs) are synced from host settings. Optionally, listed agents/skills (markdown files only) are copied.
+- **A clean `settings.json`** is generated inside the container with `bypassPermissions` and enabled plugins — your host's permission allowlists, MCP server configs, and hooks are not copied.
+- **No shell history** is persisted or shared with the container.
+- **The `.git` directory** is mounted read-write (required for commits/pushes). This is the main trust boundary — Claude can push code.
 
 ## Network Firewall (optional)
 
@@ -131,8 +161,7 @@ These items survive container rebuilds (stored in Docker named volumes):
 
 - `~/.cargo/registry` and `~/.cargo/git` — Rust dependency cache
 - `target/` — Rust build artifacts
-- `~/.claude/` — Claude Code config, credentials, conversation history
-- `/commandhistory/` — shell history
+- `~/.claude/` — Claude Code credentials, settings, and optionally agents/skills from host
 
 ## Troubleshooting
 
@@ -142,13 +171,8 @@ Git worktrees are supported automatically. The `init-host.sh` script (runs on th
 
 ### Claude says "not authenticated"
 
-- Check that `ANTHROPIC_API_KEY` is set in your host shell, or
-- Run `claude login` on your host before opening the devcontainer, or
-- Run `claude login` inside the container
-
-### MCP server warnings at Claude startup
-
-- Expected if your host config has MCP servers referencing macOS binaries. Harmless — Claude works fine without them.
+- Ensure `ANTHROPIC_API_KEY` is set in your host shell, **or**
+- Run `claude login` on your host and rebuild the container
 
 ### `yarn install` fails
 

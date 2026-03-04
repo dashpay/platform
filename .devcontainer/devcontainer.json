@@ -53,11 +53,6 @@
       "type": "volume"
     },
     {
-      "source": "devcontainer-platform-bashhistory-${devcontainerId}",
-      "target": "/commandhistory",
-      "type": "volume"
-    },
-    {
       "source": "${localWorkspaceFolder}/.devcontainer/.main-git-resolved",
       "target": "/workspace/.host-main-git",
       "type": "bind"
