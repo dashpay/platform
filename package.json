@@ -122,7 +122,9 @@
     "tmp": "^0.2.4",
     "js-yaml": "^4.1.1",
     "micromatch": "^4.0.8",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "serialize-javascript": "^7.0.4",
+    "nise": "^6.1.3"
   },
   "dependencies": {
     "dompurify": "^3.2.6",
