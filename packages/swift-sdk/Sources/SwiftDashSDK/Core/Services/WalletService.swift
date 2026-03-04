@@ -163,7 +163,7 @@ public class WalletService: ObservableObject {
         
         SDKLogger.log("Loading current wallet...", minimumLevel: .medium)
         
-        guard modelContainer != nil else { return }
+        guard self.modelContainer != nil else { return }
         
         // The WalletManager will handle loading and restoring wallets from persistence
         // It will restore the serialized wallet bytes to the FFI wallet manager
@@ -509,7 +509,7 @@ public class WalletService: ObservableObject {
         // Remove wallet from observable state BEFORE SwiftData delete
         // This prevents "Never access a full future backing data" crash
         if let walletManager = walletManager {
-            await walletManager.removeWalletFromObservableState(wallet)
+            walletManager.removeWalletFromObservableState(wallet)
 
             // Set a new current wallet if available
             if currentWallet == nil, let firstWallet = walletManager.wallets.first {

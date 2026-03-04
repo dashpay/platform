@@ -120,7 +120,7 @@ public class ManagedIdentity {
     /// Set the last updated balance block time
     public func setLastUpdatedBalanceBlockTime(_ blockTime: BlockTime) throws {
         var error = PlatformWalletFFIError()
-        var ffiBlockTime = blockTime.ffiValue
+        let ffiBlockTime = blockTime.ffiValue
 
         let result = managed_identity_set_last_updated_balance_block_time(handle, ffiBlockTime, &error)
         guard result == Success else {
@@ -233,7 +233,7 @@ public class ManagedIdentity {
     public func getSentContactRequest(recipientId: Identifier) throws -> ContactRequest? {
         var requestHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(recipientId)
+        let ffiId = identifierToFFI(recipientId)
 
         let result = managed_identity_get_sent_contact_request(handle, ffiId, &requestHandle, &error)
 
@@ -252,7 +252,7 @@ public class ManagedIdentity {
     public func getIncomingContactRequest(senderId: Identifier) throws -> ContactRequest? {
         var requestHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(senderId)
+        let ffiId = identifierToFFI(senderId)
 
         let result = managed_identity_get_incoming_contact_request(handle, ffiId, &requestHandle, &error)
 
@@ -271,7 +271,7 @@ public class ManagedIdentity {
     public func getEstablishedContact(contactId: Identifier) throws -> EstablishedContact? {
         var contactHandle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(contactId)
+        let ffiId = identifierToFFI(contactId)
 
         let result = managed_identity_get_established_contact(handle, ffiId, &contactHandle, &error)
 
@@ -290,7 +290,7 @@ public class ManagedIdentity {
     public func isContactEstablished(contactId: Identifier) throws -> Bool {
         var isEstablished: Bool = false
         var error = PlatformWalletFFIError()
-        var ffiId = identifierToFFI(contactId)
+        let ffiId = identifierToFFI(contactId)
 
         let result = managed_identity_is_contact_established(handle, ffiId, &isEstablished, &error)
         guard result == Success else {
@@ -309,7 +309,7 @@ public class ManagedIdentity {
         encryptedPublicKey: Data
     ) throws {
         var error = PlatformWalletFFIError()
-        var ffiRecipientId = identifierToFFI(recipientId)
+        let ffiRecipientId = identifierToFFI(recipientId)
 
         let result = encryptedPublicKey.withUnsafeBytes { keyPtr in
             managed_identity_send_contact_request(
@@ -332,7 +332,7 @@ public class ManagedIdentity {
     /// Accept a contact request from another identity
     public func acceptContactRequest(senderId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        var ffiSenderId = identifierToFFI(senderId)
+        let ffiSenderId = identifierToFFI(senderId)
 
         let result = managed_identity_accept_contact_request(handle, ffiSenderId, &error)
         guard result == Success else {
@@ -343,7 +343,7 @@ public class ManagedIdentity {
     /// Reject a contact request from another identity
     public func rejectContactRequest(senderId: Identifier) throws {
         var error = PlatformWalletFFIError()
-        var ffiSenderId = identifierToFFI(senderId)
+        let ffiSenderId = identifierToFFI(senderId)
 
         let result = managed_identity_reject_contact_request(handle, ffiSenderId, &error)
         guard result == Success else {

@@ -38,7 +38,7 @@ class TransactionService: ObservableObject {
         feePerKB: UInt64 = 1000
     ) async throws -> BuiltTransaction {
         // Route to SDK transaction builder (stubbed for now)
-        guard let wallet = walletManager.currentWallet else { throw TransactionError.invalidState }
+        guard walletManager.currentWallet != nil else { throw TransactionError.invalidState }
         let builder = SwiftDashSDK.SDKTransactionBuilder(feePerKB: feePerKB)
         // TODO: integrate coin selection + key derivation via SDK and add inputs/outputs
         _ = builder // silence unused

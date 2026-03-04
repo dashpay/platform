@@ -25,8 +25,8 @@ public class ContactRequest {
     ) throws -> ContactRequest {
         var handle: Handle = NULL_HANDLE
         var error = PlatformWalletFFIError()
-        var ffiSenderId = identifierToFFI(senderId)
-        var ffiRecipientId = identifierToFFI(recipientId)
+        let ffiSenderId = identifierToFFI(senderId)
+        let ffiRecipientId = identifierToFFI(recipientId)
 
         let result = encryptedPublicKey.withUnsafeBytes { keyPtr in
             contact_request_create(

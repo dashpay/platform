@@ -142,8 +142,8 @@ public class FilterMatchService: ObservableObject {
     /// Load matched filter heights from FFI
     /// NOTE: FFI functions for filter matching are not yet available in current FFI
     private func loadMatchedHeights() async {
-        guard let _ = walletService,
-              let _ = heightRange else {
+        guard walletService != nil,
+              heightRange != nil else {
             print("❌ FilterMatchService: Cannot load matched heights - client not available")
             return
         }
@@ -183,7 +183,7 @@ public class FilterMatchService: ObservableObject {
 
     /// NOTE: FFI functions for loading compact filters are not yet available in current FFI
     private func loadBatch(startHeight: UInt32) async {
-        guard let _ = walletService else {
+        guard walletService != nil else {
             print("❌ FilterMatchService: WalletService not available")
             error = .clientNotAvailable
             return

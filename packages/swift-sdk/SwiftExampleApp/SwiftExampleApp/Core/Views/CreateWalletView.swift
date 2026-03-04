@@ -287,7 +287,7 @@ struct CreateWalletView: View {
                 }
 
                 // Create exactly one wallet in the SDK; do not append network to label
-                let _ = try await walletService.createWallet(
+                _ = try await walletService.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,

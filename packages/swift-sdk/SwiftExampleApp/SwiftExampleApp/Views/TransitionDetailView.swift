@@ -140,11 +140,7 @@ struct TransitionDetailView: View {
 
   @ViewBuilder
   private var executeButton: some View {
-    // Explicitly read the state to ensure SwiftUI tracks the dependency
-    let canPurchase = transitionKey == "documentPurchase" ? appState.transitionState.canPurchaseDocument : true
     let enabled = isButtonEnabled
-    let _ = print("DEBUG: executeButton render - isButtonEnabled: \(enabled), canPurchase: \(canPurchase), background: \(enabled ? "blue" : "gray")")
-
     Button(action: executeTransition) {
       if isExecuting {
         ProgressView()
