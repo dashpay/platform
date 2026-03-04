@@ -134,6 +134,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub validator_set_update: FeatureVersion,
     pub should_checkpoint: OptionalFeatureVersion,
     pub update_checkpoints: OptionalFeatureVersion,
+    pub record_shielded_pool_anchor: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

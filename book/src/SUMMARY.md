@@ -29,6 +29,10 @@
 - [Platform Address Fees](fees/platform-address-fees.md)
 - [Shielded Transaction Fees](fees/shielded-fees.md)
 
+# Shielded Pool
+
+- [Anchors and Spend Proofs](shielded-pool/anchors-and-proofs.md)
+
 # Error Handling
 
 - [Consensus Errors](error-handling/consensus-errors.md)
