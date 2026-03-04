@@ -190,20 +190,13 @@ impl IdentityTopUpFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "output")]
-    pub fn set_output(&mut self, output: JsValue) -> WasmDppResult<()> {
-        let new_output = if output.is_undefined() || output.is_null() {
-            None
-        } else {
-            let output_wasm: PlatformAddressOutputWasm = serde_wasm_bindgen::from_value(output)
-                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
-            Some(output_wasm.into_inner())
-        };
+    pub fn set_output(&mut self, output: Option<PlatformAddressOutputWasm>) {
+        let new_output = output.map(|o| o.into_inner());
         match &mut self.0 {
             IdentityTopUpFromAddressesTransition::V0(v0) => {
                 v0.output = new_output;
             }
         }
-        Ok(())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]

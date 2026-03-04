@@ -9,8 +9,7 @@ use crate::platform_address::{
 };
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    IntoWasm, try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16,
-    try_to_u32,
+    try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16, try_to_u32,
 };
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -185,24 +184,13 @@ impl AddressCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "output")]
-    pub fn set_output(&mut self, output: JsValue) -> WasmDppResult<()> {
-        let new_output = if output.is_undefined() || output.is_null() {
-            None
-        } else {
-            let output_wasm = output
-                .to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
-                .map(|r| (*r).clone())
-                .map_err(|_| {
-                    WasmDppError::invalid_argument("'output' is not a PlatformAddressOutput")
-                })?;
-            Some(output_wasm.into_inner())
-        };
+    pub fn set_output(&mut self, output: Option<PlatformAddressOutputWasm>) {
+        let new_output = output.map(|o| o.into_inner());
         match &mut self.0 {
             AddressCreditWithdrawalTransition::V0(v0) => {
                 v0.output = new_output;
             }
         }
-        Ok(())
     }
 
     #[wasm_bindgen(getter = "outputScript")]
@@ -213,14 +201,12 @@ impl AddressCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputScript")]
-    pub fn set_output_script(&mut self, script: &JsValue) -> WasmDppResult<()> {
-        let script = CoreScriptWasm::try_from(script)?;
+    pub fn set_output_script(&mut self, script: &CoreScriptWasm) {
         match &mut self.0 {
             AddressCreditWithdrawalTransition::V0(v0) => {
-                v0.output_script = script.into();
+                v0.output_script = script.clone().into();
             }
         }
-        Ok(())
     }
 
     #[wasm_bindgen(getter = "pooling")]
