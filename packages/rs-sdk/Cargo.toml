@@ -17,7 +17,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "cfa27598075863a7ac0df6b427918e2741c6c510", features = ["client", "sqlite"], optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "7ecb8465fad750c7cddd5332adb6f97fcceb498b", features = ["client", "sqlite"], optional = true }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 platform-encryption = { path = "../rs-platform-encryption" }
@@ -150,7 +150,6 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
-platform_wallet_manager = ["platform-wallet/manager"]
 shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-bundle-building"]
 
 # Platform wallet support
