@@ -314,49 +314,11 @@ where
 ///
 /// * [DriveDocumentQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
 /// * [DocumentQuery](crate::platform::documents::document_query::DocumentQuery)
-#[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
-    async fn fetch_many<Q: Query<<Self as FetchMany<Identifier, Documents>>::Request>>(
-        sdk: &Sdk,
-        query: Q,
-    ) -> Result<Documents, Error> {
-        let document_query: &DocumentQuery = &query.query(sdk.prove())?;
-
-        retry(sdk.address_list(), sdk.dapi_client_settings, |settings| async move {
-            let request = document_query.clone();
-
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response
-            } = request.execute(sdk, settings).await.map_err(|e| e.inner_into())?;
-
-            tracing::trace!(request=?document_query, response=?response, ?address, retries, "fetch multiple documents");
-
-            // let object: Option<BTreeMap<K,Document>> = sdk
-            let documents = sdk
-                .parse_proof::<DocumentQuery, Documents>(document_query.clone(), response)
-                .await
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    retries,
-                    address: Some(address.clone()),
-                })?
-                .unwrap_or_default();
-
-            Ok(ExecutionResponse {
-                inner: documents,
-                retries,
-                address,
-            })
-        })
-        .await
-        .into_inner()
-    }
 }
 
 /// Retrieve public keys for a given identity.
