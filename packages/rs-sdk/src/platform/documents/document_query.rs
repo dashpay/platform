@@ -41,7 +41,7 @@ use crate::platform::Fetch;
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
-    /// Data contract ID
+    /// Data contract
     pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
     pub document_type_name: String,
@@ -128,20 +128,6 @@ impl DocumentQuery {
         self.order_by_clauses.push(clause);
 
         self
-    }
-
-    /// Create a clone of this query with a different data contract.
-    ///
-    /// Preserves all where/order_by/limit/start clauses.
-    pub fn clone_with_contract(&self, contract: Arc<DataContract>) -> Self {
-        Self {
-            data_contract: contract,
-            document_type_name: self.document_type_name.clone(),
-            where_clauses: self.where_clauses.clone(),
-            order_by_clauses: self.order_by_clauses.clone(),
-            limit: self.limit,
-            start: self.start.clone(),
-        }
     }
 }
 

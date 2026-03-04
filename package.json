@@ -52,6 +52,7 @@
     "globals": "^15.14.0",
     "semver": "^7.5.3",
     "tempfile": "^3.0.0",
+    "typedoc": "^0.28.17",
     "typescript": "^5.7.3",
     "ultra-runner": "^3.10.5"
   },
@@ -121,7 +122,8 @@
     "tmp": "^0.2.4",
     "js-yaml": "^4.1.1",
     "micromatch": "^4.0.8",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "serialize-javascript": "^7.0.4"
   },
   "dependencies": {
     "dompurify": "^3.2.6",

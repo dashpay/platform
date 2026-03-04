@@ -29,14 +29,15 @@ pub struct TokenDirectPurchaseTransitionBuilder {
 }
 
 impl TokenDirectPurchaseTransitionBuilder {
-    /// Start building a purchase tokens request for the provided DataContract.
+    /// Start building a purchase tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///
     /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
-    /// * `issuer_id` - The identifier of the issuer
+    /// * `actor_id` - The identifier of the purchaser
     /// * `amount` - The amount of tokens to purchase
+    /// * `total_agreed_price` - The total price in credits the purchaser agrees to pay
     ///
     /// # Returns
     ///

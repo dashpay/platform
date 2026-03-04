@@ -30,7 +30,7 @@ public class Account {
         var error = FFIError()
         // Derive master extended private key for this account root
         let masterPtr = masterPath.withCString { pathCStr in
-            wallet_derive_extended_private_key(wallet.ffiHandle, wallet.network.ffiValue, pathCStr, &error)
+            wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &error)
         }
         
         defer {

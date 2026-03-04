@@ -1,23 +1,25 @@
 //! Example demonstrating basic usage of PlatformWalletInfo
 
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use platform_wallet::{PlatformWalletError, PlatformWalletInfo};
+use key_wallet::Network;
+use platform_wallet::error::PlatformWalletError;
+use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 
 fn main() -> Result<(), PlatformWalletError> {
     // Create a platform wallet
     let wallet_id = [1u8; 32];
-    let network = dashcore::Network::Testnet;
+    let network = Network::Testnet;
     let platform_wallet =
-        PlatformWalletInfo::new(wallet_id, "My Platform Wallet".to_string(), network);
+        PlatformWalletInfo::new(network, wallet_id, "My Platform Wallet".to_string());
 
     println!("Created wallet: {:?}", platform_wallet.name());
 
     // You can manage identities
     // In a real application, you would load identities from the platform
-    println!("Total identities: {}", platform_wallet.identities().len());
     println!(
-        "Total credit balance: {}",
-        platform_wallet.identity_manager.total_credit_balance()
+        "Total identities on {:?}: {}",
+        network,
+        platform_wallet.identities().len()
     );
 
     // The platform wallet can be used with WalletManager (requires "manager" feature)

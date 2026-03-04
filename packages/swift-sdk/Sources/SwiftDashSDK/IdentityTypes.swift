@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Key Type
 
-public enum KeyType: UInt8, CaseIterable, Codable {
+public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
     case ecdsaSecp256k1 = 0
     case bls12_381 = 1
     case ecdsaHash160 = 2
@@ -27,7 +27,7 @@ public enum KeyType: UInt8, CaseIterable, Codable {
 
 // MARK: - Key Purpose
 
-public enum KeyPurpose: UInt8, CaseIterable, Codable {
+public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
     case authentication = 0
     case encryption = 1
     case decryption = 2
@@ -68,7 +68,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable {
 
 // MARK: - Security Level
 
-public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable {
+public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
     case master = 0
     case critical = 1
     case high = 2
@@ -104,7 +104,7 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable {
 
 // MARK: - Identity Public Key
 
-public struct IdentityPublicKey: Codable, Equatable {
+public struct IdentityPublicKey: Codable, Equatable, Sendable {
     public let id: KeyID
     public let purpose: KeyPurpose
     public let securityLevel: SecurityLevel
@@ -144,7 +144,7 @@ public struct IdentityPublicKey: Codable, Equatable {
 
 // MARK: - Contract Bounds
 
-public enum ContractBounds: Codable, Equatable {
+public enum ContractBounds: Codable, Equatable, Sendable {
     case singleContract(id: Identifier)
     case singleContractDocumentType(id: Identifier, documentTypeName: String)
     

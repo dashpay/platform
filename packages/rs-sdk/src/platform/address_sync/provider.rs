@@ -101,4 +101,29 @@ pub trait AddressProvider: Send {
     ///
     /// Used for reporting and gap extension logic.
     fn highest_found_index(&self) -> Option<AddressIndex>;
+
+    /// Get current known balances for incremental catch-up.
+    ///
+    /// Returns tuples of `(index, address_key, funds)` for addresses that have
+    /// known state from a previous sync. This is used during incremental-only
+    /// mode to provide base balances for applying `AddToCredits` delta operations.
+    ///
+    /// Default returns an empty list, which is appropriate for full tree scan
+    /// mode where the trunk/branch queries provide absolute balance values.
+    fn current_balances(&self) -> Vec<(AddressIndex, AddressKey, AddressFunds)> {
+        Vec::new()
+    }
+
+    /// Get the last sync height from a previous sync.
+    ///
+    /// Returns the [`new_sync_height`](super::AddressSyncResult::new_sync_height) value from the
+    /// previous call. Used as the starting block height for incremental-only
+    /// catch-up. The caller should store this value after each sync and
+    /// return it here on subsequent calls.
+    ///
+    /// Default returns `0`, which means incremental catch-up starts from
+    /// the genesis block (effectively a full catch-up).
+    fn last_sync_height(&self) -> u64 {
+        0
+    }
 }

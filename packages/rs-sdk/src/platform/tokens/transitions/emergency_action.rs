@@ -1,4 +1,4 @@
-//! Emergency action operations for token management.
+//! Token emergency action operations for the Dash Platform SDK.
 //!
 //! This module provides functionality for executing emergency actions on tokens,
 //! typically requiring group authorization for critical interventions.

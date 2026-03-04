@@ -33,7 +33,7 @@ pub struct TokenChangeDirectPurchasePriceTransitionBuilder {
 }
 
 impl TokenChangeDirectPurchasePriceTransitionBuilder {
-    /// Start building a change direct purchase price tokens request for the provided DataContract.
+    /// Start building a token change direct purchase price transition for the provided DataContract.
     ///
     /// # Arguments
     ///
