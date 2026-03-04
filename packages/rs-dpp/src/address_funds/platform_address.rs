@@ -583,19 +583,14 @@ pub const ORCHARD_ADDRESS_SIZE: usize = ORCHARD_DIVERSIFIER_SIZE + ORCHARD_PKD_S
 /// The raw Orchard address format matches Zcash Orchard (43 bytes), but the
 /// string encoding is Dash-specific (no F4Jumble, no Unified Address wrapper).
 ///
-/// Use [`From<PaymentAddress>`] to convert from the `orchard` crate's native type,
-/// or [`to_payment_address()`](OrchardAddress::to_payment_address) to convert back
-/// (with pk_d validation).
+/// Wraps `grovedb_commitment_tree::PaymentAddress`. Use [`From<PaymentAddress>`]
+/// to convert from the orchard crate's native type, or [`inner()`](OrchardAddress::inner)
+/// / [`into_inner()`](OrchardAddress::into_inner) to access the wrapped address.
 ///
 /// Requires the `shielded-bundle-building` feature.
 #[cfg(feature = "shielded-bundle-building")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct OrchardAddress {
-    /// 11-byte diversifier derived from the FullViewingKey with an index.
-    diversifier: [u8; ORCHARD_DIVERSIFIER_SIZE],
-    /// 32-byte diversified transmission key (point on the Pallas curve).
-    pk_d: [u8; ORCHARD_PKD_SIZE],
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OrchardAddress(grovedb_commitment_tree::PaymentAddress);
 
 #[cfg(feature = "shielded-bundle-building")]
 impl OrchardAddress {
@@ -603,43 +598,37 @@ impl OrchardAddress {
     /// Produces 'z' as the first bech32 character.
     pub const ORCHARD_TYPE: u8 = 0x10;
 
-    /// Creates an OrchardAddress from its raw components.
-    pub fn from_parts(
-        diversifier: [u8; ORCHARD_DIVERSIFIER_SIZE],
-        pk_d: [u8; ORCHARD_PKD_SIZE],
-    ) -> Self {
-        Self { diversifier, pk_d }
+    /// Returns the inner [`PaymentAddress`](grovedb_commitment_tree::PaymentAddress).
+    pub fn inner(&self) -> &grovedb_commitment_tree::PaymentAddress {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the inner `PaymentAddress`.
+    pub fn into_inner(self) -> grovedb_commitment_tree::PaymentAddress {
+        self.0
     }
 
     /// Creates an OrchardAddress from a 43-byte raw address.
     ///
     /// The first 11 bytes are the diversifier, the next 32 are pk_d.
-    /// No validation is performed on pk_d; use [`From<PaymentAddress>`]
-    /// for a pre-validated address.
-    pub fn from_raw_bytes(bytes: &[u8; ORCHARD_ADDRESS_SIZE]) -> Self {
-        let mut diversifier = [0u8; ORCHARD_DIVERSIFIER_SIZE];
-        let mut pk_d = [0u8; ORCHARD_PKD_SIZE];
-        diversifier.copy_from_slice(&bytes[..ORCHARD_DIVERSIFIER_SIZE]);
-        pk_d.copy_from_slice(&bytes[ORCHARD_DIVERSIFIER_SIZE..]);
-        Self { diversifier, pk_d }
+    /// Returns an error if `pk_d` is not a valid Pallas curve point.
+    pub fn from_raw_bytes(
+        bytes: &[u8; ORCHARD_ADDRESS_SIZE],
+    ) -> Result<Self, ProtocolError> {
+        let addr = Option::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(bytes),
+        )
+        .ok_or_else(|| {
+            ProtocolError::DecodingError(
+                "OrchardAddress pk_d is not a valid Pallas curve point".to_string(),
+            )
+        })?;
+        Ok(Self(addr))
     }
 
     /// Returns the raw 43-byte address (diversifier || pk_d).
     pub fn to_raw_bytes(&self) -> [u8; ORCHARD_ADDRESS_SIZE] {
-        let mut bytes = [0u8; ORCHARD_ADDRESS_SIZE];
-        bytes[..ORCHARD_DIVERSIFIER_SIZE].copy_from_slice(&self.diversifier);
-        bytes[ORCHARD_DIVERSIFIER_SIZE..].copy_from_slice(&self.pk_d);
-        bytes
-    }
-
-    /// Returns the 11-byte diversifier.
-    pub fn diversifier(&self) -> &[u8; ORCHARD_DIVERSIFIER_SIZE] {
-        &self.diversifier
-    }
-
-    /// Returns the 32-byte diversified transmission key.
-    pub fn pk_d(&self) -> &[u8; ORCHARD_PKD_SIZE] {
-        &self.pk_d
+        self.0.to_raw_address_bytes()
     }
 
     /// Encodes the OrchardAddress as a bech32m string for the specified network.
@@ -648,32 +637,16 @@ impl OrchardAddress {
     /// - Data: type_byte (0x10) || diversifier (11 bytes) || pk_d (32 bytes)
     /// - Total payload: 44 bytes
     /// - Checksum: bech32m (BIP-350)
-    ///
-    /// # Example
-    /// ```ignore
-    /// let address = OrchardAddress::from_raw_bytes(&raw_bytes);
-    /// let encoded = address.to_bech32m_string(Network::Dash);
-    /// // Returns something like "dash1z..."
-    /// ```
     pub fn to_bech32m_string(&self, network: Network) -> String {
         let hrp_str = PlatformAddress::hrp_for_network(network);
         let hrp = Hrp::parse(hrp_str).expect("HRP is valid");
 
+        let raw = self.to_raw_bytes();
         let mut payload = Vec::with_capacity(1 + ORCHARD_ADDRESS_SIZE);
         payload.push(Self::ORCHARD_TYPE);
-        payload.extend_from_slice(&self.diversifier);
-        payload.extend_from_slice(&self.pk_d);
+        payload.extend_from_slice(&raw);
 
         bech32::encode::<Bech32m>(hrp, &payload).expect("encoding should succeed")
-    }
-
-    /// Converts this address to an Orchard [`PaymentAddress`](grovedb_commitment_tree::PaymentAddress).
-    ///
-    /// Returns an error if `pk_d` is not a valid Pallas curve point.
-    pub fn to_payment_address(
-        &self,
-    ) -> Result<grovedb_commitment_tree::PaymentAddress, ProtocolError> {
-        crate::shielded::builder::orchard_address_to_payment_address(self)
     }
 
     /// Decodes a bech32m-encoded Orchard address string.
@@ -714,22 +687,17 @@ impl OrchardAddress {
             )));
         }
 
-        let mut diversifier = [0u8; ORCHARD_DIVERSIFIER_SIZE];
-        let mut pk_d = [0u8; ORCHARD_PKD_SIZE];
-        diversifier.copy_from_slice(&data[1..1 + ORCHARD_DIVERSIFIER_SIZE]);
-        pk_d.copy_from_slice(&data[1 + ORCHARD_DIVERSIFIER_SIZE..]);
-
-        Ok((Self { diversifier, pk_d }, network))
+        let mut raw = [0u8; ORCHARD_ADDRESS_SIZE];
+        raw.copy_from_slice(&data[1..]);
+        Self::from_raw_bytes(&raw).map(|addr| (addr, network))
     }
 }
 
 /// Infallible conversion from the orchard crate's `PaymentAddress` to `OrchardAddress`.
-///
-/// Extracts the raw 43 bytes (diversifier || pk_d) from the validated address.
 #[cfg(feature = "shielded-bundle-building")]
 impl From<grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
     fn from(addr: grovedb_commitment_tree::PaymentAddress) -> Self {
-        Self::from_raw_bytes(&addr.to_raw_address_bytes())
+        Self(addr)
     }
 }
 
@@ -737,18 +705,19 @@ impl From<grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
 #[cfg(feature = "shielded-bundle-building")]
 impl From<&grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
     fn from(addr: &grovedb_commitment_tree::PaymentAddress) -> Self {
-        Self::from_raw_bytes(&addr.to_raw_address_bytes())
+        Self(*addr)
     }
 }
 
 #[cfg(feature = "shielded-bundle-building")]
 impl std::fmt::Display for OrchardAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let raw = self.to_raw_bytes();
         write!(
             f,
             "Orchard(d={}, pk_d={})",
-            hex::encode(self.diversifier),
-            hex::encode(self.pk_d)
+            hex::encode(&raw[..ORCHARD_DIVERSIFIER_SIZE]),
+            hex::encode(&raw[ORCHARD_DIVERSIFIER_SIZE..])
         )
     }
 }
@@ -1517,34 +1486,29 @@ mod tests {
     // ========================
 
     #[cfg(feature = "shielded-bundle-building")]
+    fn test_orchard_address() -> OrchardAddress {
+        use grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+        let sk = SpendingKey::from_bytes([42u8; 32]).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let payment_address = fvk.address_at(0u32, Scope::External);
+        OrchardAddress::from(payment_address)
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
     #[test]
-    fn test_orchard_address_from_parts_roundtrip() {
-        let diversifier = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-        ];
-        let pk_d = [0xAB; 32];
-        let address = OrchardAddress::from_parts(diversifier, pk_d);
-
-        assert_eq!(address.diversifier(), &diversifier);
-        assert_eq!(address.pk_d(), &pk_d);
-
+    fn test_orchard_address_raw_bytes_roundtrip() {
+        let address = test_orchard_address();
         let raw = address.to_raw_bytes();
         assert_eq!(raw.len(), 43);
-        assert_eq!(&raw[..11], &diversifier);
-        assert_eq!(&raw[11..], &pk_d[..]);
 
-        let recovered = OrchardAddress::from_raw_bytes(&raw);
+        let recovered = OrchardAddress::from_raw_bytes(&raw).unwrap();
         assert_eq!(recovered, address);
     }
 
     #[cfg(feature = "shielded-bundle-building")]
     #[test]
     fn test_orchard_bech32m_mainnet_roundtrip() {
-        let diversifier = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-        ];
-        let pk_d = [0xAB; 32];
-        let address = OrchardAddress::from_parts(diversifier, pk_d);
+        let address = test_orchard_address();
 
         let encoded = address.to_bech32m_string(Network::Dash);
         assert!(
@@ -1562,9 +1526,7 @@ mod tests {
     #[cfg(feature = "shielded-bundle-building")]
     #[test]
     fn test_orchard_bech32m_testnet_roundtrip() {
-        let diversifier = [0xFF; 11];
-        let pk_d = [0x42; 32];
-        let address = OrchardAddress::from_parts(diversifier, pk_d);
+        let address = test_orchard_address();
 
         let encoded = address.to_bech32m_string(Network::Testnet);
         assert!(
@@ -1616,10 +1578,9 @@ mod tests {
     #[cfg(feature = "shielded-bundle-building")]
     #[test]
     fn test_orchard_and_platform_addresses_are_distinguishable() {
-        // Verify that the type bytes produce distinct prefixes
         let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
         let p2sh = PlatformAddress::P2sh([0xAB; 20]);
-        let orchard = OrchardAddress::from_parts([0xAB; 11], [0xAB; 32]);
+        let orchard = test_orchard_address();
 
         let p2pkh_enc = p2pkh.to_bech32m_string(Network::Dash);
         let p2sh_enc = p2sh.to_bech32m_string(Network::Dash);
@@ -1641,17 +1602,17 @@ mod tests {
 
     #[cfg(feature = "shielded-bundle-building")]
     #[test]
-    fn test_orchard_address_all_zeros() {
-        let address = OrchardAddress::from_parts([0u8; 11], [0u8; 32]);
-        let encoded = address.to_bech32m_string(Network::Dash);
-        let (decoded, _) = OrchardAddress::from_bech32m_string(&encoded).unwrap();
-        assert_eq!(decoded, address);
+    fn test_orchard_address_from_raw_bytes_invalid_pk_d() {
+        // All zeros for pk_d is not a valid Pallas curve point
+        let mut raw = [0u8; 43];
+        raw[0] = 0x01; // non-zero diversifier
+        assert!(OrchardAddress::from_raw_bytes(&raw).is_err());
     }
 
     #[cfg(feature = "shielded-bundle-building")]
     #[test]
     fn test_orchard_address_display() {
-        let address = OrchardAddress::from_parts([0x01; 11], [0x02; 32]);
+        let address = test_orchard_address();
         let display = format!("{}", address);
         assert!(display.starts_with("Orchard(d="));
         assert!(display.contains("pk_d="));

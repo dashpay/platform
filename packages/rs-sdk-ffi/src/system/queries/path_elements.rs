@@ -156,7 +156,10 @@ fn get_path_elements(
                                 Element::ProvableCountSumTree(_, count, sum, _) => {
                                     format!("provable_count_sum_tree:{}:{}", count, sum)
                                 }
-                                _ => format!("{:?}", element),
+                                Element::CommitmentTree(_, _, _) => todo!("CommitmentTree display"),
+                                Element::MmrTree(_, _) => todo!("MmrTree display"),
+                                Element::BulkAppendTree(_, _, _) => todo!("BulkAppendTree display"),
+                                Element::DenseAppendOnlyFixedSizeTree(_, _, _) => todo!("DenseAppendOnlyFixedSizeTree display"),
                             };
 
                             format!(
@@ -177,7 +180,10 @@ fn get_path_elements(
                                     Element::ProvableCountSumTree(_, _, _, _) => {
                                         "provable_count_sum_tree"
                                     }
-                                    _ => "unknown",
+                                    Element::CommitmentTree(_, _, _) => "commitment_tree",
+                                    Element::MmrTree(_, _) => "mmr_tree",
+                                    Element::BulkAppendTree(_, _, _) => "bulk_append_tree",
+                                    Element::DenseAppendOnlyFixedSizeTree(_, _, _) => "dense_append_only_fixed_size_tree",
                                 }
                             )
                         })

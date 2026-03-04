@@ -67,27 +67,34 @@ pub struct SpendableNote {
     pub merkle_path: MerklePath,
 }
 
-/// Converts an [`OrchardAddress`] to an Orchard [`PaymentAddress`].
-///
-/// Returns an error if `pk_d` is not a valid Pallas curve point.
-pub fn orchard_address_to_payment_address(
-    address: &OrchardAddress,
-) -> Result<PaymentAddress, ProtocolError> {
-    let raw = address.to_raw_bytes();
-    Option::from(PaymentAddress::from_raw_address_bytes(&raw)).ok_or_else(|| {
-        ProtocolError::DecodingError(
-            "OrchardAddress pk_d is not a valid Pallas curve point".to_string(),
-        )
-    })
+/// The serialized fields extracted from an authorized Orchard bundle,
+/// ready for use by state transition constructors.
+pub struct SerializedBundle {
+    /// Serialized Orchard actions (spends + outputs).
+    pub actions: Vec<SerializedAction>,
+    /// Bundle flags byte.
+    pub flags: u8,
+    /// Net value balance (positive = value leaving the shielded pool).
+    pub value_balance: i64,
+    /// Merkle tree anchor (32 bytes).
+    pub anchor: [u8; 32],
+    /// Halo 2 proof bytes.
+    pub proof: Vec<u8>,
+    /// Binding signature (64 bytes).
+    pub binding_signature: [u8; 64],
+}
+
+impl From<&OrchardAddress> for PaymentAddress {
+    fn from(address: &OrchardAddress) -> Self {
+        *address.inner()
+    }
 }
 
 /// Serializes an authorized Orchard bundle into the raw fields used by
 /// state transition constructors.
-///
-/// Returns `(actions, flags, value_balance, anchor, proof, binding_signature)`.
 pub fn serialize_authorized_bundle(
     bundle: &Bundle<Authorized, i64, DashMemo>,
-) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+) -> SerializedBundle {
     let actions: Vec<SerializedAction> = bundle
         .actions()
         .iter()
@@ -111,8 +118,15 @@ pub fn serialize_authorized_bundle(
     let value_balance = *bundle.value_balance();
     let anchor = bundle.anchor().to_bytes();
     let proof = bundle.authorization().proof().as_ref().to_vec();
-    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-    (actions, flags, value_balance, anchor, proof, binding_sig)
+    let binding_signature = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    SerializedBundle {
+        actions,
+        flags,
+        value_balance,
+        anchor,
+        proof,
+        binding_signature,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +143,7 @@ fn build_output_only_bundle(
     memo: [u8; 36],
     proving_key: &ProvingKey,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
-    let payment_address = orchard_address_to_payment_address(recipient)?;
+    let payment_address = PaymentAddress::from(recipient);
     let anchor = Anchor::empty_tree();
     let mut builder = Builder::<DashMemo>::new(
         BundleType::Transactional {
@@ -161,7 +175,7 @@ fn build_spend_bundle(
     proving_key: &ProvingKey,
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
-    let payment_address = orchard_address_to_payment_address(recipient)?;
+    let payment_address = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
 
@@ -247,17 +261,16 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>>(
     }
 
     let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
-    let (actions, flags, value_balance, anchor, proof, binding_sig) =
-        serialize_authorized_bundle(&bundle);
+    let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(
         inputs,
-        actions,
-        flags,
-        value_balance,
-        anchor,
-        proof,
-        binding_sig,
+        sb.actions,
+        sb.flags,
+        sb.value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
         fee_strategy,
         signer,
         user_fee_increase,
@@ -290,18 +303,17 @@ pub fn build_shield_from_asset_lock_transition(
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
-    let (actions, flags, value_balance, anchor, proof, binding_sig) =
-        serialize_authorized_bundle(&bundle);
+    let sb = serialize_authorized_bundle(&bundle);
 
     ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
         asset_lock_proof,
         asset_lock_private_key,
-        actions,
-        flags,
-        value_balance,
-        anchor,
-        proof,
-        binding_sig,
+        sb.actions,
+        sb.flags,
+        sb.value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
         user_fee_increase,
         platform_version,
     )
@@ -368,7 +380,7 @@ pub fn build_shielded_transfer_transition(
 
     let change_amount = total_spent - required;
 
-    let recipient_payment = orchard_address_to_payment_address(recipient)?;
+    let recipient_payment = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
 
@@ -390,7 +402,7 @@ pub fn build_shielded_transfer_transition(
 
     // Change output (if any)
     if change_amount > 0 {
-        let change_payment = orchard_address_to_payment_address(change_address)?;
+        let change_payment = PaymentAddress::from(change_address);
         builder
             .add_output(
                 None,
@@ -403,17 +415,16 @@ pub fn build_shielded_transfer_transition(
 
     // ShieldedTransfer has no extra_data in sighash
     let bundle = prove_and_sign_bundle(builder, proving_key, &[ask.clone()], &[])?;
-    let (actions, flags, value_balance, anchor_bytes, proof, binding_sig) =
-        serialize_authorized_bundle(&bundle);
+    let sb = serialize_authorized_bundle(&bundle);
 
     // value_balance = effective_fee (the amount leaving the shielded pool as fee)
     ShieldedTransferTransition::try_from_bundle(
-        actions,
-        flags,
-        value_balance as u64,
-        anchor_bytes,
-        proof,
-        binding_sig,
+        sb.actions,
+        sb.flags,
+        sb.value_balance as u64,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
         platform_version,
     )
 }
@@ -494,18 +505,17 @@ pub fn build_unshield_transition(
         &extra_sighash_data,
     )?;
 
-    let (actions, flags, value_balance, anchor_bytes, proof, binding_sig) =
-        serialize_authorized_bundle(&bundle);
+    let sb = serialize_authorized_bundle(&bundle);
 
     UnshieldTransition::try_from_bundle(
         output_address,
         unshield_amount,
-        actions,
-        flags,
-        value_balance,
-        anchor_bytes,
-        proof,
-        binding_sig,
+        sb.actions,
+        sb.flags,
+        sb.value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
         platform_version,
     )
 }
@@ -592,17 +602,16 @@ pub fn build_shielded_withdrawal_transition(
         &extra_sighash_data,
     )?;
 
-    let (actions, flags, value_balance, anchor_bytes, proof, binding_sig) =
-        serialize_authorized_bundle(&bundle);
+    let sb = serialize_authorized_bundle(&bundle);
 
     ShieldedWithdrawalTransition::try_from_bundle(
         withdrawal_amount,
-        actions,
-        flags,
-        value_balance,
-        anchor_bytes,
-        proof,
-        binding_sig,
+        sb.actions,
+        sb.flags,
+        sb.value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
         core_fee_per_byte,
         pooling,
         output_script,
