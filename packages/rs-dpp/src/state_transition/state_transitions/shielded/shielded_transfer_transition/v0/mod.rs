@@ -30,11 +30,6 @@ use serde::{Deserialize, Serialize};
 pub struct ShieldedTransferTransitionV0 {
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Orchard bundle flags controlling which half of actions are enabled.
-    /// Bit 0 (0x01): spends_enabled — set if actions may spend existing notes.
-    /// Bit 1 (0x02): outputs_enabled — set if actions may create new notes.
-    /// For a transfer both bits are set (0x03).
-    pub flags: u8,
     /// Net value balance (fee amount extracted from shielded pool)
     pub value_balance: u64,
     /// Sinsemilla root of the note commitment tree (Orchard Anchor)
@@ -77,7 +72,6 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            flags: 0u8,
             value_balance: 0u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],

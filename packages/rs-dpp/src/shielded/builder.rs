@@ -266,7 +266,6 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>>(
     ShieldTransition::try_from_bundle_with_signer(
         inputs,
         sb.actions,
-        sb.flags,
         sb.value_balance,
         sb.anchor,
         sb.proof,
@@ -321,7 +320,6 @@ pub fn build_shield_from_asset_lock_transition(
         asset_lock_proof,
         asset_lock_private_key,
         sb.actions,
-        sb.flags,
         value_balance,
         sb.anchor,
         sb.proof,
@@ -432,7 +430,6 @@ pub fn build_shielded_transfer_transition(
     // value_balance = effective_fee (the amount leaving the shielded pool as fee)
     ShieldedTransferTransition::try_from_bundle(
         sb.actions,
-        sb.flags,
         sb.value_balance as u64,
         sb.anchor,
         sb.proof,
@@ -523,7 +520,6 @@ pub fn build_unshield_transition(
         output_address,
         unshield_amount,
         sb.actions,
-        sb.flags,
         sb.value_balance,
         sb.anchor,
         sb.proof,
@@ -619,7 +615,6 @@ pub fn build_shielded_withdrawal_transition(
     ShieldedWithdrawalTransition::try_from_bundle(
         withdrawal_amount,
         sb.actions,
-        sb.flags,
         sb.value_balance,
         sb.anchor,
         sb.proof,

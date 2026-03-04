@@ -27,7 +27,6 @@ impl ShieldTransitionMethodsV0 for ShieldTransition {
     fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
-        flags: u8,
         value_balance: i64,
         anchor: [u8; 32],
         proof: Vec<u8>,
@@ -46,7 +45,6 @@ impl ShieldTransitionMethodsV0 for ShieldTransition {
             0 => ShieldTransitionV0::try_from_bundle_with_signer(
                 inputs,
                 actions,
-                flags,
                 value_balance,
                 anchor,
                 proof,

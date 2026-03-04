@@ -10,7 +10,6 @@ pub trait ShieldedTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         actions: Vec<SerializedAction>,
-        flags: u8,
         value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,

@@ -35,11 +35,6 @@ pub struct UnshieldTransitionV0 {
     pub amount: u64,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Orchard bundle flags controlling which half of actions are enabled.
-    /// Bit 0 (0x01): spends_enabled — set if actions may spend existing notes.
-    /// Bit 1 (0x02): outputs_enabled — set if actions may create new notes.
-    /// For an unshield (spend + change) both bits are set (0x03).
-    pub flags: u8,
     /// Net value balance (amount + fee flowing out of shielded pool)
     pub value_balance: i64,
     /// Sinsemilla root of the note commitment tree (Orchard Anchor)
@@ -87,7 +82,6 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            flags: 0u8,
             value_balance: 1000i64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],

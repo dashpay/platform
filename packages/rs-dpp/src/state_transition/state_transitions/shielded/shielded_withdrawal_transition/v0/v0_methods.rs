@@ -16,7 +16,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
     fn try_from_bundle(
         amount: u64,
         actions: Vec<SerializedAction>,
-        flags: u8,
         value_balance: i64,
         anchor: [u8; 32],
         proof: Vec<u8>,
@@ -29,7 +28,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
         let transition = ShieldedWithdrawalTransitionV0 {
             amount,
             actions,
-            flags,
             value_balance,
             anchor,
             proof,
