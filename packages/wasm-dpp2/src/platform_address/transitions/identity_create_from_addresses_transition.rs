@@ -7,17 +7,19 @@ use crate::platform_address::{
     fee_strategy_from_steps_or_default, inputs_from_js_options, optional_output_from_js_options,
 };
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u16};
+use crate::utils::{
+    try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u16,
+};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
-use wasm_bindgen::prelude::wasm_bindgen;
+use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
@@ -92,16 +94,14 @@ impl IdentityCreateFromAddressesTransitionWasm {
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
         Ok(IdentityCreateFromAddressesTransitionWasm(
-            IdentityCreateFromAddressesTransition::V0(
-                IdentityCreateFromAddressesTransitionV0 {
-                    public_keys: public_keys.iter().map(|k| k.clone().into()).collect(),
-                    inputs: inputs_map,
-                    output,
-                    fee_strategy,
-                    user_fee_increase,
-                    input_witnesses: Vec::new(),
-                },
-            ),
+            IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
+                public_keys: public_keys.iter().map(|k| k.clone().into()).collect(),
+                inputs: inputs_map,
+                output,
+                fee_strategy,
+                user_fee_increase,
+                input_witnesses: Vec::new(),
+            }),
         ))
     }
 
@@ -123,27 +123,21 @@ impl IdentityCreateFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(
-        bytes: Vec<u8>,
-    ) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
         let rs_transition =
             IdentityCreateFromAddressesTransition::deserialize_from_bytes(bytes.as_slice())?;
         Ok(IdentityCreateFromAddressesTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(
-        hex: String,
-    ) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Self::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(
-        base64: String,
-    ) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityCreateFromAddressesTransitionWasm> {
         let bytes = decode(base64.as_str(), Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Self::from_bytes(bytes)
@@ -214,9 +208,8 @@ impl IdentityCreateFromAddressesTransitionWasm {
         let new_output = if output.is_undefined() || output.is_null() {
             None
         } else {
-            let output_wasm: PlatformAddressOutputWasm =
-                serde_wasm_bindgen::from_value(output)
-                    .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+            let output_wasm: PlatformAddressOutputWasm = serde_wasm_bindgen::from_value(output)
+                .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
             Some(output_wasm.into_inner())
         };
         match &mut self.0 {

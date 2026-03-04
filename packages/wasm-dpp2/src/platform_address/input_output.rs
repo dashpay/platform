@@ -1,7 +1,7 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{try_to_u64, IntoWasm};
+use crate::utils::{IntoWasm, try_to_u64};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;

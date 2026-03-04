@@ -12,11 +12,11 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
-use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::StateTransition;
-use wasm_bindgen::prelude::wasm_bindgen;
+use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
@@ -112,9 +112,7 @@ impl AddressFundsTransferTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(
-        bytes: Vec<u8>,
-    ) -> WasmDppResult<AddressFundsTransferTransitionWasm> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AddressFundsTransferTransitionWasm> {
         let rs_transition =
             AddressFundsTransferTransition::deserialize_from_bytes(bytes.as_slice())?;
         Ok(AddressFundsTransferTransitionWasm(rs_transition))
@@ -209,9 +207,7 @@ impl AddressFundsTransferTransitionWasm {
     ) -> WasmDppResult<AddressFundsTransferTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
         match rs_st {
-            StateTransition::AddressFundsTransfer(st) => {
-                Ok(AddressFundsTransferTransitionWasm(st))
-            }
+            StateTransition::AddressFundsTransfer(st) => Ok(AddressFundsTransferTransitionWasm(st)),
             _ => Err(WasmDppError::invalid_argument(
                 "Invalid state transition type",
             )),

@@ -12,12 +12,12 @@ use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
-use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
-use dpp::state_transition::StateTransition;
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
@@ -92,17 +92,15 @@ impl AddressFundingFromAssetLockTransitionWasm {
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
         Ok(AddressFundingFromAssetLockTransitionWasm(
-            AddressFundingFromAssetLockTransition::V0(
-                AddressFundingFromAssetLockTransitionV0 {
-                    asset_lock_proof: asset_lock.into(),
-                    inputs: inputs_map,
-                    outputs,
-                    fee_strategy,
-                    user_fee_increase,
-                    signature: Default::default(),
-                    input_witnesses: Default::default(),
-                },
-            ),
+            AddressFundingFromAssetLockTransition::V0(AddressFundingFromAssetLockTransitionV0 {
+                asset_lock_proof: asset_lock.into(),
+                inputs: inputs_map,
+                outputs,
+                fee_strategy,
+                user_fee_increase,
+                signature: Default::default(),
+                input_witnesses: Default::default(),
+            }),
         ))
     }
 
@@ -124,27 +122,21 @@ impl AddressFundingFromAssetLockTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(
-        bytes: Vec<u8>,
-    ) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
         let rs_transition =
             AddressFundingFromAssetLockTransition::deserialize_from_bytes(bytes.as_slice())?;
         Ok(AddressFundingFromAssetLockTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(
-        hex: String,
-    ) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
+    pub fn from_hex(hex: String) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Self::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(
-        base64: String,
-    ) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
+    pub fn from_base64(base64: String) -> WasmDppResult<AddressFundingFromAssetLockTransitionWasm> {
         let bytes = decode(base64.as_str(), Base64)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Self::from_bytes(bytes)
@@ -188,9 +180,7 @@ impl AddressFundingFromAssetLockTransitionWasm {
         self.0
             .outputs()
             .iter()
-            .map(|(address, amount)| {
-                PlatformAddressOutputWasm::new_optional(*address, *amount)
-            })
+            .map(|(address, amount)| PlatformAddressOutputWasm::new_optional(*address, *amount))
             .collect()
     }
 

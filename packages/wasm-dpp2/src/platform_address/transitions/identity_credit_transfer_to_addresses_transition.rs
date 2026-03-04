@@ -2,7 +2,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
-use crate::platform_address::{outputs_from_js_options, outputs_to_btree_map, PlatformAddressOutputWasm};
+use crate::platform_address::{
+    PlatformAddressOutputWasm, outputs_from_js_options, outputs_to_btree_map,
+};
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_to_u16, try_to_u32, try_to_u64};
 use dpp::platform_value::BinaryData;
@@ -139,9 +141,7 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(
-        hex: String,
-    ) -> WasmDppResult<IdentityCreditTransferToAddressesTransitionWasm> {
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityCreditTransferToAddressesTransitionWasm> {
         let bytes =
             decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
         IdentityCreditTransferToAddressesTransitionWasm::from_bytes(bytes)
@@ -151,8 +151,8 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
     pub fn from_base64(
         base64: String,
     ) -> WasmDppResult<IdentityCreditTransferToAddressesTransitionWasm> {
-        let bytes =
-            decode(base64.as_str(), Base64).map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         IdentityCreditTransferToAddressesTransitionWasm::from_bytes(bytes)
     }
 
@@ -166,10 +166,7 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "recipientAddresses")]
-    pub fn set_recipient_addresses(
-        &mut self,
-        outputs: Vec<PlatformAddressOutputWasm>,
-    ) {
+    pub fn set_recipient_addresses(&mut self, outputs: Vec<PlatformAddressOutputWasm>) {
         self.0
             .set_recipient_addresses(outputs_to_btree_map(outputs));
     }
