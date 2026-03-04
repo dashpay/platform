@@ -715,10 +715,7 @@ mod nonce_cache_tests {
 
         // Platform returns None (identity has never interacted with contract).
         sdk.mock()
-            .expect_fetch::<IdentityContractNonceFetcher, _>(
-                (identity_id, contract_id),
-                None,
-            )
+            .expect_fetch::<IdentityContractNonceFetcher, _>((identity_id, contract_id), None)
             .await
             .expect("set mock expectation");
 
