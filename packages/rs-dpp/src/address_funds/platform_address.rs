@@ -612,17 +612,14 @@ impl OrchardAddress {
     ///
     /// The first 11 bytes are the diversifier, the next 32 are pk_d.
     /// Returns an error if `pk_d` is not a valid Pallas curve point.
-    pub fn from_raw_bytes(
-        bytes: &[u8; ORCHARD_ADDRESS_SIZE],
-    ) -> Result<Self, ProtocolError> {
-        let addr = Option::from(
-            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(bytes),
-        )
-        .ok_or_else(|| {
-            ProtocolError::DecodingError(
-                "OrchardAddress pk_d is not a valid Pallas curve point".to_string(),
-            )
-        })?;
+    pub fn from_raw_bytes(bytes: &[u8; ORCHARD_ADDRESS_SIZE]) -> Result<Self, ProtocolError> {
+        let addr =
+            Option::from(grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(bytes))
+                .ok_or_else(|| {
+                    ProtocolError::DecodingError(
+                        "OrchardAddress pk_d is not a valid Pallas curve point".to_string(),
+                    )
+                })?;
         Ok(Self(addr))
     }
 

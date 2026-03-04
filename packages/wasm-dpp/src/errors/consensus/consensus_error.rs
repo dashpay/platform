@@ -448,9 +448,7 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::AddressInvalidNonceError(e) => {
             generic_consensus_error!(AddressInvalidNonceError, e).into()
         }
-        StateError::InvalidAnchorError(e) => {
-            generic_consensus_error!(InvalidAnchorError, e).into()
-        }
+        StateError::InvalidAnchorError(e) => generic_consensus_error!(InvalidAnchorError, e).into(),
         StateError::NullifierAlreadySpentError(e) => {
             generic_consensus_error!(NullifierAlreadySpentError, e).into()
         }
@@ -463,7 +461,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::InsufficientShieldedFeeError(e) => {
             generic_consensus_error!(InsufficientShieldedFeeError, e).into()
         }
-        _ => JsError::new(&format!("unsupported state error: {:?}", state_error)).into(),
     }
 }
 
@@ -965,7 +962,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::UnshieldValueBalanceBelowAmountError(e) => {
             generic_consensus_error!(UnshieldValueBalanceBelowAmountError, e).into()
         }
-        _ => JsError::new(&format!("unsupported basic error: {:?}", basic_error)).into(),
     }
 }
 

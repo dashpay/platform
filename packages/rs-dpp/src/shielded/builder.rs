@@ -94,9 +94,7 @@ impl From<&OrchardAddress> for PaymentAddress {
 
 /// Serializes an authorized Orchard bundle into the raw fields used by
 /// state transition constructors.
-pub fn serialize_authorized_bundle(
-    bundle: &Bundle<Authorized, i64, DashMemo>,
-) -> SerializedBundle {
+pub fn serialize_authorized_bundle(bundle: &Bundle<Authorized, i64, DashMemo>) -> SerializedBundle {
     let actions: Vec<SerializedAction> = bundle
         .actions()
         .iter()
