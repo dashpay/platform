@@ -1551,7 +1551,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     string_decoder: "npm:^1.3.0"
@@ -1580,7 +1580,7 @@ __metadata:
     long: "npm:^5.2.0"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1620,7 +1620,7 @@ __metadata:
     pino: "npm:^9.13.0"
     pino-pretty: "npm:^10.2.3"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     swagger-jsdoc: "npm:^3.5.0"
     ws: "npm:^8.17.1"
@@ -1647,7 +1647,7 @@ __metadata:
     memdown: "npm:^5.1.0"
     mocha: "npm:^11.1.0"
     should: "npm:^13.2.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     wasm-x11-hash: "npm:~0.0.2"
   languageName: unknown
   linkType: soft
@@ -1711,7 +1711,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1747,7 +1747,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1779,7 +1779,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     string_decoder: "npm:^1.3.0"
     terser-webpack-plugin: "npm:^5.3.11"
@@ -1802,7 +1802,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1825,7 +1825,7 @@ __metadata:
     mocha-sinon: "npm:^2.1.2"
     nyc: "npm:^15.1.0"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1839,7 +1839,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1853,7 +1853,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1904,7 +1904,7 @@ __metadata:
     process: "npm:^0.11.10"
     semver: "npm:^7.5.3"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -1976,7 +1976,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2021,7 +2021,7 @@ __metadata:
     pbkdf2: "npm:^3.1.3"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2045,7 +2045,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2127,7 +2127,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2187,7 +2187,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -3510,7 +3510,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@sinonjs/fake-timers@npm:^11.2.2":
+"@sinonjs/fake-timers@npm:11.2.2":
   version: 11.2.2
   resolution: "@sinonjs/fake-timers@npm:11.2.2"
   dependencies:
@@ -7283,7 +7283,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     rimraf: "npm:^3.0.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -7353,7 +7353,7 @@ __metadata:
     qs: "npm:^6.14.2"
     rxjs: "npm:^6.6.7"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     systeminformation: "npm:^5.31.1"
     table: "npm:^6.8.1"
@@ -13221,7 +13221,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nise@npm:^6.1.3":
+"nise@npm:^6.0.0":
   version: 6.1.3
   resolution: "nise@npm:6.1.3"
   dependencies:
@@ -16141,17 +16141,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sinon@npm:^17.0.1":
-  version: 17.0.1
-  resolution: "sinon@npm:17.0.1"
+"sinon@npm:^18.0.1":
+  version: 18.0.1
+  resolution: "sinon@npm:18.0.1"
   dependencies:
-    "@sinonjs/commons": "npm:^3.0.0"
-    "@sinonjs/fake-timers": "npm:^11.2.2"
+    "@sinonjs/commons": "npm:^3.0.1"
+    "@sinonjs/fake-timers": "npm:11.2.2"
     "@sinonjs/samsam": "npm:^8.0.0"
-    diff: "npm:^5.1.0"
-    nise: "npm:^5.1.5"
-    supports-color: "npm:^7.2.0"
-  checksum: 10/b34f1a97da0be3556ac686c6b649a566c2666eb7f50e75e754928c1c72c96d78f56e56a999227be794c3d9cdaed0bc78d11f38ab303d3079c5bcbcffc0f9c6d5
+    diff: "npm:^5.2.0"
+    nise: "npm:^6.0.0"
+    supports-color: "npm:^7"
+  checksum: 10/65be65a7c5dbef7e9e315820bcd17fe0387fb07cb5dd41d3d6a89177e9a2ca463144676d8407348dc075758daa7cf37b9376d35bd1bc7e06717e87d03aa26111
   languageName: node
   linkType: hard
 
@@ -16866,7 +16866,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"supports-color@npm:^7.0.0, supports-color@npm:^7.1.0, supports-color@npm:^7.2.0":
+"supports-color@npm:^7, supports-color@npm:^7.0.0, supports-color@npm:^7.1.0":
   version: 7.2.0
   resolution: "supports-color@npm:7.2.0"
   dependencies:
