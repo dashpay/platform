@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
 
@@ -159,6 +160,7 @@ struct WalletInfoView: View {
     @State private var isEditingName = false
     @State private var mainnetEnabled: Bool = false
     @State private var testnetEnabled: Bool = false
+    @State private var regtestEnabled: Bool = false
     @State private var devnetEnabled: Bool = false
     @State private var isUpdatingNetworks = false
     @State private var errorMessage: String?
@@ -315,39 +317,6 @@ struct WalletInfoView: View {
                         }
                     }
                 }
-
-                // Sync From (per-network) Section
-                Section("Sync From (Block Height)") {
-                    // Show only enabled networks for clarity
-                    if mainnetEnabled {
-                        HStack {
-                            Text("Mainnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromMainnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if testnetEnabled {
-                        HStack {
-                            Text("Testnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromTestnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if devnetEnabled {
-                        HStack {
-                            Text("Devnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromDevnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if !mainnetEnabled && !testnetEnabled && !devnetEnabled {
-                        Text("No networks enabled")
-                            .foregroundColor(.secondary)
-                    }
-                }
                 
                 // Delete Wallet Section
                 Section {
@@ -403,29 +372,37 @@ struct WalletInfoView: View {
     }
     
     private func loadNetworkStates() {
-        // Check which networks this wallet is on
-        let networks = wallet.networks
-        mainnetEnabled = (networks & 1) != 0  // DASH
-        testnetEnabled = (networks & 2) != 0  // TESTNET
-        devnetEnabled = (networks & 8) != 0   // DEVNET
+        // TODO: Probably not needed this way anymore?
+        switch wallet.dashNetwork {
+        case .mainnet:
+            mainnetEnabled = true
+        case .testnet:
+            testnetEnabled = true
+        case .regtest:
+            // TODO: Handle this properly in the UI or somehow ignore it.
+            regtestEnabled = true
+        case .devnet:
+            devnetEnabled = true
+        }
     }
 
     private func loadAccountCounts() async {
+        // TODO: This can probably be refactored now with with single network manager?
         guard let manager = walletService.walletManager else { return }
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .mainnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 mainnetAccountCount = list.count
             }
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .testnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 testnetAccountCount = list.count
             }
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .devnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
@@ -449,24 +426,13 @@ struct WalletInfoView: View {
         }
     }
     
-    private func enableNetwork(_ network: Network) async {
+    private func enableNetwork(_ network: AppNetwork) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
-        
+
         do {
-            // Add the network to the wallet
-            let networkBit: UInt32
-            switch network {
-            case .mainnet:
-                networkBit = 1  // DASH
-            case .testnet:
-                networkBit = 2  // TESTNET
-            case .devnet:
-                networkBit = 8  // DEVNET
-            }
             
-            // Update the wallet's networks bitfield
-            wallet.networks = wallet.networks | networkBit
+            // TODO: This needs some love after single wallet refactoring.
             
             // Save to Core Data
             try modelContext.save()
@@ -488,26 +454,27 @@ struct WalletInfoView: View {
     
     private func deleteWallet() async {
         isDeleting = true
-        defer { 
+        defer {
             Task { @MainActor in
                 isDeleting = false
             }
         }
-        
+
         do {
-            // Delete the wallet from Core Data
-            modelContext.delete(wallet)
-            try modelContext.save()
-            
-            // Dismiss both the info view and the wallet detail view
+            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+            // This prevents "Never access a full future backing data" crash
             await MainActor.run {
                 dismiss()
                 onWalletDeleted()
             }
-            
-            // Notify the wallet service to reload
+
+            // Notify the wallet service (removes wallet from observable arrays)
             await walletService.walletDeleted(wallet)
-            
+
+            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
+            modelContext.delete(wallet)
+            try modelContext.save()
+
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to delete wallet: \(error.localizedDescription)"

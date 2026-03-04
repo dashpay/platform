@@ -69,3 +69,9 @@
 
 - [Binding Patterns](wasm/binding-patterns.md)
 - [Error Macros](wasm/error-macros.md)
+
+---
+
+# Appendix
+
+- [API Reference](api-reference.md)

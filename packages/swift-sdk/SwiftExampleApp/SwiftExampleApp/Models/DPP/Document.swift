@@ -1,193 +1,24 @@
 import Foundation
+import SwiftDashSDK
 
-// MARK: - Document Models based on DPP
+// Re-export SDK Document types for backward compatibility
+public typealias DPPDocument = SwiftDashSDK.DPPDocument
+public typealias ExtendedDocument = SwiftDashSDK.ExtendedDocument
+public typealias DocumentMetadata = SwiftDashSDK.DocumentMetadata
+public typealias TokenPaymentInfo = SwiftDashSDK.TokenPaymentInfo
+public typealias DocumentPatch = SwiftDashSDK.DocumentPatch
+public typealias DocumentPropertyNames = SwiftDashSDK.DocumentPropertyNames
 
-/// Main Document structure
-public struct DPPDocument: Identifiable, Codable, Equatable {
-    public let id: Identifier
-    public let ownerId: Identifier
-    public let properties: [String: PlatformValue]
-    public let revision: Revision?
-    public let createdAt: TimestampMillis?
-    public let updatedAt: TimestampMillis?
-    public let transferredAt: TimestampMillis?
-    public let createdAtBlockHeight: BlockHeight?
-    public let updatedAtBlockHeight: BlockHeight?
-    public let transferredAtBlockHeight: BlockHeight?
-    public let createdAtCoreBlockHeight: CoreBlockHeight?
-    public let updatedAtCoreBlockHeight: CoreBlockHeight?
-    public let transferredAtCoreBlockHeight: CoreBlockHeight?
-    
-    /// Get the document ID as a string
-    var idString: String {
-        id.toBase58String()
-    }
-    
-    /// Get the owner ID as a string
-    var ownerIdString: String {
-        ownerId.toBase58String()
-    }
-    
-    public init(id: Identifier, ownerId: Identifier, properties: [String: PlatformValue], 
-                revision: Revision? = nil, createdAt: TimestampMillis? = nil, 
-                updatedAt: TimestampMillis? = nil, transferredAt: TimestampMillis? = nil,
-                createdAtBlockHeight: BlockHeight? = nil, updatedAtBlockHeight: BlockHeight? = nil,
-                transferredAtBlockHeight: BlockHeight? = nil, createdAtCoreBlockHeight: CoreBlockHeight? = nil,
-                updatedAtCoreBlockHeight: CoreBlockHeight? = nil, transferredAtCoreBlockHeight: CoreBlockHeight? = nil) {
-        self.id = id
-        self.ownerId = ownerId
-        self.properties = properties
-        self.revision = revision
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-        self.transferredAt = transferredAt
-        self.createdAtBlockHeight = createdAtBlockHeight
-        self.updatedAtBlockHeight = updatedAtBlockHeight
-        self.transferredAtBlockHeight = transferredAtBlockHeight
-        self.createdAtCoreBlockHeight = createdAtCoreBlockHeight
-        self.updatedAtCoreBlockHeight = updatedAtCoreBlockHeight
-        self.transferredAtCoreBlockHeight = transferredAtCoreBlockHeight
-    }
-    
-    /// Get created date
-    var createdDate: Date? {
-        guard let createdAt = createdAt else { return nil }
-        return Date(timeIntervalSince1970: Double(createdAt) / 1000)
-    }
-    
-    /// Get updated date
-    var updatedDate: Date? {
-        guard let updatedAt = updatedAt else { return nil }
-        return Date(timeIntervalSince1970: Double(updatedAt) / 1000)
-    }
-    
-    /// Get transferred date
-    var transferredDate: Date? {
-        guard let transferredAt = transferredAt else { return nil }
-        return Date(timeIntervalSince1970: Double(transferredAt) / 1000)
-    }
-}
-
-// MARK: - Extended Document
-
-/// Extended document that includes data contract and metadata
-struct ExtendedDocument: Identifiable, Codable, Equatable {
-    let documentTypeName: String
-    let dataContractId: Identifier
-    let document: DPPDocument
-    let dataContract: DPPDataContract
-    let metadata: DocumentMetadata?
-    let entropy: Bytes32
-    let tokenPaymentInfo: TokenPaymentInfo?
-    
-    /// Convenience accessor for document ID
-    var id: Identifier {
-        document.id
-    }
-    
-    /// Get the data contract ID as a string
-    var dataContractIdString: String {
-        dataContractId.toBase58String()
-    }
-}
-
-// MARK: - Document Metadata
-
-struct DocumentMetadata: Codable, Equatable {
-    let blockHeight: BlockHeight
-    let coreBlockHeight: CoreBlockHeight
-    let timeMs: TimestampMillis
-    let protocolVersion: UInt32
-}
-
-// MARK: - Token Payment Info
-
-struct TokenPaymentInfo: Codable, Equatable {
-    let tokenId: Identifier
-    let amount: UInt64
-    
-    var tokenIdString: String {
-        tokenId.toBase58String()
-    }
-}
-
-// MARK: - Document Patch
-
-/// Represents a partial document update
-struct DocumentPatch: Codable, Equatable {
-    let id: Identifier
-    let properties: [String: PlatformValue]
-    let revision: Revision?
-    let updatedAt: TimestampMillis?
-    
-    /// Get the document ID as a string
-    var idString: String {
-        id.toBase58String()
-    }
-}
-
-// MARK: - Document Property Names
-
-struct DocumentPropertyNames {
-    static let featureVersion = "$version"
-    static let id = "$id"
-    static let dataContractId = "$dataContractId"
-    static let revision = "$revision"
-    static let ownerId = "$ownerId"
-    static let price = "$price"
-    static let createdAt = "$createdAt"
-    static let updatedAt = "$updatedAt"
-    static let transferredAt = "$transferredAt"
-    static let createdAtBlockHeight = "$createdAtBlockHeight"
-    static let updatedAtBlockHeight = "$updatedAtBlockHeight"
-    static let transferredAtBlockHeight = "$transferredAtBlockHeight"
-    static let createdAtCoreBlockHeight = "$createdAtCoreBlockHeight"
-    static let updatedAtCoreBlockHeight = "$updatedAtCoreBlockHeight"
-    static let transferredAtCoreBlockHeight = "$transferredAtCoreBlockHeight"
-    
-    static let identifierFields = [id, ownerId, dataContractId]
-    static let timestampFields = [createdAt, updatedAt, transferredAt]
-    static let blockHeightFields = [
-        createdAtBlockHeight, updatedAtBlockHeight, transferredAtBlockHeight,
-        createdAtCoreBlockHeight, updatedAtCoreBlockHeight, transferredAtCoreBlockHeight
-    ]
-}
-
-// MARK: - Document Factory
+// MARK: - App-Specific Extensions
 
 extension DPPDocument {
-    /// Create a new document
-    static func create(
-        id: Identifier? = nil,
-        ownerId: Identifier,
-        properties: [String: PlatformValue] = [:]
-    ) -> DPPDocument {
-        let documentId = id ?? Data(UUID().uuidString.utf8).prefix(32).paddedToLength(32)
-        
-        return DPPDocument(
-            id: documentId,
-            ownerId: ownerId,
-            properties: properties,
-            revision: 0,
-            createdAt: TimestampMillis(Date().timeIntervalSince1970 * 1000),
-            updatedAt: nil,
-            transferredAt: nil,
-            createdAtBlockHeight: nil,
-            updatedAtBlockHeight: nil,
-            transferredAtBlockHeight: nil,
-            createdAtCoreBlockHeight: nil,
-            updatedAtCoreBlockHeight: nil,
-            transferredAtCoreBlockHeight: nil
-        )
-    }
-    
     /// Create from our simplified DocumentModel
     init(from model: DocumentModel) {
         // model.id is a string, convert it to Data
-        self.id = Data.identifier(fromHex: model.id) ?? Data(repeating: 0, count: 32)
+        let documentId = Data.identifier(fromHex: model.id) ?? Data(repeating: 0, count: 32)
         // model.ownerId is already Data
-        self.ownerId = model.ownerId
-        
+        let ownerIdData = model.ownerId
+
         // Convert properties - in a real implementation, this would properly convert types
         var platformProperties: [String: PlatformValue] = [:]
         for (key, value) in model.data {
@@ -200,18 +31,22 @@ extension DPPDocument {
             }
             // Add more type conversions as needed
         }
-        self.properties = platformProperties
-        
-        self.revision = 0
-        self.createdAt = model.createdAt.map { TimestampMillis($0.timeIntervalSince1970 * 1000) }
-        self.updatedAt = model.updatedAt.map { TimestampMillis($0.timeIntervalSince1970 * 1000) }
-        self.transferredAt = nil
-        self.createdAtBlockHeight = nil
-        self.updatedAtBlockHeight = nil
-        self.transferredAtBlockHeight = nil
-        self.createdAtCoreBlockHeight = nil
-        self.updatedAtCoreBlockHeight = nil
-        self.transferredAtCoreBlockHeight = nil
+
+        self.init(
+            id: documentId,
+            ownerId: ownerIdData,
+            properties: platformProperties,
+            revision: 0,
+            createdAt: model.createdAt.map { TimestampMillis($0.timeIntervalSince1970 * 1000) },
+            updatedAt: model.updatedAt.map { TimestampMillis($0.timeIntervalSince1970 * 1000) },
+            transferredAt: nil,
+            createdAtBlockHeight: nil,
+            updatedAtBlockHeight: nil,
+            transferredAtBlockHeight: nil,
+            createdAtCoreBlockHeight: nil,
+            updatedAtCoreBlockHeight: nil,
+            transferredAtCoreBlockHeight: nil
+        )
     }
 }
 

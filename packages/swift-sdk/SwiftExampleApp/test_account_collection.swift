@@ -24,7 +24,7 @@ print("   - Identity topup accounts via managed_account_collection_get_identity_
 print("   - Provider accounts (voting keys, owner keys, etc.)")
 print()
 print("3. For each account, it:")
-print("   - Gets balance using managed_account_get_balance()")
+print("   - Gets balance using managed_core_account_get_balance()")
 print("   - Returns account information with proper labels")
 print("   - Uses unique indices for UI display")
 print()

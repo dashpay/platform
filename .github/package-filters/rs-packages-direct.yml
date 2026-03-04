@@ -1,20 +1,32 @@
 wallet-utils-contract:
-  - packages/wallet-utils-contract/**
+  - packages/wallet-utils-contract/src/**
+  - packages/wallet-utils-contract/schema/**
+  - packages/wallet-utils-contract/Cargo.toml
 
 token-history-contract:
-  - packages/token-history-contract/**
+  - packages/token-history-contract/src/**
+  - packages/token-history-contract/schema/**
+  - packages/token-history-contract/Cargo.toml
 
 dashpay-contract:
-  - packages/dashpay-contract/**
+  - packages/dashpay-contract/src/**
+  - packages/dashpay-contract/schema/**
+  - packages/dashpay-contract/Cargo.toml
 
 masternode-reward-shares-contract:
-  - packages/masternode-reward-shares-contract/**
+  - packages/masternode-reward-shares-contract/src/**
+  - packages/masternode-reward-shares-contract/schema/**
+  - packages/masternode-reward-shares-contract/Cargo.toml
 
 withdrawals-contract:
-  - packages/withdrawals-contract/**
+  - packages/withdrawals-contract/src/**
+  - packages/withdrawals-contract/schema/**
+  - packages/withdrawals-contract/Cargo.toml
 
 dpns-contract:
-  - packages/dpns-contract/**
+  - packages/dpns-contract/src/**
+  - packages/dpns-contract/schema/**
+  - packages/dpns-contract/Cargo.toml
 
 json-schema-compatibility-validator:
   - packages/rs-json-schema-compatibility-validator/**
@@ -23,10 +35,12 @@ dpp:
   - packages/rs-dpp/**
 
 wasm-dpp:
-  - packages/wasm-dpp/**
+  - packages/wasm-dpp/src/**
+  - packages/wasm-dpp/Cargo.toml
 
 wasm-dpp2:
-  - packages/wasm-dpp2/**
+  - packages/wasm-dpp2/src/**
+  - packages/wasm-dpp2/Cargo.toml
 
 drive:
   - packages/rs-drive/**
@@ -35,7 +49,10 @@ drive-abci:
   - packages/rs-drive-abci/**
 
 dapi-grpc:
-  - packages/dapi-grpc/**
+  - packages/dapi-grpc/src/**
+  - packages/dapi-grpc/protos/**
+  - packages/dapi-grpc/build.rs
+  - packages/dapi-grpc/Cargo.toml
 
 rs-dapi-client:
   - packages/rs-dapi-client/**
@@ -47,4 +64,5 @@ rs-sdk-ffi:
   - packages/rs-sdk-ffi/**
 
 wasm-sdk:
-  - packages/wasm-sdk/**
+  - packages/wasm-sdk/src/**
+  - packages/wasm-sdk/Cargo.toml

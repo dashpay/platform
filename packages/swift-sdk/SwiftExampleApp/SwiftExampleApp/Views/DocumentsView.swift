@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct DocumentsView: View {
     @EnvironmentObject var appState: AppState

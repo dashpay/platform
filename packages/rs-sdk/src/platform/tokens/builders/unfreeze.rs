@@ -29,7 +29,7 @@ pub struct TokenUnfreezeTransitionBuilder {
 }
 
 impl TokenUnfreezeTransitionBuilder {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building an unfreeze tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///

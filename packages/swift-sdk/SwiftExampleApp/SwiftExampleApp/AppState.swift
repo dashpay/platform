@@ -15,7 +15,7 @@ class AppState: ObservableObject {
     @Published var documents: [DocumentModel] = []
     @Published var dataContracts: [DPPDataContract] = []
     
-    @Published var currentNetwork: Network {
+    @Published var currentNetwork: AppNetwork {
         didSet {
             UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
             Task {
@@ -49,7 +49,7 @@ class AppState: ObservableObject {
     init() {
         // Load saved network preference or use default
         if let savedNetwork = UserDefaults.standard.string(forKey: "currentNetwork"),
-           let network = Network(rawValue: savedNetwork) {
+           let network = AppNetwork(rawValue: savedNetwork) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet
@@ -171,7 +171,7 @@ class AppState: ObservableObject {
         showError = true
     }
     
-    func switchNetwork(to network: Network) async {
+    func switchNetwork(to network: AppNetwork) async {
         guard let modelContext = modelContext else { return }
         
         // Clear current data

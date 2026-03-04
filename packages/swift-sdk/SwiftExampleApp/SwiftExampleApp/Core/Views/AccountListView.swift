@@ -1,63 +1,8 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 
-// MARK: - Account Model (UI)
-
-public enum AccountCategory: Equatable, Hashable {
-    case bip44
-    case bip32
-    case coinjoin
-    case identityRegistration
-    case identityInvitation
-    case identityTopupNotBound
-    case identityTopup
-    case providerVotingKeys
-    case providerOwnerKeys
-    case providerOperatorKeys
-    case providerPlatformKeys
-}
-
-public struct AccountInfo: Identifiable, Hashable {
-    public let id: String
-    public let category: AccountCategory
-    public let index: UInt32? // present only for indexed account types
-    public let label: String
-    public let balance: (confirmed: UInt64, unconfirmed: UInt64)
-    public let addressCount: (external: Int, internal: Int)
-    public let nextReceiveAddress: String?
-
-    public init(category: AccountCategory,
-                index: UInt32? = nil,
-                label: String,
-                balance: (confirmed: UInt64, unconfirmed: UInt64),
-                addressCount: (external: Int, internal: Int),
-                nextReceiveAddress: String?) {
-        self.category = category
-        self.index = index
-        self.label = label
-        self.balance = balance
-        self.addressCount = addressCount
-        self.nextReceiveAddress = nextReceiveAddress
-        // Build a stable id
-        if let idx = index {
-            self.id = "\(category)-\(idx)"
-        } else {
-            self.id = "\(category)"
-        }
-    }
-}
-
-extension AccountInfo: Equatable {
-    public static func == (lhs: AccountInfo, rhs: AccountInfo) -> Bool {
-        return lhs.id == rhs.id
-    }
-}
-
-extension AccountInfo {
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
+// AccountInfo and AccountCategory are imported from SwiftDashSDK
 
 // MARK: - Account List View
 struct AccountListView: View {

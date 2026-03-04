@@ -6,7 +6,7 @@
 //! ## Traits
 //! - [Fetch]: An asynchronous trait that defines how to fetch data from Platform.
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
-//!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
+//!   traits. The associated [`Fetch::Request`] type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
 use crate::sync::retry;
@@ -34,8 +34,9 @@ use super::DocumentQuery;
 /// To fetch an object from Platform, you need to define some query (criteria that fetched object must match) and
 /// use [Fetch::fetch()] for your object type.
 ///
-/// Implementators of this trait should implement at least the [fetch_with_metadata()](Fetch::fetch_with_metadata)
-/// method, as other methods are convenience methods that call it with default settings.
+/// Implementors of this trait must define the associated [`Fetch::Request`] type.
+/// All methods have default implementations; override [fetch_with_metadata_and_proof()](Fetch::fetch_with_metadata_and_proof)
+/// if custom fetch logic is needed, as other methods are convenience methods that call it.
 ///
 /// ## Example
 ///
@@ -69,7 +70,7 @@ where
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement [`TransportRequest`] and [`MockRequest`].
+    /// This type must implement [`TransportRequest`].
     type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from Platform.
@@ -112,9 +113,9 @@ where
     ///
     /// ## Returns
     ///
-    /// Returns:
-    /// * `Ok(Some(Self))` when object is found
-    /// * `Ok(None)` when object is not found
+    /// Returns a tuple of the fetched object and [ResponseMetadata]:
+    /// * `Ok((Some(Self), ResponseMetadata))` when object is found
+    /// * `Ok((None, ResponseMetadata))` when object is not found
     /// * [`Err(Error)`](Error) when an error occurs
     ///
     /// ## Error Handling
@@ -135,7 +136,7 @@ where
     /// Fetch object from Platform that satisfies provided [Query].
     /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
-    /// This method is meant to give the user library a way to see the underlying proof
+    /// This method is meant to give the library user a way to see the underlying proof
     /// for educational purposes. This method should most likely only be used for debugging.
     ///
     /// ## Parameters
@@ -146,9 +147,9 @@ where
     ///
     /// ## Returns
     ///
-    /// Returns:
-    /// * `Ok(Some(Self))` when object is found
-    /// * `Ok(None)` when object is not found
+    /// Returns a tuple of the fetched object, [ResponseMetadata], and the underlying [Proof]:
+    /// * `Ok((Some(Self), ResponseMetadata, Proof))` when object is found
+    /// * `Ok((None, ResponseMetadata, Proof))` when object is not found
     /// * [`Err(Error)`](Error) when an error occurs
     ///
     /// ## Error Handling
