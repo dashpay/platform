@@ -164,6 +164,7 @@ fn build_output_only_bundle(
 ///
 /// Used by ShieldedTransfer, Unshield, and ShieldedWithdrawal where funds
 /// are spent from existing notes.
+#[allow(clippy::too_many_arguments)]
 fn build_spend_bundle(
     spends: Vec<SpendableNote>,
     recipient: &OrchardAddress,
@@ -194,7 +195,7 @@ fn build_spend_bundle(
         )
         .map_err(|e| ProtocolError::Generic(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle(builder, proving_key, &[ask.clone()], extra_sighash_data)
+    prove_and_sign_bundle(builder, proving_key, std::slice::from_ref(ask), extra_sighash_data)
 }
 
 /// Takes a configured Builder, generates the proof, computes the platform
@@ -243,6 +244,7 @@ fn prove_and_sign_bundle(
 /// - `proving_key` - Halo 2 proving key (cache with `OnceLock` — ~30s to build)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
 pub fn build_shield_transition<S: Signer<PlatformAddress>>(
     recipient: &OrchardAddress,
     shield_amount: u64,
@@ -291,6 +293,7 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>>(
 /// - `proving_key` - Halo 2 proving key
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_transition(
     recipient: &OrchardAddress,
     shield_amount: u64,
@@ -348,6 +351,7 @@ pub fn build_shield_from_asset_lock_transition(
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
 ///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
 pub fn build_shielded_transfer_transition(
     spends: Vec<SpendableNote>,
     recipient: &OrchardAddress,
@@ -424,7 +428,7 @@ pub fn build_shielded_transfer_transition(
     }
 
     // ShieldedTransfer has no extra_data in sighash
-    let bundle = prove_and_sign_bundle(builder, proving_key, &[ask.clone()], &[])?;
+    let bundle = prove_and_sign_bundle(builder, proving_key, std::slice::from_ref(ask), &[])?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // value_balance = effective_fee (the amount leaving the shielded pool as fee)
@@ -457,6 +461,7 @@ pub fn build_shielded_transfer_transition(
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
 ///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
 pub fn build_unshield_transition(
     spends: Vec<SpendableNote>,
     output_address: PlatformAddress,
@@ -549,6 +554,7 @@ pub fn build_unshield_transition(
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
 ///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
 pub fn build_shielded_withdrawal_transition(
     spends: Vec<SpendableNote>,
     withdrawal_amount: u64,
