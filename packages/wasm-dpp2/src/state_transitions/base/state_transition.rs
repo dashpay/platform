@@ -557,9 +557,9 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+    pub fn set_identity_contract_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
         use crate::utils::try_to_u64;
-        let nonce: IdentityNonce = try_to_u64(&nonce, "identityContractNonce")?;
+        let nonce: IdentityNonce = try_to_u64(nonce, "identityContractNonce")?;
         use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(_) => {
@@ -625,9 +625,9 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setIdentityNonce")]
-    pub fn set_identity_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+    pub fn set_identity_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
         use crate::utils::try_to_u64;
-        let nonce: IdentityNonce = try_to_u64(&nonce, "identityNonce")?;
+        let nonce: IdentityNonce = try_to_u64(nonce, "identityNonce")?;
         use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(mut contract_create) => {

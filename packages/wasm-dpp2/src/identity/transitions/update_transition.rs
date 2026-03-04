@@ -22,7 +22,6 @@ use dpp::state_transition::{
     StateTransitionSingleSigned,
 };
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -200,14 +199,14 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
-        self.0.set_revision(try_to_u64(&revision, "revision")?);
+    pub fn set_revision(&mut self, revision: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(revision, "revision")?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        self.0.set_nonce(try_to_u64(&nonce, "nonce")?);
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(nonce, "nonce")?);
         Ok(())
     }
 

@@ -183,8 +183,8 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = nonce)]
-    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        let nonce = try_to_u64(&nonce, "nonce")?;
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        let nonce = try_to_u64(nonce, "nonce")?;
         self.0 = match self.0.clone() {
             MasternodeVoteTransition::V0(mut vote) => {
                 vote.nonce = nonce;
@@ -253,9 +253,9 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+    pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
         self.0
-            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+            .set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
         Ok(())
     }
 

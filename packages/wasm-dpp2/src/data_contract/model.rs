@@ -460,8 +460,8 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "version")]
-    pub fn set_version(&mut self, version: JsValue) -> WasmDppResult<()> {
-        self.0.set_version(try_to_u32(&version, "version")?);
+    pub fn set_version(&mut self, version: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.set_version(try_to_u32(version, "version")?);
         Ok(())
     }
 
