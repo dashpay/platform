@@ -354,8 +354,9 @@ impl Sdk {
     }
 
     /// Get or fetch identity-contract nonce, querying Platform when stale or absent.
-    /// Returns `0` for first interactions **and** non-existent identity/contract.
-    /// Does not verify identity or contract existence.
+    /// Treats a missing nonce as `0` before applying the optional bump; on first
+    /// interaction this may return `0` or `1` depending on `bump_first`. Does not
+    /// verify identity or contract existence.
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: Identifier,

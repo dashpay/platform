@@ -683,7 +683,7 @@ mod nonce_cache_tests {
 
     // --- First-time interaction: None → nonce 0 (issue #3169) ---
     #[tokio::test]
-    async fn first_identity_nonce_defaults_to_zero() {
+    async fn first_identity_nonce_defaults_to_zero_then_bumps_to_one() {
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
         let mut sdk = crate::Sdk::new_mock();
@@ -705,7 +705,7 @@ mod nonce_cache_tests {
     }
 
     #[tokio::test]
-    async fn first_identity_contract_nonce_defaults_to_zero() {
+    async fn first_identity_contract_nonce_defaults_to_zero_then_bumps_to_one() {
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
         let mut sdk = crate::Sdk::new_mock();
@@ -731,6 +731,28 @@ mod nonce_cache_tests {
             nonce, 1,
             "first identity-contract nonce should be 1 (0 bumped)"
         );
+    }
+
+    #[tokio::test]
+    async fn first_identity_nonce_defaults_to_zero_without_bump() {
+        use drive_proof_verifier::types::IdentityNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let settings = PutSettings::default();
+
+        // Platform returns None (identity has never interacted).
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, None)
+            .await
+            .expect("set mock expectation");
+
+        // bump_first=false: should return the raw default of 0.
+        let nonce = sdk
+            .get_identity_nonce(identity_id, false, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(nonce, 0, "first identity nonce without bump should be 0");
     }
 
     // --- Different keys are isolated ---
