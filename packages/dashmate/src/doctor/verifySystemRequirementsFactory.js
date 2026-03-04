@@ -29,7 +29,7 @@ export default function verifySystemRequirementsFactory() {
   ) {
     const MINIMUM_CPU_CORES = isHP ? 4 : 2;
     const MINIMUM_CPU_FREQUENCY = 2.4; // GHz
-    const MINIMUM_RAM = isHP ? 8 : 4; // GB
+    const MINIMUM_RAM = isHP ? 7.3 : 3.6; // GB
     const MINIMUM_DISK_SPACE = overrideRequirements.diskSpace ?? (isHP ? 200 : 100); // GB
 
     const problems = [];

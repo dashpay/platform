@@ -1,9 +1,35 @@
 use std::sync::Arc;
 
-use dash_spv::bloom::utils::{extract_pubkey_hash, outpoint_to_bytes};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
 use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
+use dpp::dashcore::Script;
+
+/// Extract pubkey hash from P2PKH script
+fn extract_pubkey_hash(script: &Script) -> Option<Vec<u8>> {
+    let bytes = script.as_bytes();
+    // P2PKH: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+    if bytes.len() == 25
+        && bytes[0] == 0x76  // OP_DUP
+        && bytes[1] == 0xa9  // OP_HASH160
+        && bytes[2] == 0x14  // Push 20 bytes
+        && bytes[23] == 0x88 // OP_EQUALVERIFY
+        && bytes[24] == 0xac
+    // OP_CHECKSIG
+    {
+        Some(bytes[3..23].to_vec())
+    } else {
+        None
+    }
+}
+
+/// Convert outpoint to bytes for bloom filter
+fn outpoint_to_bytes(outpoint: &OutPoint) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(36);
+    bytes.extend_from_slice(&outpoint.txid[..]);
+    bytes.extend_from_slice(&outpoint.vout.to_le_bytes());
+    bytes
+}
 
 fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
     let script_bytes = script.as_bytes();
@@ -11,8 +37,8 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
         return true;
     }
 
-    if let Some(pubkey_hash) = extract_pubkey_hash(script.as_script())
-        && filter.contains(&pubkey_hash)
+    if let Some(pubkey_hash) = script.as_script().p2pkh_public_key_hash_bytes()
+        && filter.contains(pubkey_hash)
     {
         return true;
     }
@@ -23,11 +49,9 @@ fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
 }
 
 #[inline]
-fn txid_to_be_bytes(txid: &Txid) -> Vec<u8> {
+fn txid_to_internal_bytes(txid: &Txid) -> Vec<u8> {
     use dashcore_rpc::dashcore::hashes::Hash;
-    let mut arr = txid.to_byte_array();
-    arr.reverse();
-    arr.to_vec()
+    txid.to_byte_array().to_vec()
 }
 
 fn is_pubkey_script(script: &ScriptBuf) -> bool {
@@ -35,9 +59,7 @@ fn is_pubkey_script(script: &ScriptBuf) -> bool {
     if bytes.len() >= 35 && (bytes[0] == 33 || bytes[0] == 65) {
         return true;
     }
-    bytes.contains(&33u8)
-        || bytes.contains(&65u8)
-        || extract_pubkey_hash(script.as_script()).is_some()
+    bytes.contains(&33u8) || bytes.contains(&65u8) || script.as_script().is_p2pkh()
 }
 
 pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
@@ -65,8 +87,8 @@ pub fn matches_transaction(
     };
 
     let txid = tx.txid();
-    let txid_be = txid_to_be_bytes(&txid);
-    if filter.contains(&txid_be) {
+    let txid_internal = txid_to_internal_bytes(&txid);
+    if filter.contains(&txid_internal) {
         return true;
     }
 
@@ -75,10 +97,11 @@ pub fn matches_transaction(
             if flags == BloomFlags::All
                 || (flags == BloomFlags::PubkeyOnly && is_pubkey_script(&out.script_pubkey))
             {
-                let outpoint_bytes = outpoint_to_bytes(&OutPoint {
+                let outpoint_bytes: [u8; 36] = OutPoint {
                     txid,
                     vout: index as u32,
-                });
+                }
+                .into();
                 drop(filter);
                 if let Ok(mut f) = filter_lock.write().inspect_err(|e| {
                     tracing::debug!("Failed to acquire write lock for bloom filter: {}", e);
@@ -91,7 +114,7 @@ pub fn matches_transaction(
     }
 
     for input in tx.input.iter() {
-        let outpoint_bytes = outpoint_to_bytes(&input.previous_output);
+        let outpoint_bytes: [u8; 36] = input.previous_output.into();
         if filter.contains(&outpoint_bytes) || script_matches(&filter, &input.script_sig) {
             return true;
         }
@@ -116,7 +139,6 @@ pub(crate) fn bloom_flags_from_int<I: TryInto<u8>>(flags: I) -> BloomFlags {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dash_spv::bloom::utils::outpoint_to_bytes;
     use dashcore_rpc::dashcore::bloom::BloomFilter as CoreBloomFilter;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash};
@@ -143,11 +165,15 @@ mod tests {
     }
 
     #[test]
-    fn test_txid_endianness_conversion() {
-        let hex_be = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
-        let txid = Txid::from_str(hex_be).expect("valid txid hex");
-        let be_bytes = super::txid_to_be_bytes(&txid);
-        assert_eq!(be_bytes, hex::decode(hex_be).unwrap());
+    fn test_txid_internal_bytes_match_consensus_wire_order() {
+        let hex_display = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let txid = Txid::from_str(hex_display).expect("valid txid hex");
+        let internal_bytes = super::txid_to_internal_bytes(&txid);
+
+        // Txid display is reverse of consensus/wire serialization for hash values.
+        let mut expected_internal = hex::decode(hex_display).unwrap();
+        expected_internal.reverse();
+        assert_eq!(internal_bytes, expected_internal);
     }
 
     #[test]
@@ -159,9 +185,9 @@ mod tests {
             output: vec![],
             special_transaction_payload: None,
         };
-        let txid_be = super::txid_to_be_bytes(&tx.txid());
+        let txid_internal = super::txid_to_internal_bytes(&tx.txid());
         let mut filter = CoreBloomFilter::from_bytes(vec![0; 128], 3, 0, BloomFlags::None).unwrap();
-        filter.insert(&txid_be);
+        filter.insert(&txid_internal);
         assert!(matches_transaction(
             Arc::new(RwLock::new(filter)),
             &tx,
@@ -193,10 +219,11 @@ mod tests {
             &tx,
             BloomFlags::All
         ));
-        let outpoint = outpoint_to_bytes(&OutPoint {
+        let outpoint: [u8; 36] = OutPoint {
             txid: tx.txid(),
             vout: 0,
-        });
+        }
+        .into();
         let guard = filter_lock.read().unwrap();
         assert!(guard.contains(&outpoint));
     }
@@ -322,10 +349,11 @@ mod tests {
             &tx_sh,
             BloomFlags::PubkeyOnly
         ));
-        let outpoint = outpoint_to_bytes(&OutPoint {
+        let outpoint: [u8; 36] = OutPoint {
             txid: tx_sh.txid(),
             vout: 0,
-        });
+        }
+        .into();
         assert!(!filter_lock.read().unwrap().contains(&outpoint));
         let mut opret_bytes2 = Vec::new();
         opret_bytes2.push(0x6a);
@@ -346,10 +374,11 @@ mod tests {
             &tx_or,
             BloomFlags::PubkeyOnly
         ));
-        let outpoint2 = outpoint_to_bytes(&OutPoint {
+        let outpoint2: [u8; 36] = OutPoint {
             txid: tx_or.txid(),
             vout: 0,
-        });
+        }
+        .into();
         assert!(!filter_lock.read().unwrap().contains(&outpoint2));
     }
 
@@ -413,6 +442,79 @@ mod tests {
             &tx,
             BloomFlags::None
         ));
+    }
+
+    /// Simulates client-server bloom filter workflow with correct byte order.
+    ///
+    /// Both the client SDK and the server use `Txid::to_byte_array()` (consensus
+    /// wire format) when inserting into / checking against the bloom filter.
+    /// This is the correct, consistent path.
+    #[test]
+    fn test_client_filter_with_consensus_byte_order_matches_server_side() {
+        use dashcore_rpc::dashcore::hashes::Hash as _;
+        use dashcore_rpc::dashcore::{ScriptBuf, TxOut};
+
+        // 1. A transaction that the server will see on the network.
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 5000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAA; 20])),
+            }],
+            special_transaction_payload: None,
+        };
+
+        // 2. Client SDK serialises the txid the same way any conforming implementation
+        //    would: consensus wire byte order via `to_byte_array()`.
+        let client_txid_bytes = tx.txid().to_byte_array();
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        filter.insert(&client_txid_bytes);
+
+        // 3. Server checks the incoming transaction against the client's filter.
+        assert!(
+            matches_transaction(Arc::new(RwLock::new(filter)), &tx, BloomFlags::None),
+            "filter with txid in consensus byte order must match on the server side"
+        );
+    }
+
+    /// Simulates a buggy client that inserts the txid in display hex byte order
+    /// (human-readable, reversed from wire format) into the bloom filter.
+    ///
+    /// Display hex is what block explorers show. It is the reverse of the consensus
+    /// bytes that the protocol uses on the wire. A client that naively decodes the
+    /// display hex string into bytes and inserts those into the filter will NOT match
+    /// on the server side.
+    #[test]
+    fn test_client_filter_with_display_byte_order_does_not_match_server_side() {
+        use dashcore_rpc::dashcore::{ScriptBuf, TxOut};
+
+        let tx = CoreTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 5000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0xAA; 20])),
+            }],
+            special_transaction_payload: None,
+        };
+
+        // Buggy client: decodes the display-hex string directly into bytes.
+        // Display hex is reversed compared to consensus wire order.
+        let display_hex = tx.txid().to_string();
+        let display_order_bytes = hex::decode(&display_hex).unwrap();
+
+        let mut filter = CoreBloomFilter::from_bytes(vec![0; 256], 3, 0, BloomFlags::None).unwrap();
+        filter.insert(&display_order_bytes);
+
+        // Server must NOT match — the byte order is inconsistent.
+        assert!(
+            !matches_transaction(Arc::new(RwLock::new(filter)), &tx, BloomFlags::None),
+            "filter with txid in display byte order must NOT match on the server side"
+        );
     }
 
     #[test]

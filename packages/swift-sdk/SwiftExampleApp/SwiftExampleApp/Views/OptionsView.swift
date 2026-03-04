@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
@@ -31,7 +32,7 @@ struct OptionsView: View {
                             }
                         }
                     )) {
-                        ForEach(Network.allCases, id: \.self) { network in
+                        ForEach(AppNetwork.allCases, id: \.self) { network in
                             Text(network.displayName).tag(network)
                         }
                     }

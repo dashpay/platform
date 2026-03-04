@@ -31,6 +31,8 @@ pub enum WasmSdkErrorKind {
     Cancelled,
     StaleNode,
     StateTransitionBroadcastError,
+    NonceOverflow,
+    IdentityNonceNotFound,
 
     // Local helper kinds
     InvalidArgument,
@@ -177,6 +179,18 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            NonceOverflow(nonce) => Self::new(
+                WasmSdkErrorKind::NonceOverflow,
+                format!(
+                    "Identity nonce overflow: nonce has reached the maximum value ({})",
+                    nonce
+                ),
+                None,
+                false,
+            ),
+            IdentityNonceNotFound(msg) => {
+                Self::new(WasmSdkErrorKind::IdentityNonceNotFound, msg, None, true)
+            }
             NoAvailableAddressesToRetry(inner) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 format!("no available addresses to retry, last error: {}", inner),
@@ -253,6 +267,8 @@ impl WasmSdkError {
             K::Cancelled => "Cancelled",
             K::StaleNode => "StaleNode",
             K::StateTransitionBroadcastError => "StateTransitionBroadcastError",
+            K::NonceOverflow => "NonceOverflow",
+            K::IdentityNonceNotFound => "IdentityNonceNotFound",
             K::InvalidArgument => "InvalidArgument",
             K::SerializationError => "SerializationError",
             K::NotFound => "NotFound",

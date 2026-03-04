@@ -1,25 +1,37 @@
 ---
 # Login to AWS ECR
 name: "aws_ecr_login"
-description: "Login to AWS ECR to store Docker containers"
+description: "Login to AWS ECR to store Docker containers. Skips gracefully when credentials are not provided."
 inputs:
   aws_account_id:
     description: AWS account ID (AWS_ACCOUNT_ID)
-    required: true
+    required: false
   aws_access_key_id:
     description: Access key ID (AWS_ACCESS_KEY_ID)
-    required: true
+    required: false
   aws_secret_access_key:
     description: Secret access key (AWS_SECRET_ACCESS_KEY)
-    required: true
+    required: false
   aws_region:
     description: AWS region to use (AWS_REGION)
-    required: true
+    required: false
 
 runs:
   using: composite
   steps:
+    - name: Check ECR credentials
+      id: check
+      shell: bash
+      run: |
+        if [[ -z "${{ inputs.aws_region }}" || -z "${{ inputs.aws_access_key_id }}" || -z "${{ inputs.aws_secret_access_key }}" || -z "${{ inputs.aws_account_id }}" ]]; then
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::ECR login skipped — credentials not available (expected for fork PRs)"
+        else
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Configure AWS credentials and bucket region
+      if: steps.check.outputs.skip != 'true'
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ inputs.aws_access_key_id }}
@@ -27,6 +39,7 @@ runs:
         aws-region: ${{ inputs.aws_region }}
 
     - name: Login to ECR
+      if: steps.check.outputs.skip != 'true'
       run: |
         aws ecr get-login-password \
           --region ${{ inputs.aws_region }} | docker login --username AWS --password-stdin ${{ inputs.aws_account_id }}.dkr.ecr.${{ inputs.aws_region  }}.amazonaws.com
@@ -34,6 +47,7 @@ runs:
 
     # Unset AWS credentials to avoid conflicts, as we prefer credentials from ~/.aws/credentials to authenticate
     - name: Unset AWS credentials to avoid conflicts
+      if: steps.check.outputs.skip != 'true'
       shell: bash
       run: |
         echo AWS_DEFAULT_REGION='' >> $GITHUB_ENV

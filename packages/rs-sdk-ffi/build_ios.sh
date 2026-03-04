@@ -13,13 +13,16 @@ PROJECT_NAME="rs_sdk_ffi"
 
 # Parse arguments
 BUILD_ARCH="${1:-arm}"
+CLEAN_BUILD=0
 
 # Parse command line arguments
 for arg in "$@"; do
     case $arg in
         arm|x86|universal)
             BUILD_ARCH="$arg"
-            shift
+            ;;
+        --clean)
+            CLEAN_BUILD=1
             ;;
     esac
 done
@@ -69,6 +72,34 @@ else
     # Default to ARM
     check_target "aarch64-apple-ios"
     check_target "aarch64-apple-ios-sim"
+fi
+
+# Detect if rust-dashcore is a local path dependency and has changed since last iOS build
+RUST_DASHCORE_DIR="$PROJECT_ROOT/../rust-dashcore"
+HASHFILE="$PROJECT_ROOT/target/.rust_dashcore_ios_hash"
+if [[ -d "$RUST_DASHCORE_DIR" ]] && grep -q 'path.*rust-dashcore' "$PROJECT_ROOT/packages/rs-sdk-ffi/Cargo.toml" "$PROJECT_ROOT/packages/rs-dpp/Cargo.toml" 2>/dev/null; then
+    CURRENT_HASH=$(find "$RUST_DASHCORE_DIR/dash/src" "$RUST_DASHCORE_DIR/key-wallet/src" "$RUST_DASHCORE_DIR/dash-spv/src" "$RUST_DASHCORE_DIR/dash-spv-ffi/src" "$RUST_DASHCORE_DIR/key-wallet-manager/src" -name '*.rs' 2>/dev/null | sort | xargs cat 2>/dev/null | shasum -a 256 | cut -d' ' -f1)
+    PREV_HASH=""
+    if [[ -f "$HASHFILE" ]]; then
+        PREV_HASH=$(cat "$HASHFILE")
+    fi
+    if [[ "$CURRENT_HASH" != "$PREV_HASH" ]]; then
+        echo -e "${YELLOW}Local rust-dashcore changes detected — cleaning cached iOS build artifacts${NC}"
+        CLEAN_BUILD=1
+    fi
+fi
+
+if [[ "$CLEAN_BUILD" -eq 1 ]]; then
+    echo -e "${GREEN}Cleaning rs-sdk-ffi and dependencies for iOS targets...${NC}"
+    cargo clean --release --target aarch64-apple-ios -p rs-sdk-ffi 2>/dev/null || true
+    cargo clean --release --target aarch64-apple-ios-sim -p rs-sdk-ffi 2>/dev/null || true
+    cargo clean --release --target x86_64-apple-ios -p rs-sdk-ffi 2>/dev/null || true
+    # Also clean path-dependency crates that cargo may cache
+    for pkg in dashcore key-wallet key-wallet-manager dash-spv dash-spv-ffi rs-platform-wallet rs-platform-wallet-ffi; do
+        cargo clean --release --target aarch64-apple-ios -p "$pkg" 2>/dev/null || true
+        cargo clean --release --target aarch64-apple-ios-sim -p "$pkg" 2>/dev/null || true
+        cargo clean --release --target x86_64-apple-ios -p "$pkg" 2>/dev/null || true
+    done
 fi
 
 # Build for iOS device (arm64) - always needed
@@ -187,8 +218,8 @@ typedef struct FFIAccountCollection { unsigned char _private[0]; } FFIAccountCol
 typedef struct FFIBLSAccount { unsigned char _private[0]; } FFIBLSAccount;
 typedef struct FFIEdDSAAccount { unsigned char _private[0]; } FFIEdDSAAccount;
 typedef struct FFIAddressPool { unsigned char _private[0]; } FFIAddressPool;
-typedef struct FFIManagedAccountCollection { unsigned char _private[0]; } FFIManagedAccountCollection;
-typedef struct FFIManagedAccount { unsigned char _private[0]; } FFIManagedAccount;
+typedef struct FFIManagedCoreAccountCollection { unsigned char _private[0]; } FFIManagedCoreAccountCollection;
+typedef struct FFIManagedCoreAccount { unsigned char _private[0]; } FFIManagedCoreAccount;
 // Platform SDK opaque handles
 typedef struct SDKHandle { unsigned char _private[0]; } SDKHandle;
 typedef struct DataContractHandle { unsigned char _private[0]; } DataContractHandle;
@@ -323,6 +354,7 @@ fi
 # Build dash-spv-ffi from local rust-dashcore for device and simulator
 RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 SPV_CRATE_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi"
+SPV_TARGET_PATH="$RUST_DASHCORE_PATH/target"
 if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
@@ -377,11 +409,11 @@ if [ "$BUILD_ARCH" != "x86" ]; then
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
     # Merge with dash-spv-ffi device lib if available
-    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
+    if [ -f "$SPV_TARGET_PATH/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
       echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
       libtool -static -o "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" \
         "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
-        "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a"
+        "$SPV_TARGET_PATH/aarch64-apple-ios/release/libdash_spv_ffi.a"
       COMBINED_DEVICE_LIB=1
     fi
 fi
@@ -445,10 +477,10 @@ fi
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
     # Try to merge with SPV sim lib if it exists
     SIM_SPV_LIB=""
-    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
-    elif [ -f "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
-      SIM_SPV_LIB="$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    if [ -f "$SPV_TARGET_PATH/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_TARGET_PATH/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
+    elif [ -f "$SPV_TARGET_PATH/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_TARGET_PATH/x86_64-apple-ios/release/libdash_spv_ffi.a"
     fi
     if [ -n "$SIM_SPV_LIB" ]; then
       echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
@@ -469,6 +501,12 @@ else
     echo -e "${RED}✗ XCFramework creation failed${NC}"
     cat /tmp/xcframework.log
     exit 1
+fi
+
+# Save rust-dashcore hash so next build can detect changes
+if [[ -n "${CURRENT_HASH:-}" ]]; then
+    mkdir -p "$(dirname "$HASHFILE")"
+    echo "$CURRENT_HASH" > "$HASHFILE"
 fi
 
 echo -e "\n${GREEN}Build complete!${NC}"

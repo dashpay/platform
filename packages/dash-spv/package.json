@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dash-spv",
-  "version": "4.0.1",
+  "version": "4.1.0-dev.1",
   "description": "Repository containing SPV functions used by @dashevo",
   "main": "index.js",
   "scripts": {
@@ -24,6 +24,6 @@
     "eslint": "^9.18.0",
     "mocha": "^11.1.0",
     "should": "^13.2.3",
-    "sinon": "^17.0.1"
+    "sinon": "^18.0.1"
   }
 }

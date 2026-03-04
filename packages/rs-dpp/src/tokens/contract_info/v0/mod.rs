@@ -4,6 +4,14 @@ use derive_more::From;
 use platform_value::Identifier;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
+#[cfg_attr(
+    any(
+        feature = "fixtures-and-mocks",
+        feature = "state-transition-serde-conversion"
+    ),
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "camelCase")
+)]
 /// Token contract info
 pub struct TokenContractInfoV0 {
     /// The contract id of the token

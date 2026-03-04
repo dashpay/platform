@@ -1,3 +1,75 @@
+## [3.1.0-dev.1](https://github.com/dashpay/platform/compare/v3.0.1...v3.1.0-dev.1) (2026-02-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** differentiate service ports between networks to avoid conflicts (#3085)
+* **sdk:** state transition broadcast result for Evo SDK (#3077)
+* **sdk:** fix type inconsistencies across wasm-sdk and js-evo-sdk (#3047)
+* **sdk:** getSignableBytes is not compatible with sign and verify (#3048)
+* **platform:** update PlatformAddress encoding and HRP constants (#3059)
+* **platform:** 3.0 audit report fixes (#3053)
+* **sdk:** comprehensive Evo SDK refactoring (#2999)
+* upgrade bincode to 2.0.1 (#2991)
+
+### Features
+
+* **dapi:** add method to retrieve all non-banned endpoints ([#3072](https://github.com/dashpay/platform/issues/3072))
+* **dashmate:** add Tenderdash 1.6 allowlistOnly option ([#3067](https://github.com/dashpay/platform/issues/3067))
+* **drive-abci:** debugging tool to replay abci requests ([#2862](https://github.com/dashpay/platform/issues/2862))
+* **platform:** update PlatformAddress encoding and HRP constants ([#3059](https://github.com/dashpay/platform/issues/3059))
+* **sdk:** retry the wait for result request on deadline exeeded ([#3035](https://github.com/dashpay/platform/issues/3035))
+* **sdk:** state transition broadcast result for Evo SDK ([#3077](https://github.com/dashpay/platform/issues/3077))
+* **sdk:** token config update JS binding ([#3038](https://github.com/dashpay/platform/issues/3038))
+* **wasm:** add pre-flight check for wasm-bindgen-cli version ([#3094](https://github.com/dashpay/platform/issues/3094))
+
+
+### Bug Fixes
+
+* **dapi-grpc:** files generated outside sandbox
+* **dashmate:** differentiate service ports between networks to avoid conflicts ([#3085](https://github.com/dashpay/platform/issues/3085))
+* **platform:** 3.0 audit report fixes ([#3053](https://github.com/dashpay/platform/issues/3053))
+* **sdk:** deserialization error due to outdated contract cache ([#3052](https://github.com/dashpay/platform/issues/3052))
+* **sdk:** getSignableBytes is not compatible with sign and verify ([#3048](https://github.com/dashpay/platform/issues/3048))
+* **sdk:** inconsistent document query operator ([#3039](https://github.com/dashpay/platform/issues/3039))
+* **sdk:** missing `getSignedBytes` method ([#3073](https://github.com/dashpay/platform/issues/3073))
+* **sdk:** outdated platfrom version in JS SDK ([#3046](https://github.com/dashpay/platform/issues/3046))
+* **sdk:** prevent sized_integer_types config downgrade that breaks document ([#3071](https://github.com/dashpay/platform/issues/3071))
+* **wasm-sdk:** increment address nonce in identity_create_from_addresses ([#3084](https://github.com/dashpay/platform/issues/3084))
+
+
+### Tests
+
+* **drive-abci:** suppress tracing logs in test output ([#3014](https://github.com/dashpay/platform/issues/3014))
+* regenerate test vectors for v3.0.1 ([#3065](https://github.com/dashpay/platform/issues/3065))
+
+
+### Code Refactoring
+
+* **sdk:** comprehensive Evo SDK refactoring ([#2999](https://github.com/dashpay/platform/issues/2999))
+* **sdk:** fix type inconsistencies across wasm-sdk and js-evo-sdk ([#3047](https://github.com/dashpay/platform/issues/3047))
+* **sdk:** get rid of static trusted contexts ([#3043](https://github.com/dashpay/platform/issues/3043))
+
+
+### Build System
+
+* bump Alpine to v3.23 ([#3022](https://github.com/dashpay/platform/issues/3022))
+* bump tracing-subscriber to 0.3.22 ([#3023](https://github.com/dashpay/platform/issues/3023))
+* update javascript grpc-js to 1.14.3 ([#3015](https://github.com/dashpay/platform/issues/3015))
+* update js webpack to 5.104.0 ([#3068](https://github.com/dashpay/platform/issues/3068))
+* update rs-tenderdash-abci to v1.5.0 ([#3025](https://github.com/dashpay/platform/issues/3025))
+
+
+### Miscellaneous Chores
+
+* add shumkov as code owner for SDK packages ([#3093](https://github.com/dashpay/platform/issues/3093))
+* clippy
+* introduce protocol version 12 ([#3017](https://github.com/dashpay/platform/issues/3017))
+* rust dashcore made a workspace dependency  ([#3062](https://github.com/dashpay/platform/issues/3062))
+* **sdk:** update address HRP prefix and encoding ([#3069](https://github.com/dashpay/platform/issues/3069))
+* upgrade bincode to 2.0.1 ([#2991](https://github.com/dashpay/platform/issues/2991))
+* use subdir of out_dir
+
 ### [3.0.1](///compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
 
 ### [3.0.1-hotfix.4](///compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)

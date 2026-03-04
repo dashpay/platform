@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct AddressManagementView: View {
     @EnvironmentObject var walletService: WalletService

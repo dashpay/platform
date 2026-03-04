@@ -26,11 +26,7 @@ use rs_dapi_client::{
     transport::TransportRequest,
     DapiClient, DumpData, ExecutionResponse,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 /// Mechanisms to mock Dash Platform SDK.
@@ -46,9 +42,6 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 #[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
-    /// Keys for which proof parsing should return a `CorruptedSerialization` error.
-    /// Used to test contract-refresh retry logic.
-    proof_error_expectations: BTreeSet<Key>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     sdk: ArcSwapOption<Sdk>,
@@ -72,11 +65,10 @@ impl MockDashPlatformSdk {
     ///
     /// ## Note
     ///
-    /// You have to call [MockDashPlatformSdk::with_sdk()] to set sdk, otherwise Mock SDK will panic.
+    /// You have to call [MockDashPlatformSdk::set_sdk()] to set sdk, otherwise Mock SDK will panic.
     pub(crate) fn new(version: &'static PlatformVersion, dapi: Arc<Mutex<MockDapiClient>>) -> Self {
         Self {
             from_proof_expectations: Default::default(),
-            proof_error_expectations: Default::default(),
             platform_version: version,
             dapi,
             sdk: ArcSwapOption::new(None),
@@ -275,7 +267,7 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query. Must implement [Fetch] and [MockResponse].
-    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
+    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query].
     ///
     /// ## Arguments
     ///
@@ -352,13 +344,14 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
-    ///   Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
-    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query] and [Mockable].
+    ///   Must implement [FetchMany].
+    /// - `Q`: Type of the query that will be sent to Platform. Must implement [Query].
+    /// - `R`: Collection type for the results. Must implement [MockResponse].
     ///
     /// ## Arguments
     ///
     /// - `query`: Query that will be sent to Platform.
-    /// - `objects`: Vector of objects that will be returned in response to `query`, or None if no objects are expected.
+    /// - `objects`: Collection of objects that will be returned in response to `query`, or None if no objects are expected.
     ///
     /// ## Returns
     ///
@@ -398,39 +391,6 @@ impl MockDashPlatformSdk {
     {
         let grpc_request = query.query(self.prove()).expect("query must be correct");
         self.expect(grpc_request, objects).await?;
-
-        Ok(self)
-    }
-
-    /// Expect a [Fetch] request to fail with a document deserialization (CorruptedSerialization) error.
-    ///
-    /// This sets up the mock so that proof parsing for the given query returns a
-    /// `ProtocolError(DataContractError::CorruptedSerialization(...))` error.
-    /// Used to test the contract-refresh retry logic.
-    pub async fn expect_fetch_proof_error<O: Fetch, Q: Query<<O as Fetch>::Request>>(
-        &mut self,
-        query: Q,
-    ) -> Result<&mut Self, Error>
-    where
-        <<O as Fetch>::Request as TransportRequest>::Response: Default,
-    {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
-        let key = Key::new(&grpc_request);
-
-        self.proof_error_expectations.insert(key);
-
-        // Also set up DAPI mock for execute so the transport layer returns a default response
-        {
-            let mut dapi_guard = self.dapi.lock().await;
-            dapi_guard.expect(
-                &grpc_request,
-                &Ok(ExecutionResponse {
-                    inner: Default::default(),
-                    retries: 0,
-                    address: "http://127.0.0.1".parse().expect("failed to parse address"),
-                }),
-            )?;
-        }
 
         Ok(self)
     }
@@ -487,7 +447,7 @@ impl MockDashPlatformSdk {
         removed_from_proof || removed_from_dapi
     }
 
-    /// Wrapper around [FromProof] that uses mock expectations instead of executing [FromProof] trait.
+    /// Wrapper around [FromProof] that uses mock expectations, falling back to [FromProof] if no expectation is found.
     pub(crate) fn parse_proof_with_metadata<I, O: FromProof<I>>(
         &self,
         request: O::Request,
@@ -499,17 +459,6 @@ impl MockDashPlatformSdk {
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
         let key = Key::new(&request);
-
-        // Check if this request should simulate a deserialization error
-        if self.proof_error_expectations.contains(&key) {
-            return Err(drive_proof_verifier::Error::ProtocolError(
-                dpp::ProtocolError::DataContractError(
-                    dpp::data_contract::errors::DataContractError::CorruptedSerialization(
-                        "mock: simulated stale contract deserialization error".to_string(),
-                    ),
-                ),
-            ));
-        }
 
         let data = match self.from_proof_expectations.get(&key) {
             Some(d) => (
@@ -535,7 +484,7 @@ impl MockDashPlatformSdk {
 
         Ok(data)
     }
-    /// Return context provider implementation defined for upstreeam Sdk object.
+    /// Return context provider implementation defined for upstream Sdk object.
     fn context_provider(&self) -> Option<impl ContextProvider> {
         if let Some(sdk) = self.sdk.load_full() {
             sdk.clone().context_provider()

@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "3.0.1",
+  "version": "3.1.0-dev.1",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -41,7 +41,7 @@
     "@dashevo/wasm-dpp": "workspace:*",
     "@grpc/grpc-js": "^1.14.3",
     "@pshenmic/zeromq": "6.0.0-beta.22",
-    "ajv": "^8.6.0",
+    "ajv": "^8.18.0",
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
     "dotenv": "^8.6.0",
@@ -67,7 +67,7 @@
     "mocha-sinon": "^2.1.2",
     "nyc": "^15.1.0",
     "semver": "^7.5.3",
-    "sinon": "^17.0.1",
+    "sinon": "^18.0.1",
     "sinon-chai": "^3.7.0",
     "swagger-jsdoc": "^3.5.0"
   },

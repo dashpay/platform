@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "10.0.1",
+  "version": "10.1.0-dev.1",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
@@ -84,7 +84,7 @@
     "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",
-    "sinon": "^17.0.1",
+    "sinon": "^18.0.1",
     "sinon-chai": "^3.7.0",
     "stream-browserify": "^3.0.0",
     "stream-http": "^3.2.0",

@@ -13,10 +13,10 @@ use dpp::state_transition::StateTransitionLike;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
 
-/// Waitable trait provides a wait to wait for a response of a state transition after it has been broadcast and
+/// Waitable trait provides a way to wait for a response of a state transition after it has been broadcast and
 /// receive altered objects.
 ///
-/// This is simple conveniance trait wrapping the [`BroadcastStateTransition::wait_for_response`] method.
+/// This is a simple convenience trait wrapping the [`BroadcastStateTransition::wait_for_response`] method.
 #[async_trait::async_trait]
 pub trait Waitable: Sized {
     async fn wait_for_response(

@@ -1551,7 +1551,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     string_decoder: "npm:^1.3.0"
@@ -1580,7 +1580,7 @@ __metadata:
     long: "npm:^5.2.0"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1600,7 +1600,7 @@ __metadata:
     "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": "npm:^1.14.3"
     "@pshenmic/zeromq": "npm:6.0.0-beta.22"
-    ajv: "npm:^8.6.0"
+    ajv: "npm:^8.18.0"
     bs58: "npm:^4.0.1"
     cbor: "npm:^8.0.0"
     chai: "npm:^4.3.10"
@@ -1620,7 +1620,7 @@ __metadata:
     pino: "npm:^9.13.0"
     pino-pretty: "npm:^10.2.3"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     swagger-jsdoc: "npm:^3.5.0"
     ws: "npm:^8.17.1"
@@ -1647,7 +1647,7 @@ __metadata:
     memdown: "npm:^5.1.0"
     mocha: "npm:^11.1.0"
     should: "npm:^13.2.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     wasm-x11-hash: "npm:~0.0.2"
   languageName: unknown
   linkType: soft
@@ -1711,7 +1711,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1747,7 +1747,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1779,7 +1779,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     string_decoder: "npm:^1.3.0"
     terser-webpack-plugin: "npm:^5.3.11"
@@ -1802,7 +1802,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1825,7 +1825,7 @@ __metadata:
     mocha-sinon: "npm:^2.1.2"
     nyc: "npm:^15.1.0"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1839,7 +1839,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1853,7 +1853,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1904,7 +1904,7 @@ __metadata:
     process: "npm:^0.11.10"
     semver: "npm:^7.5.3"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -1937,6 +1937,7 @@ __metadata:
     node-gyp: "npm:^10.0.1"
     semver: "npm:^7.5.3"
     tempfile: "npm:^3.0.0"
+    typedoc: "npm:^0.28.17"
     typescript: "npm:^5.7.3"
     ultra-runner: "npm:^3.10.5"
   languageName: unknown
@@ -1975,7 +1976,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2020,7 +2021,7 @@ __metadata:
     pbkdf2: "npm:^3.1.3"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2044,7 +2045,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2099,7 +2100,7 @@ __metadata:
     "@types/bs58": "npm:^4.0.1"
     "@types/node": "npm:^20.10.0"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
-    ajv: "npm:^8.6.0"
+    ajv: "npm:^8.18.0"
     assert: "npm:^2.0.0"
     bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
@@ -2126,7 +2127,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2186,7 +2187,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2342,6 +2343,19 @@ __metadata:
     "@eslint/core": "npm:^0.17.0"
     levn: "npm:^0.4.1"
   checksum: 10/c5947d0ffeddca77d996ac1b886a66060c1a15ed1d5e425d0c7e7d7044a4bd3813fc968892d03950a7831c9b89368a2f7b281e45dd3c74a048962b74bf3a1cb4
+  languageName: node
+  linkType: hard
+
+"@gerrit0/mini-shiki@npm:^3.17.0":
+  version: 3.22.0
+  resolution: "@gerrit0/mini-shiki@npm:3.22.0"
+  dependencies:
+    "@shikijs/engine-oniguruma": "npm:^3.22.0"
+    "@shikijs/langs": "npm:^3.22.0"
+    "@shikijs/themes": "npm:^3.22.0"
+    "@shikijs/types": "npm:^3.22.0"
+    "@shikijs/vscode-textmate": "npm:^10.0.2"
+  checksum: 10/c81a6320f9286ecbd77084687da9a30a4fbd3041ad280b5bc72835fec588e3968df30bde8007ae43924371f1cb1c767a2e65dce68669973bca8b6f866e6f288d
   languageName: node
   linkType: hard
 
@@ -3357,6 +3371,51 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@shikijs/engine-oniguruma@npm:^3.22.0":
+  version: 3.23.0
+  resolution: "@shikijs/engine-oniguruma@npm:3.23.0"
+  dependencies:
+    "@shikijs/types": "npm:3.23.0"
+    "@shikijs/vscode-textmate": "npm:^10.0.2"
+  checksum: 10/edd8983be86f6b055793813e80ecf31c3cefdd896f3742797ae03f2cbb9f467ac736c4b152d4a5c42dbd17da17d24ff798a15d37bcf6205d7f8cd8f44e2a11e0
+  languageName: node
+  linkType: hard
+
+"@shikijs/langs@npm:^3.22.0":
+  version: 3.23.0
+  resolution: "@shikijs/langs@npm:3.23.0"
+  dependencies:
+    "@shikijs/types": "npm:3.23.0"
+  checksum: 10/115b1afb9eb4eb300eb68b146e442f7e6d196878798c5b9d75dd53a6ef1e1c3b27e325353a10973e3fa47d88630e937b8a3cf3b37b6eef80bf2aec3d51657bb3
+  languageName: node
+  linkType: hard
+
+"@shikijs/themes@npm:^3.22.0":
+  version: 3.23.0
+  resolution: "@shikijs/themes@npm:3.23.0"
+  dependencies:
+    "@shikijs/types": "npm:3.23.0"
+  checksum: 10/741987380445b788aea6cc1e03492bc06950f1a0461edf45083bd226889c5ba78c7ed1af9724afacab7d6471777f0c0e8871577183dfb2cfbceb255663374835
+  languageName: node
+  linkType: hard
+
+"@shikijs/types@npm:3.23.0, @shikijs/types@npm:^3.22.0":
+  version: 3.23.0
+  resolution: "@shikijs/types@npm:3.23.0"
+  dependencies:
+    "@shikijs/vscode-textmate": "npm:^10.0.2"
+    "@types/hast": "npm:^3.0.4"
+  checksum: 10/18b5703d445d53dd6782a3e2c7332009302c6c046f301d9cd99f1a26b9c8329b3e502b096894bffac61f78835c533827bab2ce78a39666ab87b78f8d7ca11f7b
+  languageName: node
+  linkType: hard
+
+"@shikijs/vscode-textmate@npm:^10.0.2":
+  version: 10.0.2
+  resolution: "@shikijs/vscode-textmate@npm:10.0.2"
+  checksum: 10/d924cba8a01cd9ca12f56ba097d628fdb81455abb85884c8d8a5ae85b628a37dd5907e7691019b97107bd6608c866adf91ba04a1c3bba391281c88e386c044ea
+  languageName: node
+  linkType: hard
+
 "@sigstore/bundle@npm:^1.1.0":
   version: 1.1.0
   resolution: "@sigstore/bundle@npm:1.1.0"
@@ -3442,21 +3501,30 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@sinonjs/fake-timers@npm:^10.0.2":
-  version: 10.3.0
-  resolution: "@sinonjs/fake-timers@npm:10.3.0"
+"@sinonjs/commons@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "@sinonjs/commons@npm:3.0.1"
   dependencies:
-    "@sinonjs/commons": "npm:^3.0.0"
-  checksum: 10/78155c7bd866a85df85e22028e046b8d46cf3e840f72260954f5e3ed5bd97d66c595524305a6841ffb3f681a08f6e5cef572a2cce5442a8a232dc29fb409b83e
+    type-detect: "npm:4.0.8"
+  checksum: 10/a0af217ba7044426c78df52c23cedede6daf377586f3ac58857c565769358ab1f44ebf95ba04bbe38814fba6e316ca6f02870a009328294fc2c555d0f85a7117
   languageName: node
   linkType: hard
 
-"@sinonjs/fake-timers@npm:^11.2.2":
+"@sinonjs/fake-timers@npm:11.2.2":
   version: 11.2.2
   resolution: "@sinonjs/fake-timers@npm:11.2.2"
   dependencies:
     "@sinonjs/commons": "npm:^3.0.0"
   checksum: 10/da7dfa677b2362bc5a321fc1563184755b5c62fbb1a72457fb9e901cd187ba9dc834f9e8a0fb5a4e1d1e6e6ad4c5b54e90900faa44dd6c82d3c49c92ec23ecd4
+  languageName: node
+  linkType: hard
+
+"@sinonjs/fake-timers@npm:^15.1.1":
+  version: 15.1.1
+  resolution: "@sinonjs/fake-timers@npm:15.1.1"
+  dependencies:
+    "@sinonjs/commons": "npm:^3.0.1"
+  checksum: 10/f262d613ea7f7cdb1b5d90c0cae01b7c6b797d6d0f1ca0fe30b7b69012e3076bb8a0f69d735bc69d2824b9bb1efb8554ca9765b4a6bb22defdec9ce79e7cd8a4
   languageName: node
   linkType: hard
 
@@ -3477,13 +3545,6 @@ __metadata:
     lodash.get: "npm:^4.4.2"
     type-detect: "npm:^4.0.8"
   checksum: 10/0c9928a7d16a2428ba561e410d9d637c08014d549cac4979c63a6580c56b69378dba80ea01b17e8e163f2ca5dd331376dae92eae8364857ef827ae59dbcfe0ce
-  languageName: node
-  linkType: hard
-
-"@sinonjs/text-encoding@npm:^0.7.1":
-  version: 0.7.1
-  resolution: "@sinonjs/text-encoding@npm:0.7.1"
-  checksum: 10/1340c707f210fb7171c429e47006e7b25da275e11235d53fe08d5d0f0c37cf9ecc1896a3326deea28b6a2a6a7fd38056593c75f5741c0840526337589cdfcbf0
   languageName: node
   linkType: hard
 
@@ -3750,6 +3811,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/hast@npm:^3.0.4":
+  version: 3.0.4
+  resolution: "@types/hast@npm:3.0.4"
+  dependencies:
+    "@types/unist": "npm:*"
+  checksum: 10/732920d81bb7605895776841b7658b4d8cc74a43a8fa176017cc0fb0ecc1a4c82a2b75a4fe6b71aa262b649d3fb62858c6789efa3793ea1d40269953af96ecb5
+  languageName: node
+  linkType: hard
+
 "@types/http-cache-semantics@npm:*, @types/http-cache-semantics@npm:^4.0.2":
   version: 4.0.4
   resolution: "@types/http-cache-semantics@npm:4.0.4"
@@ -3914,6 +3984,13 @@ __metadata:
   version: 2.0.7
   resolution: "@types/trusted-types@npm:2.0.7"
   checksum: 10/8e4202766a65877efcf5d5a41b7dd458480b36195e580a3b1085ad21e948bc417d55d6f8af1fd2a7ad008015d4117d5fdfe432731157da3c68678487174e4ba3
+  languageName: node
+  linkType: hard
+
+"@types/unist@npm:*":
+  version: 3.0.3
+  resolution: "@types/unist@npm:3.0.3"
+  checksum: 10/96e6453da9e075aaef1dc22482463898198acdc1eeb99b465e65e34303e2ec1e3b1ed4469a9118275ec284dc98019f63c3f5d49422f0e4ac707e5ab90fb3b71a
   languageName: node
   linkType: hard
 
@@ -4795,15 +4872,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ajv@npm:^8.0.0, ajv@npm:^8.0.1, ajv@npm:^8.6.0, ajv@npm:^8.9.0":
-  version: 8.12.0
-  resolution: "ajv@npm:8.12.0"
+"ajv@npm:^8.0.0, ajv@npm:^8.0.1, ajv@npm:^8.18.0, ajv@npm:^8.9.0":
+  version: 8.18.0
+  resolution: "ajv@npm:8.18.0"
   dependencies:
-    fast-deep-equal: "npm:^3.1.1"
+    fast-deep-equal: "npm:^3.1.3"
+    fast-uri: "npm:^3.0.1"
     json-schema-traverse: "npm:^1.0.0"
     require-from-string: "npm:^2.0.2"
-    uri-js: "npm:^4.2.2"
-  checksum: 10/b406f3b79b5756ac53bfe2c20852471b08e122bc1ee4cde08ae4d6a800574d9cd78d60c81c69c63ff81e4da7cd0b638fafbb2303ae580d49cf1600b9059efb85
+  checksum: 10/bfed9de827a2b27c6d4084324eda76a4e32bdde27410b3e9b81d06e6f8f5c78370fc6b93fe1d869f1939ff1d7c4ae8896960995acb8425e3e9288c8884247c48
   languageName: node
   linkType: hard
 
@@ -7206,7 +7283,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     rimraf: "npm:^3.0.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -7240,7 +7317,7 @@ __metadata:
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": "npm:^3.10.8"
     "@oclif/plugin-help": "npm:^6.0.5"
-    ajv: "npm:^8.6.0"
+    ajv: "npm:^8.18.0"
     ajv-formats: "npm:^2.1.1"
     awilix: "npm:^4.2.6"
     begoo: "npm:^2.0.2"
@@ -7276,9 +7353,9 @@ __metadata:
     qs: "npm:^6.14.2"
     rxjs: "npm:^6.6.7"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
-    systeminformation: "npm:^5.27.14"
+    systeminformation: "npm:^5.31.1"
     table: "npm:^6.8.1"
     tar: "npm:7.5.9"
     wrap-ansi: "npm:^7.0.0"
@@ -8018,6 +8095,13 @@ __metadata:
   version: 2.2.0
   resolution: "ent@npm:2.2.0"
   checksum: 10/818a2b5f5039ea02c9e232ba4c7496ced8512341b2524ae7c6c808d2e2b357d8087e715e0e3950cec9895c20c9b3443e0b56a2e26879984d97bb511c5fbb5299
+  languageName: node
+  linkType: hard
+
+"entities@npm:^4.4.0":
+  version: 4.5.0
+  resolution: "entities@npm:4.5.0"
+  checksum: 10/ede2a35c9bce1aeccd055a1b445d41c75a14a2bb1cd22e242f20cf04d236cdcd7f9c859eb83f76885327bfae0c25bf03303665ee1ce3d47c5927b98b0e3e3d48
   languageName: node
   linkType: hard
 
@@ -9049,6 +9133,13 @@ __metadata:
   version: 2.1.1
   resolution: "fast-safe-stringify@npm:2.1.1"
   checksum: 10/dc1f063c2c6ac9533aee14d406441f86783a8984b2ca09b19c2fe281f9ff59d315298bc7bc22fd1f83d26fe19ef2f20e2ddb68e96b15040292e555c5ced0c1e4
+  languageName: node
+  linkType: hard
+
+"fast-uri@npm:^3.0.1":
+  version: 3.1.0
+  resolution: "fast-uri@npm:3.1.0"
+  checksum: 10/818b2c96dc913bcf8511d844c3d2420e2c70b325c0653633f51821e4e29013c2015387944435cd0ef5322c36c9beecc31e44f71b257aeb8e0b333c1d62bb17c2
   languageName: node
   linkType: hard
 
@@ -11698,10 +11789,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"just-extend@npm:^4.0.2":
-  version: 4.2.1
-  resolution: "just-extend@npm:4.2.1"
-  checksum: 10/375389c0847d56300873fa622fbc5c5e208933e372bbedb39c82f583299cdad4fe9c4773bc35fcd9c42cd85744f07474ca4163aa0f9125dd5be37bc09075eb49
+"just-extend@npm:^6.2.0":
+  version: 6.2.0
+  resolution: "just-extend@npm:6.2.0"
+  checksum: 10/1f487b074b9e5773befdd44dc5d1b446f01f24f7d4f1f255d51c0ef7f686e8eb5f95d983b792b9ca5c8b10cd7e60a924d64103725759eddbd7f18bcb22743f92
   languageName: node
   linkType: hard
 
@@ -11933,6 +12024,15 @@ __metadata:
   version: 1.1.6
   resolution: "lines-and-columns@npm:1.1.6"
   checksum: 10/198a5436b1fa5cf703bae719c01c686b076f0ad7e1aafd95a58d626cabff302dc0414822126f2f80b58a8c3d66cda8a7b6da064f27130f87e1d3506d6dfd0d68
+  languageName: node
+  linkType: hard
+
+"linkify-it@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "linkify-it@npm:5.0.0"
+  dependencies:
+    uc.micro: "npm:^2.0.0"
+  checksum: 10/ef3b7609dda6ec0c0be8a7b879cea195f0d36387b0011660cd6711bba0ad82137f59b458b7e703ec74f11d88e7c1328e2ad9b855a8500c0ded67461a8c4519e6
   languageName: node
   linkType: hard
 
@@ -12299,6 +12399,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"lunr@npm:^2.3.9":
+  version: 2.3.9
+  resolution: "lunr@npm:2.3.9"
+  checksum: 10/f2f6db34c046f5a767782fe2454e6dd69c75ba3c5cf5c1cb9cacca2313a99c2ba78ff8fa67dac866fb7c4ffd5f22e06684793f5f15ba14bddb598b94513d54bf
+  languageName: node
+  linkType: hard
+
 "luxon@npm:^1.23.x":
   version: 1.28.1
   resolution: "luxon@npm:1.28.1"
@@ -12412,6 +12519,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"markdown-it@npm:^14.1.0":
+  version: 14.1.1
+  resolution: "markdown-it@npm:14.1.1"
+  dependencies:
+    argparse: "npm:^2.0.1"
+    entities: "npm:^4.4.0"
+    linkify-it: "npm:^5.0.0"
+    mdurl: "npm:^2.0.0"
+    punycode.js: "npm:^2.3.1"
+    uc.micro: "npm:^2.1.0"
+  bin:
+    markdown-it: bin/markdown-it.mjs
+  checksum: 10/088822c8aa9346ba4af6a205f6ee0f4baae55e3314f040dc5c28c897d57d0f979840c71872b3582a6a6e572d8c851c54e323c82f4559011dfa2e96224fc20fc2
+  languageName: node
+  linkType: hard
+
 "math-intrinsics@npm:^1.1.0":
   version: 1.1.0
   resolution: "math-intrinsics@npm:1.1.0"
@@ -12446,6 +12569,13 @@ __metadata:
     inherits: "npm:^2.0.1"
     safe-buffer: "npm:^5.1.2"
   checksum: 10/098494d885684bcc4f92294b18ba61b7bd353c23147fbc4688c75b45cb8590f5a95fd4584d742415dcc52487f7a1ef6ea611cfa1543b0dc4492fe026357f3f0c
+  languageName: node
+  linkType: hard
+
+"mdurl@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "mdurl@npm:2.0.0"
+  checksum: 10/1720349d4a53e401aa993241368e35c0ad13d816ad0b28388928c58ca9faa0cf755fa45f18ccbf64f4ce54a845a50ddce5c84e4016897b513096a68dac4b0158
   languageName: node
   linkType: hard
 
@@ -13091,16 +13221,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nise@npm:^5.1.5":
-  version: 5.1.5
-  resolution: "nise@npm:5.1.5"
+"nise@npm:^6.0.0":
+  version: 6.1.3
+  resolution: "nise@npm:6.1.3"
   dependencies:
-    "@sinonjs/commons": "npm:^2.0.0"
-    "@sinonjs/fake-timers": "npm:^10.0.2"
-    "@sinonjs/text-encoding": "npm:^0.7.1"
-    just-extend: "npm:^4.0.2"
-    path-to-regexp: "npm:^1.7.0"
-  checksum: 10/c6afe82b919a2c1985916d5bb3a738a7b2cfb017a6ab9479ec1ede62343051b40da88a1321517bb5d912c13e08b8d9ce9cdef9583edeb44d640af7273c35ebf2
+    "@sinonjs/commons": "npm:^3.0.1"
+    "@sinonjs/fake-timers": "npm:^15.1.1"
+    just-extend: "npm:^6.2.0"
+    path-to-regexp: "npm:^8.3.0"
+  checksum: 10/a07be16c8bb55e484c5faad69bce036a2d92ce245fc86462d0ee08a2e8f546820a0add0c65c4d5a33c72d9df995f7ad99db911eb67877b33533efae126f81459
   languageName: node
   linkType: hard
 
@@ -14719,6 +14848,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"punycode.js@npm:^2.3.1":
+  version: 2.3.1
+  resolution: "punycode.js@npm:2.3.1"
+  checksum: 10/f0e946d1edf063f9e3d30a32ca86d8ff90ed13ca40dad9c75d37510a04473340cfc98db23a905cc1e517b1e9deb0f6021dce6f422ace235c60d3c9ac47c5a16a
+  languageName: node
+  linkType: hard
+
 "punycode@npm:1.3.2":
   version: 1.3.2
   resolution: "punycode@npm:1.3.2"
@@ -15668,12 +15804,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"serialize-javascript@npm:^6.0.2":
-  version: 6.0.2
-  resolution: "serialize-javascript@npm:6.0.2"
-  dependencies:
-    randombytes: "npm:^2.1.0"
-  checksum: 10/445a420a6fa2eaee4b70cbd884d538e259ab278200a2ededd73253ada17d5d48e91fb1f4cd224a236ab62ea7ba0a70c6af29fc93b4f3d3078bf7da1c031fde58
+"serialize-javascript@npm:^7.0.4":
+  version: 7.0.4
+  resolution: "serialize-javascript@npm:7.0.4"
+  checksum: 10/f96d59d6053739785822750e6ffbe06ec5a2651b836b3e6c76742c613e1b2fcb846b5df92294857ecfe69730fe36a1968c0eb8f258b02fd9173a1d5e73f0a32f
   languageName: node
   linkType: hard
 
@@ -16007,17 +16141,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sinon@npm:^17.0.1":
-  version: 17.0.1
-  resolution: "sinon@npm:17.0.1"
+"sinon@npm:^18.0.1":
+  version: 18.0.1
+  resolution: "sinon@npm:18.0.1"
   dependencies:
-    "@sinonjs/commons": "npm:^3.0.0"
-    "@sinonjs/fake-timers": "npm:^11.2.2"
+    "@sinonjs/commons": "npm:^3.0.1"
+    "@sinonjs/fake-timers": "npm:11.2.2"
     "@sinonjs/samsam": "npm:^8.0.0"
-    diff: "npm:^5.1.0"
-    nise: "npm:^5.1.5"
-    supports-color: "npm:^7.2.0"
-  checksum: 10/b34f1a97da0be3556ac686c6b649a566c2666eb7f50e75e754928c1c72c96d78f56e56a999227be794c3d9cdaed0bc78d11f38ab303d3079c5bcbcffc0f9c6d5
+    diff: "npm:^5.2.0"
+    nise: "npm:^6.0.0"
+    supports-color: "npm:^7"
+  checksum: 10/65be65a7c5dbef7e9e315820bcd17fe0387fb07cb5dd41d3d6a89177e9a2ca463144676d8407348dc075758daa7cf37b9376d35bd1bc7e06717e87d03aa26111
   languageName: node
   linkType: hard
 
@@ -16732,7 +16866,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"supports-color@npm:^7.0.0, supports-color@npm:^7.1.0, supports-color@npm:^7.2.0":
+"supports-color@npm:^7, supports-color@npm:^7.0.0, supports-color@npm:^7.1.0":
   version: 7.2.0
   resolution: "supports-color@npm:7.2.0"
   dependencies:
@@ -16804,12 +16938,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"systeminformation@npm:^5.27.14":
-  version: 5.27.14
-  resolution: "systeminformation@npm:5.27.14"
+"systeminformation@npm:^5.31.1":
+  version: 5.31.1
+  resolution: "systeminformation@npm:5.31.1"
   bin:
     systeminformation: lib/cli.js
-  checksum: 10/bf8194000e1a4af47acf16a9bc41b715dbd6bde15cb09dc52626f8c8d77ebc1c62b939343ae153b7cbc08486c5d841128019bfe4e5d71c42c14e1089a32c97a1
+  checksum: 10/1fff0b2827f7de2ec5379385c9bb12896db92186ee1d721cb08791ae7277a02f39fb8f3060df47312b70fe88c5b91a70726e7265ca8e5bab1f87780fb2acb991
   conditions: (os=darwin | os=linux | os=win32 | os=freebsd | os=openbsd | os=netbsd | os=sunos | os=android)
   languageName: node
   linkType: hard
@@ -17582,6 +17716,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"typedoc@npm:^0.28.17":
+  version: 0.28.17
+  resolution: "typedoc@npm:0.28.17"
+  dependencies:
+    "@gerrit0/mini-shiki": "npm:^3.17.0"
+    lunr: "npm:^2.3.9"
+    markdown-it: "npm:^14.1.0"
+    minimatch: "npm:^9.0.5"
+    yaml: "npm:^2.8.1"
+  peerDependencies:
+    typescript: 5.0.x || 5.1.x || 5.2.x || 5.3.x || 5.4.x || 5.5.x || 5.6.x || 5.7.x || 5.8.x || 5.9.x
+  bin:
+    typedoc: bin/typedoc
+  checksum: 10/09bf15a30c51c7e16533865fb7988cece90c9eb10f7fa239b7db0ec8000c69b63c6a9ee999f40e4783311a6b0d641fb384b76c273a12fcd09f3ef5e9315902f6
+  languageName: node
+  linkType: hard
+
 "typescript-eslint@npm:^8.53.1":
   version: 8.54.0
   resolution: "typescript-eslint@npm:8.54.0"
@@ -17641,6 +17792,13 @@ __metadata:
   version: 1.0.33
   resolution: "ua-parser-js@npm:1.0.33"
   checksum: 10/26455b1bbc165eea24b92283034e1e941ca5e272fcbb0a81ce2d064da369353182a1f6eb7472a6d2e738dd89b0cd008de9f1f17946f9b8f5ddfcf4e8a5949c1a
+  languageName: node
+  linkType: hard
+
+"uc.micro@npm:^2.0.0, uc.micro@npm:^2.1.0":
+  version: 2.1.0
+  resolution: "uc.micro@npm:2.1.0"
+  checksum: 10/37197358242eb9afe367502d4638ac8c5838b78792ab218eafe48287b0ed28aaca268ec0392cc5729f6c90266744de32c06ae938549aee041fc93b0f9672d6b2
   languageName: node
   linkType: hard
 
@@ -18652,6 +18810,15 @@ __metadata:
   version: 2.2.2
   resolution: "yaml@npm:2.2.2"
   checksum: 10/991384bf875dd1df9ab8e3393d6db7010d222eef4e750f17590b5d3d96d3f3ad49420f58fff6a3896321fb64d08f4bb3b4edf0d337fdfd6e960119ef5aa0527c
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^2.8.1":
+  version: 2.8.2
+  resolution: "yaml@npm:2.8.2"
+  bin:
+    yaml: bin.mjs
+  checksum: 10/4eab0074da6bc5a5bffd25b9b359cf7061b771b95d1b3b571852098380db3b1b8f96e0f1f354b56cc7216aa97cea25163377ccbc33a2e9ce00316fe8d02f4539
   languageName: node
   linkType: hard
 
