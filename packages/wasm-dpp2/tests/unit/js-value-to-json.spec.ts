@@ -156,15 +156,12 @@ describe('testJsValueToJson', () => {
       });
     });
 
-    describe('Map with Identifier keys', () => {
-      it('should serialize Map with Identifier keys using toString()', () => {
-        const id1 = wasm.Identifier.fromBase58('H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1');
-        const id2 = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
-
+    describe('Map with Identifier-based string keys', () => {
+      it('should serialize Map with base58 Identifier string keys', () => {
         // This simulates getEvonodesProposedEpochBlocksByIds which returns Map<string, bigint>
         const map = new Map([
-          [id1.toBase58(), 100n],
-          [id2.toBase58(), 200n],
+          ['H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1', 100n],
+          ['ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U', 200n],
         ]);
 
         const json = wasm.testJsValueToJson(map);
