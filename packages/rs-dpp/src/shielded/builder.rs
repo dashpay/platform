@@ -305,12 +305,24 @@ pub fn build_shield_from_asset_lock_transition(
     let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
     let sb = serialize_authorized_bundle(&bundle);
 
+    // For output-only bundles, Orchard value_balance is negative (value flowing in).
+    // Convert to u64 (absolute amount entering the pool).
+    let value_balance = sb
+        .value_balance
+        .checked_neg()
+        .and_then(|v| u64::try_from(v).ok())
+        .ok_or_else(|| {
+            ProtocolError::Generic(
+                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
+            )
+        })?;
+
     ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
         asset_lock_proof,
         asset_lock_private_key,
         sb.actions,
         sb.flags,
-        sb.value_balance,
+        value_balance,
         sb.anchor,
         sb.proof,
         sb.binding_signature,

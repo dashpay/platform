@@ -36,10 +36,14 @@ pub struct ShieldFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
+    /// Orchard bundle flags controlling which half of actions are enabled.
+    /// Bit 0 (0x01): spends_enabled — set if actions may spend existing notes.
+    /// Bit 1 (0x02): outputs_enabled — set if actions may create new notes.
+    /// For a shield (output-only) bundle, only outputs_enabled (0x02) is set.
     pub flags: u8,
-    /// Net value flowing into the shielded pool (must be negative for shielding)
-    pub value_balance: i64,
+    /// Amount of credits flowing into the shielded pool from the asset lock.
+    /// Must be > 0 and <= i64::MAX.
+    pub value_balance: u64,
     /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
@@ -94,7 +98,7 @@ mod tests {
                 spend_auth_sig: [6u8; 64],
             }],
             flags: 0u8,
-            value_balance: -1000i64,
+            value_balance: 1000u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],

@@ -20,7 +20,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
         asset_lock_proof_private_key: &[u8],
         actions: Vec<SerializedAction>,
         flags: u8,
-        value_balance: i64,
+        value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],

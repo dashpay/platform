@@ -30,7 +30,10 @@ use serde::{Deserialize, Serialize};
 pub struct ShieldedTransferTransitionV0 {
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
+    /// Orchard bundle flags controlling which half of actions are enabled.
+    /// Bit 0 (0x01): spends_enabled — set if actions may spend existing notes.
+    /// Bit 1 (0x02): outputs_enabled — set if actions may create new notes.
+    /// For a transfer both bits are set (0x03).
     pub flags: u8,
     /// Net value balance (fee amount extracted from shielded pool)
     pub value_balance: u64,

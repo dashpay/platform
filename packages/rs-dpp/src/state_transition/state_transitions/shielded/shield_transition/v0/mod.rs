@@ -40,7 +40,10 @@ pub struct ShieldTransitionV0 {
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
+    /// Orchard bundle flags controlling which half of actions are enabled.
+    /// Bit 0 (0x01): spends_enabled — set if actions may spend existing notes.
+    /// Bit 1 (0x02): outputs_enabled — set if actions may create new notes.
+    /// For a shield (output-only) bundle, only outputs_enabled (0x02) is set.
     pub flags: u8,
     /// Net value flowing into/out of the shielded pool
     pub value_balance: i64,

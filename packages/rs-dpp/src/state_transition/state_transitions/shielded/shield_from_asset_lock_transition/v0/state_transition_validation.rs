@@ -23,12 +23,24 @@ impl StateTransitionStructureValidation for ShieldFromAssetLockTransitionV0 {
             return err;
         }
 
-        // value_balance must be negative (credits flowing into pool)
-        if self.value_balance >= 0 {
+        // value_balance must be > 0 (credits flowing into pool)
+        if self.value_balance == 0 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
-                        "shield_from_asset_lock value_balance must be negative".to_string(),
+                        "shield_from_asset_lock value_balance must be greater than 0".to_string(),
+                    ),
+                )
+                .into(),
+            );
+        }
+
+        // value_balance must fit in i64 (Orchard protocol uses i64 internally)
+        if self.value_balance > i64::MAX as u64 {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "shield_from_asset_lock value_balance exceeds i64::MAX".to_string(),
                     ),
                 )
                 .into(),
