@@ -2559,7 +2559,7 @@ const RAW_RUNTIME_STATE =
           ["pino", "npm:9.13.0"],\
           ["pino-pretty", "npm:10.2.3"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["swagger-jsdoc", "npm:3.7.0"],\
           ["ws", "virtual:b375dcefccef90d9158d5f197a75395cffedb61772e66f2efcf31c6c8e30c82a6423e0d52b091b15b4fa72cda43a09256ed00b6ce89b9cfb14074f087b9c8496#npm:8.17.1"]\
@@ -2609,7 +2609,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["setimmediate", "npm:1.0.5"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["string_decoder", "npm:1.3.0"],\
@@ -2640,7 +2640,7 @@ const RAW_RUNTIME_STATE =
           ["long", "npm:5.2.0"],\
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2669,7 +2669,7 @@ const RAW_RUNTIME_STATE =
           ["memdown", "npm:5.1.0"],\
           ["mocha", "npm:11.1.0"],\
           ["should", "npm:13.2.3"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["wasm-x11-hash", "npm:0.0.2"]\
         ],\
         "linkType": "SOFT"\
@@ -2737,7 +2737,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2777,7 +2777,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2811,7 +2811,7 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.1.0"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],\
           ["string_decoder", "npm:1.3.0"],\
           ["terser-webpack-plugin", "virtual:da12f6bb23b671689b7f4f5cfff69cabf980ba04aff1ffd96860c787f7d5d08d32b0db765d9f16463de0d1af2c01fa6987b861cf5df2362e38e0ef415f29b51c#npm:5.3.11"],\
@@ -2836,7 +2836,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2861,7 +2861,7 @@ const RAW_RUNTIME_STATE =
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2877,7 +2877,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2893,7 +2893,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2971,7 +2971,7 @@ const RAW_RUNTIME_STATE =
           ["process", "npm:0.11.10"],\
           ["semver", "npm:7.5.3"],\
           ["setimmediate", "npm:1.0.5"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -2988,7 +2988,7 @@ const RAW_RUNTIME_STATE =
     ]],\
     ["@dashevo/protobufjs", [\
       ["npm:6.10.5", {\
-        "packageLocation": "./.yarn/cache/@dashevo-protobufjs-npm-6.10.5-9ffa190993-c37a4df384.zip/node_modules/@dashevo/protobufjs/",\
+        "packageLocation": "./.yarn/unplugged/@dashevo-protobufjs-npm-6.10.5-9ffa190993/node_modules/@dashevo/protobufjs/",\
         "packageDependencies": [\
           ["@dashevo/protobufjs", "npm:6.10.5"],\
           ["@protobufjs/aspromise", "npm:1.1.2"],\
@@ -3026,7 +3026,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -3073,7 +3073,7 @@ const RAW_RUNTIME_STATE =
           ["pbkdf2", "npm:3.1.3"],\
           ["process", "npm:0.11.10"],\
           ["setimmediate", "npm:1.0.5"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -3099,7 +3099,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -3147,7 +3147,7 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.1.0"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -3249,7 +3249,7 @@ const RAW_RUNTIME_STATE =
           ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["mocha", "npm:11.1.0"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -4753,22 +4753,30 @@ const RAW_RUNTIME_STATE =
           ["type-detect", "npm:4.0.8"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:3.0.1", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-commons-npm-3.0.1-bffb9f5a53-a0af217ba7.zip/node_modules/@sinonjs/commons/",\
+        "packageDependencies": [\
+          ["@sinonjs/commons", "npm:3.0.1"],\
+          ["type-detect", "npm:4.0.8"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["@sinonjs/fake-timers", [\
-      ["npm:10.3.0", {\
-        "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-10.3.0-7417f876b4-78155c7bd8.zip/node_modules/@sinonjs/fake-timers/",\
-        "packageDependencies": [\
-          ["@sinonjs/commons", "npm:3.0.0"],\
-          ["@sinonjs/fake-timers", "npm:10.3.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
       ["npm:11.2.2", {\
         "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-11.2.2-eb695fcf3c-da7dfa677b.zip/node_modules/@sinonjs/fake-timers/",\
         "packageDependencies": [\
           ["@sinonjs/commons", "npm:3.0.0"],\
           ["@sinonjs/fake-timers", "npm:11.2.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:15.1.1", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-15.1.1-00752b7af6-f262d613ea.zip/node_modules/@sinonjs/fake-timers/",\
+        "packageDependencies": [\
+          ["@sinonjs/commons", "npm:3.0.1"],\
+          ["@sinonjs/fake-timers", "npm:15.1.1"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -4789,15 +4797,6 @@ const RAW_RUNTIME_STATE =
           ["@sinonjs/samsam", "npm:8.0.0"],\
           ["lodash.get", "npm:4.4.2"],\
           ["type-detect", "npm:4.0.8"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["@sinonjs/text-encoding", [\
-      ["npm:0.7.1", {\
-        "packageLocation": "./.yarn/cache/@sinonjs-text-encoding-npm-0.7.1-865b0079b5-1340c707f2.zip/node_modules/@sinonjs/text-encoding/",\
-        "packageDependencies": [\
-          ["@sinonjs/text-encoding", "npm:0.7.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -9388,7 +9387,7 @@ const RAW_RUNTIME_STATE =
     ]],\
     ["core-js", [\
       ["npm:3.33.2", {\
-        "packageLocation": "./.yarn/cache/core-js-npm-3.33.2-08a6fba407-d62554d51c.zip/node_modules/core-js/",\
+        "packageLocation": "./.yarn/unplugged/core-js-npm-3.33.2-08a6fba407/node_modules/core-js/",\
         "packageDependencies": [\
           ["core-js", "npm:3.33.2"]\
         ],\
@@ -9634,7 +9633,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["rimraf", "npm:3.0.2"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -9706,7 +9705,7 @@ const RAW_RUNTIME_STATE =
           ["qs", "npm:6.15.0"],\
           ["rxjs", "npm:6.6.7"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["systeminformation", "npm:5.31.1"],\
           ["table", "npm:6.8.1"],\
@@ -14835,10 +14834,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["just-extend", [\
-      ["npm:4.2.1", {\
-        "packageLocation": "./.yarn/cache/just-extend-npm-4.2.1-ccc4201277-375389c084.zip/node_modules/just-extend/",\
+      ["npm:6.2.0", {\
+        "packageLocation": "./.yarn/cache/just-extend-npm-6.2.0-25e57ed812-1f487b074b.zip/node_modules/just-extend/",\
         "packageDependencies": [\
-          ["just-extend", "npm:4.2.1"]\
+          ["just-extend", "npm:6.2.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -16393,7 +16392,7 @@ const RAW_RUNTIME_STATE =
           ["minimatch", "npm:5.1.6"],\
           ["mocha", "npm:11.1.0"],\
           ["ms", "npm:2.1.3"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["strip-json-comments", "npm:3.1.1"],\
           ["supports-color", "npm:8.1.1"],\
           ["workerpool", "npm:6.5.1"],\
@@ -16419,7 +16418,7 @@ const RAW_RUNTIME_STATE =
           ["@types/sinon", null],\
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
-          ["sinon", "npm:17.0.1"]\
+          ["sinon", "npm:18.0.1"]\
         ],\
         "packagePeers": [\
           "@types/mocha",\
@@ -16622,14 +16621,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["nise", [\
-      ["npm:5.1.5", {\
-        "packageLocation": "./.yarn/cache/nise-npm-5.1.5-847a2de198-c6afe82b91.zip/node_modules/nise/",\
+      ["npm:6.1.3", {\
+        "packageLocation": "./.yarn/cache/nise-npm-6.1.3-148369f991-a07be16c8b.zip/node_modules/nise/",\
         "packageDependencies": [\
-          ["@sinonjs/commons", "npm:2.0.0"],\
-          ["@sinonjs/fake-timers", "npm:10.3.0"],\
-          ["@sinonjs/text-encoding", "npm:0.7.1"],\
-          ["just-extend", "npm:4.2.1"],\
-          ["nise", "npm:5.1.5"],\
+          ["@sinonjs/commons", "npm:3.0.1"],\
+          ["@sinonjs/fake-timers", "npm:15.1.1"],\
+          ["just-extend", "npm:6.2.0"],\
+          ["nise", "npm:6.1.3"],\
           ["path-to-regexp", "npm:1.9.0"]\
         ],\
         "linkType": "HARD"\
@@ -18304,7 +18302,7 @@ const RAW_RUNTIME_STATE =
     ]],\
     ["protobufjs", [\
       ["npm:6.11.4", {\
-        "packageLocation": "./.yarn/cache/protobufjs-npm-6.11.4-af11968b80-6b7fd7540d.zip/node_modules/protobufjs/",\
+        "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.4-af11968b80/node_modules/protobufjs/",\
         "packageDependencies": [\
           ["@protobufjs/aspromise", "npm:1.1.2"],\
           ["@protobufjs/base64", "npm:1.1.2"],\
@@ -19397,11 +19395,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["serialize-javascript", [\
-      ["npm:6.0.2", {\
-        "packageLocation": "./.yarn/cache/serialize-javascript-npm-6.0.2-cc09461d45-445a420a6f.zip/node_modules/serialize-javascript/",\
+      ["npm:7.0.4", {\
+        "packageLocation": "./.yarn/cache/serialize-javascript-npm-7.0.4-c70012ae10-f96d59d605.zip/node_modules/serialize-javascript/",\
         "packageDependencies": [\
-          ["randombytes", "npm:2.1.0"],\
-          ["serialize-javascript", "npm:6.0.2"]\
+          ["serialize-javascript", "npm:7.0.4"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -19753,15 +19750,15 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["sinon", [\
-      ["npm:17.0.1", {\
-        "packageLocation": "./.yarn/cache/sinon-npm-17.0.1-997c13081d-b34f1a97da.zip/node_modules/sinon/",\
+      ["npm:18.0.1", {\
+        "packageLocation": "./.yarn/cache/sinon-npm-18.0.1-eb670134a1-65be65a7c5.zip/node_modules/sinon/",\
         "packageDependencies": [\
-          ["@sinonjs/commons", "npm:3.0.0"],\
+          ["@sinonjs/commons", "npm:3.0.1"],\
           ["@sinonjs/fake-timers", "npm:11.2.2"],\
           ["@sinonjs/samsam", "npm:8.0.0"],\
           ["diff", "npm:5.2.2"],\
-          ["nise", "npm:5.1.5"],\
-          ["sinon", "npm:17.0.1"],\
+          ["nise", "npm:6.1.3"],\
+          ["sinon", "npm:18.0.1"],\
           ["supports-color", "npm:7.2.0"]\
         ],\
         "linkType": "HARD"\
@@ -19781,7 +19778,7 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", "npm:4.3.20"],\
           ["@types/sinon", "npm:9.0.11"],\
           ["chai", "npm:4.3.10"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"]\
         ],\
         "packagePeers": [\
@@ -19798,7 +19795,7 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", null],\
           ["@types/sinon", null],\
           ["chai", "npm:4.3.10"],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "packagePeers": [\
@@ -20782,7 +20779,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:4007bcbf54b6a1fc892cfdfa87d57c16a3d9d04f40d8627892c15aab1e876c161341a8d50416117b4d1b25d4709d289b42728585c69b09237cab14322e1446c6#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20812,7 +20809,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:48ff67a0e840c930203141d1637049652c5edbbcd196849f101d2eccd0fa0b4489e17945c3c1bd2a2f12d95fd471c8cd5185b7a14d2734017373bfa6d8d05c95#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20842,7 +20839,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:4f0f9b68e7ce11e5978eca7c8b0a6a247dd8bf97b0f1667ab8458fd5666d55f93661e1cc0f42a4dc08adb928d06507af6700923d87d728d81c6e65cfbd289144#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20872,7 +20869,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:62941717b655ac142dd4cd1370e0c48afd49b5b0e864a88fae8030cff430b00a6538f10d6ec6916a973bebc3c0274b8dad2e2dfd6263382ab5c42f6550c4185a#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20902,7 +20899,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:ac08d1802148a23c9b3f7a8749cbaaded258daba072aa6e761629ffa5f56f8f3e419894607861c1572ce1b35ea47b30ac3d38935ced0e4c1e2540eff8deb5e8f#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20932,7 +20929,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.3.11"],\
           ["uglify-js", null],\
@@ -20962,7 +20959,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:be62dbe6a90b52c749baac6deb5de07ddeff4f1a8ddad2373494caee7afd79548ac93750b7f72d4d78e33d400acfe238653150a3f2538c2ac37dcb93c4b6f001#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -20992,7 +20989,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:be6a302f4603f759eab24f466ff96c2ebfdecb1ae05baf7c5d5166535833a454d4fc20106f065d537e3f48f37a7c8fe3c565764f1b782ea734081dc93d0dfac9#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -21022,7 +21019,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:da12f6bb23b671689b7f4f5cfff69cabf980ba04aff1ffd96860c787f7d5d08d32b0db765d9f16463de0d1af2c01fa6987b861cf5df2362e38e0ef415f29b51c#npm:5.3.11"],\
           ["uglify-js", null],\
@@ -21052,7 +21049,7 @@ const RAW_RUNTIME_STATE =
           ["esbuild", null],\
           ["jest-worker", "npm:27.5.1"],\
           ["schema-utils", "npm:4.3.0"],\
-          ["serialize-javascript", "npm:6.0.2"],\
+          ["serialize-javascript", "npm:7.0.4"],\
           ["terser", "npm:5.39.0"],\
           ["terser-webpack-plugin", "virtual:f4ab5f842ae92831564bb9c51df628512e7cbc4b95ade6180c8b4aa79140126a35e1433b1c31a5ad3badd9104d877649be3ca11137a24ac8c31f75ce1bd1b44b#npm:5.3.16"],\
           ["uglify-js", null],\
@@ -21519,7 +21516,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["@types/sinon", "npm:9.0.11"],\
           ["@types/typescript", null],\
-          ["sinon", "npm:17.0.1"],\
+          ["sinon", "npm:18.0.1"],\
           ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"]\
         ],\
@@ -22193,7 +22190,7 @@ const RAW_RUNTIME_STATE =
     ]],\
     ["unrs-resolver", [\
       ["npm:1.11.1", {\
-        "packageLocation": "./.yarn/cache/unrs-resolver-npm-1.11.1-9828edd1f1-4de653508c.zip/node_modules/unrs-resolver/",\
+        "packageLocation": "./.yarn/unplugged/unrs-resolver-npm-1.11.1-9828edd1f1/node_modules/unrs-resolver/",\
         "packageDependencies": [\
           ["@unrs/resolver-binding-android-arm-eabi", "npm:1.11.1"],\
           ["@unrs/resolver-binding-android-arm64", "npm:1.11.1"],\
