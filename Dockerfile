@@ -377,6 +377,7 @@ COPY --parents \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
@@ -479,6 +480,7 @@ COPY --parents \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
@@ -593,6 +595,7 @@ COPY --parents \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
@@ -821,6 +824,7 @@ COPY --parents \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
