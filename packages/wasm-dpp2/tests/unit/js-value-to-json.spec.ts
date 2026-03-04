@@ -163,8 +163,8 @@ describe('testJsValueToJson', () => {
 
         // This simulates getEvonodesProposedEpochBlocksByIds which returns Map<string, bigint>
         const map = new Map([
-          [id1, 100n],
-          [id2, 200n],
+          [id1.toBase58(), 100n],
+          [id2.toBase58(), 200n],
         ]);
 
         const json = wasm.testJsValueToJson(map);
