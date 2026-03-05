@@ -19,8 +19,8 @@ use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use dpp::state_transition::StateTransitionHasUserFeeIncrease;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use dpp::state_transition::{StateTransitionLike, StateTransitionSingleSigned};
 use dpp::withdrawal::Pooling;
 

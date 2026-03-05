@@ -6,8 +6,8 @@ use dpp::consensus::ConsensusError;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::state_transition::StateTransitionHasUserFeeIncrease;
+use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::state_transition::{
     StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
 };

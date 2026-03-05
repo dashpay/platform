@@ -13,8 +13,8 @@ use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTr
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
-    StateTransitionSingleSigned,
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
+    StateTransitionLike, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;

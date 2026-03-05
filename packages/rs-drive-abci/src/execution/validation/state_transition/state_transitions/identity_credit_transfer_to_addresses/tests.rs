@@ -21,6 +21,7 @@ mod tests {
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
     use dpp::state_transition::StateTransition;
+    use dpp::state_transition::StateTransitionHasUserFeeIncrease;
     use platform_version::version::PlatformVersion;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
