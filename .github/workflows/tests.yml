@@ -9,7 +9,7 @@ on:
       - "v*-dev"
       - "ci/*"
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "0 23 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -88,8 +88,8 @@ jobs:
     needs:
       - changes
       - check-secrets
-    # Require manual approval only when test-suite-related code hasn't changed
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+    # Require manual approval only when test-suite-related code hasn't changed and not a scheduled/manual run
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     environment: test-suite-approval
     steps:
@@ -101,12 +101,12 @@ jobs:
       - check-secrets
       - changes
       - build-images-gate
-    # Run when: code changed (gate skipped) OR manual approval granted (gate succeeded)
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
     if: >-
       always() &&
       needs.check-secrets.outputs.has_ecr == 'true' &&
       (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
-      (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success')
+      (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -214,8 +214,8 @@ jobs:
     needs:
       - changes
       - check-secrets
-    # Require manual approval only when test-suite code hasn't changed
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' }}
+    # Require manual approval only on PRs when test-suite code hasn't changed
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-24.04
     environment: test-suite-approval
     steps:
@@ -230,14 +230,14 @@ jobs:
       - check-secrets
       - test-suite-gate
     secrets: inherit
-    # Run when: code changed (gate skipped) OR manual approval granted (gate succeeded)
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
     # always() is needed so this job evaluates even when test-suite-gate is skipped
     if: >-
       always() &&
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success')
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -275,5 +275,5 @@ jobs:
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success')
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml
