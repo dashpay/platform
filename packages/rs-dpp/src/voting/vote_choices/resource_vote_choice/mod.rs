@@ -50,6 +50,47 @@ impl JsonConvertible for ResourceVoteChoice {}
 #[cfg(feature = "vote-serde-conversion")]
 impl ValueConvertible for ResourceVoteChoice {}
 
+#[cfg(all(test, feature = "json-conversion", feature = "vote-serde-conversion"))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn resource_vote_choice_towards_identity_json_round_trip() {
+        let id = Identifier::from([0x42u8; 32]);
+        let choice = ResourceVoteChoice::TowardsIdentity(id);
+
+        let json = choice.to_json().expect("to_json should succeed");
+        let json_str = serde_json::to_string(&json).unwrap();
+        let expected_base58 = id.to_string(platform_value::string_encoding::Encoding::Base58);
+        assert!(
+            json_str.contains(&expected_base58),
+            "JSON should contain base58 identifier {}, got: {}",
+            expected_base58,
+            json_str
+        );
+
+        let restored = ResourceVoteChoice::from_json(json).expect("from_json should succeed");
+        assert_eq!(choice, restored);
+    }
+
+    #[test]
+    fn resource_vote_choice_abstain_json_round_trip() {
+        let choice = ResourceVoteChoice::Abstain;
+        let json = choice.to_json().expect("to_json should succeed");
+        let restored = ResourceVoteChoice::from_json(json).expect("from_json should succeed");
+        assert_eq!(choice, restored);
+    }
+
+    #[test]
+    fn resource_vote_choice_lock_json_round_trip() {
+        let choice = ResourceVoteChoice::Lock;
+        let json = choice.to_json().expect("to_json should succeed");
+        let restored = ResourceVoteChoice::from_json(json).expect("from_json should succeed");
+        assert_eq!(choice, restored);
+    }
+}
+
 impl TryFrom<(i32, Option<Vec<u8>>)> for ResourceVoteChoice {
     type Error = ProtocolError;
 

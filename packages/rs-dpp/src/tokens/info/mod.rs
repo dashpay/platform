@@ -73,3 +73,46 @@ impl IdentityTokenInfo {
         }
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    any(
+        feature = "fixtures-and-mocks",
+        feature = "state-transition-serde-conversion"
+    )
+))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn identity_token_info_json_round_trip() {
+        let info = IdentityTokenInfo::V0(IdentityTokenInfoV0 { frozen: true });
+
+        let json = info.to_json().expect("to_json should succeed");
+
+        // Verify the version tag
+        assert_eq!(
+            json["$formatVersion"].as_str().unwrap(),
+            "0",
+            "Version tag should be '0'"
+        );
+
+        // Verify the boolean field
+        assert_eq!(json["frozen"].as_bool().unwrap(), true);
+
+        // round-trip
+        let restored = IdentityTokenInfo::from_json(json).expect("from_json should succeed");
+        assert_eq!(info, restored);
+    }
+
+    #[test]
+    fn identity_token_info_unfrozen_json_round_trip() {
+        let info = IdentityTokenInfo::V0(IdentityTokenInfoV0 { frozen: false });
+
+        let json = info.to_json().expect("to_json should succeed");
+        let restored = IdentityTokenInfo::from_json(json).expect("from_json should succeed");
+        assert_eq!(info, restored);
+    }
+}

@@ -47,3 +47,41 @@ impl Vote {
         }
     }
 }
+
+#[cfg(all(test, feature = "json-conversion", feature = "vote-serde-conversion"))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+    use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
+    use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+    use crate::voting::vote_polls::VotePoll;
+    use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
+    use crate::voting::votes::resource_vote::ResourceVote;
+
+    #[test]
+    fn vote_json_round_trip() {
+        let contract_id = Identifier::from([0x11u8; 32]);
+        let towards_id = Identifier::from([0x22u8; 32]);
+
+        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
+                ContestedDocumentResourceVotePoll {
+                    contract_id,
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![platform_value::Value::Text("dash".to_string())],
+                },
+            ),
+            resource_vote_choice: ResourceVoteChoice::TowardsIdentity(towards_id),
+        }));
+
+        let json = vote.to_json().expect("to_json should succeed");
+
+        // Verify it's a valid JSON object
+        assert!(json.is_object(), "Vote JSON should be an object");
+
+        // round-trip
+        let restored = Vote::from_json(json).expect("from_json should succeed");
+        assert_eq!(vote, restored);
+    }
+}

@@ -58,3 +58,26 @@ impl TokenStatus {
         }
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn token_status_json_round_trip() {
+        let status = TokenStatus::V0(TokenStatusV0 { paused: true });
+
+        let json = status.to_json().expect("to_json should succeed");
+
+        assert_eq!(json["$formatVersion"].as_str().unwrap(), "0");
+        assert_eq!(json["paused"].as_bool().unwrap(), true);
+
+        let restored = TokenStatus::from_json(json).expect("from_json should succeed");
+        assert_eq!(status, restored);
+    }
+}
