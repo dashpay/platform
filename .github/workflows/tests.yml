@@ -120,6 +120,7 @@ jobs:
     name: Rust packages
     needs:
       - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -136,6 +137,7 @@ jobs:
     needs:
       - changes
       - build-js
+    if: ${{ needs.changes.outputs.js-packages != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
