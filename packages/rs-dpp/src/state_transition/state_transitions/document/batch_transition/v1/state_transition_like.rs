@@ -1,6 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::StateTransitionType::Batch;
 use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -65,6 +66,9 @@ impl StateTransitionLike for BatchTransitionV1 {
             .collect()
     }
 
+}
+
+impl StateTransitionHasUserFeeIncrease for BatchTransitionV1 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }

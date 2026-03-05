@@ -2,6 +2,7 @@ use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 use crate::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{StateTransition, StateTransitionWitnessSigned};
 use crate::{
     prelude::Identifier,
@@ -40,6 +41,9 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransitionV0 {
             .collect()
     }
 
+}
+
+impl StateTransitionHasUserFeeIncrease for IdentityCreateFromAddressesTransitionV0 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }

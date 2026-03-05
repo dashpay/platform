@@ -1,6 +1,7 @@
 use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionType, StateTransitionWitnessSigned,
 };
@@ -28,25 +29,25 @@ impl StateTransitionLike for AddressCreditWithdrawalTransition {
         }
     }
 
-    /// returns the fee multiplier
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            AddressCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionHasUserFeeIncrease for AddressCreditWithdrawalTransition {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             AddressCreditWithdrawalTransition::V0(transition) => transition.user_fee_increase(),
         }
     }
 
-    /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             AddressCreditWithdrawalTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }
-        }
-    }
-
-    fn unique_identifiers(&self) -> Vec<String> {
-        match self {
-            AddressCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
 }
