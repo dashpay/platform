@@ -88,11 +88,30 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
+  build-images-gate:
+    name: Docker Build Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only when test-suite-related code hasn't changed
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Docker image build manually approved"
+
   build-images:
     name: Build Docker images
     needs:
       - check-secrets
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+      - changes
+      - build-images-gate
+    # Run when: code changed (gate skipped) OR manual approval granted (gate succeeded)
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
+      (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success')
     secrets: inherit
     strategy:
       fail-fast: false
