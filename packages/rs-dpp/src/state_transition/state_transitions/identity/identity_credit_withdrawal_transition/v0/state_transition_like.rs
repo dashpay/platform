@@ -46,7 +46,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransitionV0 {
             self.nonce
         )]
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for IdentityCreditWithdrawalTransitionV0 {

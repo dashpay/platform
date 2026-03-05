@@ -41,7 +41,6 @@ impl StateTransitionLike for AddressCreditWithdrawalTransitionV0 {
             .map(|(key, (nonce, _))| key.base64_string_with_nonce(*nonce))
             .collect()
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for AddressCreditWithdrawalTransitionV0 {

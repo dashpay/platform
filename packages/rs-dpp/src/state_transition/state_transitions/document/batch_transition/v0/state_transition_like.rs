@@ -47,7 +47,6 @@ impl StateTransitionLike for BatchTransitionV0 {
             })
             .collect()
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for BatchTransitionV0 {

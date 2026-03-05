@@ -53,7 +53,6 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
             }
         }
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for IdentityTopUpTransitionV0 {

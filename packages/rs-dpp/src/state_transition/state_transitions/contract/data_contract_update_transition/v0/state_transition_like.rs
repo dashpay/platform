@@ -36,7 +36,6 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
             self.identity_contract_nonce
         )]
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for DataContractUpdateTransitionV0 {

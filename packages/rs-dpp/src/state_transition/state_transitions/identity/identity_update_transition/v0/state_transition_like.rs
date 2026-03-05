@@ -46,7 +46,6 @@ impl StateTransitionLike for IdentityUpdateTransitionV0 {
             self.nonce
         )]
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for IdentityUpdateTransitionV0 {

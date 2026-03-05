@@ -33,7 +33,6 @@ impl StateTransitionLike for DataContractCreateTransitionV0 {
             self.data_contract.id()
         )]
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for DataContractCreateTransitionV0 {

@@ -30,7 +30,6 @@ impl StateTransitionLike for MasternodeVoteTransition {
             MasternodeVoteTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
-
 }
 
 impl StateTransitionSingleSigned for MasternodeVoteTransition {

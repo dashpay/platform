@@ -32,7 +32,6 @@ impl StateTransitionLike for DataContractUpdateTransition {
             DataContractUpdateTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for DataContractUpdateTransition {

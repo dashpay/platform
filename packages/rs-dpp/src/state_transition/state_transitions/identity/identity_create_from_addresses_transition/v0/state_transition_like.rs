@@ -40,7 +40,6 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransitionV0 {
             .map(|(key, (nonce, _))| key.base64_string_with_nonce(*nonce))
             .collect()
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for IdentityCreateFromAddressesTransitionV0 {

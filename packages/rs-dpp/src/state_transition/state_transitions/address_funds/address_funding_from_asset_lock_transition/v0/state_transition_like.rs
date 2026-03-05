@@ -40,7 +40,6 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransitionV0 {
     fn unique_identifiers(&self) -> Vec<String> {
         vec![]
     }
-
 }
 
 impl StateTransitionHasUserFeeIncrease for AddressFundingFromAssetLockTransitionV0 {
