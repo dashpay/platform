@@ -283,9 +283,13 @@ pub(crate) mod test_helpers {
             Option::from(Rho::from_bytes(&[0u8; 32])).expect("zero is valid pallas::Base");
         let rseed: RandomSeed =
             Option::from(RandomSeed::from_bytes([1u8; 32], &rho)).expect("valid random seed");
-        let note: Note =
-            Option::from(Note::from_parts(payment_address, NoteValue::from_raw(value), rho, rseed))
-                .expect("note commitment should be valid");
+        let note: Note = Option::from(Note::from_parts(
+            payment_address,
+            NoteValue::from_raw(value),
+            rho,
+            rseed,
+        ))
+        .expect("note commitment should be valid");
 
         // All-zeros merkle path at position 0 — consistent with Anchor::empty_tree()
         let auth_path = [MerkleHashOrchard::empty_leaf(); NOTE_COMMITMENT_TREE_DEPTH];

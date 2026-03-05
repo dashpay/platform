@@ -66,8 +66,8 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address_funds::AddressWitness;
     use crate::address_funds::AddressFundsFeeStrategyStep;
+    use crate::address_funds::AddressWitness;
     use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
     use platform_value::BinaryData;
 
