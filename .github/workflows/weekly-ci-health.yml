@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 8 * * 1" # Monday 8:00 UTC
   workflow_dispatch: {}
+  push:
+    branches:
+      - ci/weekly-health-check-slack
 
 permissions:
   actions: read
@@ -58,7 +61,7 @@ jobs:
             PAYLOAD=$(jq -n --arg text ":fire: *Damn, the CI is broken again!*\nFailures on \`${BRANCH}\`:\n\n${BLOCKS}" \
               '{text: $text}')
 
-            curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            echo curl -sf -X POST "$SLACK_WEBHOOK_URL" \
               -H 'Content-Type: application/json' \
               -d "$PAYLOAD"
 
