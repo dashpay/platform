@@ -67,7 +67,7 @@ jobs:
             PAYLOAD=$(jq -n --arg text ":fire: *Damn, the CI is broken again!*\nFailures on \`${BRANCH}\`:\n\n${BLOCKS}" \
               '{text: $text}')
 
-            echo curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+            curl -sf -X POST "$SLACK_WEBHOOK_URL" \
               -H 'Content-Type: application/json' \
               -d "$PAYLOAD"
 
