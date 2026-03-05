@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -64,7 +65,6 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git checkout "${{ github.head_ref }}"
           git add .github/grpc-queries-cache.json
           git commit -m "chore: update gRPC queries cache [skip ci]"
           git push
