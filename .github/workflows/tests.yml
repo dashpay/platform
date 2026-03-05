@@ -8,11 +8,6 @@ on:
       - master
       - "v*-dev"
       - "ci/*"
-  push:
-    branches:
-      - master
-      - "v*-dev"
-      - "ci/*"
   schedule:
     - cron: "30 4 * * *"
 
@@ -23,7 +18,7 @@ concurrency:
 jobs:
   check-secrets:
     name: Check secret availability
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
@@ -40,7 +35,7 @@ jobs:
 
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
@@ -94,7 +89,7 @@ jobs:
       - changes
       - check-secrets
     # Require manual approval only when test-suite-related code hasn't changed
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-24.04
     environment: test-suite-approval
     steps:
@@ -110,7 +105,7 @@ jobs:
     if: >-
       always() &&
       needs.check-secrets.outputs.has_ecr == 'true' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
       (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success')
     secrets: inherit
     strategy:
@@ -169,7 +164,7 @@ jobs:
 
   js-deps-versions:
     name: JS dependency versions check
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
