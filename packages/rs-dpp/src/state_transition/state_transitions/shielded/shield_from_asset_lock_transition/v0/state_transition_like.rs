@@ -1,3 +1,5 @@
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
@@ -31,9 +33,18 @@ impl StateTransitionLike for ShieldFromAssetLockTransitionV0 {
         vec![]
     }
 
-    /// Returns unique identifiers based on the cmx values from actions
+    /// Returns unique identifier based on the asset lock proof.
+    /// The asset lock can only be consumed once, making it the natural deduplication key.
     fn unique_identifiers(&self) -> Vec<String> {
-        self.actions.iter().map(|a| hex::encode(a.cmx)).collect()
+        let identifier = self.asset_lock_proof.create_identifier();
+        match identifier {
+            Ok(identifier) => {
+                vec![BASE64_STANDARD.encode(identifier)]
+            }
+            Err(_) => {
+                vec![String::default()]
+            }
+        }
     }
 }
 
