@@ -9,8 +9,10 @@ impl StateTransitionEstimatedFeeValidation for UnshieldTransition {
         &self,
         _platform_version: &PlatformVersion,
     ) -> Result<Credits, ProtocolError> {
-        // Fee for unshield is paid from value balance in the orchard bundle
-        // Minimum fee is 0 as the actual fee is extracted from the bundle during validation
+        // TODO: revisit when drive/drive-abci integration lands — the shielded fee is
+        // embedded in unshielding_amount and validated on-chain via
+        // `validate_minimum_shielded_fee`, but this client-side estimate currently
+        // returns 0 which means mempool pre-checks won't reject under-fee'd txns.
         Ok(0)
     }
 }

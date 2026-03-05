@@ -15,7 +15,7 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         actions: Vec<SerializedAction>,
-        value_balance: i64,
+        unshielding_amount: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
@@ -26,7 +26,7 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
     ) -> Result<StateTransition, ProtocolError> {
         let transition = ShieldedWithdrawalTransitionV0 {
             actions,
-            value_balance,
+            unshielding_amount,
             anchor,
             proof,
             binding_signature,

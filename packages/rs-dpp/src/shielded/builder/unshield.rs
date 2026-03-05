@@ -92,7 +92,7 @@ pub fn build_unshield_transition<P: OrchardProver>(
     UnshieldTransition::try_from_bundle(
         output_address,
         sb.actions,
-        sb.value_balance,
+        sb.value_balance as u64,
         sb.anchor,
         sb.proof,
         sb.binding_signature,

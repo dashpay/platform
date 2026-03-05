@@ -99,7 +99,7 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
 
     ShieldedWithdrawalTransition::try_from_bundle(
         sb.actions,
-        sb.value_balance,
+        sb.value_balance as u64,
         sb.anchor,
         sb.proof,
         sb.binding_signature,

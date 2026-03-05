@@ -32,8 +32,8 @@ use serde::{Deserialize, Serialize};
 pub struct ShieldedWithdrawalTransitionV0 {
     /// Orchard actions (spends + change outputs)
     pub actions: Vec<SerializedAction>,
-    /// Net value balance (amount + fee flowing out of shielded pool)
-    pub value_balance: i64,
+    /// Total credits leaving the shielded pool (recipient amount + fee)
+    pub unshielding_amount: u64,
     /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
@@ -80,7 +80,7 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            value_balance: 1000i64,
+            unshielding_amount: 1000u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],

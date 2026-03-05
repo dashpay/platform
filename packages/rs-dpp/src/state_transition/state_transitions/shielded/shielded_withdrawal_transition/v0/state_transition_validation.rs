@@ -23,12 +23,12 @@ impl StateTransitionStructureValidation for ShieldedWithdrawalTransitionV0 {
             return err;
         }
 
-        // value_balance must be positive (credits flowing out of pool = amount + fee)
-        if self.value_balance <= 0 {
+        // unshielding_amount must be positive (credits flowing out of pool)
+        if self.unshielding_amount == 0 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
-                        "shielded withdrawal value_balance must be positive".to_string(),
+                        "shielded withdrawal unshielding_amount must be positive".to_string(),
                     ),
                 )
                 .into(),
