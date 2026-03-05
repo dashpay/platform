@@ -25,7 +25,7 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `fee_strategy` - How to deduct fees from the transparent inputs
 /// - `signer` - Signs each input address witness (ECDSA)
 /// - `user_fee_increase` - Fee multiplier (0 = 100% base fee)
-/// - `proving_key` - Halo 2 proving key (cache with `OnceLock` — ~30s to build)
+/// - `prover` - Orchard prover (holds the Halo 2 proving key; cache with `OnceLock` — ~30s to build)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]

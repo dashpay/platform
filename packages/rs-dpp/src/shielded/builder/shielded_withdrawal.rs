@@ -29,7 +29,7 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// - `fvk` - Full viewing key for spend authorization
 /// - `ask` - Spend authorizing key for RedPallas signatures
 /// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
-/// - `proving_key` - Halo 2 proving key
+/// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
 /// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
 ///   If `Some`, must be >= the minimum fee.

@@ -19,7 +19,7 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `asset_lock_proof` - Proof that funds are locked on core chain
 /// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
 /// - `user_fee_increase` - Fee multiplier (0 = 100% base fee)
-/// - `proving_key` - Halo 2 proving key
+/// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
