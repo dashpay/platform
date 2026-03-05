@@ -1,4 +1,3 @@
-use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
@@ -22,15 +21,6 @@ impl StateTransitionLike for ShieldedWithdrawalTransition {
         match self {
             ShieldedWithdrawalTransition::V0(transition) => transition.state_transition_type(),
         }
-    }
-
-    /// returns the fee multiplier
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        0
-    }
-    /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
-        // No-op: shielded withdrawal fees are cryptographically locked by the Orchard binding signature
     }
 
     fn unique_identifiers(&self) -> Vec<String> {

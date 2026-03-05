@@ -701,7 +701,29 @@ impl StateTransition {
 
     /// returns the fee_increase additional percentage multiplier, it affects only processing costs
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
-        call_method!(self, user_fee_increase)
+        match self {
+            StateTransition::DataContractCreate(st) => st.user_fee_increase(),
+            StateTransition::DataContractUpdate(st) => st.user_fee_increase(),
+            StateTransition::Batch(st) => st.user_fee_increase(),
+            StateTransition::IdentityCreate(st) => st.user_fee_increase(),
+            StateTransition::IdentityTopUp(st) => st.user_fee_increase(),
+            StateTransition::IdentityCreditWithdrawal(st) => st.user_fee_increase(),
+            StateTransition::IdentityUpdate(st) => st.user_fee_increase(),
+            StateTransition::IdentityCreditTransfer(st) => st.user_fee_increase(),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.user_fee_increase(),
+            StateTransition::IdentityCreateFromAddresses(st) => st.user_fee_increase(),
+            StateTransition::IdentityTopUpFromAddresses(st) => st.user_fee_increase(),
+            StateTransition::AddressFundsTransfer(st) => st.user_fee_increase(),
+            StateTransition::AddressFundingFromAssetLock(st) => st.user_fee_increase(),
+            StateTransition::AddressCreditWithdrawal(st) => st.user_fee_increase(),
+            StateTransition::Shield(st) => st.user_fee_increase(),
+            StateTransition::ShieldFromAssetLock(st) => st.user_fee_increase(),
+            // These transitions don't support user fee adjustment
+            StateTransition::MasternodeVote(_) => 0,
+            StateTransition::ShieldedTransfer(_) => 0,
+            StateTransition::Unshield(_) => 0,
+            StateTransition::ShieldedWithdrawal(_) => 0,
+        }
     }
 
     /// Calculates the estimated minimum fee required for this state transition.
@@ -871,7 +893,47 @@ impl StateTransition {
 
     /// set fee multiplier
     pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        call_method!(self, set_user_fee_increase, user_fee_increase)
+        match self {
+            StateTransition::DataContractCreate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::DataContractUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::Batch(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityCreate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityTopUp(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::IdentityUpdate(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::IdentityTopUpFromAddresses(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::AddressFundsTransfer(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::AddressCreditWithdrawal(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            StateTransition::Shield(st) => st.set_user_fee_increase(user_fee_increase),
+            StateTransition::ShieldFromAssetLock(st) => {
+                st.set_user_fee_increase(user_fee_increase)
+            }
+            // These transitions don't support user fee adjustment — no-op
+            StateTransition::MasternodeVote(_) => {}
+            StateTransition::ShieldedTransfer(_) => {}
+            StateTransition::Unshield(_) => {}
+            StateTransition::ShieldedWithdrawal(_) => {}
+        }
     }
 
     /// set a new signature

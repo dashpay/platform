@@ -1,4 +1,3 @@
-use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 use crate::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use crate::{
@@ -41,11 +40,4 @@ impl StateTransitionLike for ShieldedTransferTransitionV0 {
             .collect()
     }
 
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        0
-    }
-
-    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
-        // No-op: fee is cryptographically locked by the Orchard binding signature
-    }
 }

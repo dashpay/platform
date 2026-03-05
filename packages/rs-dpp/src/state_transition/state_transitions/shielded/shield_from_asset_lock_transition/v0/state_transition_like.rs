@@ -3,6 +3,7 @@ use platform_value::BinaryData;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 use crate::version::FeatureVersion;
 use crate::{
@@ -37,6 +38,9 @@ impl StateTransitionLike for ShieldFromAssetLockTransitionV0 {
         self.actions.iter().map(|a| hex::encode(a.cmx)).collect()
     }
 
+}
+
+impl StateTransitionHasUserFeeIncrease for ShieldFromAssetLockTransitionV0 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }

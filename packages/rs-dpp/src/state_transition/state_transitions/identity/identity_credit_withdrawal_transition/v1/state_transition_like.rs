@@ -3,6 +3,7 @@ use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
@@ -45,6 +46,9 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransitionV1 {
         )]
     }
 
+}
+
+impl StateTransitionHasUserFeeIncrease for IdentityCreditWithdrawalTransitionV1 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }
