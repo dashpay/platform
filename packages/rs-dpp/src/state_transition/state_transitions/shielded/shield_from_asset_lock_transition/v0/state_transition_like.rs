@@ -1,6 +1,5 @@
 use platform_value::BinaryData;
 
-use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
@@ -35,14 +34,6 @@ impl StateTransitionLike for ShieldFromAssetLockTransitionV0 {
     /// Returns unique identifiers based on the cmx values from actions
     fn unique_identifiers(&self) -> Vec<String> {
         self.actions.iter().map(|a| hex::encode(a.cmx)).collect()
-    }
-
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        self.user_fee_increase
-    }
-
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        self.user_fee_increase = user_fee_increase
     }
 }
 

@@ -2,6 +2,7 @@ use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
 use crate::state_transition::shield_transition::ShieldTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
@@ -40,7 +41,9 @@ impl StateTransitionLike for ShieldTransitionV0 {
             .map(|(key, (nonce, _))| key.base64_string_with_nonce(*nonce))
             .collect()
     }
+}
 
+impl StateTransitionHasUserFeeIncrease for ShieldTransitionV0 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }

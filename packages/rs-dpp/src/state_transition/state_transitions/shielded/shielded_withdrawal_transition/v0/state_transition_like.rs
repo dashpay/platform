@@ -1,7 +1,7 @@
 use crate::state_transition::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use crate::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use crate::{
-    prelude::{Identifier, UserFeeIncrease},
+    prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
@@ -38,13 +38,5 @@ impl StateTransitionLike for ShieldedWithdrawalTransitionV0 {
             .iter()
             .map(|action| hex::encode(action.nullifier))
             .collect()
-    }
-
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        0
-    }
-
-    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
-        // No-op: shielded withdrawal fees are cryptographically locked by the Orchard binding signature
     }
 }

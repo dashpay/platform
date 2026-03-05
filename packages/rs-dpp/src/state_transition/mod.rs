@@ -716,8 +716,13 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(st) => st.user_fee_increase(),
             StateTransition::AddressFundingFromAssetLock(st) => st.user_fee_increase(),
             StateTransition::AddressCreditWithdrawal(st) => st.user_fee_increase(),
+            StateTransition::Shield(st) => st.user_fee_increase(),
             // These transitions don't support user fee adjustment
+            StateTransition::ShieldFromAssetLock(_) => 0,
             StateTransition::MasternodeVote(_) => 0,
+            StateTransition::ShieldedTransfer(_) => 0,
+            StateTransition::Unshield(_) => 0,
+            StateTransition::ShieldedWithdrawal(_) => 0,
         }
     }
 
@@ -919,8 +924,13 @@ impl StateTransition {
             StateTransition::AddressCreditWithdrawal(st) => {
                 st.set_user_fee_increase(user_fee_increase)
             }
+            StateTransition::Shield(st) => st.set_user_fee_increase(user_fee_increase),
             // These transitions don't support user fee adjustment — no-op
+            StateTransition::ShieldFromAssetLock(_) => {}
             StateTransition::MasternodeVote(_) => {}
+            StateTransition::ShieldedTransfer(_) => {}
+            StateTransition::Unshield(_) => {}
+            StateTransition::ShieldedWithdrawal(_) => {}
         }
     }
 

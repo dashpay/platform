@@ -1,6 +1,7 @@
 use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shield_transition::ShieldTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionType, StateTransitionWitnessSigned,
 };
@@ -27,6 +28,14 @@ impl StateTransitionLike for ShieldTransition {
         }
     }
 
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            ShieldTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionHasUserFeeIncrease for ShieldTransition {
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
@@ -37,12 +46,6 @@ impl StateTransitionLike for ShieldTransition {
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             ShieldTransition::V0(transition) => transition.set_user_fee_increase(user_fee_increase),
-        }
-    }
-
-    fn unique_identifiers(&self) -> Vec<String> {
-        match self {
-            ShieldTransition::V0(transition) => transition.unique_identifiers(),
         }
     }
 }

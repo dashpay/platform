@@ -1,4 +1,3 @@
-use crate::prelude::UserFeeIncrease;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
@@ -24,22 +23,6 @@ impl StateTransitionLike for ShieldFromAssetLockTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             ShieldFromAssetLockTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-
-    /// returns the fee multiplier
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            ShieldFromAssetLockTransition::V0(transition) => transition.user_fee_increase(),
-        }
-    }
-
-    /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        match self {
-            ShieldFromAssetLockTransition::V0(transition) => {
-                transition.set_user_fee_increase(user_fee_increase)
-            }
         }
     }
 

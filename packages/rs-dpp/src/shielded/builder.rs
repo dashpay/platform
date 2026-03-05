@@ -195,7 +195,12 @@ fn build_spend_bundle(
         )
         .map_err(|e| ProtocolError::Generic(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle(builder, proving_key, std::slice::from_ref(ask), extra_sighash_data)
+    prove_and_sign_bundle(
+        builder,
+        proving_key,
+        std::slice::from_ref(ask),
+        extra_sighash_data,
+    )
 }
 
 /// Takes a configured Builder, generates the proof, computes the platform
