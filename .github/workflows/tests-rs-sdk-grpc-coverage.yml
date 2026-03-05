@@ -62,11 +62,12 @@ jobs:
 
       - name: Commit cache updates
         if: steps.coverage.outputs.cache_modified == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          EXPECTED_BRANCH: ${{ github.head_ref }}
         run: |
           BRANCH=$(git branch --show-current)
-          EXPECTED="${{ github.head_ref }}"
-          if [ "$BRANCH" != "$EXPECTED" ]; then
-            echo "::error::Expected branch '${EXPECTED}' but on '${BRANCH}'. Refusing to push."
+          if [ "$BRANCH" != "$EXPECTED_BRANCH" ]; then
+            echo "::error::Expected branch '${EXPECTED_BRANCH}' but on '${BRANCH}'. Refusing to push."
             exit 1
           fi
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
