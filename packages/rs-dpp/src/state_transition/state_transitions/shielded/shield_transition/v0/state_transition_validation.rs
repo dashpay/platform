@@ -64,13 +64,12 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             }
         }
 
-        // value_balance must be negative (credits flowing into pool)
-        if self.value_balance >= 0 {
+        // amount must be positive (credits flowing into pool)
+        if self.amount == 0 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
-                        "shield value_balance must be negative (credits flow into pool)"
-                            .to_string(),
+                        "shield amount must be greater than zero".to_string(),
                     ),
                 )
                 .into(),

@@ -1,5 +1,5 @@
 use grovedb_commitment_tree::{
-    Anchor, Builder, BundleType, DashMemo, FullViewingKey, NoteValue, PaymentAddress, ProvingKey,
+    Anchor, Builder, BundleType, DashMemo, FullViewingKey, NoteValue, PaymentAddress,
     SpendAuthorizingKey,
 };
 
@@ -12,7 +12,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{prove_and_sign_bundle, serialize_authorized_bundle, SpendableNote};
+use super::{prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver, SpendableNote};
 
 /// Builds a ShieldedTransfer state transition (shielded pool -> shielded pool).
 ///
@@ -34,7 +34,7 @@ use super::{prove_and_sign_bundle, serialize_authorized_bundle, SpendableNote};
 ///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_shielded_transfer_transition(
+pub fn build_shielded_transfer_transition<P: OrchardProver>(
     spends: Vec<SpendableNote>,
     recipient: &OrchardAddress,
     transfer_amount: u64,
@@ -42,7 +42,7 @@ pub fn build_shielded_transfer_transition(
     fvk: &FullViewingKey,
     ask: &SpendAuthorizingKey,
     anchor: Anchor,
-    proving_key: &ProvingKey,
+    prover: &P,
     memo: [u8; 36],
     fee: Option<Credits>,
     platform_version: &PlatformVersion,
@@ -57,6 +57,12 @@ pub fn build_shielded_transfer_transition(
         Some(f) if f < min_fee => {
             return Err(ProtocolError::Generic(format!(
                 "fee {} is below minimum required fee {}",
+                f, min_fee
+            )));
+        }
+        Some(f) if f > min_fee.saturating_mul(1000) => {
+            return Err(ProtocolError::Generic(format!(
+                "fee {} exceeds 1000x the minimum fee {}",
                 f, min_fee
             )));
         }
@@ -110,7 +116,7 @@ pub fn build_shielded_transfer_transition(
     }
 
     // ShieldedTransfer has no extra_data in sighash
-    let bundle = prove_and_sign_bundle(builder, proving_key, std::slice::from_ref(ask), &[])?;
+    let bundle = prove_and_sign_bundle(builder, prover, std::slice::from_ref(ask), &[])?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // value_balance = effective_fee (the amount leaving the shielded pool as fee)
@@ -128,7 +134,7 @@ pub fn build_shielded_transfer_transition(
 mod tests {
     use super::*;
     use crate::shielded::builder::test_helpers::{
-        proving_key, test_orchard_address, test_spendable_note,
+        test_orchard_address, test_spendable_note, TestProver,
     };
 
     #[test]
@@ -153,7 +159,7 @@ mod tests {
             &fvk,
             &ask,
             Anchor::empty_tree(),
-            proving_key(),
+            &TestProver,
             [0u8; 36],
             Some(1), // fee = 1, should be below minimum
             platform_version,
@@ -191,7 +197,7 @@ mod tests {
             &fvk,
             &ask,
             Anchor::empty_tree(),
-            proving_key(),
+            &TestProver,
             [0u8; 36],
             None,
             platform_version,

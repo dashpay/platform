@@ -25,7 +25,7 @@ pub trait ShieldTransitionMethodsV0 {
     fn try_from_bundle_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
-        value_balance: i64,
+        amount: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],

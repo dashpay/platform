@@ -1,5 +1,3 @@
-use grovedb_commitment_tree::ProvingKey;
-
 use crate::address_funds::OrchardAddress;
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
@@ -8,7 +6,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_output_only_bundle, serialize_authorized_bundle};
+use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver};
 
 /// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
 ///
@@ -25,17 +23,17 @@ use super::{build_output_only_bundle, serialize_authorized_bundle};
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_shield_from_asset_lock_transition(
+pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     recipient: &OrchardAddress,
     shield_amount: u64,
     asset_lock_proof: AssetLockProof,
     asset_lock_private_key: &[u8],
     user_fee_increase: UserFeeIncrease,
-    proving_key: &ProvingKey,
+    prover: &P,
     memo: [u8; 36],
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -66,7 +64,7 @@ pub fn build_shield_from_asset_lock_transition(
 #[cfg(test)]
 mod tests {
     use super::super::{build_output_only_bundle, serialize_authorized_bundle};
-    use crate::shielded::builder::test_helpers::{proving_key, test_orchard_address};
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
 
     /// Verifies that an output-only bundle produces a negative value_balance
     /// (value flowing into the pool), which is the precondition for
@@ -74,10 +72,9 @@ mod tests {
     #[test]
     fn test_output_only_bundle_value_balance_is_negative() {
         let recipient = test_orchard_address();
-        let pk = proving_key();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], pk)
+        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
             .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 

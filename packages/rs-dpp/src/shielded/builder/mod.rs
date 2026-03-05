@@ -34,7 +34,7 @@ mod shielded_transfer;
 mod shielded_withdrawal;
 mod unshield;
 
-pub use shield::build_shield_transition;
+pub use self::shield::build_shield_transition;
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 pub use shielded_transfer::build_shielded_transfer_transition;
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
@@ -49,6 +49,16 @@ use rand::rngs::OsRng;
 use crate::address_funds::OrchardAddress;
 use crate::shielded::{compute_platform_sighash, SerializedAction};
 use crate::ProtocolError;
+
+/// Trait abstracting over Orchard proof generation.
+///
+/// This follows the same pattern as `Signer` — callers provide an implementation
+/// that holds (and potentially caches) the expensive `ProvingKey`, and the builder
+/// functions use it via this trait.
+pub trait OrchardProver {
+    /// Returns a reference to the Halo 2 proving key for the Orchard circuit.
+    fn proving_key(&self) -> &ProvingKey;
+}
 
 /// A note that can be spent in a shielded transaction, paired with its
 /// Merkle inclusion path in the commitment tree.
@@ -129,11 +139,11 @@ pub fn serialize_authorized_bundle(bundle: &Bundle<Authorized, i64, DashMemo>) -
 ///
 /// Used by Shield and ShieldFromAssetLock transitions where funds enter
 /// the shielded pool from transparent sources.
-pub(crate) fn build_output_only_bundle(
+pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     recipient: &OrchardAddress,
     amount: u64,
     memo: [u8; 36],
-    proving_key: &ProvingKey,
+    prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
     let anchor = Anchor::empty_tree();
@@ -149,7 +159,7 @@ pub(crate) fn build_output_only_bundle(
         .add_output(None, payment_address, NoteValue::from_raw(amount), memo)
         .map_err(|e| ProtocolError::Generic(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle(builder, proving_key, &[], &[])
+    prove_and_sign_bundle(builder, prover, &[], &[])
 }
 
 /// Builds a spend+output Orchard bundle.
@@ -157,7 +167,7 @@ pub(crate) fn build_output_only_bundle(
 /// Used by ShieldedTransfer, Unshield, and ShieldedWithdrawal where funds
 /// are spent from existing notes.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_spend_bundle(
+pub(crate) fn build_spend_bundle<P: OrchardProver>(
     spends: Vec<SpendableNote>,
     recipient: &OrchardAddress,
     output_amount: u64,
@@ -165,7 +175,7 @@ pub(crate) fn build_spend_bundle(
     fvk: &FullViewingKey,
     ask: &SpendAuthorizingKey,
     anchor: Anchor,
-    proving_key: &ProvingKey,
+    prover: &P,
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -189,7 +199,7 @@ pub(crate) fn build_spend_bundle(
 
     prove_and_sign_bundle(
         builder,
-        proving_key,
+        prover,
         std::slice::from_ref(ask),
         extra_sighash_data,
     )
@@ -197,9 +207,9 @@ pub(crate) fn build_spend_bundle(
 
 /// Takes a configured Builder, generates the proof, computes the platform
 /// sighash, and applies signatures.
-pub(crate) fn prove_and_sign_bundle(
+pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
     builder: Builder<DashMemo>,
-    proving_key: &ProvingKey,
+    prover: &P,
     signing_keys: &[SpendAuthorizingKey],
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
@@ -214,7 +224,7 @@ pub(crate) fn prove_and_sign_bundle(
     let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
 
     let proven = unauthorized
-        .create_proof(proving_key, &mut rng)
+        .create_proof(prover.proving_key(), &mut rng)
         .map_err(|e| ProtocolError::Generic(format!("failed to create proof: {:?}", e)))?;
 
     proven
@@ -237,6 +247,15 @@ pub(crate) mod test_helpers {
     /// Returns a cached ProvingKey (~30s to build on first call).
     pub fn proving_key() -> &'static ProvingKey {
         PROVING_KEY.get_or_init(ProvingKey::build)
+    }
+
+    /// Test implementation of `OrchardProver` backed by the cached proving key.
+    pub struct TestProver;
+
+    impl super::OrchardProver for TestProver {
+        fn proving_key(&self) -> &ProvingKey {
+            proving_key()
+        }
     }
 
     /// Creates a test OrchardAddress from a deterministic spending key.

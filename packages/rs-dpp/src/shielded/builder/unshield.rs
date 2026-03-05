@@ -1,4 +1,4 @@
-use grovedb_commitment_tree::{Anchor, FullViewingKey, ProvingKey, SpendAuthorizingKey};
+use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 
 use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::fee::Credits;
@@ -9,7 +9,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle, serialize_authorized_bundle, SpendableNote};
+use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, SpendableNote};
 
 /// Builds an Unshield state transition (shielded pool -> platform address).
 ///
@@ -31,7 +31,7 @@ use super::{build_spend_bundle, serialize_authorized_bundle, SpendableNote};
 ///   If `Some`, must be >= the minimum fee.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_unshield_transition(
+pub fn build_unshield_transition<P: OrchardProver>(
     spends: Vec<SpendableNote>,
     output_address: PlatformAddress,
     unshield_amount: u64,
@@ -39,7 +39,7 @@ pub fn build_unshield_transition(
     fvk: &FullViewingKey,
     ask: &SpendAuthorizingKey,
     anchor: Anchor,
-    proving_key: &ProvingKey,
+    prover: &P,
     memo: [u8; 36],
     fee: Option<Credits>,
     platform_version: &PlatformVersion,
@@ -84,7 +84,7 @@ pub fn build_unshield_transition(
         fvk,
         ask,
         anchor,
-        proving_key,
+        prover,
         &extra_sighash_data,
     )?;
 
@@ -106,7 +106,7 @@ pub fn build_unshield_transition(
 mod tests {
     use super::*;
     use crate::shielded::builder::test_helpers::{
-        proving_key, test_orchard_address, test_spendable_note,
+        test_orchard_address, test_spendable_note, TestProver,
     };
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
             &fvk,
             &ask,
             Anchor::empty_tree(),
-            proving_key(),
+            &TestProver,
             [0u8; 36],
             Some(1), // fee = 1, should be below minimum
             platform_version,
@@ -168,7 +168,7 @@ mod tests {
             &fvk,
             &ask,
             Anchor::empty_tree(),
-            proving_key(),
+            &TestProver,
             [0u8; 36],
             None,
             platform_version,

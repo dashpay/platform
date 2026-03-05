@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use grovedb_commitment_tree::ProvingKey;
-
 use crate::address_funds::AddressFundsFeeStrategy;
 use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::fee::Credits;
@@ -13,7 +11,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
-use super::{build_output_only_bundle, serialize_authorized_bundle};
+use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver};
 
 /// Builds a Shield state transition (transparent platform addresses -> shielded pool).
 ///
@@ -31,14 +29,14 @@ use super::{build_output_only_bundle, serialize_authorized_bundle};
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
-pub fn build_shield_transition<S: Signer<PlatformAddress>>(
+pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
     recipient: &OrchardAddress,
     shield_amount: u64,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     fee_strategy: AddressFundsFeeStrategy,
     signer: &S,
     user_fee_increase: UserFeeIncrease,
-    proving_key: &ProvingKey,
+    prover: &P,
     memo: [u8; 36],
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
@@ -48,13 +46,13 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>>(
         ));
     }
 
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, proving_key)?;
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(
         inputs,
         sb.actions,
-        sb.value_balance,
+        sb.value_balance.unsigned_abs(),
         sb.anchor,
         sb.proof,
         sb.binding_signature,
@@ -70,7 +68,7 @@ mod tests {
     use super::*;
     use crate::address_funds::AddressWitness;
     use crate::address_funds::AddressFundsFeeStrategyStep;
-    use crate::shielded::builder::test_helpers::{proving_key, test_orchard_address};
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
     use platform_value::BinaryData;
 
     /// A dummy signer that produces a fake 65-byte signature.
@@ -102,8 +100,6 @@ mod tests {
     fn test_build_shield_empty_fee_strategy() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
-        let pk = proving_key();
-
         let result = build_shield_transition(
             &recipient,
             1000,
@@ -111,7 +107,7 @@ mod tests {
             vec![], // empty fee strategy
             &DummySigner,
             0,
-            pk,
+            &TestProver,
             [0u8; 36],
             platform_version,
         );
@@ -129,8 +125,6 @@ mod tests {
     fn test_build_shield_transition_valid() {
         let recipient = test_orchard_address();
         let platform_version = PlatformVersion::latest();
-        let pk = proving_key();
-
         // Create a P2PKH address as input
         let input_address = PlatformAddress::P2pkh([1u8; 20]);
         let mut inputs = BTreeMap::new();
@@ -145,7 +139,7 @@ mod tests {
             fee_strategy,
             &DummySigner,
             0,
-            pk,
+            &TestProver,
             [0u8; 36],
             platform_version,
         );
