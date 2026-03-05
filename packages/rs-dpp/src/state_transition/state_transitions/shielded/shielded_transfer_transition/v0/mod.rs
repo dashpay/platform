@@ -39,7 +39,7 @@ pub struct ShieldedTransferTransitionV0 {
     /// RedPallas binding signature
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "crate::shielded::serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
 }

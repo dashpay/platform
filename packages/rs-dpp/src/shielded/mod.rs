@@ -64,23 +64,6 @@ pub fn compute_minimum_shielded_fee(
     constants.shielded_proof_verification_fee + num_actions as u64 * per_action
 }
 
-/// Serde helper for `[u8; 64]` fields (serde only supports arrays up to 32).
-#[cfg(feature = "state-transition-serde-conversion")]
-pub(crate) mod serde_bytes_64 {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(bytes)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 64], D::Error> {
-        let vec = <Vec<u8>>::deserialize(deserializer)?;
-        vec.try_into().map_err(|v: Vec<u8>| {
-            serde::de::Error::custom(format!("expected 64 bytes, got {}", v.len()))
-        })
-    }
-}
-
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:
@@ -167,7 +150,7 @@ pub struct SerializedAction {
     /// signature from one transition cannot be reused in another.
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub spend_auth_sig: [u8; 64],
 }
