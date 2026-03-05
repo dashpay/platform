@@ -42,7 +42,7 @@ jobs:
               -w "$wf_name" \
               -b "$BRANCH" \
               --limit 1 \
-              --json conclusion,url,updatedAt,workflowName \
+              --json conclusion,url,updatedAt,workflowName,databaseId \
               --jq '.[0] // empty' 2>/dev/null || true)
 
             [ -z "$run_json" ] && continue
@@ -50,18 +50,33 @@ jobs:
             conclusion=$(echo "$run_json" | jq -r '.conclusion // "in_progress"')
             run_url=$(echo "$run_json" | jq -r '.url')
             updated=$(echo "$run_json" | jq -r '.updatedAt')
-
-            echo "${wf_name}: ${conclusion} (${updated})"
+            run_id=$(echo "$run_json" | jq -r '.databaseId')
 
             if [ "$conclusion" = "failure" ]; then
-              printf '%s|%s|%s\n' "$wf_name" "$run_url" "$updated" >> /tmp/failures.txt
+              # Drill into jobs — only count actual failures, not skipped jobs
+              failed_jobs=$(gh run view "$run_id" \
+                --json jobs \
+                --jq '[.jobs[] | select(.conclusion | IN("success","skipped","cancelled") | not)] | length')
+
+              if [ "$failed_jobs" -gt 0 ]; then
+                echo "${wf_name}: FAILED (${failed_jobs} failed jobs) (${updated})"
+                # Collect failed job names for detail
+                failed_names=$(gh run view "$run_id" \
+                  --json jobs \
+                  --jq '[.jobs[] | select(.conclusion | IN("success","skipped","cancelled") | not) | .name] | join(", ")')
+                printf '%s|%s|%s|%s\n' "$wf_name" "$run_url" "$updated" "$failed_names" >> /tmp/failures.txt
+              else
+                echo "${wf_name}: OK (workflow-level failure but all jobs succeeded/skipped) (${updated})"
+              fi
+            else
+              echo "${wf_name}: ${conclusion} (${updated})"
             fi
           done
 
           if [ -s /tmp/failures.txt ]; then
             BLOCKS=""
-            while IFS='|' read -r name url updated; do
-              BLOCKS="${BLOCKS}• *<${url}|${name}>* — failed (${updated})\n"
+            while IFS='|' read -r name url updated failed_jobs; do
+              BLOCKS="${BLOCKS}• *<${url}|${name}>* — ${failed_jobs} (${updated})\n"
             done < /tmp/failures.txt
 
             PAYLOAD=$(jq -n --arg text ":fire: *Damn, the CI is broken again!*\nFailures on \`${BRANCH}\`:\n\n${BLOCKS}" \
