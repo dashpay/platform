@@ -1,5 +1,5 @@
 use crate::address_funds::OrchardAddress;
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::AssetLockProof;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::StateTransition;
@@ -18,7 +18,6 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `shield_amount` - Amount of credits to shield (from the asset lock)
 /// - `asset_lock_proof` - Proof that funds are locked on core chain
 /// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
-/// - `user_fee_increase` - Fee multiplier (0 = 100% base fee)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
 /// - `platform_version` - Protocol version
@@ -28,7 +27,6 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     shield_amount: u64,
     asset_lock_proof: AssetLockProof,
     asset_lock_private_key: &[u8],
-    user_fee_increase: UserFeeIncrease,
     prover: &P,
     memo: [u8; 36],
     platform_version: &PlatformVersion,
@@ -56,7 +54,6 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
         sb.anchor,
         sb.proof,
         sb.binding_signature,
-        user_fee_increase,
         platform_version,
     )
 }

@@ -7,7 +7,7 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+use crate::{state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
 use dashcore::signer;
 #[cfg(feature = "state-transition-signing")]
@@ -23,7 +23,6 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the unsigned transition
@@ -34,7 +33,6 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
             anchor,
             proof,
             binding_signature,
-            user_fee_increase,
             signature: Default::default(),
         };
 

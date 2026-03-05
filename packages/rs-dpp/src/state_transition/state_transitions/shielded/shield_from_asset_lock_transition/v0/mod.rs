@@ -6,7 +6,6 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::prelude::UserFeeIncrease;
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -49,10 +48,6 @@ pub struct ShieldFromAssetLockTransitionV0 {
         serde(with = "crate::shielded::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
-    // TODO: remove user_fee_increase — the fee is implicitly the difference between
-    // the asset lock value and value_balance, so no separate fee multiplier is needed.
-    /// Fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
     /// ECDSA signature over the signable bytes (excluded from sig hash)
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
@@ -98,7 +93,6 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
-            user_fee_increase: 0u16,
             signature: BinaryData::new(vec![10u8; 65]),
         };
 

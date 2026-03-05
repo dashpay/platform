@@ -9,7 +9,6 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::UserFeeIncrease,
     state_transition::{
         shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0, StateTransition,
     },
@@ -28,7 +27,6 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -45,7 +43,6 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                 anchor,
                 proof,
                 binding_signature,
-                user_fee_increase,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

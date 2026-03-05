@@ -7,7 +7,7 @@ mod state_transition_validation;
 pub mod v0;
 mod version;
 
-use crate::state_transition::shield_from_asset_lock_transition::fields::SIGNATURE;
+use crate::state_transition::shield_from_asset_lock_transition::fields::{PROOF, SIGNATURE};
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
@@ -58,6 +58,6 @@ impl StateTransitionFieldTypes for ShieldFromAssetLockTransition {
     }
 
     fn binary_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE]
+        vec![SIGNATURE, PROOF]
     }
 }
