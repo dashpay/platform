@@ -62,7 +62,7 @@ jobs:
               BLOCKS="${BLOCKS}• *<${url}|${name}>* — failed (${updated})${NL}"
             done < /tmp/failures.txt
 
-            TEXT=":fire: *Damn, the CI is broken again!*${NL}Failures on \`${BRANCH}\`:${NL}${NL}${BLOCKS}"
+            TEXT=":pirate_flag: *Arrr! The CI be takin' on water again!*${NL}Failures on \`${BRANCH}\`:${NL}${NL}${BLOCKS}"
             PAYLOAD=$(jq -n --arg text "$TEXT" '{text: $text}')
 
             curl -sf -X POST "$SLACK_WEBHOOK_URL" \
