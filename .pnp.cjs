@@ -149,7 +149,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
-          ["dompurify", "npm:3.2.6"],\
+          ["dompurify", "npm:3.3.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["eslint-config-airbnb-extended", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:3.0.1"],\
           ["eslint-plugin-jsdoc", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:50.8.0"],\
@@ -2909,7 +2909,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
-          ["dompurify", "npm:3.2.6"],\
+          ["dompurify", "npm:3.3.1"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["eslint-config-airbnb-extended", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:3.0.1"],\
           ["eslint-plugin-jsdoc", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:50.8.0"],\
@@ -6493,7 +6493,7 @@ const RAW_RUNTIME_STATE =
           ["p-limit", "npm:2.3.0"],\
           ["semver", "npm:7.5.3"],\
           ["strip-ansi", "npm:6.0.1"],\
-          ["tar", "npm:7.5.9"],\
+          ["tar", "npm:7.5.10"],\
           ["tinylogic", "npm:2.0.0"],\
           ["treeify", "npm:1.1.0"],\
           ["tslib", "npm:2.6.2"],\
@@ -8154,7 +8154,7 @@ const RAW_RUNTIME_STATE =
           ["minipass-pipeline", "npm:1.2.4"],\
           ["p-map", "npm:4.0.0"],\
           ["ssri", "npm:10.0.5"],\
-          ["tar", "npm:7.5.9"],\
+          ["tar", "npm:7.5.10"],\
           ["unique-filename", "npm:3.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -9709,7 +9709,7 @@ const RAW_RUNTIME_STATE =
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["systeminformation", "npm:5.31.1"],\
           ["table", "npm:6.8.1"],\
-          ["tar", "npm:7.5.9"],\
+          ["tar", "npm:7.5.10"],\
           ["wrap-ansi", "npm:7.0.0"]\
         ],\
         "linkType": "SOFT"\
@@ -10367,11 +10367,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["dompurify", [\
-      ["npm:3.2.6", {\
-        "packageLocation": "./.yarn/cache/dompurify-npm-3.2.6-8d2a7542b7-b91631ed0e.zip/node_modules/dompurify/",\
+      ["npm:3.3.1", {\
+        "packageLocation": "./.yarn/cache/dompurify-npm-3.3.1-5bbe58c5ff-f71cca489e.zip/node_modules/dompurify/",\
         "packageDependencies": [\
           ["@types/trusted-types", "npm:2.0.7"],\
-          ["dompurify", "npm:3.2.6"]\
+          ["dompurify", "npm:3.3.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -16708,7 +16708,7 @@ const RAW_RUNTIME_STATE =
           ["nopt", "npm:7.2.0"],\
           ["proc-log", "npm:3.0.0"],\
           ["semver", "npm:7.5.3"],\
-          ["tar", "npm:7.5.9"],\
+          ["tar", "npm:7.5.10"],\
           ["which", "npm:4.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -17616,7 +17616,7 @@ const RAW_RUNTIME_STATE =
           ["read-package-json-fast", "npm:2.0.3"],\
           ["rimraf", "npm:3.0.2"],\
           ["ssri", "npm:8.0.1"],\
-          ["tar", "npm:7.5.9"]\
+          ["tar", "npm:7.5.10"]\
         ],\
         "linkType": "HARD"\
       }],\
@@ -17641,7 +17641,7 @@ const RAW_RUNTIME_STATE =
           ["read-package-json-fast", "npm:3.0.2"],\
           ["sigstore", "npm:1.9.0"],\
           ["ssri", "npm:10.0.5"],\
-          ["tar", "npm:7.5.9"]\
+          ["tar", "npm:7.5.10"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20681,14 +20681,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["tar", [\
-      ["npm:7.5.9", {\
-        "packageLocation": "./.yarn/cache/tar-npm-7.5.9-dd42dd386e-1213cdde9c.zip/node_modules/tar/",\
+      ["npm:7.5.10", {\
+        "packageLocation": "./.yarn/cache/tar-npm-7.5.10-83147ff192-98ba6421a2.zip/node_modules/tar/",\
         "packageDependencies": [\
           ["@isaacs/fs-minipass", "npm:4.0.1"],\
           ["chownr", "npm:3.0.0"],\
           ["minipass", "npm:7.1.2"],\
           ["minizlib", "npm:3.1.0"],\
-          ["tar", "npm:7.5.9"],\
+          ["tar", "npm:7.5.10"],\
           ["yallist", "npm:5.0.0"]\
         ],\
         "linkType": "HARD"\
