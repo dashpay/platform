@@ -4,13 +4,13 @@ This page tracks the health of nightly checks and security audits for the Dash P
 
 ## Security Audits
 
-These audits run nightly (4:30 AM UTC) and can also be triggered manually.
+These audits run nightly (11:30 PM UTC) and can also be triggered manually.
 
 | Audit | Status |
 |-------|--------|
-| Rust Crates Security | [![Rust crates security audit](https://github.com/dashpay/platform/actions/workflows/security-audits.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audits.yml) |
-| JS NPM Security | [![JS NPM security audit](https://github.com/dashpay/platform/actions/workflows/security-audits.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audits.yml) |
-| JS CodeQL Analysis | [![JS code security audit](https://github.com/dashpay/platform/actions/workflows/security-audits.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audits.yml) |
+| Rust Crates Security | [![Security: Rust Crates](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-rust.yml) |
+| JS NPM Security | [![Security: JS NPM](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-npm.yml) |
+| JS CodeQL Analysis | [![Security: JS CodeQL](https://github.com/dashpay/platform/actions/workflows/security-audit-js-codeql.yml/badge.svg)](https://github.com/dashpay/platform/actions/workflows/security-audit-js-codeql.yml) |
 
 ## CI
 
