@@ -17,6 +17,12 @@ jobs:
     name: Check last workflow runs on default branch
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout (gh needs repo context)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .
+          sparse-checkout-cone-mode: true
+
       - name: Check all workflows and notify Slack on failures
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
