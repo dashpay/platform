@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: "0 8 * * 1" # Monday 8:00 UTC
   workflow_dispatch: {}
-  push:
-    branches:
-      - ci/weekly-health-check-slack
 
 permissions:
   actions: read
