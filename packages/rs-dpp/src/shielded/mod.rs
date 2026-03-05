@@ -83,14 +83,12 @@ pub(crate) mod serde_bytes_64 {
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:
-/// the serialized actions, bundle flags, Sinsemilla anchor, Halo 2 proof,
-/// and RedPallas binding signature. Using this struct reduces parameter counts
-/// in SDK helper functions from 10-12 down to 5-8.
+/// the serialized actions, Sinsemilla anchor, Halo 2 proof, and RedPallas
+/// binding signature. Using this struct reduces parameter counts in SDK
+/// helper functions from 10-12 down to 5-8.
 pub struct OrchardBundleParams {
     /// The serialized Orchard actions (spends + outputs).
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags byte.
-    pub flags: u8,
     /// Sinsemilla root of the note commitment tree at bundle creation time (32 bytes).
     /// This is the Orchard Anchor — the root of the depth-32 Sinsemilla Merkle
     /// tree over extracted note commitments (cmx values), NOT the GroveDB
