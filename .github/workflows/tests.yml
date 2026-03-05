@@ -8,13 +8,8 @@ on:
       - master
       - "v*-dev"
       - "ci/*"
-  push:
-    branches:
-      - master
-      - "v*-dev"
-      - "ci/*"
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "0 23 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +18,7 @@ concurrency:
 jobs:
   check-secrets:
     name: Check secret availability
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
@@ -40,7 +35,7 @@ jobs:
 
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
@@ -88,11 +83,30 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
+  build-images-gate:
+    name: Docker Build Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only when test-suite-related code hasn't changed and not a scheduled/manual run
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Docker image build manually approved"
+
   build-images:
     name: Build Docker images
     needs:
       - check-secrets
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+      - changes
+      - build-images-gate
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
+      (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -150,7 +164,7 @@ jobs:
 
   js-deps-versions:
     name: JS dependency versions check
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
@@ -195,6 +209,18 @@ jobs:
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && contains(needs.changes.outputs.js-packages, 'dashmate') }}
 
+  test-suite-gate:
+    name: Test Suite Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only on PRs when test-suite code hasn't changed
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Test suite manually approved"
+
   test-suite:
     name: Test Suite
     needs:
@@ -202,8 +228,16 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
+    # always() is needed so this job evaluates even when test-suite-gate is skipped
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -234,6 +268,12 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml
