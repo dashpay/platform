@@ -3,7 +3,7 @@ name: Security Audits
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "30 23 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
