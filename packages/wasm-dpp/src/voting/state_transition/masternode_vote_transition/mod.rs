@@ -225,12 +225,11 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
-        self.0.user_fee_increase()
+        0
     }
 
     #[wasm_bindgen(js_name=setUserFeeIncrease)]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: u16) {
-        self.0.set_user_fee_increase(user_fee_increase);
+    pub fn set_user_fee_increase(&mut self, _user_fee_increase: u16) {
     }
 
     #[wasm_bindgen(js_name=getIdentityContractNonce)]

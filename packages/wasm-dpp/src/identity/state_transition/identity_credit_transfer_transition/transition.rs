@@ -20,6 +20,7 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::{StateTransitionLike, StateTransitionSingleSigned};
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]

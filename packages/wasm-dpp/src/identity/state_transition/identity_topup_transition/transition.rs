@@ -28,6 +28,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use dpp::{
     identifier::Identifier, identity::state_transition::asset_lock_proof::AssetLockProof,
