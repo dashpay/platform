@@ -13,7 +13,7 @@ use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTr
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
     StateTransitionSingleSigned,
 };
 use serde::Deserialize;

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::prelude::{Identifier, UserFeeIncrease};
+use crate::prelude::Identifier;
 use crate::version::FeatureVersion;
 
 use crate::state_transition::StateTransitionType;
@@ -35,10 +35,6 @@ pub trait StateTransitionLike:
     fn state_transition_protocol_version(&self) -> FeatureVersion;
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType;
-    /// returns the fee multiplier
-    fn user_fee_increase(&self) -> UserFeeIncrease;
-    /// set a fee multiplier
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease);
     /// get modified ids list
     fn modified_data_ids(&self) -> Vec<Identifier>;
 

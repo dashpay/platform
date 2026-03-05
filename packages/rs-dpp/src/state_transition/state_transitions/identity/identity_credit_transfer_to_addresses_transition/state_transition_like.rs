@@ -1,5 +1,6 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
@@ -30,7 +31,16 @@ impl StateTransitionLike for IdentityCreditTransferToAddressesTransition {
         }
     }
 
-    /// returns the fee multiplier
+    fn unique_identifiers(&self) -> Vec<String> {
+        match self {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
+                transition.unique_identifiers()
+            }
+        }
+    }
+}
+
+impl StateTransitionHasUserFeeIncrease for IdentityCreditTransferToAddressesTransition {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             IdentityCreditTransferToAddressesTransition::V0(transition) => {
@@ -38,19 +48,11 @@ impl StateTransitionLike for IdentityCreditTransferToAddressesTransition {
             }
         }
     }
-    /// set a fee multiplier
+
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
             IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
-            }
-        }
-    }
-
-    fn unique_identifiers(&self) -> Vec<String> {
-        match self {
-            IdentityCreditTransferToAddressesTransition::V0(transition) => {
-                transition.unique_identifiers()
             }
         }
     }

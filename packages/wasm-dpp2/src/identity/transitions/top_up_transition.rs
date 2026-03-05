@@ -13,7 +13,10 @@ use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
+use dpp::state_transition::{
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionLike,
+    StateTransitionSingleSigned,
+};
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 
