@@ -82,7 +82,9 @@ jobs:
 
   build-js:
     name: Build JS packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.test-suite == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
