@@ -44,6 +44,14 @@ pub fn build_unshield_transition<P: OrchardProver>(
     fee: Option<Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
+    if unshield_amount > i64::MAX as u64 {
+        return Err(ProtocolError::Generic(format!(
+            "unshield amount {} exceeds maximum allowed value {}",
+            unshield_amount,
+            i64::MAX as u64
+        )));
+    }
+
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
 
     // Conservative action count: at least (spends, 1) since we have a change output.

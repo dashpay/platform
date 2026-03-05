@@ -50,6 +50,14 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     fee: Option<Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
+    if withdrawal_amount > i64::MAX as u64 {
+        return Err(ProtocolError::Generic(format!(
+            "withdrawal amount {} exceeds maximum allowed value {}",
+            withdrawal_amount,
+            i64::MAX as u64
+        )));
+    }
+
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
 
     // Conservative action count: at least (spends, 1) since we have a change output.
