@@ -1,4 +1,4 @@
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 pub mod builder;
 
 use bincode::{Decode, Encode};

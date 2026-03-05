@@ -328,7 +328,7 @@ extended-document = [
 ]
 token-reward-explanations = ["dep:chrono-tz"]
 
-shielded-bundle-building = [
+shielded-tx = [
   "state-transition-signing",
   "dep:grovedb-commitment-tree",
 ]

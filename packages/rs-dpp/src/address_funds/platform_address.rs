@@ -556,17 +556,17 @@ impl PlatformAddress {
 }
 
 // ---------------------------------------------------------------------------
-// Orchard shielded payment address (requires `shielded-bundle-building`)
+// Orchard shielded payment address (requires `shielded-tx`)
 // ---------------------------------------------------------------------------
 
 /// Size of the Orchard diversifier (11 bytes).
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 pub const ORCHARD_DIVERSIFIER_SIZE: usize = 11;
 /// Size of the Orchard diversified transmission key pk_d (32 bytes, Pallas curve point).
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 pub const ORCHARD_PKD_SIZE: usize = 32;
 /// Total size of a raw Orchard payment address (43 bytes = diversifier + pk_d).
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 pub const ORCHARD_ADDRESS_SIZE: usize = ORCHARD_DIVERSIFIER_SIZE + ORCHARD_PKD_SIZE;
 
 /// An Orchard shielded payment address.
@@ -587,12 +587,12 @@ pub const ORCHARD_ADDRESS_SIZE: usize = ORCHARD_DIVERSIFIER_SIZE + ORCHARD_PKD_S
 /// to convert from the orchard crate's native type, or [`inner()`](OrchardAddress::inner)
 /// / [`into_inner()`](OrchardAddress::into_inner) to access the wrapped address.
 ///
-/// Requires the `shielded-bundle-building` feature.
-#[cfg(feature = "shielded-bundle-building")]
+/// Requires the `shielded-tx` feature.
+#[cfg(feature = "shielded-tx")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrchardAddress(grovedb_commitment_tree::PaymentAddress);
 
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 impl OrchardAddress {
     /// Type byte for Orchard addresses in bech32m encoding (user-facing).
     /// Produces 'z' as the first bech32 character.
@@ -691,7 +691,7 @@ impl OrchardAddress {
 }
 
 /// Infallible conversion from the orchard crate's `PaymentAddress` to `OrchardAddress`.
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 impl From<grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
     fn from(addr: grovedb_commitment_tree::PaymentAddress) -> Self {
         Self(addr)
@@ -699,14 +699,14 @@ impl From<grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
 }
 
 /// Infallible conversion from a reference to `PaymentAddress`.
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 impl From<&grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
     fn from(addr: &grovedb_commitment_tree::PaymentAddress) -> Self {
         Self(*addr)
     }
 }
 
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-tx")]
 impl std::fmt::Display for OrchardAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let raw = self.to_raw_bytes();
@@ -1479,10 +1479,10 @@ mod tests {
     }
 
     // ========================
-    // Orchard address tests (require shielded-bundle-building feature)
+    // Orchard address tests (require shielded-tx feature)
     // ========================
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     fn test_orchard_address() -> OrchardAddress {
         use grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
         let sk = SpendingKey::from_bytes([42u8; 32]).unwrap();
@@ -1491,7 +1491,7 @@ mod tests {
         OrchardAddress::from(payment_address)
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_address_raw_bytes_roundtrip() {
         let address = test_orchard_address();
@@ -1502,7 +1502,7 @@ mod tests {
         assert_eq!(recovered, address);
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_bech32m_mainnet_roundtrip() {
         let address = test_orchard_address();
@@ -1520,7 +1520,7 @@ mod tests {
         assert_eq!(network, Network::Dash);
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_bech32m_testnet_roundtrip() {
         let address = test_orchard_address();
@@ -1538,7 +1538,7 @@ mod tests {
         assert_eq!(network, Network::Testnet);
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_bech32m_wrong_type_byte_fails() {
         // Manually construct an address with P2PKH type byte (0xb0) but 44-byte payload
@@ -1555,7 +1555,7 @@ mod tests {
             .contains("invalid Orchard address type byte"));
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_bech32m_wrong_length_fails() {
         // Too short (only 20 bytes instead of 43)
@@ -1572,7 +1572,7 @@ mod tests {
             .contains("invalid Orchard address length"));
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_and_platform_addresses_are_distinguishable() {
         let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
@@ -1597,7 +1597,7 @@ mod tests {
         assert!(OrchardAddress::from_bech32m_string(&p2pkh_enc).is_err());
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_address_from_raw_bytes_invalid_pk_d() {
         // All zeros for pk_d is not a valid Pallas curve point
@@ -1606,7 +1606,7 @@ mod tests {
         assert!(OrchardAddress::from_raw_bytes(&raw).is_err());
     }
 
-    #[cfg(feature = "shielded-bundle-building")]
+    #[cfg(feature = "shielded-tx")]
     #[test]
     fn test_orchard_address_display() {
         let address = test_orchard_address();

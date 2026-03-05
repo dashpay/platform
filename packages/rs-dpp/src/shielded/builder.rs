@@ -4,7 +4,7 @@
 //! builder configuration, proof generation, signature application,
 //! and serialization into platform state transitions.
 //!
-//! Requires the `shielded-bundle-building` feature, which pulls in
+//! Requires the `shielded-tx` feature, which pulls in
 //! `grovedb-commitment-tree` (and transitively the `orchard` crate).
 //!
 //! # Example
