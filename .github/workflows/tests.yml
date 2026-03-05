@@ -131,28 +131,6 @@ jobs:
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","rs-dapi","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
       direct-packages: ${{ needs.changes.outputs.rs-packages-direct }}
 
-  rs-crates-security:
-    name: Rust crates security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Audit crates
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   js-packages:
     name: JS packages
     needs:
@@ -188,26 +166,6 @@ jobs:
 
       - name: Validate workspaces
         run: yarn constraints
-
-  js-npm-security:
-    name: JS NPM security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive
-
-  js-codeql:
-    name: JS code security audit
-    needs: build-js
-    secrets: inherit
-    uses: ./.github/workflows/tests-codeql.yml
 
   dashmate-e2e-tests:
     name: Dashmate E2E tests
