@@ -31,8 +31,6 @@ use serde::{Deserialize, Serialize};
 pub struct UnshieldTransitionV0 {
     /// Address receiving the unshielded funds
     pub output_address: PlatformAddress,
-    /// Amount being unshielded (in credits)
-    pub amount: u64,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
     /// Net value balance (amount + fee flowing out of shielded pool)
@@ -73,7 +71,6 @@ mod tests {
             output_address: PlatformAddress::P2pkh([
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
             ]),
-            amount: 500u64,
             actions: vec![SerializedAction {
                 nullifier: [1u8; 32],
                 rk: [2u8; 32],

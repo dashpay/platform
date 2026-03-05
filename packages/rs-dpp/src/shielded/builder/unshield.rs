@@ -72,9 +72,8 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // Unshield extra_data = output_address.to_bytes() || amount.to_le_bytes()
-    let mut extra_sighash_data = output_address.to_bytes();
-    extra_sighash_data.extend_from_slice(&unshield_amount.to_le_bytes());
+    // Unshield extra_data = output_address.to_bytes()
+    let extra_sighash_data = output_address.to_bytes();
 
     let bundle = build_spend_bundle(
         spends,
@@ -92,7 +91,6 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     UnshieldTransition::try_from_bundle(
         output_address,
-        unshield_amount,
         sb.actions,
         sb.value_balance,
         sb.anchor,

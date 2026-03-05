@@ -14,7 +14,6 @@ use platform_version::version::PlatformVersion;
 impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
-        amount: u64,
         actions: Vec<SerializedAction>,
         value_balance: i64,
         anchor: [u8; 32],
@@ -26,7 +25,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransitionV0 {
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         let transition = ShieldedWithdrawalTransitionV0 {
-            amount,
             actions,
             value_balance,
             anchor,

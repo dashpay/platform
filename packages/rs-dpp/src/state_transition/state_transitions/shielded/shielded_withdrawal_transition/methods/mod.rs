@@ -22,7 +22,6 @@ use platform_version::version::PlatformVersion;
 impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
-        amount: u64,
         actions: Vec<SerializedAction>,
         value_balance: i64,
         anchor: [u8; 32],
@@ -40,7 +39,6 @@ impl ShieldedWithdrawalTransitionMethodsV0 for ShieldedWithdrawalTransition {
             .default_current_version
         {
             0 => ShieldedWithdrawalTransitionV0::try_from_bundle(
-                amount,
                 actions,
                 value_balance,
                 anchor,

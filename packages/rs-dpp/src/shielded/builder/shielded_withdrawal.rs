@@ -80,9 +80,8 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // ShieldedWithdrawal extra_data = output_script.as_bytes() || amount.to_le_bytes()
-    let mut extra_sighash_data = output_script.as_bytes().to_vec();
-    extra_sighash_data.extend_from_slice(&withdrawal_amount.to_le_bytes());
+    // ShieldedWithdrawal extra_data = output_script.as_bytes()
+    let extra_sighash_data = output_script.as_bytes().to_vec();
 
     let bundle = build_spend_bundle(
         spends,
@@ -99,7 +98,6 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldedWithdrawalTransition::try_from_bundle(
-        withdrawal_amount,
         sb.actions,
         sb.value_balance,
         sb.anchor,

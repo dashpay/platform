@@ -30,8 +30,6 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 pub struct ShieldedWithdrawalTransitionV0 {
-    /// Withdrawal amount in credits
-    pub amount: u64,
     /// Orchard actions (spends + change outputs)
     pub actions: Vec<SerializedAction>,
     /// Net value balance (amount + fee flowing out of shielded pool)
@@ -74,7 +72,6 @@ mod tests {
     #[test]
     fn test_shielded_withdrawal_transition_v0_serialization_round_trip() {
         let transition = ShieldedWithdrawalTransitionV0 {
-            amount: 500u64,
             actions: vec![SerializedAction {
                 nullifier: [1u8; 32],
                 rk: [2u8; 32],

@@ -19,7 +19,6 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         output_address: PlatformAddress,
-        amount: u64,
         actions: Vec<SerializedAction>,
         value_balance: i64,
         anchor: [u8; 32],
@@ -35,7 +34,6 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransition {
         {
             0 => UnshieldTransitionV0::try_from_bundle(
                 output_address,
-                amount,
                 actions,
                 value_balance,
                 anchor,

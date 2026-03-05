@@ -1,6 +1,4 @@
-use crate::consensus::basic::state_transition::{
-    ShieldedInvalidValueBalanceError, UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError,
-};
+use crate::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use crate::consensus::basic::BasicError;
 use crate::state_transition::state_transitions::shielded::common_validation::{
     validate_actions_count, validate_anchor_not_zero, validate_proof_not_empty,
@@ -25,13 +23,6 @@ impl StateTransitionStructureValidation for UnshieldTransitionV0 {
             return err;
         }
 
-        // Amount must be > 0
-        if self.amount == 0 {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::UnshieldAmountZeroError(UnshieldAmountZeroError::new()).into(),
-            );
-        }
-
         // value_balance must be positive (credits flowing out of pool = amount + fee)
         if self.value_balance <= 0 {
             return SimpleConsensusValidationResult::new_with_error(
@@ -39,16 +30,6 @@ impl StateTransitionStructureValidation for UnshieldTransitionV0 {
                     ShieldedInvalidValueBalanceError::new(
                         "unshield value_balance must be positive".to_string(),
                     ),
-                )
-                .into(),
-            );
-        }
-
-        // value_balance must be >= amount (value_balance = amount + fee)
-        if (self.value_balance as u64) < self.amount {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::UnshieldValueBalanceBelowAmountError(
-                    UnshieldValueBalanceBelowAmountError::new(self.value_balance, self.amount),
                 )
                 .into(),
             );

@@ -13,7 +13,6 @@ pub trait UnshieldTransitionMethodsV0 {
     #[allow(clippy::too_many_arguments)]
     fn try_from_bundle(
         output_address: PlatformAddress,
-        amount: u64,
         actions: Vec<SerializedAction>,
         value_balance: i64,
         anchor: [u8; 32],

@@ -23,9 +23,10 @@ const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
 /// The sighash is computed as:
 ///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
 ///
-/// This binds transparent state transition fields (like `output_address` and `amount`
-/// in unshield transitions) to the Orchard signatures, preventing replay attacks
-/// where an attacker substitutes transparent fields while reusing a valid Orchard bundle.
+/// This binds transparent state transition fields (like `output_address` in unshield
+/// or `output_script` in shielded withdrawal) to the Orchard signatures, preventing
+/// replay attacks where an attacker substitutes transparent fields while reusing a
+/// valid Orchard bundle.
 ///
 /// The same computation must be used on both the signing (client) and verification
 /// (platform) sides. For transitions without transparent fields (shield and

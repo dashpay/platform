@@ -14,7 +14,6 @@ pub trait ShieldedWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     fn try_from_bundle(
-        amount: u64,
         actions: Vec<SerializedAction>,
         value_balance: i64,
         anchor: [u8; 32],
