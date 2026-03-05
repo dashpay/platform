@@ -5,6 +5,10 @@ on:
     - cron: "0 8 * * 1" # Monday 8:00 UTC
   workflow_dispatch: {}
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   check-ci-health:
     name: Check last workflow runs on default branch
