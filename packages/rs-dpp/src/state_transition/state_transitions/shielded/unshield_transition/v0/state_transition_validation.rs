@@ -23,12 +23,23 @@ impl StateTransitionStructureValidation for UnshieldTransitionV0 {
             return err;
         }
 
-        // unshielding_amount must be positive (credits flowing out of pool)
+        // unshielding_amount must be positive and within i64::MAX
         if self.unshielding_amount == 0 {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::ShieldedInvalidValueBalanceError(
                     ShieldedInvalidValueBalanceError::new(
                         "unshield unshielding_amount must be positive".to_string(),
+                    ),
+                )
+                .into(),
+            );
+        }
+
+        if self.unshielding_amount > i64::MAX as u64 {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "unshield unshielding_amount exceeds maximum allowed value".to_string(),
                     ),
                 )
                 .into(),
