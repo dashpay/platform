@@ -49,6 +49,8 @@ pub struct ShieldFromAssetLockTransitionV0 {
         serde(with = "crate::shielded::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
+    // TODO: remove user_fee_increase — the fee is implicitly the difference between
+    // the asset lock value and value_balance, so no separate fee multiplier is needed.
     /// Fee multiplier
     pub user_fee_increase: UserFeeIncrease,
     /// ECDSA signature over the signable bytes (excluded from sig hash)
