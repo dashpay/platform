@@ -35,6 +35,10 @@
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
 
+'@dashevo/wasm-dpp2': &wasm-dpp2
+  - packages/wasm-dpp2/**
+  - *wasm-dpp
+
 '@dashevo/dapi-grpc': &dapi-grpc
   - packages/dapi-grpc/**
   - *grpc-common
