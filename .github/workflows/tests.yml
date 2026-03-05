@@ -195,6 +195,18 @@ jobs:
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && contains(needs.changes.outputs.js-packages, 'dashmate') }}
 
+  test-suite-gate:
+    name: Test Suite Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only when test-suite code hasn't changed
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Test suite manually approved"
+
   test-suite:
     name: Test Suite
     needs:
@@ -202,8 +214,16 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    # Run when: code changed (gate skipped) OR manual approval granted (gate succeeded)
+    # always() is needed so this job evaluates even when test-suite-gate is skipped
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -234,6 +254,12 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success')
     uses: ./.github/workflows/tests-packges-functional.yml
