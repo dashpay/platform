@@ -1,10 +1,15 @@
+use crate::error::PlatformWalletError;
+use crate::ContactRequest;
 use crate::IdentityManager;
+use dpp::prelude::Identifier;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Network;
 use std::fmt;
 
 mod accessors;
 mod contact_requests;
+mod identity_discovery;
+pub(crate) mod key_derivation;
 mod managed_account_operations;
 mod matured_transactions;
 mod wallet_info_interface;
@@ -47,6 +52,95 @@ impl fmt::Debug for PlatformWalletInfo {
             .field("identity_manager", &self.identity_manager)
             .finish()
     }
+}
+
+/// Parse a contact request document into a ContactRequest struct
+///
+/// Extracts DashPay contact request fields from a platform document.
+pub(super) fn parse_contact_request_document(
+    doc: &dpp::document::Document,
+) -> Result<ContactRequest, PlatformWalletError> {
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::Value;
+
+    let properties = doc.properties();
+
+    let to_user_id = properties
+        .get("toUserId")
+        .and_then(|v| match v {
+            Value::Identifier(id) => Some(Identifier::from(*id)),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Missing or invalid toUserId in contact request".to_string(),
+            )
+        })?;
+
+    let sender_key_index = properties
+        .get("senderKeyIndex")
+        .and_then(|v| match v {
+            Value::U32(i) => Some(*i),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Missing or invalid senderKeyIndex in contact request".to_string(),
+            )
+        })?;
+
+    let recipient_key_index = properties
+        .get("recipientKeyIndex")
+        .and_then(|v| match v {
+            Value::U32(i) => Some(*i),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Missing or invalid recipientKeyIndex in contact request".to_string(),
+            )
+        })?;
+
+    let account_reference = properties
+        .get("accountReference")
+        .and_then(|v| match v {
+            Value::U32(i) => Some(*i),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Missing or invalid accountReference in contact request".to_string(),
+            )
+        })?;
+
+    let encrypted_public_key = properties
+        .get("encryptedPublicKey")
+        .and_then(|v| match v {
+            Value::Bytes(b) => Some(b.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Missing or invalid encryptedPublicKey in contact request".to_string(),
+            )
+        })?;
+
+    let created_at_core_block_height = doc.created_at_core_block_height().unwrap_or(0);
+
+    let created_at = doc.created_at().unwrap_or(0);
+
+    let sender_id = doc.owner_id();
+
+    Ok(ContactRequest::new(
+        sender_id,
+        to_user_id,
+        sender_key_index,
+        recipient_key_index,
+        account_reference,
+        encrypted_public_key,
+        created_at_core_block_height,
+        created_at,
+    ))
 }
 
 #[cfg(test)]

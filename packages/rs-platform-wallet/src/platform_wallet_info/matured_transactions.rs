@@ -3,15 +3,13 @@
 //! This module handles the detection and fetching of identities created from
 //! asset lock transactions.
 
+use super::key_derivation::derive_identity_auth_key_hash;
+use super::parse_contact_request_document;
 use super::PlatformWalletInfo;
 use crate::error::PlatformWalletError;
-#[allow(unused_imports)]
-use crate::ContactRequest;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::Network;
-
-use dpp::identity::accessors::IdentityGettersV0;
 
 impl PlatformWalletInfo {
     /// Discover identity and fetch contact requests for a single asset lock transaction
@@ -62,7 +60,6 @@ impl PlatformWalletInfo {
     ) -> Result<Vec<Identifier>, PlatformWalletError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
-        use dpp::util::hash::ripemd160_sha256;
 
         let mut identities_processed = Vec::new();
 
@@ -83,59 +80,9 @@ impl PlatformWalletInfo {
             })?
             .clone();
 
-        // Derive the first authentication key (identity_index 0, key_index 0)
-        let identity_index = 0u32;
-        let key_index = 0u32;
-
-        // Build identity authentication derivation path
-        // Path format: m/9'/COIN_TYPE'/5'/0'/identity_index'/key_index'
-        use key_wallet::bip32::{ChildNumber, DerivationPath};
-        use key_wallet::dip9::{
-            IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        };
-
-        let base_path = match self.network() {
-            Network::Dash => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-            Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-            _ => {
-                return Err(PlatformWalletError::InvalidIdentityData(
-                    "Unsupported network for identity derivation".to_string(),
-                ));
-            }
-        };
-
-        // Create full derivation path: base path + identity_index' + key_index'
-        let mut full_path = DerivationPath::from(base_path);
-        full_path = full_path.extend([
-            ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Invalid identity index: {}", e))
-            })?,
-            ChildNumber::from_hardened_idx(key_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
-            })?,
-        ]);
-
-        // Derive the extended private key at this path
-        let auth_key = wallet
-            .derive_extended_private_key(&full_path)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to derive authentication key: {}",
-                    e
-                ))
-            })?;
-
-        // Get public key bytes and hash them
-        use dashcore::secp256k1::Secp256k1;
-        use key_wallet::bip32::ExtendedPubKey;
-        let secp = Secp256k1::new();
-        let public_key = ExtendedPubKey::from_priv(&secp, &auth_key);
-        let public_key_bytes = public_key.public_key.serialize();
-        let key_hash = ripemd160_sha256(&public_key_bytes);
-
-        // Create a fixed-size array from the hash
-        let mut key_hash_array = [0u8; 20];
-        key_hash_array.copy_from_slice(&key_hash);
+        // Derive the first authentication key hash (identity_index 0, key_index 0)
+        let key_hash_array =
+            derive_identity_auth_key_hash(wallet, self.network(), 0, 0)?;
 
         // Query Platform for identity by public key hash
         match dpp::identity::Identity::fetch(&sdk, PublicKeyHash(key_hash_array)).await {
@@ -208,92 +155,4 @@ impl PlatformWalletInfo {
 
         Ok(identities_processed)
     }
-}
-
-/// Parse a contact request document into a ContactRequest struct
-fn parse_contact_request_document(
-    doc: &dpp::document::Document,
-) -> Result<ContactRequest, PlatformWalletError> {
-    use dpp::document::DocumentV0Getters;
-    use dpp::platform_value::Value;
-
-    // Extract fields from the document
-    let properties = doc.properties();
-
-    let to_user_id = properties
-        .get("toUserId")
-        .and_then(|v| match v {
-            Value::Identifier(id) => Some(Identifier::from(*id)),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Missing or invalid toUserId in contact request".to_string(),
-            )
-        })?;
-
-    let sender_key_index = properties
-        .get("senderKeyIndex")
-        .and_then(|v| match v {
-            Value::U32(i) => Some(*i),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Missing or invalid senderKeyIndex in contact request".to_string(),
-            )
-        })?;
-
-    let recipient_key_index = properties
-        .get("recipientKeyIndex")
-        .and_then(|v| match v {
-            Value::U32(i) => Some(*i),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Missing or invalid recipientKeyIndex in contact request".to_string(),
-            )
-        })?;
-
-    let account_reference = properties
-        .get("accountReference")
-        .and_then(|v| match v {
-            Value::U32(i) => Some(*i),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Missing or invalid accountReference in contact request".to_string(),
-            )
-        })?;
-
-    let encrypted_public_key = properties
-        .get("encryptedPublicKey")
-        .and_then(|v| match v {
-            Value::Bytes(b) => Some(b.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(
-                "Missing or invalid encryptedPublicKey in contact request".to_string(),
-            )
-        })?;
-
-    let created_at_core_block_height = doc.created_at_core_block_height().unwrap_or(0);
-
-    let created_at = doc.created_at().unwrap_or(0);
-
-    let sender_id = doc.owner_id();
-
-    Ok(ContactRequest::new(
-        sender_id,
-        to_user_id,
-        sender_key_index,
-        recipient_key_index,
-        account_reference,
-        encrypted_public_key,
-        created_at_core_block_height,
-        created_at,
-    ))
 }
