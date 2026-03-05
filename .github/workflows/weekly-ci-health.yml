@@ -7,7 +7,7 @@ on:
 
 jobs:
   check-ci-health:
-    name: Check last workflow runs on main branch
+    name: Check last workflow runs on default branch
     runs-on: ubuntu-24.04
     steps:
       - name: Check all workflows and notify Slack on failures
@@ -15,32 +15,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
         run: |
-          REPO="${{ github.repository }}"
-          BRANCH="v3.1-dev"
+          # Auto-detect default branch
+          BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+          echo "Default branch: ${BRANCH}"
 
-          echo "Checking last run of each active workflow on ${BRANCH}..."
+          # Get all active workflow names
+          mapfile -t WORKFLOWS < <(gh workflow list --json name --jq '.[].name' -L 100)
+          echo "Found ${#WORKFLOWS[@]} active workflows"
 
-          # Collect all active workflow IDs and names
-          gh api "repos/${REPO}/actions/workflows" --paginate \
-            --jq '.workflows[] | select(.state=="active") | "\(.id)\t\(.name)"' > /tmp/workflows.txt
-
-          # Check each workflow's last run on the target branch
-          while IFS=$'\t' read -r wf_id wf_name; do
-            run_json=$(gh api "repos/${REPO}/actions/workflows/${wf_id}/runs?branch=${BRANCH}&per_page=1" \
-              --jq '.workflow_runs[0] // empty' 2>/dev/null || true)
+          # Check each workflow's last run on the default branch
+          for wf_name in "${WORKFLOWS[@]}"; do
+            run_json=$(gh run list \
+              -w "$wf_name" \
+              -b "$BRANCH" \
+              --limit 1 \
+              --json conclusion,url,updatedAt,workflowName \
+              --jq '.[0] // empty' 2>/dev/null || true)
 
             [ -z "$run_json" ] && continue
 
             conclusion=$(echo "$run_json" | jq -r '.conclusion // "in_progress"')
-            run_url=$(echo "$run_json" | jq -r '.html_url')
-            updated=$(echo "$run_json" | jq -r '.updated_at')
+            run_url=$(echo "$run_json" | jq -r '.url')
+            updated=$(echo "$run_json" | jq -r '.updatedAt')
 
             echo "${wf_name}: ${conclusion} (${updated})"
 
             if [ "$conclusion" = "failure" ]; then
               printf '%s|%s|%s\n' "$wf_name" "$run_url" "$updated" >> /tmp/failures.txt
             fi
-          done < /tmp/workflows.txt
+          done
 
           if [ -s /tmp/failures.txt ]; then
             BLOCKS=""
