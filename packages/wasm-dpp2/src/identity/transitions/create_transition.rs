@@ -17,7 +17,9 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
+use dpp::state_transition::{
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionSingleSigned,
+};
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;

@@ -9,7 +9,7 @@ use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCred
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use dpp::state_transition::StateTransitionLike;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 
 impl BumpIdentityNonceActionV0 {
     /// from identity update

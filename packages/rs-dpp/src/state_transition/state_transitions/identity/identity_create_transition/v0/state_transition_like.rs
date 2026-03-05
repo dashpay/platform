@@ -4,6 +4,7 @@ use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
@@ -41,7 +42,9 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
     fn unique_identifiers(&self) -> Vec<String> {
         vec![BASE64_STANDARD.encode(self.identity_id)]
     }
+}
 
+impl StateTransitionHasUserFeeIncrease for IdentityCreateTransitionV0 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }
