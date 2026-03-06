@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Verifies a proof for shielded nullifier spend status.
+    #[allow(clippy::type_complexity)]
     pub fn verify_shielded_nullifiers(
         proof: &[u8],
         nullifiers: &[Vec<u8>],

@@ -13,7 +13,7 @@ impl UnshieldTransitionActionV0 {
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         ConsensusValidationResult::new_with_data(UnshieldTransitionActionV0 {
-            output_address: value.output_address.clone(),
+            output_address: value.output_address,
             amount: value.unshielding_amount,
             notes,
             anchor,

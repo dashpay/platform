@@ -29,6 +29,7 @@ impl Drive {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn prove_nullifiers_branch_query_operations_v0(
         &self,
         pool_type: u32,

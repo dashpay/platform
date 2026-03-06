@@ -6,6 +6,7 @@ use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::type_complexity)]
     pub(super) fn verify_shielded_nullifiers_v0(
         proof: &[u8],
         nullifiers: &[Vec<u8>],

@@ -58,6 +58,7 @@ impl Drive {
     }
 
     /// Proves nullifiers using a branch chunk query and tracks operations.
+    #[allow(clippy::too_many_arguments)]
     pub fn prove_nullifiers_branch_query_operations(
         &self,
         pool_type: u32,

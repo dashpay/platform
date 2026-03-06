@@ -7,6 +7,7 @@ use grovedb::{Element, GroveDb, PathQuery, Query, QueryItem, SizedQuery, Subquer
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::type_complexity)]
     pub(super) fn verify_shielded_encrypted_notes_v0(
         proof: &[u8],
         start_index: u64,
@@ -23,7 +24,7 @@ impl Drive {
 
         // start_index must be chunk-aligned (multiple of max_elements)
         let chunk_size = max_elements as u64;
-        if start_index % chunk_size != 0 {
+        if !start_index.is_multiple_of(chunk_size) {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "start_index is not chunk-aligned; must be a multiple of max_elements",
             )));
