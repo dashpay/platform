@@ -128,7 +128,7 @@ mod tests {
 
             assert_eq!(operation.path.to_path(), pending_epoch_refunds_path_vec());
 
-            let epoch_index_key = operation.key.expect("key should be present").get_key();
+            let epoch_index_key = operation.key.expect("expected key").get_key();
             let epoch_index = u16::from_be_bytes(
                 epoch_index_key
                     .try_into()

@@ -48,6 +48,12 @@ pub mod grove_get_raw_path_query;
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
 
+/// V1 proved path query in grove (supports BulkAppendTree/CommitmentTree)
+pub mod grove_get_proved_path_query_v1;
+
+/// Get total count from a CommitmentTree
+pub mod grove_commitment_tree_count;
+
 /// Proved branch chunk query in grove
 pub mod grove_get_proved_branch_chunk_query;
 
@@ -140,6 +146,8 @@ pub mod batch_insert_sum_item_if_not_exists;
 /// Moved items that are found in a path query to a new path.
 pub mod batch_move_items_in_path_query;
 
+/// Batch inserts items into a count tree with auto-incremented keys
+pub mod batch_insert_auto_incremented_items_in_count_tree;
 /// Batch inserts item with sum item if not already existing
 pub mod batch_insert_item_with_sum_item_if_not_exists;
 /// Keeps the item, but inserts or adds to the sum item if it already exists

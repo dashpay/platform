@@ -335,7 +335,7 @@ impl fmt::Display for GroveDbOpBatch {
             let (key_string, _) = if let Some(ref key) = op.key {
                 readable_key_info(known_path, key)
             } else {
-                ("None".to_string(), None)
+                ("(none)".to_string(), None)
             };
             writeln!(f, "{{")?;
             writeln!(f, "   Path: {}", path_string)?;
