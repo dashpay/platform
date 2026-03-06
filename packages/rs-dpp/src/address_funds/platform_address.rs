@@ -1303,7 +1303,7 @@ mod tests {
         assert_eq!(p2pkh.to_bytes()[0], 0x00);
         assert_eq!(p2sh.to_bytes()[0], 0x01);
 
-        // Bech32m encoding uses 0xb0/0x80 (verified by successful roundtrip)
+        // Bech32m encoding uses 0xb0/0xb8 (verified by successful roundtrip)
         let p2pkh_encoded = p2pkh.to_bech32m_string(Network::Dash);
         let p2sh_encoded = p2sh.to_bech32m_string(Network::Dash);
 

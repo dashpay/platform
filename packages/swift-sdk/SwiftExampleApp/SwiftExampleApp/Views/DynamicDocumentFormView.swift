@@ -5,13 +5,13 @@ struct DynamicDocumentFormView: View {
     let documentType: String
     let schema: [String: Any]?
     @Binding var documentData: [String: Any]
-    
+
     @State private var formFields: [DocumentField] = []
     @State private var stringValues: [String: String] = [:]
     @State private var numberValues: [String: Double] = [:]
     @State private var boolValues: [String: Bool] = [:]
     @State private var arrayValues: [String: [String]] = [:]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let properties = getProperties() {
@@ -63,7 +63,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
         }
     }
 }
-    
+
     @ViewBuilder
     private func fieldView(for fieldName: String, schema: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -72,13 +72,13 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 Text(fieldName.camelCaseToWords())
                     .font(.subheadline)
                     .fontWeight(.medium)
-                
+
                 if isRequired(fieldName) {
                     Text("*")
                         .foregroundColor(.red)
                 }
             }
-            
+
             // Field input based on type
             if let fieldType = schema["type"] as? String {
                 switch fieldType {
@@ -97,7 +97,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
             }
-            
+
             // Field description/help
             if let description = schema["description"] as? String,
                !description.contains("NSManagedObject"),
@@ -108,13 +108,13 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     @ViewBuilder
     private func stringField(for fieldName: String, schema: [String: Any]) -> some View {
         let maxLength = schema["maxLength"] as? Int
         let format = schema["format"] as? String
         let enumValues = schema["enum"] as? [String]
-        
+
         if let enumValues = enumValues {
             // Dropdown for enum values
             Picker(fieldName, selection: binding(for: fieldName)) {
@@ -141,7 +141,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 TextField(placeholder(for: fieldName, schema: schema), text: binding(for: fieldName))
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .keyboardType(keyboardType(for: format))
-                
+
                 if let maxLength = maxLength {
                     Text("\(stringValues[fieldName]?.count ?? 0)/\(maxLength) characters")
                         .font(.caption2)
@@ -150,17 +150,17 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     @ViewBuilder
     private func numberField(for fieldName: String, schema: [String: Any]) -> some View {
         let minimum = schema["minimum"] as? Double
         let maximum = schema["maximum"] as? Double
-        
+
         HStack {
             TextField(placeholder(for: fieldName, schema: schema), text: numberBinding(for: fieldName))
                 .keyboardType(.decimalPad)
                 .textFieldStyle(RoundedBorderTextFieldStyle())
-            
+
             if let min = minimum, let max = maximum {
                 Text("(\(Int(min))-\(Int(max)))")
                     .font(.caption)
@@ -168,7 +168,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     @ViewBuilder
     private func booleanField(for fieldName: String, schema: [String: Any]) -> some View {
         Toggle(isOn: boolBinding(for: fieldName)) {
@@ -176,7 +176,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
         }
         .labelsHidden()
     }
-    
+
     @ViewBuilder
     private func arrayField(for fieldName: String, schema: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -187,7 +187,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 // Regular array - simple comma-separated input for now
                 TextField("Enter comma-separated values", text: arrayBinding(for: fieldName))
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                
+
                 if let items = schema["items"] as? [String: Any],
                    let itemType = items["type"] as? String {
                     Text("Item type: \(itemType)")
@@ -197,14 +197,14 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     @ViewBuilder
     private func byteArrayField(for fieldName: String, schema: [String: Any]) -> some View {
         let minItems = schema["minItems"] as? Int
         let maxItems = schema["maxItems"] as? Int
         let expectedBytes = minItems ?? maxItems ?? 32 // Default to 32 if not specified
         let expectedHexLength = expectedBytes * 2
-        
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Hex Data", text: binding(for: fieldName))
@@ -219,28 +219,28 @@ private struct DocumentFormChangeHandler: ViewModifier {
                             stringValues[fieldName] = cleaned
                         }
                     }
-                
+
                 // Validation indicator
                 if let currentValue = stringValues[fieldName], !currentValue.isEmpty {
                     Image(systemName: isValidHex(currentValue, expectedLength: expectedHexLength) ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundColor(isValidHex(currentValue, expectedLength: expectedHexLength) ? .green : .red)
                 }
             }
-            
+
             // Help text
             Text("Enter a valid \(expectedBytes) byte array in hex format (\(expectedHexLength) characters)")
                 .font(.caption2)
                 .foregroundColor(.secondary)
-            
+
             // Current status
             if let currentValue = stringValues[fieldName], !currentValue.isEmpty {
                 HStack {
                     Text("\(currentValue.count)/\(expectedHexLength) characters")
                         .font(.caption2)
                         .foregroundColor(currentValue.count == expectedHexLength ? .green : .orange)
-                    
+
                     Spacer()
-                    
+
                     if currentValue.count == expectedHexLength {
                         Text("✓ Valid hex data")
                             .font(.caption2)
@@ -250,22 +250,22 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     private func isValidHex(_ string: String, expectedLength: Int) -> Bool {
         // Check if string contains only hex characters
         let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
         let stringCharacterSet = CharacterSet(charactersIn: string)
-        
+
         return stringCharacterSet.isSubset(of: hexCharacterSet) && string.count == expectedLength
     }
-    
+
     @ViewBuilder
     private func objectField(for fieldName: String, schema: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Object fields:")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            
+
             if let properties = schema["properties"] as? [String: Any] {
                 ForEach(Array(properties.keys.sorted()), id: \.self) { subFieldName in
                     if properties[subFieldName] is [String: Any] {
@@ -277,7 +277,7 @@ private struct DocumentFormChangeHandler: ViewModifier {
                     }
                 }
             }
-            
+
             // For now, use JSON input for complex objects
             TextEditor(text: binding(for: fieldName))
                 .font(.system(.caption, design: .monospaced))
@@ -288,31 +288,31 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 )
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     private func getProperties() -> [String: Any]? {
         if let props = schema?["properties"] as? [String: Any] {
             return props
         }
         return nil
     }
-    
+
     private func isRequired(_ fieldName: String) -> Bool {
         if let required = schema?["required"] as? [String] {
             return required.contains(fieldName)
         }
         return false
     }
-    
+
     private func parseSchema() {
         guard let properties = getProperties() else { return }
-        
+
         // Initialize form values from existing document data
         for (fieldName, fieldSchema) in properties {
             if let schema = fieldSchema as? [String: Any],
                let fieldType = schema["type"] as? String {
-                
+
                 // Initialize with existing data or defaults
                 if let existingValue = documentData[fieldName] {
                     switch fieldType {
@@ -368,10 +368,10 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         }
     }
-    
+
     private func updateDocumentData() {
         var newData: [String: Any] = [:]
-        
+
         // Process string values, checking if they're byte arrays
         if let properties = getProperties() {
             for (key, value) in stringValues {
@@ -398,31 +398,31 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 }
             }
         }
-        
+
         for (key, value) in numberValues {
             newData[key] = value
         }
-        
+
         for (key, value) in boolValues {
             newData[key] = value
         }
-        
+
         for (key, value) in arrayValues {
             if !value.isEmpty {
                 newData[key] = value
             }
         }
-        
+
         documentData = newData
     }
-    
+
     private func binding(for fieldName: String) -> Binding<String> {
         Binding(
             get: { stringValues[fieldName] ?? "" },
             set: { stringValues[fieldName] = $0 }
         )
     }
-    
+
     private func numberBinding(for fieldName: String) -> Binding<String> {
         Binding(
             get: {
@@ -438,14 +438,14 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         )
     }
-    
+
     private func boolBinding(for fieldName: String) -> Binding<Bool> {
         Binding(
             get: { boolValues[fieldName] ?? false },
             set: { boolValues[fieldName] = $0 }
         )
     }
-    
+
     private func arrayBinding(for fieldName: String) -> Binding<String> {
         Binding(
             get: {
@@ -456,12 +456,12 @@ private struct DocumentFormChangeHandler: ViewModifier {
             }
         )
     }
-    
+
     private func placeholder(for fieldName: String, schema: [String: Any]) -> String {
         if let placeholder = schema["placeholder"] as? String {
             return placeholder
         }
-        
+
         if let format = schema["format"] as? String {
             switch format {
             case "email":
@@ -476,10 +476,10 @@ private struct DocumentFormChangeHandler: ViewModifier {
                 break
             }
         }
-        
+
         return "Enter \(fieldName.camelCaseToWords().lowercased())"
     }
-    
+
     private func keyboardType(for format: String?) -> UIKeyboardType {
         switch format {
         case "email":

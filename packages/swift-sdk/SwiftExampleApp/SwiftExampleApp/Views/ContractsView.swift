@@ -1,10 +1,11 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct ContractsView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingFetchContract = false
     @State private var selectedContract: ContractModel?
-    
+
     var body: some View {
         NavigationView {
             List {
@@ -45,7 +46,7 @@ struct ContractsView: View {
             }
         }
     }
-    
+
     private func loadSampleContracts() {
         // Add sample contracts for demonstration
         appState.contracts = [
@@ -105,7 +106,7 @@ struct ContractsView: View {
 struct ContractRow: View {
     let contract: ContractModel
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 4) {
@@ -122,13 +123,13 @@ struct ContractRow: View {
                         .background(Color.blue.opacity(0.2))
                         .cornerRadius(4)
                 }
-                
+
                 Text(contract.id)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                
+
                 HStack {
                     Image(systemName: "doc.text")
                         .font(.caption)
@@ -148,7 +149,7 @@ struct ContractDetailView: View {
     let contract: ContractModel
     @Environment(\.dismiss) var dismiss
     @State private var selectedDocumentType: String?
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -164,12 +165,12 @@ struct ContractDetailView: View {
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(10)
                     }
-                    
+
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Document Types")
                                 .font(.headline)
-                            
+
                             ForEach(contract.documentTypes, id: \.self) { docType in
                                 Button(action: {
                                     selectedDocumentType = selectedDocumentType == docType ? nil : docType
@@ -188,7 +189,7 @@ struct ContractDetailView: View {
                                     .background(Color.gray.opacity(0.1))
                                     .cornerRadius(8)
                                 }
-                                
+
                                 if selectedDocumentType == docType {
                                     Text(getSchemaForDocumentType(docType))
                                         .font(.system(.caption, design: .monospaced))
@@ -201,12 +202,12 @@ struct ContractDetailView: View {
                         }
                         .padding()
                     }
-                    
+
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Full Schema")
                                 .font(.headline)
-                            
+
                             Text(contract.formattedSchema)
                                 .font(.system(.caption, design: .monospaced))
                                 .padding()
@@ -228,7 +229,7 @@ struct ContractDetailView: View {
             }
         }
     }
-    
+
     private func getSchemaForDocumentType(_ docType: String) -> String {
         if let typeSchema = contract.schema[docType] {
             guard let jsonData = try? JSONSerialization.data(withJSONObject: typeSchema, options: .prettyPrinted),
@@ -246,7 +247,7 @@ struct FetchContractView: View {
     @Environment(\.dismiss) var dismiss
     @State private var contractIdToFetch = ""
     @State private var isLoading = false
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -255,7 +256,7 @@ struct FetchContractView: View {
                         .textContentType(.none)
                         .autocapitalization(.none)
                 }
-                
+
                 if isLoading {
                     Section {
                         HStack {
@@ -288,17 +289,17 @@ struct FetchContractView: View {
             }
         }
     }
-    
+
     @MainActor
     private func fetchContract() async {
         guard let sdk = appState.sdk else {
             appState.showError(message: "SDK not initialized")
             return
         }
-        
+
         do {
             isLoading = true
-            
+
             // In a real app, we would use the SDK's contract fetching functionality
             if (try await sdk.getDataContract(id: contractIdToFetch)) != nil {
                 // Convert SDK contract to our model
@@ -307,7 +308,7 @@ struct FetchContractView: View {
             } else {
                 appState.showError(message: "Contract not found")
             }
-            
+
             isLoading = false
         } catch {
             appState.showError(message: "Failed to fetch contract: \(error.localizedDescription)")

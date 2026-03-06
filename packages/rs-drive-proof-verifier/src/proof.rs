@@ -277,7 +277,9 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))?
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })?
             }
         };
 
@@ -472,7 +474,9 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                 get_identity_keys_request::Version::V0(v0) => {
                     let request_type = v0.request_type;
                     let identity_id = Identifier::from_bytes(&v0.identity_id)
-                        .map_err(|e| Error::ProtocolError(e.into()))?
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?
                         .into_buffer();
                     let limit = v0.limit.map(|i| i as u16);
                     let offset = v0.offset.map(|i| i as u16);
@@ -610,12 +614,14 @@ impl FromProof<platform::GetIdentityNonceRequest> for IdentityNonceFetcher {
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let identity_id = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_nonce_request::Version::V0(v0) => Ok::<Identifier, Error>(
-                Identifier::from_bytes(&v0.identity_id)
-                    .map_err(|e| Error::ProtocolError(e.into()))?,
-            ),
-        }?;
+        let identity_id =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_nonce_request::Version::V0(v0) => Ok::<Identifier, Error>(
+                    Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                ),
+            }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_nonce) = Drive::verify_identity_nonce(
@@ -661,10 +667,12 @@ impl FromProof<platform::GetIdentityContractNonceRequest> for IdentityContractNo
         let (identity_id, contract_id) = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_contract_nonce_request::Version::V0(v0) => {
                 Ok::<(Identifier, Identifier), Error>((
-                    Identifier::from_bytes(&v0.identity_id)
-                        .map_err(|e| Error::ProtocolError(e.into()))?,
-                    Identifier::from_bytes(&v0.contract_id)
-                        .map_err(|e| Error::ProtocolError(e.into()))?,
+                    Identifier::from_bytes(&v0.identity_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
+                    Identifier::from_bytes(&v0.contract_id).map_err(|e| Error::ProtocolError {
+                        error: e.to_string(),
+                    })?,
                 ))
             }
         }?;
@@ -712,9 +720,10 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
-            get_identity_balance_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))
-            }
+            get_identity_balance_request::Version::V0(v0) => Identifier::from_bytes(&v0.id)
+                .map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                }),
         }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
@@ -805,7 +814,9 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_balance_and_revision_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
             }
         }?;
 
@@ -1123,7 +1134,9 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
             get_data_contract_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
             }
         }?;
 
@@ -1168,7 +1181,9 @@ impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
 
         let id = match request.version.ok_or(Error::EmptyVersion)? {
             get_data_contract_request::Version::V0(v0) => {
-                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
             }
         }?;
 
@@ -1279,8 +1294,9 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         let (id, limit, offset, start_at_ms) = match request.version.ok_or(Error::EmptyVersion)? {
             get_data_contract_history_request::Version::V0(v0) => {
-                let id =
-                    Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError(e.into()))?;
+                let id = Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })?;
                 let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
                 let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
                 let start_at_ms = v0.start_at_ms;
@@ -1330,7 +1346,9 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
         let state_transition = StateTransition::deserialize_from_bytes(&request.state_transition)
-            .map_err(Error::ProtocolError)?;
+            .map_err(|e| Error::ProtocolError {
+            error: e.to_string(),
+        })?;
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
@@ -1755,14 +1773,20 @@ impl FromProof<platform::GetIdentitiesContractKeysRequest> for IdentitiesContrac
                             Ok(identifier.to_buffer())
                         })
                         .collect::<Result<Vec<[u8; 32]>, platform_value::Error>>()
-                        .map_err(|e| Error::ProtocolError(e.into()))?;
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?;
                     let contract_id = Identifier::from_vec(contract_id)
-                        .map_err(|e| Error::ProtocolError(e.into()))?
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?
                         .into_buffer();
                     let purposes = purposes
                         .into_iter()
                         .map(|purpose| {
-                            Purpose::try_from(purpose).map_err(|e| Error::ProtocolError(e.into()))
+                            Purpose::try_from(purpose).map_err(|e| Error::ProtocolError {
+                                error: e.to_string(),
+                            })
                         })
                         .collect::<Result<Vec<Purpose>, Error>>()?;
                     (identifiers, contract_id, document_type_name, purposes)

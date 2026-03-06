@@ -8,13 +8,8 @@ on:
       - master
       - "v*-dev"
       - "ci/*"
-  push:
-    branches:
-      - master
-      - "v*-dev"
-      - "ci/*"
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "0 23 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,7 +18,7 @@ concurrency:
 jobs:
   check-secrets:
     name: Check secret availability
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
@@ -40,7 +35,7 @@ jobs:
 
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
@@ -82,15 +77,36 @@ jobs:
 
   build-js:
     name: Build JS packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.test-suite == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
+
+  build-images-gate:
+    name: Docker Build Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only when test-suite-related code hasn't changed and not a scheduled/manual run
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Docker image build manually approved"
 
   build-images:
     name: Build Docker images
     needs:
       - check-secrets
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) }}
+      - changes
+      - build-images-gate
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft) &&
+      (needs.changes.outputs.test-suite == 'true' || needs.build-images-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -118,6 +134,7 @@ jobs:
     name: Rust packages
     needs:
       - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -129,33 +146,12 @@ jobs:
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","rs-dapi","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
       direct-packages: ${{ needs.changes.outputs.rs-packages-direct }}
 
-  rs-crates-security:
-    name: Rust crates security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Audit crates
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   js-packages:
     name: JS packages
     needs:
       - changes
       - build-js
+    if: ${{ needs.changes.outputs.js-packages != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -170,7 +166,7 @@ jobs:
 
   js-deps-versions:
     name: JS dependency versions check
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
@@ -186,26 +182,6 @@ jobs:
 
       - name: Validate workspaces
         run: yarn constraints
-
-  js-npm-security:
-    name: JS NPM security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive
-
-  js-codeql:
-    name: JS code security audit
-    needs: build-js
-    secrets: inherit
-    uses: ./.github/workflows/tests-codeql.yml
 
   dashmate-e2e-tests:
     name: Dashmate E2E tests
@@ -235,6 +211,18 @@ jobs:
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && contains(needs.changes.outputs.js-packages, 'dashmate') }}
 
+  test-suite-gate:
+    name: Test Suite Approval
+    needs:
+      - changes
+      - check-secrets
+    # Require manual approval only on PRs when test-suite code hasn't changed
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    environment: test-suite-approval
+    steps:
+      - run: echo "Test suite manually approved"
+
   test-suite:
     name: Test Suite
     needs:
@@ -242,8 +230,16 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    # Run when: code changed (gate skipped) OR manual approval granted OR scheduled/manual run
+    # always() is needed so this job evaluates even when test-suite-gate is skipped
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -274,6 +270,12 @@ jobs:
       - build-images
       - changes
       - check-secrets
+      - test-suite-gate
     secrets: inherit
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite == 'true' }}
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.test-suite == 'true' || needs.test-suite-gate.result == 'success' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml

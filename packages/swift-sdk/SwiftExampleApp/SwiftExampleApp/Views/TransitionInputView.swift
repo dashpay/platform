@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 
 struct TransitionInputView: View {
@@ -6,19 +7,19 @@ struct TransitionInputView: View {
     @Binding var value: String
     @Binding var checkboxValue: Bool
     let onSpecialAction: (String) -> Void
-    
+
     @Query private var dataContracts: [PersistentDataContract]
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     // State for dynamic selections
     @State private var selectedContractId: String = ""
     @State private var selectedDocumentType: String = ""
     @State private var useManualEntry: Bool = false
-    
+
     // Computed property to get mintable tokens
     var mintableTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
         var results: [(token: PersistentToken, contract: PersistentDataContract)] = []
-        
+
         for contract in dataContracts {
             if let tokens = contract.tokens {
                 for token in tokens {
@@ -31,11 +32,11 @@ struct TransitionInputView: View {
 
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
-    
+
     // Computed property to get burnable tokens
     var burnableTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
         var results: [(token: PersistentToken, contract: PersistentDataContract)] = []
-        
+
         for contract in dataContracts {
             if let tokens = contract.tokens {
                 for token in tokens {
@@ -45,14 +46,14 @@ struct TransitionInputView: View {
                 }
             }
         }
-        
+
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
-    
+
     // Computed property to get freezable tokens
     var freezableTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
         var results: [(token: PersistentToken, contract: PersistentDataContract)] = []
-        
+
         for contract in dataContracts {
             if let tokens = contract.tokens {
                 for token in tokens {
@@ -62,14 +63,14 @@ struct TransitionInputView: View {
                 }
             }
         }
-        
+
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
-    
+
     // Computed property to get all tokens (for operations that work on any token)
     var allTokens: [(token: PersistentToken, contract: PersistentDataContract)] {
         var results: [(token: PersistentToken, contract: PersistentDataContract)] = []
-        
+
         for contract in dataContracts {
             if let tokens = contract.tokens {
                 for token in tokens {
@@ -77,10 +78,10 @@ struct TransitionInputView: View {
                 }
             }
         }
-        
+
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if input.type != "button" && input.type != "checkbox" {
@@ -94,12 +95,12 @@ struct TransitionInputView: View {
                     }
                 }
             }
-            
+
             switch input.type {
             case "text":
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                
+
             case "textarea":
                 TextEditor(text: $value)
                     .frame(minHeight: 100)
@@ -107,17 +108,17 @@ struct TransitionInputView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                
+
             case "number":
                 TextField(input.placeholder ?? "", text: $value)
                     .keyboardType(.numberPad)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                
+
             case "checkbox":
                 Toggle(isOn: $checkboxValue) {
                     Text(input.label)
                 }
-                
+
             case "select":
                 Picker(input.label, selection: $value) {
                     Text("Select...").tag("")
@@ -126,7 +127,7 @@ struct TransitionInputView: View {
                     }
                 }
                 .pickerStyle(MenuPickerStyle())
-                
+
             case "button":
                 Button(action: { onSpecialAction(input.action ?? "") }) {
                     Text(input.label)
@@ -136,7 +137,7 @@ struct TransitionInputView: View {
                         .foregroundColor(.white)
                         .cornerRadius(8)
                 }
-                
+
             case "json":
                 TextEditor(text: $value)
                     .font(.system(.caption, design: .monospaced))
@@ -145,43 +146,43 @@ struct TransitionInputView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                
+
             case "mintableToken":
                 tokenSelector(tokens: mintableTokens, emptyMessage: "No mintable tokens available")
-                
+
             case "burnableToken":
                 tokenSelector(tokens: burnableTokens, emptyMessage: "No burnable tokens available")
-                
+
             case "freezableToken":
                 tokenSelector(tokens: freezableTokens, emptyMessage: "No freezable tokens available")
-                
+
             case "anyToken":
                 tokenSelector(tokens: allTokens, emptyMessage: "No tokens available")
-                
+
             case "contractPicker":
                 contractPicker()
-                
+
             case "documentTypePicker":
                 documentTypePicker()
-                
+
             case "identityPicker":
                 if input.name == "toIdentityId" || input.name == "recipientId" {
                     recipientIdentityPicker()
                 } else {
                     identityPicker()
                 }
-                
+
             case "documentPicker":
                 documentPicker()
-                
+
             case "documentWithPrice":
                 documentWithPricePicker()
-                
+
             default:
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
             }
-            
+
             if let help = input.help {
                 Text(help)
                     .font(.caption2)
@@ -190,7 +191,7 @@ struct TransitionInputView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     @ViewBuilder
     private func tokenSelector(tokens: [(token: PersistentToken, contract: PersistentDataContract)], emptyMessage: String) -> some View {
         if tokens.isEmpty {
@@ -217,7 +218,7 @@ struct TransitionInputView: View {
             .cornerRadius(8)
         }
     }
-    
+
     private func getContractDisplayName(_ contract: PersistentDataContract) -> String {
         // Check if this is a token-only contract
         if let tokens = contract.tokens,
@@ -232,13 +233,13 @@ struct TransitionInputView: View {
                 return "Token Contract"
             }
         }
-        
+
         // Otherwise use the stored name
         return contract.name
     }
-    
+
     // MARK: - New Picker Components
-    
+
     @ViewBuilder
     private func contractPicker() -> some View {
         // Check operation types from the action field
@@ -249,7 +250,7 @@ struct TransitionInputView: View {
         let isReplaceOperation = input.action?.contains("documentReplace") == true
         let isDeleteOperation = input.action?.contains("documentDelete") == true
         let isMarketplaceOperation = isPurchaseOperation || isSetPriceOperation
-        
+
         // Filter contracts based on operation type
         let availableContracts: [PersistentDataContract] = {
             if isTransferOperation {
@@ -298,7 +299,7 @@ struct TransitionInputView: View {
                 return dataContracts
             }
         }()
-        
+
         let emptyMessage: String = {
             if isTransferOperation {
                 return "No contracts with transferable documents"
@@ -314,7 +315,7 @@ struct TransitionInputView: View {
                 return "No contracts available"
             }
         }()
-        
+
         if availableContracts.isEmpty {
             Text(emptyMessage)
                 .font(.caption)
@@ -343,12 +344,12 @@ struct TransitionInputView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func documentTypePicker() -> some View {
         // Get the selected contract from parent's form data
         let contractId = input.placeholder ?? selectedContractId
-        
+
         // Check operation types
         let isTransferOperation = input.action?.contains("documentTransfer") == true
         let isPurchaseOperation = input.action?.contains("documentPurchase") == true
@@ -357,7 +358,7 @@ struct TransitionInputView: View {
         let isReplaceOperation = input.action?.contains("documentReplace") == true
         let isDeleteOperation = input.action?.contains("documentDelete") == true
         let isMarketplaceOperation = isPurchaseOperation || isSetPriceOperation
-        
+
         if contractId.isEmpty {
             Text("Please select a contract first")
                 .font(.caption)
@@ -388,7 +389,7 @@ struct TransitionInputView: View {
                         return Array(docTypes)
                     }
                 }()
-                
+
                 let emptyMessage: String = {
                     if isTransferOperation {
                         return "No transferable document types in selected contract"
@@ -404,7 +405,7 @@ struct TransitionInputView: View {
                         return "No document types in selected contract"
                     }
                 }()
-                
+
                 if availableDocTypes.isEmpty {
                     Text(emptyMessage)
                         .font(.caption)
@@ -430,7 +431,7 @@ struct TransitionInputView: View {
                         // Notify parent to update schema
                         onSpecialAction("documentTypeSelected:\(newValue)")
                     }
-                    
+
                     // Show warning if document type has owner-only creation restriction
                     if isCreateOperation && !value.isEmpty,
                        let selectedDocType = availableDocTypes.first(where: { $0.name == value }),
@@ -441,7 +442,7 @@ struct TransitionInputView: View {
                             // Check if this identity owns the contract
                             return identity.id == contract.ownerId
                         }
-                        
+
                         if selectedIdentities.isEmpty {
                             Text("⚠️ Only the contract owner can create documents of this type. You don't have the owner identity.")
                                 .font(.caption)
@@ -480,11 +481,11 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         }
     }
-    
+
     @ViewBuilder
     private func identityPicker() -> some View {
         let identities = appState.platformState.identities
-        
+
         if identities.isEmpty {
             Text("No identities available")
                 .font(.caption)
@@ -508,14 +509,14 @@ struct TransitionInputView: View {
             .cornerRadius(8)
         }
     }
-    
+
     @ViewBuilder
     private func recipientIdentityPicker() -> some View {
         VStack(alignment: .leading, spacing: 12) {
             // Get the sender identity from the parent's selectedIdentityId
             let senderIdentityId = input.placeholder ?? ""
             let identities = appState.platformState.identities.filter { $0.idString != senderIdentityId }
-            
+
             if !useManualEntry {
                 if identities.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
@@ -526,7 +527,7 @@ struct TransitionInputView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.orange.opacity(0.1))
                             .cornerRadius(8)
-                        
+
                         Button(action: {
                             useManualEntry = true
                         }) {
@@ -563,7 +564,7 @@ struct TransitionInputView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Enter recipient identity ID", text: $value)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
-                    
+
                     if !identities.isEmpty {
                         Button(action: {
                             useManualEntry = false
@@ -578,13 +579,13 @@ struct TransitionInputView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func documentPicker() -> some View {
         TextField(input.placeholder ?? "Enter document ID", text: $value)
             .textFieldStyle(RoundedBorderTextFieldStyle())
     }
-    
+
     @ViewBuilder
     private func documentWithPricePicker() -> some View {
         // Extract contract ID, document type, and identity ID from action field (format: "contractId|documentType|identityId")
@@ -592,7 +593,7 @@ struct TransitionInputView: View {
         let contractId = parts.count > 0 ? parts[0] : ""
         let documentType = parts.count > 1 ? parts[1] : ""
         let identityId = parts.count > 2 ? parts[2] : nil
-        
+
         DocumentWithPriceView(
             documentId: $value,
             contractId: contractId,

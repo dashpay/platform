@@ -52,7 +52,7 @@ pub trait DocumentFromTransferTransitionAction {
     ///
     /// # Arguments
     ///
-    /// * `value` - A reference to the `DocumentTransferTransitionAction` containing information about the document being transferd.
+    /// * `value` - A reference to the `DocumentTransferTransitionAction` containing information about the document being transferred.
     /// * `owner_id` - The `Identifier` of the document's owner.
     ///
     /// # Returns
@@ -69,7 +69,7 @@ pub trait DocumentFromTransferTransitionAction {
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentTransferTransitionAction` instance containing information about the document being transferd.
+    /// * `value` - A `DocumentTransferTransitionAction` instance containing information about the document being transferred.
     /// * `owner_id` - The `Identifier` of the document's owner.
     ///
     /// # Returns

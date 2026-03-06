@@ -1551,7 +1551,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     string_decoder: "npm:^1.3.0"
@@ -1580,7 +1580,7 @@ __metadata:
     long: "npm:^5.2.0"
     mocha: "npm:^11.1.0"
     mocha-sinon: "npm:^2.1.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1620,7 +1620,7 @@ __metadata:
     pino: "npm:^9.13.0"
     pino-pretty: "npm:^10.2.3"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     swagger-jsdoc: "npm:^3.5.0"
     ws: "npm:^8.17.1"
@@ -1647,7 +1647,7 @@ __metadata:
     memdown: "npm:^5.1.0"
     mocha: "npm:^11.1.0"
     should: "npm:^13.2.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     wasm-x11-hash: "npm:~0.0.2"
   languageName: unknown
   linkType: soft
@@ -1711,7 +1711,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1747,7 +1747,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1779,7 +1779,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     string_decoder: "npm:^1.3.0"
     terser-webpack-plugin: "npm:^5.3.11"
@@ -1802,7 +1802,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1825,7 +1825,7 @@ __metadata:
     mocha-sinon: "npm:^2.1.2"
     nyc: "npm:^15.1.0"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1839,7 +1839,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1853,7 +1853,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -1904,7 +1904,7 @@ __metadata:
     process: "npm:^0.11.10"
     semver: "npm:^7.5.3"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -1929,7 +1929,7 @@ __metadata:
     add-stream: "npm:^1.0.0"
     conventional-changelog: "npm:^3.1.24"
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
-    dompurify: "npm:^3.2.6"
+    dompurify: "npm:^3.3.2"
     eslint: "npm:^9.18.0"
     eslint-config-airbnb-extended: "npm:^3.0.1"
     eslint-plugin-jsdoc: "npm:^50.6.3"
@@ -1976,7 +1976,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2021,7 +2021,7 @@ __metadata:
     pbkdf2: "npm:^3.1.3"
     process: "npm:^0.11.10"
     setimmediate: "npm:^1.0.5"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2045,7 +2045,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -2127,7 +2127,7 @@ __metadata:
     mocha: "npm:^11.1.0"
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -2187,7 +2187,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^9.18.0"
     mocha: "npm:^11.1.0"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
   languageName: unknown
   linkType: soft
@@ -3501,21 +3501,30 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@sinonjs/fake-timers@npm:^10.0.2":
-  version: 10.3.0
-  resolution: "@sinonjs/fake-timers@npm:10.3.0"
+"@sinonjs/commons@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "@sinonjs/commons@npm:3.0.1"
   dependencies:
-    "@sinonjs/commons": "npm:^3.0.0"
-  checksum: 10/78155c7bd866a85df85e22028e046b8d46cf3e840f72260954f5e3ed5bd97d66c595524305a6841ffb3f681a08f6e5cef572a2cce5442a8a232dc29fb409b83e
+    type-detect: "npm:4.0.8"
+  checksum: 10/a0af217ba7044426c78df52c23cedede6daf377586f3ac58857c565769358ab1f44ebf95ba04bbe38814fba6e316ca6f02870a009328294fc2c555d0f85a7117
   languageName: node
   linkType: hard
 
-"@sinonjs/fake-timers@npm:^11.2.2":
+"@sinonjs/fake-timers@npm:11.2.2":
   version: 11.2.2
   resolution: "@sinonjs/fake-timers@npm:11.2.2"
   dependencies:
     "@sinonjs/commons": "npm:^3.0.0"
   checksum: 10/da7dfa677b2362bc5a321fc1563184755b5c62fbb1a72457fb9e901cd187ba9dc834f9e8a0fb5a4e1d1e6e6ad4c5b54e90900faa44dd6c82d3c49c92ec23ecd4
+  languageName: node
+  linkType: hard
+
+"@sinonjs/fake-timers@npm:^15.1.1":
+  version: 15.1.1
+  resolution: "@sinonjs/fake-timers@npm:15.1.1"
+  dependencies:
+    "@sinonjs/commons": "npm:^3.0.1"
+  checksum: 10/f262d613ea7f7cdb1b5d90c0cae01b7c6b797d6d0f1ca0fe30b7b69012e3076bb8a0f69d735bc69d2824b9bb1efb8554ca9765b4a6bb22defdec9ce79e7cd8a4
   languageName: node
   linkType: hard
 
@@ -3536,13 +3545,6 @@ __metadata:
     lodash.get: "npm:^4.4.2"
     type-detect: "npm:^4.0.8"
   checksum: 10/0c9928a7d16a2428ba561e410d9d637c08014d549cac4979c63a6580c56b69378dba80ea01b17e8e163f2ca5dd331376dae92eae8364857ef827ae59dbcfe0ce
-  languageName: node
-  linkType: hard
-
-"@sinonjs/text-encoding@npm:^0.7.1":
-  version: 0.7.1
-  resolution: "@sinonjs/text-encoding@npm:0.7.1"
-  checksum: 10/1340c707f210fb7171c429e47006e7b25da275e11235d53fe08d5d0f0c37cf9ecc1896a3326deea28b6a2a6a7fd38056593c75f5741c0840526337589cdfcbf0
   languageName: node
   linkType: hard
 
@@ -7281,7 +7283,7 @@ __metadata:
     path-browserify: "npm:^1.0.1"
     process: "npm:^0.11.10"
     rimraf: "npm:^3.0.2"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     stream-browserify: "npm:^3.0.0"
     stream-http: "npm:^3.2.0"
@@ -7351,11 +7353,11 @@ __metadata:
     qs: "npm:^6.14.2"
     rxjs: "npm:^6.6.7"
     semver: "npm:^7.5.3"
-    sinon: "npm:^17.0.1"
+    sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
     systeminformation: "npm:^5.31.1"
     table: "npm:^6.8.1"
-    tar: "npm:7.5.9"
+    tar: "npm:7.5.10"
     wrap-ansi: "npm:^7.0.0"
   bin:
     dashmate: ./bin/run.js
@@ -7844,15 +7846,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dompurify@npm:^3.2.6":
-  version: 3.2.6
-  resolution: "dompurify@npm:3.2.6"
+"dompurify@npm:^3.3.2":
+  version: 3.3.2
+  resolution: "dompurify@npm:3.3.2"
   dependencies:
     "@types/trusted-types": "npm:^2.0.7"
   dependenciesMeta:
     "@types/trusted-types":
       optional: true
-  checksum: 10/b91631ed0e4d17fae950ef53613cc009ed7e73adc43ac94a41dd52f35483f7538d13caebdafa7626e0da145fc8184e7ac7935f14f25b7e841b32fda777e40447
+  checksum: 10/3ca02559677ce6d9583a500f21ffbb6b9e88f1af99f69fa0d0d9442cddbac98810588c869f8b435addb5115492d6e49870024bca322169b941bafedb99c7f281
   languageName: node
   linkType: hard
 
@@ -11787,10 +11789,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"just-extend@npm:^4.0.2":
-  version: 4.2.1
-  resolution: "just-extend@npm:4.2.1"
-  checksum: 10/375389c0847d56300873fa622fbc5c5e208933e372bbedb39c82f583299cdad4fe9c4773bc35fcd9c42cd85744f07474ca4163aa0f9125dd5be37bc09075eb49
+"just-extend@npm:^6.2.0":
+  version: 6.2.0
+  resolution: "just-extend@npm:6.2.0"
+  checksum: 10/1f487b074b9e5773befdd44dc5d1b446f01f24f7d4f1f255d51c0ef7f686e8eb5f95d983b792b9ca5c8b10cd7e60a924d64103725759eddbd7f18bcb22743f92
   languageName: node
   linkType: hard
 
@@ -13219,16 +13221,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nise@npm:^5.1.5":
-  version: 5.1.5
-  resolution: "nise@npm:5.1.5"
+"nise@npm:^6.0.0":
+  version: 6.1.3
+  resolution: "nise@npm:6.1.3"
   dependencies:
-    "@sinonjs/commons": "npm:^2.0.0"
-    "@sinonjs/fake-timers": "npm:^10.0.2"
-    "@sinonjs/text-encoding": "npm:^0.7.1"
-    just-extend: "npm:^4.0.2"
-    path-to-regexp: "npm:^1.7.0"
-  checksum: 10/c6afe82b919a2c1985916d5bb3a738a7b2cfb017a6ab9479ec1ede62343051b40da88a1321517bb5d912c13e08b8d9ce9cdef9583edeb44d640af7273c35ebf2
+    "@sinonjs/commons": "npm:^3.0.1"
+    "@sinonjs/fake-timers": "npm:^15.1.1"
+    just-extend: "npm:^6.2.0"
+    path-to-regexp: "npm:^8.3.0"
+  checksum: 10/a07be16c8bb55e484c5faad69bce036a2d92ce245fc86462d0ee08a2e8f546820a0add0c65c4d5a33c72d9df995f7ad99db911eb67877b33533efae126f81459
   languageName: node
   linkType: hard
 
@@ -15803,12 +15804,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"serialize-javascript@npm:^6.0.2":
-  version: 6.0.2
-  resolution: "serialize-javascript@npm:6.0.2"
-  dependencies:
-    randombytes: "npm:^2.1.0"
-  checksum: 10/445a420a6fa2eaee4b70cbd884d538e259ab278200a2ededd73253ada17d5d48e91fb1f4cd224a236ab62ea7ba0a70c6af29fc93b4f3d3078bf7da1c031fde58
+"serialize-javascript@npm:^7.0.4":
+  version: 7.0.4
+  resolution: "serialize-javascript@npm:7.0.4"
+  checksum: 10/f96d59d6053739785822750e6ffbe06ec5a2651b836b3e6c76742c613e1b2fcb846b5df92294857ecfe69730fe36a1968c0eb8f258b02fd9173a1d5e73f0a32f
   languageName: node
   linkType: hard
 
@@ -16142,17 +16141,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sinon@npm:^17.0.1":
-  version: 17.0.1
-  resolution: "sinon@npm:17.0.1"
+"sinon@npm:^18.0.1":
+  version: 18.0.1
+  resolution: "sinon@npm:18.0.1"
   dependencies:
-    "@sinonjs/commons": "npm:^3.0.0"
-    "@sinonjs/fake-timers": "npm:^11.2.2"
+    "@sinonjs/commons": "npm:^3.0.1"
+    "@sinonjs/fake-timers": "npm:11.2.2"
     "@sinonjs/samsam": "npm:^8.0.0"
-    diff: "npm:^5.1.0"
-    nise: "npm:^5.1.5"
-    supports-color: "npm:^7.2.0"
-  checksum: 10/b34f1a97da0be3556ac686c6b649a566c2666eb7f50e75e754928c1c72c96d78f56e56a999227be794c3d9cdaed0bc78d11f38ab303d3079c5bcbcffc0f9c6d5
+    diff: "npm:^5.2.0"
+    nise: "npm:^6.0.0"
+    supports-color: "npm:^7"
+  checksum: 10/65be65a7c5dbef7e9e315820bcd17fe0387fb07cb5dd41d3d6a89177e9a2ca463144676d8407348dc075758daa7cf37b9376d35bd1bc7e06717e87d03aa26111
   languageName: node
   linkType: hard
 
@@ -16867,7 +16866,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"supports-color@npm:^7.0.0, supports-color@npm:^7.1.0, supports-color@npm:^7.2.0":
+"supports-color@npm:^7, supports-color@npm:^7.0.0, supports-color@npm:^7.1.0":
   version: 7.2.0
   resolution: "supports-color@npm:7.2.0"
   dependencies:
@@ -17014,16 +17013,16 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tar@npm:7.5.9":
-  version: 7.5.9
-  resolution: "tar@npm:7.5.9"
+"tar@npm:7.5.10":
+  version: 7.5.10
+  resolution: "tar@npm:7.5.10"
   dependencies:
     "@isaacs/fs-minipass": "npm:^4.0.0"
     chownr: "npm:^3.0.0"
     minipass: "npm:^7.1.2"
     minizlib: "npm:^3.1.0"
     yallist: "npm:^5.0.0"
-  checksum: 10/1213cdde9c22d6acf8809ba5d2a025212ce3517bc99c4a4c6981b7dc0489bf3b164db9c826c9517680889194c9ba57448c8ff0da35eca9a60bb7689bf0b3897d
+  checksum: 10/98ba6421a250b233c36a54f7441647bdfee1ed0b916cd57850259a3602154d996f5b8422f67ef5c8ce77f582ed938054775c2873fc7c901e0c7530ed50febc40
   languageName: node
   linkType: hard
 

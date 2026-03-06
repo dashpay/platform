@@ -301,6 +301,13 @@ impl Drive {
                     .chain(st.output().into_iter().map(|(address, _)| address));
                 Drive::balances_for_clear_addresses_query(addresses_to_check)
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented in prove_state_transition")
+            }
         };
 
         let proof = self.grove_get_proved_path_query(

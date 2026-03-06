@@ -31,7 +31,7 @@ export class ContractsFacade {
     return w.getDataContractHistoryWithProofInfo(query);
   }
 
-  async getMany(contractIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.DataContract | undefined>> {
+  async getMany(contractIds: wasm.IdentifierLikeArray): Promise<Map<string, wasm.DataContract | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContracts(contractIds);
   }
@@ -39,7 +39,7 @@ export class ContractsFacade {
   async getManyWithProof(
     contractIds: wasm.IdentifierLikeArray,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.DataContract | undefined>
+    Map<string, wasm.DataContract | undefined>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContractsWithProofInfo(contractIds);

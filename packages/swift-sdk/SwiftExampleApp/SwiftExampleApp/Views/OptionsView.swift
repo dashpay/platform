@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
@@ -7,7 +8,7 @@ struct OptionsView: View {
     @State private var showingAbout = false
     @State private var showingContracts = false
     @State private var isSwitchingNetwork = false
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -20,10 +21,10 @@ struct OptionsView: View {
                                 Task {
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
-                                    
+
                                     // Also update wallet service
                                     await unifiedAppState.handleNetworkSwitch(to: newNetwork)
-                                    
+
                                     await MainActor.run {
                                         isSwitchingNetwork = false
                                     }
@@ -31,13 +32,13 @@ struct OptionsView: View {
                             }
                         }
                     )) {
-                        ForEach(Network.allCases, id: \.self) { network in
+                        ForEach(AppNetwork.allCases, id: \.self) { network in
                             Text(network.displayName).tag(network)
                         }
                     }
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
-                    
+
                     Toggle("Use Local DAPI (Platform)", isOn: $appState.useLocalPlatform)
                         .onChange(of: appState.useLocalPlatform) { _, _ in
                             isSwitchingNetwork = true
@@ -53,7 +54,7 @@ struct OptionsView: View {
                             // Core override will be applied when SPV peer overrides are supported
                         }
                         .help("When enabled, Core (SPV) connects only to configured peers (default 127.0.0.1 with network port). Override via 'corePeerAddresses'.")
-                    
+
                     HStack {
                         Text("Network Status")
                         Spacer()
@@ -76,16 +77,16 @@ struct OptionsView: View {
                         }
                     }
                 }
-                
+
                 Section("Data") {
                     NavigationLink(destination: ContractsView()) {
                         Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
-                    
+
                     Button(action: { showingDataManagement = true }) {
                         Label("Manage Local Data", systemImage: "internaldrive")
                     }
-                    
+
                     if let stats = appState.dataStatistics {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Storage Statistics")
@@ -119,14 +120,14 @@ struct OptionsView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                
+
                 Section("Developer") {
                     Toggle("Show Test Data", isOn: .constant(false))
                         .disabled(true)
-                    
+
                     Toggle("Enable Debug Logging", isOn: .constant(false))
                         .disabled(true)
-                    
+
                     Button(action: {
                         Task {
                             await appState.loadSampleIdentities()
@@ -135,7 +136,7 @@ struct OptionsView: View {
                         Label("Load Sample Identities", systemImage: "person.badge.plus")
                     }
                 }
-                
+
                 Section("About") {
                     Button(action: { showingAbout = true }) {
                         HStack {
@@ -146,14 +147,14 @@ struct OptionsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     HStack {
                         Text("SDK Version")
                         Spacer()
                         Text("1.0.0")
                             .foregroundColor(.secondary)
                     }
-                    
+
                     HStack {
                         Text("App Version")
                         Spacer()
@@ -175,7 +176,7 @@ struct OptionsView: View {
             }
         }
     }
-    
+
     private func loadDataStatistics() async {
         if let stats = await appState.getDataStatistics() {
             await MainActor.run {
@@ -189,7 +190,7 @@ struct DataManagementView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
     @State private var showingClearConfirmation = false
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -199,20 +200,20 @@ struct DataManagementView: View {
                     }) {
                         Label("Clear All Identities", systemImage: "person.crop.circle.badge.xmark")
                     }
-                    
+
                     Button(role: .destructive, action: {
                         // Clear documents
                     }) {
                         Label("Clear All Documents", systemImage: "doc.badge.xmark")
                     }
-                    
+
                     Button(role: .destructive, action: {
                         // Clear contracts
                     }) {
                         Label("Clear All Contracts", systemImage: "doc.plaintext.badge.xmark")
                     }
                 }
-                
+
                 Section("Clear All Data") {
                     Button(role: .destructive, action: {
                         showingClearConfirmation = true
@@ -221,7 +222,7 @@ struct DataManagementView: View {
                             .foregroundColor(.red)
                     }
                 }
-                
+
                 Section {
                     Text("Warning: Clearing data will remove all locally stored information for the current network. This action cannot be undone.")
                         .font(.caption)
@@ -251,7 +252,7 @@ struct DataManagementView: View {
 
 struct AboutView: View {
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -259,34 +260,34 @@ struct AboutView: View {
                     Image(systemName: "app.fill")
                         .font(.system(size: 80))
                         .foregroundColor(.blue)
-                    
+
                     Text("Dash SDK Example")
                         .font(.title)
                         .fontWeight(.bold)
-                    
+
                     Text("A demonstration app showcasing the capabilities of the Dash Platform SDK for iOS.")
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
-                    
+
                     VStack(alignment: .leading, spacing: 16) {
                         FeatureRow(
                             icon: "person.3.fill",
                             title: "Identity Management",
                             description: "Create and manage Dash Platform identities"
                         )
-                        
+
                         FeatureRow(
                             icon: "doc.text.fill",
                             title: "Document Storage",
                             description: "Store and retrieve documents on the platform"
                         )
-                        
+
                         FeatureRow(
                             icon: "dollarsign.circle.fill",
                             title: "Token Support",
                             description: "Manage tokens and token balances"
                         )
-                        
+
                         FeatureRow(
                             icon: "network",
                             title: "Multi-Network",
@@ -294,7 +295,7 @@ struct AboutView: View {
                         )
                     }
                     .padding()
-                    
+
                     Link("Learn More", destination: URL(string: "https://www.dash.org/platform/")!)
                         .buttonStyle(.borderedProminent)
                 }
@@ -317,14 +318,14 @@ struct FeatureRow: View {
     let icon: String
     let title: String
     let description: String
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundColor(.blue)
                 .frame(width: 40)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
@@ -332,7 +333,7 @@ struct FeatureRow: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
         }
     }

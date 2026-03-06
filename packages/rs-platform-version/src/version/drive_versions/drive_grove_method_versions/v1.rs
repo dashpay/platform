@@ -31,6 +31,8 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         grove_get_optional_sum_tree_total_value: 0,
         grove_get_raw_optional_item: 0,
         grove_get_big_sum_tree_total_value: 0,
+        grove_get_proved_path_query_v1: 0,
+        grove_commitment_tree_count: 0,
     },
     batch: DriveGroveBatchMethodVersions {
         batch_insert_empty_tree: 0,
@@ -51,6 +53,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_insert_empty_sum_tree: 0,
         batch_move: 0,
         batch_insert_item_with_sum_item_if_not_exists: 0,
+        batch_insert_auto_incremented_items_in_count_tree: 0,
     },
     apply: DriveGroveApplyMethodVersions {
         grove_apply_operation: 0,

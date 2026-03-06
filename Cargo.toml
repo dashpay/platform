@@ -40,16 +40,47 @@ members = [
     "packages/rs-dapi",
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
+    "packages/rs-platform-wallet-ffi",
+    "packages/rs-platform-encryption",
     "packages/wasm-sdk",
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "2824e52a3845d5f595fd5a113193bbc6cca72d6a" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "0bc6592bd41037ffc532d813d4c0828bea7cf882" }
+
+# Optimize heavy crypto crates even in dev/test builds so that
+# Halo 2 proof generation and verification run at near-release speed.
+# Without this, ZK operations are 10-100x slower (debug field arithmetic).
+[profile.dev.package.halo2_proofs]
+opt-level = 3
+[profile.dev.package.halo2_gadgets]
+opt-level = 3
+[profile.dev.package.halo2_poseidon]
+opt-level = 3
+[profile.dev.package.orchard]
+opt-level = 3
+[profile.dev.package.pasta_curves]
+opt-level = 3
+[profile.dev.package.grovedb-commitment-tree]
+opt-level = 3
+
+[profile.test.package.halo2_proofs]
+opt-level = 3
+[profile.test.package.halo2_gadgets]
+opt-level = 3
+[profile.test.package.halo2_poseidon]
+opt-level = 3
+[profile.test.package.orchard]
+opt-level = 3
+[profile.test.package.pasta_curves]
+opt-level = 3
+[profile.test.package.grovedb-commitment-tree]
+opt-level = 3
 
 # Strip full debug info from third-party crates in dev/test builds.
 # Keeps file + line for backtraces; skips types/variables/DWARF bloat.

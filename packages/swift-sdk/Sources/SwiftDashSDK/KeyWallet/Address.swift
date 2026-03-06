@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Address utilities
 public class Address {
-    
+
     /// Address type enumeration
     public enum AddressType: UInt8 {
         case p2pkh = 0
@@ -11,7 +11,7 @@ public class Address {
         case other = 2
         case unknown = 255
     }
-    
+
     /// Validate an address
     /// - Parameters:
     ///   - address: The address to validate
@@ -19,20 +19,20 @@ public class Address {
     /// - Returns: True if the address is valid
     public static func validate(_ address: String, network: KeyWalletNetwork = .mainnet) -> Bool {
         var error = FFIError()
-        
+
         let isValid = address.withCString { addressCStr in
             address_validate(addressCStr, network.ffiValue, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         return isValid
     }
-    
+
     /// Get the type of an address
     /// - Parameters:
     ///   - address: The address to check
@@ -40,17 +40,17 @@ public class Address {
     /// - Returns: The address type
     public static func getType(of address: String, network: KeyWalletNetwork = .mainnet) -> AddressType {
         var error = FFIError()
-        
+
         let typeRaw = address.withCString { addressCStr in
             address_get_type(addressCStr, network.ffiValue, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         // Map the raw value to our enum
         switch typeRaw {
         case 0:

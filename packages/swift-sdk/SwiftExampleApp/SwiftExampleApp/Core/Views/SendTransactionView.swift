@@ -1,29 +1,30 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct SendTransactionView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
-    
+
     @State private var recipientAddress = ""
     @State private var amountString = ""
     @State private var memo = ""
     @State private var isSending = false
     @State private var error: Error?
     @State private var successTxid: String?
-    
+
     private var amount: UInt64? {
         guard let double = Double(amountString) else { return nil }
         return UInt64(double * 100_000_000) // Convert DASH to duffs
     }
-    
+
     private var canSend: Bool {
         !recipientAddress.isEmpty &&
         amount != nil &&
         amount! > 0 &&
         amount! <= wallet.confirmedBalance
     }
-    
+
     var body: some View {
         NavigationStack {
             Form {
@@ -34,16 +35,16 @@ struct SendTransactionView: View {
                 } header: {
                     Text("Recipient")
                 }
-                
+
                 Section {
                     HStack {
                         TextField("0.00000000", text: $amountString)
                             .keyboardType(.decimalPad)
-                        
+
                         Text("DASH")
                             .foregroundColor(.secondary)
                     }
-                    
+
                     HStack {
                         Text("Available:")
                         Spacer()
@@ -59,13 +60,13 @@ struct SendTransactionView: View {
                             .foregroundColor(.red)
                     }
                 }
-                
+
                 Section {
                     TextField("Optional message", text: $memo)
                 } header: {
                     Text("Memo (Optional)")
                 }
-                
+
                 Section {
                     HStack {
                         Text("Network Fee:")
@@ -83,7 +84,7 @@ struct SendTransactionView: View {
                         dismiss()
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Send") {
                         sendTransaction()
@@ -120,12 +121,12 @@ struct SendTransactionView: View {
             }
         }
     }
-    
+
     private func sendTransaction() {
         guard let amount = amount else { return }
-        
+
         isSending = true
-        
+
         Task {
             do {
                 let txid = try await walletService.sendTransaction(
@@ -133,7 +134,7 @@ struct SendTransactionView: View {
                     amount: amount,
                     memo: memo.isEmpty ? nil : memo
                 )
-                
+
                 await MainActor.run {
                     successTxid = txid
                 }
@@ -145,15 +146,15 @@ struct SendTransactionView: View {
             }
         }
     }
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         // Special case for zero
         if dash == 0 {
             return "0 DASH"
         }
-        
+
         // Format with up to 8 decimal places, removing trailing zeros
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
@@ -161,11 +162,11 @@ struct SendTransactionView: View {
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-        
+
         // Fallback formatting
         let formatted = String(format: "%.8f", dash)
         let trimmed = formatted.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)

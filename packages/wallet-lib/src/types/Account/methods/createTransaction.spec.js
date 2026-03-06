@@ -20,7 +20,7 @@ describe('Account - createTransaction', function suite() {
   this.timeout(10000);
   let mockWallet;
 
-  it('sould warn on missing inputs', function () {
+  it('should warn on missing inputs', function () {
     const self = getFixtureHDAccountWithStorage()
     self.getUTXOS = getUTXOS;
     self.getUnusedAddress = getUnusedAddress;

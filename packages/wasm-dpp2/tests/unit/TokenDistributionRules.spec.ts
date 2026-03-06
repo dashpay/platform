@@ -29,9 +29,8 @@ function createChangeControlRules(
 
 // Helper to create pre-programmed distribution with proper Map format
 function createPreProgrammedDistribution(timestamp: number, identifierBase58: string, amount: bigint) {
-  const id = new wasm.Identifier(identifierBase58);
   const innerMap = new Map();
-  innerMap.set(id, amount);
+  innerMap.set(identifierBase58, amount);
   const outerMap = new Map();
   outerMap.set(timestamp.toString(), innerMap);
   return new wasm.TokenPreProgrammedDistribution(outerMap);

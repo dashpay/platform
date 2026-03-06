@@ -19,7 +19,7 @@ runs:
             JAVY_ARCH="arm-linux"
             ;;
           "X64")
-            JAVY_ARCH="x86_64-linux"            
+            JAVY_ARCH="x86_64-linux"
             ;;
           *)
             echo "Unsupported architecture: ${{ runner.arch }}"

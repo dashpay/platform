@@ -532,7 +532,7 @@ The rs-dapi binary is designed as a unified server that handles all DAPI functio
 
 All ports bind to internal Docker network. External access is handled by Envoy.
 
-#### Service livecycle management
+#### Service lifecycle management
 
 - **Docker** as primary deployment method
 - **Dashmate** as primary deployment and management tool

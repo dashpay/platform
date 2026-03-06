@@ -27,7 +27,7 @@ pub struct SimpleSigner {
 
     /// Maps address hash (20 bytes) to private key (32 bytes)
     pub address_private_keys: BTreeMap<[u8; 20], [u8; 32]>,
-    /// Addres private keys to be added at the end of a block
+    /// Address private keys to be added at the end of a block
     pub address_private_keys_in_creation: BTreeMap<[u8; 20], [u8; 32]>,
 }
 

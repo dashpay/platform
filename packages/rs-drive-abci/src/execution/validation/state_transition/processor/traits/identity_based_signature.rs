@@ -131,6 +131,13 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => Ok(ConsensusValidationResult::new()),
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 
@@ -176,6 +183,13 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_) => true,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 
@@ -197,6 +211,13 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreditTransferToAddresses(_) => true,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }
