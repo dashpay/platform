@@ -5,6 +5,7 @@ run:
   - packages/js-dash-sdk/**
   - packages/js-dapi-client/**
   - packages/wasm-dpp/**
+  - packages/wasm-dpp2/**
   - packages/dapi-grpc/**
   - packages/js-grpc-common/**
   - packages/dash-spv/**

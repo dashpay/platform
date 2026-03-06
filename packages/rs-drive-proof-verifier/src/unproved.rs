@@ -184,7 +184,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                     .map(|q_hash| {
                         let mut q_hash_array = [0u8; 32];
                         if q_hash.len() != 32 {
-                            return Err(Error::ResponseDecodeError {
+                            return Err(Error::ProtocolError {
                                 error: "Invalid quorum_hash length".to_string(),
                             });
                         }
@@ -196,7 +196,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                 // Extract current quorum hash
                 let mut current_quorum_hash = [0u8; 32];
                 if v0.current_quorum_hash.len() != 32 {
-                    return Err(Error::ResponseDecodeError {
+                    return Err(Error::ProtocolError {
                         error: "Invalid current_quorum_hash length".to_string(),
                     });
                 }
@@ -204,7 +204,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
 
                 let mut last_block_proposer = [0u8; 32];
                 if v0.last_block_proposer.len() != 32 {
-                    return Err(Error::ResponseDecodeError {
+                    return Err(Error::ProtocolError {
                         error: "Invalid last_block_proposer length".to_string(),
                     });
                 }
@@ -225,7 +225,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                                 .into_iter()
                                 .map(|member| {
                                     let pro_tx_hash = ProTxHash::from_slice(&member.pro_tx_hash)
-                                        .map_err(|_| Error::ResponseDecodeError {
+                                        .map_err(|_| Error::ProtocolError {
                                             error: "Invalid ProTxHash format".to_string(),
                                         })?;
                                     let validator = ValidatorV0 {
@@ -244,7 +244,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
 
                             Ok(ValidatorSet::V0(ValidatorSetV0 {
                                 quorum_hash: QuorumHash::from_slice(quorum_hash.as_slice())
-                                    .map_err(|_| Error::ResponseDecodeError {
+                                    .map_err(|_| Error::ProtocolError {
                                         error: "Invalid Quorum Hash format".to_string(),
                                     })?,
                                 quorum_index: None, // Assuming it's not provided here
@@ -253,7 +253,7 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                                 threshold_public_key: BlsPublicKey::try_from(
                                     vs.threshold_public_key.as_slice(),
                                 )
-                                .map_err(|_| Error::ResponseDecodeError {
+                                .map_err(|_| Error::ProtocolError {
                                     error: "Invalid BlsPublicKey format".to_string(),
                                 })?,
                             }))

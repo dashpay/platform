@@ -31,7 +31,7 @@ pub struct TokenMintTransitionBuilder {
 }
 
 impl TokenMintTransitionBuilder {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building a mint tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///

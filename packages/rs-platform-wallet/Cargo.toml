@@ -9,6 +9,8 @@ description = "Platform wallet with identity management support"
 [dependencies]
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract"] }
+platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
@@ -19,9 +21,13 @@ dashcore = { workspace = true }
 
 # Standard dependencies
 thiserror = "1.0"
+async-trait = "0.1"
 
 # Collections
 indexmap = "2.0"
+
+[dev-dependencies]
+rand = "0.8"
 
 
 [features]

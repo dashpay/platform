@@ -25,6 +25,9 @@ simple-signer = { path = "../simple-signer" }
 # Core SDK integration (always included for unified SDK)
 dash-spv-ffi = { workspace = true, optional = true }
 
+# Platform Wallet integration for DashPay support
+platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
+
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

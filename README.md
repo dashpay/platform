@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="GitHub CI Status" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg"></a>
   <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
@@ -19,6 +20,23 @@ Dash Platform is a technology stack for building decentralized applications on
 the Dash network. The two main architectural components, Drive and DAPI, turn
 the Dash P2P network into a cloud that developers can integrate with their
 applications.
+
+<details>
+<summary>Per-Crate Coverage</summary>
+
+| Crate | Coverage |
+|-------|----------|
+| dpp | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dpp)](https://codecov.io/gh/dashpay/platform/component/dpp) |
+| drive | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
+| drive-abci | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
+| sdk | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
+| dapi-client | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dapi-client)](https://codecov.io/gh/dashpay/platform/component/dapi-client) |
+| platform-version | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-version)](https://codecov.io/gh/dashpay/platform/component/platform-version) |
+| platform-value | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-value)](https://codecov.io/gh/dashpay/platform/component/platform-value) |
+| platform-wallet | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-wallet)](https://codecov.io/gh/dashpay/platform/component/platform-wallet) |
+| drive-proof-verifier | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-proof-verifier)](https://codecov.io/gh/dashpay/platform/component/drive-proof-verifier) |
+
+</details>
 
 If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Dash

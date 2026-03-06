@@ -89,25 +89,24 @@ let addresses = try managed.getExternalAddressRange(
 ### Transaction Management
 
 ```swift
-// Build a transaction
+// Build and sign a transaction in one step
 let outputs = [
     Transaction.Output(address: "XqHiz8EXYbTAtBEYs4pWTHh7ipEDQcNQeT", amount: 100000000)
 ]
 
-let txData = try Transaction.build(
+let result = try Transaction.buildAndSign(
+    manager: walletManager,
     wallet: wallet,
     accountIndex: 0,
     outputs: outputs,
-    feePerKB: 1000
+    feeRate: .normal
 )
-
-// Sign the transaction
-let signedTx = try Transaction.sign(wallet: wallet, transactionData: txData)
+print("Fee paid: \(result.fee) duffs")
 
 // Check if a transaction belongs to the wallet
 let checkResult = try Transaction.check(
     wallet: wallet,
-    transactionData: signedTx,
+    transactionData: result.transactionData,
     context: .mempool
 )
 

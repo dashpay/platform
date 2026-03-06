@@ -13,6 +13,7 @@ struct PlatformQueriesView: View {
         case epoch = "Epoch & Block"
         case token = "Token"
         case group = "Group"
+        case addresses = "Addresses"
         case system = "System & Utility"
         case diagnostics = "Diagnostics"
         
@@ -27,6 +28,7 @@ struct PlatformQueriesView: View {
             case .epoch: return "clock"
             case .token: return "dollarsign.circle"
             case .group: return "person.3"
+            case .addresses: return "wallet.pass"
             case .system: return "gear"
             case .diagnostics: return "stethoscope"
             }
@@ -43,6 +45,7 @@ struct PlatformQueriesView: View {
             case .epoch: return "Epoch and block information"
             case .token: return "Token balances and information"
             case .group: return "Group management queries"
+            case .addresses: return "Platform address balance and nonce queries"
             case .system: return "System status and utilities"
             case .diagnostics: return "Test and diagnose platform queries"
             }
@@ -82,49 +85,54 @@ struct QueryCategoryDetailView: View {
     @EnvironmentObject var appState: UnifiedAppState
     
     var body: some View {
-        List {
-            ForEach(queries(for: category), id: \.name) { query in
-                if query.name == "runAllQueries" {
-                    NavigationLink(destination: DiagnosticsView()) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(query.label)
-                                .font(.headline)
-                            Text(query.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
+        // Special handling for addresses category - use dedicated view
+        if category == .addresses {
+            AddressQueriesView()
+        } else {
+            List {
+                ForEach(queries(for: category), id: \.name) { query in
+                    if query.name == "runAllQueries" {
+                        NavigationLink(destination: DiagnosticsView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
-                    }
-                } else if query.name == "testDPNSQueries" {
-                    NavigationLink(destination: DPNSTestView()) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(query.label)
-                                .font(.headline)
-                            Text(query.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
+                    } else if query.name == "testDPNSQueries" {
+                        NavigationLink(destination: DPNSTestView()) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
-                    }
-                } else {
-                    NavigationLink(destination: QueryDetailView(query: query)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(query.label)
-                                .font(.headline)
-                            Text(query.description)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
+                    } else {
+                        NavigationLink(destination: QueryDetailView(query: query)) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(query.label)
+                                    .font(.headline)
+                                Text(query.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(.vertical, 4)
                         }
-                        .padding(.vertical, 4)
                     }
                 }
             }
+            .navigationTitle(category.rawValue)
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .navigationTitle(category.rawValue)
-        .navigationBarTitleDisplayMode(.inline)
     }
     
     private func queries(for category: PlatformQueriesView.QueryCategory) -> [QueryDefinition] {
@@ -221,6 +229,13 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getTotalCreditsInPlatform", label: "Get Total Credits in Platform", description: "Get total credits in the platform"),
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
                 QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account")
+            ]
+            
+        case .addresses:
+            // Addresses use a dedicated view, but define queries for completeness
+            return [
+                QueryDefinition(name: "getAddressInfo", label: "Get Address Info", description: "Fetch balance and nonce for a single Platform address"),
+                QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses")
             ]
             
         case .diagnostics:

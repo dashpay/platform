@@ -87,5 +87,8 @@ packages/wasm-sdk/wasm_sdk_bg.wasm
 packages/wasm-sdk/documentation-check-report.txt
 packages/wasm-sdk/extracted_definitions.json
 
+# mdBook build output (built by CI)
+book/book/
+
 # gRPC coverage report
 grpc-coverage-report.txt

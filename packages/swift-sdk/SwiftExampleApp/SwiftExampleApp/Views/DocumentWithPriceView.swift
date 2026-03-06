@@ -167,9 +167,9 @@ struct DocumentWithPriceView: View {
             return data.count == 32
         }
         
-        // Check if it's a valid hex string (64 characters)
-        if id.count == 64 {
-            return id.allSatisfy { $0.isHexDigit }
+        // Check if it's a valid hex string (64 characters = 32 bytes)
+        if AddressValidator.isHexIdentityId(id) {
+            return true
         }
         
         return false

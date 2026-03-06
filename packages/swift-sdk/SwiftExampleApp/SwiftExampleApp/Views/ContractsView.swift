@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct ContractsView: View {
     @EnvironmentObject var appState: AppState

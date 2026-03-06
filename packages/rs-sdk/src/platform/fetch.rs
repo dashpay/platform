@@ -6,14 +6,12 @@
 //! ## Traits
 //! - [Fetch]: An asynchronous trait that defines how to fetch data from Platform.
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
-//!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
+//!   traits. The associated [`Fetch::Request`] type needs to implement [TransportRequest].
 
 use crate::mock::MockResponse;
 use crate::sync::retry;
 use crate::{error::Error, platform::query::Query, Sdk};
-use dash_context_provider::ContextProvider;
 use dapi_grpc::platform::v0::{self as platform_proto, Proof, ResponseMetadata};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dpp::voting::votes::Vote;
@@ -34,8 +32,9 @@ use super::DocumentQuery;
 /// To fetch an object from Platform, you need to define some query (criteria that fetched object must match) and
 /// use [Fetch::fetch()] for your object type.
 ///
-/// Implementators of this trait should implement at least the [fetch_with_metadata()](Fetch::fetch_with_metadata)
-/// method, as other methods are convenience methods that call it with default settings.
+/// Implementors of this trait must define the associated [`Fetch::Request`] type.
+/// All methods have default implementations; override [fetch_with_metadata_and_proof()](Fetch::fetch_with_metadata_and_proof)
+/// if custom fetch logic is needed, as other methods are convenience methods that call it.
 ///
 /// ## Example
 ///
@@ -69,7 +68,7 @@ where
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement [`TransportRequest`] and [`MockRequest`].
+    /// This type must implement [`TransportRequest`].
     type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from Platform.
@@ -112,9 +111,9 @@ where
     ///
     /// ## Returns
     ///
-    /// Returns:
-    /// * `Ok(Some(Self))` when object is found
-    /// * `Ok(None)` when object is not found
+    /// Returns a tuple of the fetched object and [ResponseMetadata]:
+    /// * `Ok((Some(Self), ResponseMetadata))` when object is found
+    /// * `Ok((None, ResponseMetadata))` when object is not found
     /// * [`Err(Error)`](Error) when an error occurs
     ///
     /// ## Error Handling
@@ -135,7 +134,7 @@ where
     /// Fetch object from Platform that satisfies provided [Query].
     /// Most often, the Query is an [Identifier] of the object to be fetched.
     ///
-    /// This method is meant to give the user library a way to see the underlying proof
+    /// This method is meant to give the library user a way to see the underlying proof
     /// for educational purposes. This method should most likely only be used for debugging.
     ///
     /// ## Parameters
@@ -146,9 +145,9 @@ where
     ///
     /// ## Returns
     ///
-    /// Returns:
-    /// * `Ok(Some(Self))` when object is found
-    /// * `Ok(None)` when object is not found
+    /// Returns a tuple of the fetched object, [ResponseMetadata], and the underlying [Proof]:
+    /// * `Ok((Some(Self), ResponseMetadata, Proof))` when object is found
+    /// * `Ok((None, ResponseMetadata, Proof))` when object is not found
     /// * [`Err(Error)`](Error) when an error occurs
     ///
     /// ## Error Handling
@@ -159,8 +158,47 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request = query.query(sdk.prove())?;
-        fetch_request(sdk, &request, settings).await
+        let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
+
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|execution_error| execution_error.inner_into())?;
+
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
+
+            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
+                .parse_proof_with_metadata_and_proof(request.clone(), response)
+                .await
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
+                    retries,
+                })?;
+
+            match object {
+                Some(item) => Ok((item.into(), response_metadata, proof)),
+                None => Ok((None, response_metadata, proof)),
+            }
+            .map(|x| ExecutionResponse {
+                inner: x,
+                address,
+                retries,
+            })
+        };
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry(sdk.address_list(), settings, fut).await.into_inner()
     }
 
     /// Fetch single object from Platform.
@@ -223,85 +261,8 @@ impl Fetch for (dpp::prelude::DataContract, Vec<u8>) {
     type Request = platform_proto::GetDataContractRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for Document {
     type Request = DocumentQuery;
-
-    async fn fetch_with_metadata_and_proof<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &Sdk,
-        query: Q,
-        settings: Option<RequestSettings>,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let document_query: DocumentQuery = query.query(sdk.prove())?;
-
-        // First attempt with current (possibly cached) contract
-        match fetch_request(sdk, &document_query, settings).await {
-            Ok(result) => Ok(result),
-            Err(e) if is_document_deserialization_error(&e) => {
-                let fresh_query = refetch_contract_for_query(sdk, &document_query).await?;
-                fetch_request(sdk, &fresh_query, settings).await
-            }
-            Err(e) => Err(e),
-        }
-    }
-}
-
-/// Execute a fetch request with node-level retry logic.
-///
-/// Shared implementation used by both the default [Fetch::fetch_with_metadata_and_proof]
-/// and the [Document]-specific override.
-async fn fetch_request<O, R>(
-    sdk: &Sdk,
-    request: &R,
-    settings: Option<RequestSettings>,
-) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
-where
-    O: Sized
-        + Send
-        + Debug
-        + MockResponse
-        + FromProof<R, Request = R, Response = <R as DapiRequest>::Response>,
-    R: TransportRequest + Into<<O as FromProof<R>>::Request> + Clone + Debug,
-{
-    let fut = |settings: RequestSettings| async move {
-        let ExecutionResponse {
-            address,
-            retries,
-            inner: response,
-        } = request
-            .clone()
-            .execute(sdk, settings)
-            .await
-            .map_err(|execution_error| execution_error.inner_into())?;
-
-        let object_type = std::any::type_name::<O>().to_string();
-        tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
-
-        let (object, response_metadata, proof): (Option<O>, ResponseMetadata, Proof) = sdk
-            .parse_proof_with_metadata_and_proof(request.clone(), response)
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })?;
-
-        match object {
-            Some(item) => Ok((item.into(), response_metadata, proof)),
-            None => Ok((None, response_metadata, proof)),
-        }
-        .map(|x| ExecutionResponse {
-            inner: x,
-            address,
-            retries,
-        })
-    };
-
-    let settings = sdk
-        .dapi_client_settings
-        .override_by(settings.unwrap_or_default());
-
-    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 impl Fetch for drive_proof_verifier::types::IdentityBalance {
@@ -367,91 +328,4 @@ impl Fetch for drive_proof_verifier::types::RecentCompactedAddressBalanceChanges
 
 impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
     type Request = platform_proto::GetAddressesTrunkStateRequest;
-}
-
-/// Refetch the data contract from the network, update the context provider
-/// cache, and return a new [DocumentQuery] with the fresh contract.
-///
-/// Used by document fetch retry logic when a deserialization error indicates
-/// a stale cached contract.
-pub(super) async fn refetch_contract_for_query(
-    sdk: &Sdk,
-    document_query: &DocumentQuery,
-) -> Result<DocumentQuery, Error> {
-    tracing::debug!(
-        contract_id = ?document_query.data_contract.id(),
-        "refetching contract for document query after deserialization failure"
-    );
-
-    let fresh_contract = dpp::prelude::DataContract::fetch(sdk, document_query.data_contract.id())
-        .await?
-        .ok_or(Error::MissingDependency(
-            "DataContract".to_string(),
-            format!(
-                "data contract {} not found during refetch",
-                document_query.data_contract.id()
-            ),
-        ))?;
-
-    let fresh_contract = std::sync::Arc::new(fresh_contract);
-
-    // Update the cached contract in the context provider
-    if let Some(context_provider) = sdk.context_provider() {
-        context_provider.update_data_contract(fresh_contract.clone());
-    }
-
-    Ok(document_query.clone_with_contract(fresh_contract))
-}
-
-/// Returns true if the error indicates a document deserialization failure
-/// that could be caused by a stale/outdated data contract schema.
-pub(super) fn is_document_deserialization_error(error: &Error) -> bool {
-    use dpp::data_contract::errors::DataContractError;
-
-    matches!(
-        error,
-        Error::Proof(drive_proof_verifier::Error::ProtocolError(
-            dpp::ProtocolError::DataContractError(DataContractError::CorruptedSerialization(_))
-        ))
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use dpp::data_contract::errors::DataContractError;
-
-    #[test]
-    fn test_corrupted_serialization_is_detected() {
-        let error = Error::Proof(drive_proof_verifier::Error::ProtocolError(
-            dpp::ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                "test error".to_string(),
-            )),
-        ));
-
-        assert!(is_document_deserialization_error(&error));
-    }
-
-    #[test]
-    fn test_other_protocol_error_is_not_detected() {
-        let error = Error::Proof(drive_proof_verifier::Error::ProtocolError(
-            dpp::ProtocolError::DecodingError("some decoding error".to_string()),
-        ));
-
-        assert!(!is_document_deserialization_error(&error));
-    }
-
-    #[test]
-    fn test_other_proof_error_is_not_detected() {
-        let error = Error::Proof(drive_proof_verifier::Error::EmptyVersion);
-
-        assert!(!is_document_deserialization_error(&error));
-    }
-
-    #[test]
-    fn test_non_proof_error_is_not_detected() {
-        let error = Error::Generic("some error".to_string());
-
-        assert!(!is_document_deserialization_error(&error));
-    }
 }

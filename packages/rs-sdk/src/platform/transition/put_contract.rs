@@ -19,8 +19,8 @@ use super::waitable::Waitable;
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
 pub trait PutContract<S: Signer<IdentityPublicKey>>: Waitable {
-    /// Puts a document on platform
-    /// setting settings to `None` sets default connection behavior
+    /// Puts a contract on platform
+    /// Setting settings to `None` sets default connection behavior
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

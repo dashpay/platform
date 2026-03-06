@@ -6,6 +6,7 @@ struct StateTransitionsView: View {
     @EnvironmentObject var appState: UnifiedAppState
     
     enum TransitionCategory: String, CaseIterable {
+        case address = "Address"
         case identity = "Identity"
         case dataContract = "Data Contract"
         case document = "Document"
@@ -14,6 +15,7 @@ struct StateTransitionsView: View {
         
         var icon: String {
             switch self {
+            case .address: return "building.columns.fill"
             case .identity: return "person.fill"
             case .dataContract: return "doc.text.fill"
             case .document: return "doc.fill"
@@ -24,6 +26,7 @@ struct StateTransitionsView: View {
         
         var description: String {
             switch self {
+            case .address: return "Transfer and withdraw credits using Platform addresses"
             case .identity: return "Create, update, and manage identities"
             case .dataContract: return "Deploy and update data contracts"
             case .document: return "Create and manage documents"

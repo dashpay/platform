@@ -45,6 +45,9 @@ pub type OnAddressAbsentFn =
 pub type DestroyProviderFn = unsafe extern "C" fn(context: *mut c_void);
 
 /// VTable for address provider callbacks
+///
+/// Note: Optional function pointers (has_pending, highest_found_index, destroy)
+/// can be set to NULL in C. The implementation will check for null before calling.
 #[repr(C)]
 pub struct AddressProviderVTable {
     /// Get the gap limit for this provider
@@ -59,16 +62,16 @@ pub struct AddressProviderVTable {
     /// Called when an address is proven absent
     pub on_address_absent: OnAddressAbsentFn,
 
-    /// Check if there are still pending addresses
+    /// Check if there are still pending addresses (optional, can be NULL)
     /// If null, the default implementation (pending_addresses is non-empty) is used
-    pub has_pending: Option<HasPendingFn>,
+    pub has_pending: Option<unsafe extern "C" fn(context: *mut c_void) -> bool>,
 
-    /// Get the highest found index
-    /// If null, returns None
-    pub highest_found_index: Option<GetHighestFoundIndexFn>,
+    /// Get the highest found index (optional, can be NULL)
+    /// If null, returns None (u32::MAX means none found)
+    pub highest_found_index: Option<unsafe extern "C" fn(context: *mut c_void) -> u32>,
 
-    /// Optional destructor for cleanup
-    pub destroy: Option<DestroyProviderFn>,
+    /// Optional destructor for cleanup (can be NULL)
+    pub destroy: Option<unsafe extern "C" fn(context: *mut c_void)>,
 }
 
 /// FFI-compatible address provider using callbacks
@@ -163,8 +166,8 @@ impl<'a> AddressProvider for CallbackAddressProvider<'a> {
     fn highest_found_index(&self) -> Option<AddressIndex> {
         unsafe {
             let vtable = &*self.ffi.vtable;
-            if let Some(get_highest) = vtable.highest_found_index {
-                let index = get_highest(self.ffi.context);
+            if let Some(highest_found_index) = vtable.highest_found_index {
+                let index = highest_found_index(self.ffi.context);
                 if index == u32::MAX {
                     None
                 } else {

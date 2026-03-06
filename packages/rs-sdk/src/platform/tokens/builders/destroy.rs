@@ -15,7 +15,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 
-/// A builder to configure and broadcast token destroy funds transitions
+/// A builder to configure and broadcast token destroy frozen funds transitions
 pub struct TokenDestroyFrozenFundsTransitionBuilder {
     pub data_contract: Arc<DataContract>,
     pub token_position: TokenContractPosition,
@@ -29,7 +29,7 @@ pub struct TokenDestroyFrozenFundsTransitionBuilder {
 }
 
 impl TokenDestroyFrozenFundsTransitionBuilder {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building a destroy frozen funds transition for the provided DataContract.
     ///
     /// # Arguments
     ///
