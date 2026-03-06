@@ -1,0 +1,76 @@
+# Pre-commit hooks for platform
+# Install: pip install pre-commit && pre-commit install && pre-commit install --hook-type pre-push
+# See https://pre-commit.com for more information
+repos:
+  # ============================================================================
+  # FAST CHECKS - Run on every commit.
+  # ============================================================================
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: |
+          (?x)^(
+              .*\.md$
+          )$
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+        exclude: '\.rs$'  # Rust inner attributes (#![...]) look like shebangs
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.40.0
+    hooks:
+      - id: typos
+        args: ['--write-changes']
+        exclude: |
+          (?x)^(
+              .*\.lock$|
+              node_modules/
+          )$
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Format Rust code with rustfmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # ============================================================================
+  # SLOW CHECKS - Run on git push only.
+  # ============================================================================
+
+  - repo: local
+    hooks:
+      - id: clippy
+        name: clippy (workspace)
+        description: Run clippy on entire workspace
+        entry: cargo clippy --workspace
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push, manual]
+
+exclude: |
+  (?x)^(
+      target/|
+      .*/target/|
+      \.cargo/|
+      \.git/|
+      node_modules/|
+      .*/node_modules/
+  )$
