@@ -8,7 +8,7 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle,
+    read_pool_total_balance, reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY,
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -251,6 +251,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 
         if let Err(e) = reconstruct_and_verify_bundle(
             actions,
+            FLAGS_OUTPUTS_ONLY,
             -(shield_amount as i64),
             anchor,
             proof,

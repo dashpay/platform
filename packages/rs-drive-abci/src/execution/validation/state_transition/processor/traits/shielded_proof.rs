@@ -1,6 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::state_transition::state_transitions::shielded_common::reconstruct_and_verify_bundle;
+use crate::execution::validation::state_transition::state_transitions::shielded_common::{
+    reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY, FLAGS_SPENDS_AND_OUTPUTS, FLAGS_SPENDS_ONLY,
+};
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::shielded::SHIELDED_STORAGE_BYTES_PER_ACTION;
@@ -159,6 +161,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                         dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
+                                FLAGS_OUTPUTS_ONLY,
                                 -(v0.amount as i64),
                                 &v0.anchor,
                                 v0.proof.as_slice(),
@@ -171,6 +174,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
                                 0, // value_balance is 0 for shielded transfers (no net flow)
                                 &v0.anchor,
                                 v0.proof.as_slice(),
@@ -186,6 +190,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
+                                FLAGS_SPENDS_ONLY,
                                 v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
@@ -202,6 +207,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
+                                FLAGS_SPENDS_ONLY,
                                 v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
