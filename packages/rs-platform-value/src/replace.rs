@@ -314,7 +314,7 @@ impl Value {
     /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding
     /// binary type (Identifier or Binary Data) if that data is in one of the given paths.
     /// Paths can either be terminal, or can represent an object or an array (with values) where
-    /// all subvalues must be set to the bianry type.
+    /// all subvalues must be set to the binary type.
     /// Either returns `Err(Error::Structure("reason"))` or `Err(Error::ByteLengthNot32BytesError))`
     /// if the replacement can not happen.
     ///
@@ -385,7 +385,7 @@ impl Value {
     /// `replace_to_binary_types_when_setting_with_path` will replace a value with a corresponding
     /// binary type (Identifier or Binary Data) if that data is in one of the given paths.
     /// Paths can either be terminal, or can represent an object or an array (with values) where
-    /// all subvalues must be set to the bianry type.
+    /// all subvalues must be set to the binary type.
     /// Either returns `Err(Error::Structure("reason"))` or `Err(Error::ByteLengthNot32BytesError))`
     /// if the replacement can not happen.
     ///

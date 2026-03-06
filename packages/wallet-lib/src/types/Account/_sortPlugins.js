@@ -33,7 +33,7 @@ const sortUserPlugins = (defaultSortedPlugins, userUnsafePlugins, allowSensitive
     initializedSortedPlugins.push(plugin);
   });
 
-  // Iterate accross all user defined plugins
+  // Iterate across all user defined plugins
   each(userUnsafePlugins, (UnsafePlugin) => {
     const plugin = initPlugin(UnsafePlugin);
 

@@ -13,7 +13,7 @@ pub trait DriveOperationFinalizationTasks {
     fn finalization_tasks(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error>; // Since we have it only for one operation implemeneted we don't want the extra calls and empty vectors
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error>; // Since we have it only for one operation implemented we don't want the extra calls and empty vectors
 }
 
 impl DriveOperationFinalizeTask {
