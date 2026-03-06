@@ -11,7 +11,18 @@ mod v0;
 
 pub use v0::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 
-#[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, From, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    From,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[platform_serialize(unversioned)]
 pub enum AssetLockValue {
     V0(AssetLockValueV0),
