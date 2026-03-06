@@ -22,4 +22,3 @@ client.wallet.getAccount({ index: 1 })
 ```
 
 Awaiting for the `getAccount()` promise is necessary to ensure the wallet is synced-up with the network and make sure that the UTXO set is ready to be used for payment/signing.
-

@@ -6,14 +6,14 @@ struct LocalDataContractsView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     @Query(sort: \PersistentDataContract.lastAccessedAt, order: .reverse)
     private var dataContracts: [PersistentDataContract]
-    
+
     @State private var showingLoadContract = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
-    
+
     @Environment(\.modelContext) private var modelContext
-    
+
     var body: some View {
         List {
             if dataContracts.isEmpty {
@@ -21,11 +21,11 @@ struct LocalDataContractsView: View {
                     Image(systemName: "doc.text")
                         .font(.system(size: 60))
                         .foregroundColor(.secondary)
-                    
+
                     Text("No Local Contracts")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+
                     Text("Load data contracts from the network to use them offline")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -63,12 +63,12 @@ struct LocalDataContractsView: View {
             Text(errorMessage ?? "Unknown error occurred")
         }
     }
-    
+
     private func deleteContracts(at offsets: IndexSet) {
         for index in offsets {
             modelContext.delete(dataContracts[index])
         }
-        
+
         do {
             try modelContext.save()
         } catch {
@@ -81,7 +81,7 @@ struct LocalDataContractsView: View {
 struct DataContractRow: View {
     let contract: PersistentDataContract
     @State private var showingDetails = false
-    
+
     var displayName: String {
         // Check if this is a token-only contract
         if let tokens = contract.tokens,
@@ -96,11 +96,11 @@ struct DataContractRow: View {
                 return "Token Contract"
             }
         }
-        
+
         // Otherwise use the stored name
         return contract.name
     }
-    
+
     var body: some View {
         Button(action: { showingDetails = true }) {
             VStack(alignment: .leading, spacing: 4) {
@@ -113,20 +113,20 @@ struct DataContractRow: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Text(contract.idBase58)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                
+
                 HStack {
                     Text("Size: \(ByteCountFormatter.string(fromByteCount: Int64(contract.serializedContract.count), countStyle: .binary))")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    
+
                     Spacer()
-                    
+
                     Text("Last used: \(contract.lastAccessedAt, style: .relative)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -146,9 +146,9 @@ struct LoadDataContractView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @Binding var isLoading: Bool
-    
+
     @Query private var existingContracts: [PersistentDataContract]
-    
+
     @State private var contractId = ""
     @State private var contractName = ""
     @State private var errorMessage: String?
@@ -156,7 +156,7 @@ struct LoadDataContractView: View {
     @State private var fetchedContract: [String: Any]?
     @State private var showExampleContracts = false
     @State private var currentNetwork: String = "Unknown"
-    
+
     // Known testnet contracts - these are the common system contracts
     let exampleContracts = [
         ("DPNS Contract", "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"),
@@ -166,32 +166,32 @@ struct LoadDataContractView: View {
         ("Token History", "43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF"),
         ("Keyword Search", "BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA")
     ]
-    
+
     var body: some View {
         NavigationView {
             Form {
                 Section(footer: Text("Connected to: \(unifiedState.platformState.currentNetwork.rawValue)")) {
                     EmptyView()
                 }
-                
+
                 Section("Contract Details") {
                     HStack {
                         TextField("Contract ID (Base58)", text: $contractId)
                             .textContentType(.none)
                             .autocapitalization(.none)
                             .disabled(isLoading)
-                        
+
                         Button(action: { showExampleContracts.toggle() }) {
                             Image(systemName: "list.bullet")
                                 .foregroundColor(.blue)
                         }
                         .disabled(isLoading)
                     }
-                    
+
                     TextField("Name (Optional)", text: $contractName)
                         .textContentType(.none)
                         .disabled(isLoading)
-                    
+
                     if showExampleContracts {
                         Section(header: Text("Common System Contracts (\(unifiedState.platformState.currentNetwork.rawValue))")) {
                             ForEach(exampleContracts, id: \.1) { example in
@@ -220,7 +220,7 @@ struct LoadDataContractView: View {
                         }
                     }
                 }
-                
+
                 if isLoading {
                     Section {
                         HStack {
@@ -231,7 +231,7 @@ struct LoadDataContractView: View {
                         }
                     }
                 }
-                
+
                 if let contract = fetchedContract {
                     Section("Fetched Contract") {
                         if let id = contract["id"] as? String {
@@ -245,7 +245,7 @@ struct LoadDataContractView: View {
                                     .truncationMode(.middle)
                             }
                         }
-                        
+
                         if let schema = contract["schema"] as? [String: Any],
                            let documentTypes = schema["documents"] as? [String: Any] {
                             HStack {
@@ -267,7 +267,7 @@ struct LoadDataContractView: View {
                     }
                     .disabled(isLoading)
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Load") {
                         Task {
@@ -284,24 +284,24 @@ struct LoadDataContractView: View {
             }
         }
     }
-    
+
     private func loadContract() async {
         guard let sdk = unifiedState.sdk else {
             errorMessage = "SDK not initialized"
             showError = true
             return
         }
-        
+
         await MainActor.run {
             isLoading = true
         }
-        
+
         do {
             // Validate contract ID
             let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
-            
+
             print("🔵 Attempting to load contract with ID: \(trimmedId)")
-            
+
             // Basic validation - just check it's not empty
             guard !trimmedId.isEmpty else {
                 await MainActor.run {
@@ -311,54 +311,54 @@ struct LoadDataContractView: View {
                 }
                 return
             }
-            
+
             // Fetch the contract with both JSON and binary serialization
             guard let handle = sdk.handle else {
                 throw SDKError.invalidState("SDK not initialized")
             }
-            
+
             let result = trimmedId.withCString { idCStr in
                 dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, true)
             }
-            
+
             // Check for error
             if let error = result.error {
                 let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
                 dash_sdk_error_free(error)
                 throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
             }
-            
+
             // Get the JSON string
             guard result.json_string != nil else {
                 throw SDKError.internalError("No JSON data returned from contract fetch")
             }
-            
+
             let jsonString = String(cString: result.json_string!)
-            
+
             // Get the binary serialization
             var binaryData: Data? = nil
             if result.serialized_data != nil && result.serialized_data_len > 0 {
                 binaryData = Data(bytes: result.serialized_data, count: Int(result.serialized_data_len))
             }
-            
+
             // Clean up the contract handle if it was returned
             defer {
                 if result.contract_handle != nil {
                     dash_sdk_data_contract_destroy(result.contract_handle)
                 }
             }
-            
+
             // Parse the JSON
             guard let jsonData = jsonString.data(using: String.Encoding.utf8),
                   let contractData = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any] else {
                 throw SDKError.serializationError("Failed to parse contract JSON")
             }
-            
+
             print("✅ Contract fetched successfully")
             if let binaryData = binaryData {
                 print("📦 Binary serialization size: \(binaryData.count) bytes")
             }
-            
+
             // Add the contract to the trusted context if we have binary data
             if let binaryData = binaryData,
                let contractId = contractData["id"] as? String {
@@ -372,14 +372,14 @@ struct LoadDataContractView: View {
             } else {
                 print("⚠️ No binary data available to add contract to trusted context")
             }
-            
+
             await MainActor.run {
                 fetchedContract = contractData
             }
-            
+
             // Store the JSON for the contract
             let serializedContract = jsonData
-            
+
             // Get the contract ID from the response or convert from the input
             let contractIdData: Data
             if let idString = contractData["id"] as? String,
@@ -397,7 +397,7 @@ struct LoadDataContractView: View {
                 }
                 contractIdData = idData
             }
-            
+
             // Check if contract already exists
             if existingContracts.contains(where: { $0.id == contractIdData }) {
                 await MainActor.run {
@@ -407,19 +407,19 @@ struct LoadDataContractView: View {
                 }
                 return
             }
-            
+
             // Determine name
             var finalName = contractName.trimmingCharacters(in: .whitespacesAndNewlines)
             if finalName.isEmpty {
                 // Check if it's a token-only contract
                 let documents = contractData["documents"] as? [String: Any] ?? contractData["documentSchemas"] as? [String: Any] ?? [:]
                 let tokens = contractData["tokens"] as? [String: Any] ?? [:]
-                
+
                 if documents.isEmpty && tokens.count == 1,
                    let tokenData = tokens.values.first as? [String: Any] {
                     // Extract token name
                     var tokenName: String? = nil
-                    
+
                     // Try to get localized name first
                     if let conventions = tokenData["conventions"] as? [String: Any],
                        let localizations = conventions["localizations"] as? [String: Any],
@@ -427,12 +427,12 @@ struct LoadDataContractView: View {
                        let singularForm = enLocalization["singularForm"] as? String {
                         tokenName = singularForm
                     }
-                    
+
                     // Fallback to description or generic name
                     if tokenName == nil {
                         tokenName = tokenData["description"] as? String ?? tokenData["name"] as? String
                     }
-                    
+
                     if let tokenName = tokenName {
                         finalName = "\(tokenName) Token Contract"
                     } else {
@@ -446,35 +446,35 @@ struct LoadDataContractView: View {
                     finalName = "Contract \(trimmedId.prefix(8))..."
                 }
             }
-            
+
             // Save to persistent storage
             let persistentContract = PersistentDataContract(
                 id: contractIdData,
                 name: finalName,
                 serializedContract: serializedContract
             )
-            
+
             // Add the binary serialization if available
             persistentContract.binarySerialization = binaryData
-            
+
             modelContext.insert(persistentContract)
             try modelContext.save()
-            
+
             // Parse tokens and document types from the contract
             try DataContractParser.parseDataContract(
                 contractData: contractData,
                 contractId: contractIdData,
                 modelContext: modelContext
             )
-            
+
             // Save again to persist relationships
             try modelContext.save()
-            
+
             await MainActor.run {
                 isLoading = false
                 dismiss()
             }
-            
+
         } catch {
             print("❌ Failed to load contract: \(error)")
             await MainActor.run {

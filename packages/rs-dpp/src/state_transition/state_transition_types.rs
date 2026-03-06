@@ -35,6 +35,11 @@ pub enum StateTransitionType {
     AddressFundsTransfer = 12,
     AddressFundingFromAssetLock = 13,
     AddressCreditWithdrawal = 14,
+    Shield = 15,
+    ShieldedTransfer = 16,
+    Unshield = 17,
+    ShieldFromAssetLock = 18,
+    ShieldedWithdrawal = 19,
 }
 
 impl std::fmt::Display for StateTransitionType {

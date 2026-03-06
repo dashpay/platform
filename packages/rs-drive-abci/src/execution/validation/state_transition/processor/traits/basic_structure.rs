@@ -237,6 +237,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
     fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {
@@ -274,6 +281,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => true,
             StateTransition::MasternodeVote(_) => false,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }

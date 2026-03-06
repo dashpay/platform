@@ -86,7 +86,7 @@ struct MasternodeDiscoveryResponse {
 
 impl TrustedHttpContextProvider {
     /// Verify that a URL's domain resolves
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
         let parsed_url = Url::parse(url).map_err(|e| {
             TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
@@ -809,10 +809,6 @@ impl ContextProvider for TrustedHttpContextProvider {
                 "Unsupported network".to_string(),
             )),
         }
-    }
-
-    fn update_data_contract(&self, contract: Arc<DataContract>) {
-        self.add_known_contract((*contract).clone());
     }
 }
 

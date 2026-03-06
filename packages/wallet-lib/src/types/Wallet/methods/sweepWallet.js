@@ -49,7 +49,7 @@ async function sweepWallet(opts = {}) {
 
       const txid = await account.broadcastTransaction(tx);
 
-      logger.info(`SweepWallet: ${balance} of ${account.getAddress().address} to ${recipient} transfered. Txid :${txid}`);
+      logger.info(`SweepWallet: ${balance} of ${account.getAddress().address} to ${recipient} transferred. Txid :${txid}`);
 
       return resolve(newWallet);
     } catch (err) {

@@ -308,6 +308,11 @@ impl StateTransitionWasm {
             AddressFundsTransfer(_) => 12,
             AddressFundingFromAssetLock(_) => 13,
             AddressCreditWithdrawal(_) => 14,
+            Shield(_) => 15,
+            ShieldedTransfer(_) => 16,
+            Unshield(_) => 17,
+            ShieldFromAssetLock(_) => 18,
+            ShieldedWithdrawal(_) => 19,
         }
     }
 
@@ -392,6 +397,11 @@ impl StateTransitionWasm {
             | AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
             | AddressCreditWithdrawal(_) => None,
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
         }
     }
 
@@ -414,6 +424,11 @@ impl StateTransitionWasm {
             AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
             | AddressCreditWithdrawal(_) => None,
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => todo!("shielded transitions not yet implemented"),
         }
     }
 
@@ -551,6 +566,13 @@ impl StateTransitionWasm {
                     "Cannot set owner for address funds transfer transition",
                 ));
             }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         };
 
         Ok(())
@@ -618,6 +640,13 @@ impl StateTransitionWasm {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity contract nonce for address-related transition types",
                 ));
+            }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
             }
         };
 
@@ -706,6 +735,13 @@ impl StateTransitionWasm {
                 return Err(WasmDppError::invalid_argument(
                     "Cannot set identity nonce for address-related transition types",
                 ));
+            }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
             }
         };
 

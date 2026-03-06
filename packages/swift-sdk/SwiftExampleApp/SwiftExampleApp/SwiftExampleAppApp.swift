@@ -15,7 +15,7 @@ import SwiftDashSDK
 struct SwiftExampleAppApp: App {
     @StateObject private var unifiedState = UnifiedAppState()
     @State private var shouldResetApp = false
-    
+
     init() {
         // Suppress auto layout constraint warnings in debug builds
         // These are typically harmless keyboard-related warnings
@@ -23,7 +23,7 @@ struct SwiftExampleAppApp: App {
         UserDefaults.standard.set(false, forKey: "_UIConstraintBasedLayoutLogUnsatisfiable")
         #endif
     }
-    
+
     var body: some Scene {
         WindowGroup {
             if shouldResetApp {
@@ -57,7 +57,7 @@ struct SwiftExampleAppApp: App {
             }
         }
     }
-    
+
     @MainActor
     private func resetAppState() async {
         await unifiedState.reset()

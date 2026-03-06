@@ -43,7 +43,7 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
 /// - It contains only alphanumeric characters and hyphens
 /// - It doesn't have consecutive hyphens (enforced by the pattern)
 ///
-/// Pattern: ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$
+/// Pattern: `^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`
 ///
 /// # Arguments
 ///

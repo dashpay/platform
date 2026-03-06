@@ -1,0 +1,35 @@
+name: "Security Status"
+
+on:
+  workflow_run:
+    workflows:
+      - "Security: Rust Crates"
+      - "Security: JS NPM"
+      - "Security: JS CodeQL"
+    types:
+      - completed
+
+jobs:
+  check-status:
+    name: Aggregate security audit results
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check all security audit workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          failed=""
+          for workflow in "security-audit-rust.yml" "security-audit-js-npm.yml" "security-audit-js-codeql.yml"; do
+            conclusion=$(gh api "repos/${{ github.repository }}/actions/workflows/${workflow}/runs?per_page=1&branch=${{ github.event.workflow_run.head_branch }}" \
+              --jq '.workflow_runs[0].conclusion // "none"')
+            echo "${workflow}: ${conclusion}"
+            if [ "$conclusion" != "success" ]; then
+              failed="${failed} ${workflow}"
+            fi
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::Security audit failures:${failed}"
+            exit 1
+          fi
+          echo "All security audits passing"

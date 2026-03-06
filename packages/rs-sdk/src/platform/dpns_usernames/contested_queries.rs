@@ -32,7 +32,7 @@ pub struct ContestInfo {
     pub end_time: TimestampMillis,
 }
 
-/// Result of a contested DPNS username
+/// A contested DPNS username
 #[derive(Debug, Clone)]
 pub struct ContestedDpnsUsername {
     /// The domain label (e.g., "alice")

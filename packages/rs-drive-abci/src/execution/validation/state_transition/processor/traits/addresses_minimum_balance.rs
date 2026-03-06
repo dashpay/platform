@@ -72,6 +72,13 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::MasternodeVote(_) => {
                 return Ok(SimpleConsensusValidationResult::new());
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }?;
 
         // Convert ConsensusValidationResult<Credits> to SimpleConsensusValidationResult
@@ -97,6 +104,13 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::Batch(_)
             | StateTransition::MasternodeVote(_)
             | StateTransition::AddressFundingFromAssetLock(_) => false,
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }

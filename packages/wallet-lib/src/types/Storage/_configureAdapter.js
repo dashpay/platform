@@ -3,10 +3,10 @@ const { InvalidStorageAdapter } = require('../../errors');
 module.exports = async function configureAdapter(argAdapter) {
   let adapter;
   if (!argAdapter) throw new Error('Expected an adapter to configure');
-  const argAdapterContructorName = argAdapter.constructor.name;
+  const argAdapterConstructorName = argAdapter.constructor.name;
 
-  // In case of an adapter being a function, we assume it being a class non instanciated
-  if (argAdapterContructorName === 'Function') {
+  // In case of an adapter being a function, we assume it being a class non instantiated
+  if (argAdapterConstructorName === 'Function') {
     // eslint-disable-next-line new-cap
     adapter = new argAdapter();
     if (adapter.config) {
@@ -16,7 +16,7 @@ module.exports = async function configureAdapter(argAdapter) {
         throw new Error(`Tried to config the adapter. Failed with reason ${e.message}`);
       }
     } else if (adapter.createInstance) await adapter.createInstance({ name: 'dashevo-wallet-lib' });
-  } else if (argAdapterContructorName === 'Object') {
+  } else if (argAdapterConstructorName === 'Object') {
     if (argAdapter.createInstance) throw new Error('Adapter instance not created');
     adapter = argAdapter;
   } else {

@@ -16,8 +16,10 @@ fi
 OUTPUT_DIR="${PWD}/wasm"
 # shellcheck disable=SC2034
 OUTPUT_FILE="${OUTPUT_DIR}/wasm_dpp_bg.wasm"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 BUILD_COMMAND="cargo build --config net.git-fetch-with-cli=true --target=${TARGET} ${PROFILE_ARG}"
-BINDGEN_COMMAND="wasm-bindgen --out-dir=${OUTPUT_DIR} --target=web --omit-default-module-path ../../target/${TARGET}/${PROFILE}/wasm_dpp.wasm"
+BINDGEN_COMMAND="wasm-bindgen --out-dir=${OUTPUT_DIR} --target=web --omit-default-module-path ${CARGO_OUT_DIR}/${TARGET}/${PROFILE}/wasm_dpp.wasm"
 
 if ! [[ -d ${OUTPUT_DIR} ]]; then
   mkdir -p "${OUTPUT_DIR}"
@@ -49,7 +51,7 @@ fi
 
 if command -v wasm-opt &> /dev/null; then
   echo "Optimizing wasm using Binaryen"
-  
+
   # Check if we're in a release build (via CARGO_BUILD_PROFILE or GitHub event)
   if [ "${CARGO_BUILD_PROFILE}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "release" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
     echo "Running full optimizations for release build (CARGO_BUILD_PROFILE=${CARGO_BUILD_PROFILE}, GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-not_set})"

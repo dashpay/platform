@@ -1,0 +1,77 @@
+name: "Weekly CI Health Check"
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Monday 8:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check-ci-health:
+    name: Check last workflow runs on default branch
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout (gh needs repo context)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .
+          sparse-checkout-cone-mode: true
+
+      - name: Check all workflows and notify Slack on failures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+        run: |
+          # Auto-detect default branch
+          BRANCH=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name')
+          echo "Default branch: ${BRANCH}"
+
+          # Get all active workflow names
+          mapfile -t WORKFLOWS < <(gh workflow list --json name --jq '.[].name' -L 100)
+          echo "Found ${#WORKFLOWS[@]} active workflows"
+
+          # Check each workflow's last run on the default branch
+          for wf_name in "${WORKFLOWS[@]}"; do
+            run_json=$(gh run list \
+              -w "$wf_name" \
+              -b "$BRANCH" \
+              --limit 1 \
+              --json conclusion,url,updatedAt,workflowName \
+              --jq '.[0] // empty' 2>/dev/null || true)
+
+            [ -z "$run_json" ] && continue
+
+            conclusion=$(echo "$run_json" | jq -r '.conclusion // "in_progress"')
+            run_url=$(echo "$run_json" | jq -r '.url')
+            updated=$(echo "$run_json" | jq -r '.updatedAt')
+
+            echo "${wf_name}: ${conclusion} (${updated})"
+
+            if [ "$conclusion" = "failure" ]; then
+              printf '%s|%s|%s\n' "$wf_name" "$run_url" "$updated" >> /tmp/failures.txt
+            fi
+          done
+
+          if [ -s /tmp/failures.txt ]; then
+            BLOCKS=""
+            NL=$'\n'
+            while IFS='|' read -r name url updated; do
+              BLOCKS="${BLOCKS}• *<${url}|${name}>* — failed (${updated})${NL}"
+            done < /tmp/failures.txt
+
+            TEXT=":pirate_flag: *Arrr! The CI be takin' on water again!*${NL}Failures on \`${BRANCH}\`:${NL}${NL}${BLOCKS}"
+            PAYLOAD=$(jq -n --arg text "$TEXT" '{text: $text}')
+
+            curl -sf -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "$PAYLOAD"
+
+            echo ""
+            echo "::warning::CI failures detected — Slack notification sent"
+          else
+            echo ""
+            echo "All workflows healthy on ${BRANCH}"
+          fi

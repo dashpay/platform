@@ -90,7 +90,7 @@ where
     unimplemented!("block_on is not supported in wasm");
 }
 
-/// Worker function that runs the provided future and sends the result back to the caller using oneshot channel.
+/// Worker function that runs the provided future and sends the result back to the caller using mpsc channel.
 #[cfg(not(target_arch = "wasm32"))]
 async fn worker<F: Future>(
     fut: F,
@@ -160,7 +160,7 @@ async fn worker<F: Future>(
 /// ## Troubleshooting
 ///
 /// Compiler error: `no method named retry found for closure`:
-/// - ensure returned value is [`ExecutionResult`].,
+/// - ensure returned value is [`ExecutionResult`].
 /// - consider adding `.await` at the end of the closure.
 pub async fn retry<Fut, FutureFactoryFn, R>(
     address_list: &AddressList,

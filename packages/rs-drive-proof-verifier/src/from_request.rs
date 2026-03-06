@@ -31,7 +31,7 @@ use crate::Error;
 
 const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
 
-/// Conver a gRPC request into a query object.
+/// Convert a gRPC request into a query object.
 ///
 /// This trait is implemented on Drive queries that can be created from gRPC requests.
 ///

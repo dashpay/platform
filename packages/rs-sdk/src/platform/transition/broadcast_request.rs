@@ -1,10 +1,10 @@
-//! Broadcast trait representing the action of broadcasting a new identity state transition to Platform.
+//! Broadcast trait representing the action of broadcasting a state transition to Platform.
 //!
-//! The [BroadcastRequestForNewIdentity] trait is designed for the creation and broadcasting of new identity state transitions.
-//! This involves the generation of a state transition object, signing it, and then broadcasting it to Platform.
+//! The [`BroadcastRequestForStateTransition`] trait is designed for serializing state transitions
+//! into transport requests suitable for broadcasting to Platform.
 //!
-//! This trait is expected to be implemented by objects that encapsulate the necessary data and logic to perform
-//! these operations, including the handling of asset lock proof and signing operations.
+//! This trait is expected to be implemented by objects that encapsulate the necessary data and logic
+//! to serialize a state transition and prepare it for transport.
 use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
@@ -20,67 +20,40 @@ use dpp::state_transition::StateTransition;
 
 use crate::error::Error;
 
-/// Trait implemented by objects that can be used to broadcast new identity state transitions.
+/// Trait implemented by objects that can be used to create broadcast requests for state transitions.
 ///
-/// [BroadcastRequestForNewIdentity] trait is used when a new identity needs to be created and broadcasted on Platform.
-/// It encapsulates the data, the signing process, and the logic required to perform the broadcast operation.
+/// [`BroadcastRequestForStateTransition`] trait is used when a state transition needs to be broadcasted on Platform.
+/// It encapsulates the serialization logic required to convert a state transition into a transport request.
 ///
-/// Implementors of this trait will typically be responsible for creating an identity state transition,
-/// signing it with the provided private key and signer, and preparing it for transport to Platform.
+/// Implementors of this trait will typically be responsible for serializing a state transition
+/// and preparing it for transport to Platform.
 ///
 /// ## Example
 ///
-/// To broadcast a new [Identity](dpp::prelude::Identity) state transition, you would typically
-/// create an [IdentityCreateTransition](dpp::state_transition::identity_create_transition::IdentityCreateTransition),
-/// sign it, and use the `broadcast_new_identity` method provided by this trait:
+/// To broadcast a [`StateTransition`] and wait for
+/// Platform to confirm it, use the higher-level
+/// [`BroadcastStateTransition`](super::broadcast::BroadcastStateTransition) trait which wraps
+/// this trait with retry logic, error handling, and proof verification:
 ///
-/// ```rust, ignore
+/// ```rust,ignore
+/// use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 ///
-/// use dash_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
-/// use dpp::identity::signer::Signer;
-/// use dpp::prelude::{AssetLockProof, PrivateKey};
-/// use dpp::version::PlatformVersion;
-///
-/// let mut sdk = Sdk::new_mock();
-/// let asset_lock_proof = AssetLockProof::new(/* parameters for the asset lock proof */);
-/// let private_key = PrivateKey::from(/* private key data */);
-/// let signer = /* implementation of Signer trait */;
-/// let platform_version = PlatformVersion::latest();
-///
-/// let identity_transition = IdentityCreateTransition::new(/* parameters for the transition */);
-/// let result = identity_transition.broadcast_new_identity(asset_lock_proof, private_key, &signer, &platform_version);
-///
-/// match result {
-///     Ok(transport_request) => {
-///         // The transport_request can now be sent to Platform to broadcast the new identity.
-///     }
-///     Err(e) => {
-///         // Handle the error
-///     }
-/// }
+/// // Assume `sdk` is a connected Sdk instance and
+/// // `state_transition` is an already-constructed and signed StateTransition.
+/// state_transition.broadcast_and_wait(&sdk, None).await?;
 /// ```
 ///
-/// As [BroadcastRequestForStateTransition] is a trait, it can be implemented for any type that represents
-/// a new identity creation operation, allowing for flexibility in how new identities are broadcasted.
+/// As [`BroadcastRequestForStateTransition`] is a trait, it can be implemented for any type that represents
+/// a state transition, allowing for flexibility in how state transitions are broadcasted.
 pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
-    /// Converts the current instance into an instance of the `TransportRequest` type, ready for broadcasting.
-    ///
-    /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion,
-    /// including signing the state transition with the provided private key and signer.
-    ///
-    /// # Arguments
-    ///
-    /// * `asset_lock_proof` - The proof that locks the asset which is used to create the identity.
-    /// * `asset_lock_proof_private_key` - The private key associated with the asset lock proof.
-    /// * `signer` - The signer to be used for signing the state transition.
-    /// * `platform_version` - The version of Platform for which the state transition is intended.
+    /// Serializes the state transition into a [`BroadcastStateTransitionRequest`] ready for broadcasting.
     ///
     /// # Returns
-    /// On success, this method yields an instance of the `TransportRequest` type (`T`), which can be used to broadcast the new identity state transition to Platform.
+    /// On success, this method yields a [`BroadcastStateTransitionRequest`] which can be sent to Platform.
     /// On failure, it yields an [`Error`].
     ///
     /// # Error Handling
-    /// This method propagates any errors encountered during the signing or conversion process.
+    /// This method propagates any errors encountered during serialization.
     /// These are returned as [`Error`] instances.
     fn broadcast_request_for_state_transition(
         &self,

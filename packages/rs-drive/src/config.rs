@@ -122,7 +122,7 @@ pub struct DriveConfig {
     pub network: Network,
 }
 
-// TODO: some weird envy behavior requries this to exist
+// TODO: some weird envy behavior requires this to exist
 #[cfg(all(feature = "serde", feature = "grovedbg"))]
 fn from_str_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where

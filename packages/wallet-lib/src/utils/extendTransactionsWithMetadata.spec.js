@@ -19,7 +19,7 @@ transactionsMetadata[txid] = {
 describe('Utils - extendTransactionWithMetadata', function suite() {
   it('should correctly extend metadata from transaction', function () {
     const result = extendTransactionsWithMetadata(transactions, transactionsMetadata);
-    const expectedResults = [[tx,{ 
+    const expectedResults = [[tx,{
     blockHash: '0000012cf6377c6cf2b317a4deed46573c09f04f6880dca731cc9ccea6691e19',
     height: 555508,
     instantLocked: true,

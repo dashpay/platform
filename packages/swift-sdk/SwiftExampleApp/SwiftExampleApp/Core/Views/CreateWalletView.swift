@@ -6,7 +6,7 @@ struct CreateWalletView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
-    
+
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
     @State private var importMnemonic: String = ""
@@ -15,33 +15,34 @@ struct CreateWalletView: View {
     @State private var isCreating: Bool = false
     @State private var error: Error? = nil
     @FocusState private var focusedField: Field?
-    
+
     // Seed backup flow
     @State private var showBackupScreen: Bool = false
     @State private var generatedMnemonic: String = ""
     @State private var selectedWordCount: Int = 12
-    
+
     // Network selection states
     @State private var createForMainnet: Bool = false
     @State private var createForTestnet: Bool = false
+    @State private var createForRegtest: Bool = false
     @State private var createForDevnet: Bool = false
-    
+
     enum Field: Hashable {
         case walletName
         case pin
         case confirmPin
         case mnemonic
     }
-    
-    var currentNetwork: Network {
+
+    var currentNetwork: AppNetwork {
         unifiedAppState.platformState.currentNetwork
     }
-    
+
     // Only show devnet option if currently on devnet
     var shouldShowDevnet: Bool {
         currentNetwork == .devnet
     }
-    
+
     var body: some View {
         Form {
             Section {
@@ -55,13 +56,13 @@ struct CreateWalletView: View {
             } header: {
                 Text("Wallet Information")
             }
-            
+
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Create wallet for:")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    
+
                     // Always show Mainnet and Testnet
                     Toggle(isOn: $createForMainnet) {
                         HStack {
@@ -72,7 +73,7 @@ struct CreateWalletView: View {
                         }
                     }
                     .toggleStyle(CheckboxToggleStyle())
-                    
+
                     Toggle(isOn: $createForTestnet) {
                         HStack {
                             Image(systemName: "network")
@@ -82,7 +83,7 @@ struct CreateWalletView: View {
                         }
                     }
                     .toggleStyle(CheckboxToggleStyle())
-                    
+
                     // Only show Devnet if currently on Devnet
                     if shouldShowDevnet {
                         Toggle(isOn: $createForDevnet) {
@@ -102,7 +103,7 @@ struct CreateWalletView: View {
             } footer: {
                 Text("Select which networks to create wallets for. The same seed will be used for all selected networks.")
             }
-            
+
             Section {
                 HStack {
                     Text("PIN:")
@@ -113,7 +114,7 @@ struct CreateWalletView: View {
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .pin)
                 }
-                
+
                 HStack {
                     Text("Confirm PIN:")
                         .frame(width: 100, alignment: .leading)
@@ -128,13 +129,13 @@ struct CreateWalletView: View {
             } footer: {
                 Text("Choose a PIN to secure your wallet (4-6 digits)")
             }
-            
+
             Section {
                 Toggle("Import Existing Wallet", isOn: $showImportOption)
             } header: {
                 Text("Options")
             }
-            
+
             if !showImportOption {
                 Section {
                     Picker("Word Count", selection: $selectedWordCount) {
@@ -174,7 +175,7 @@ struct CreateWalletView: View {
                     dismiss()
                 }
             }
-            
+
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Create") {
                     onCreateTapped()
@@ -210,7 +211,7 @@ struct CreateWalletView: View {
             )
         }
     }
-    
+
     private var canCreateWallet: Bool {
         !walletLabel.isEmpty &&
         !walletPin.isEmpty &&
@@ -218,11 +219,11 @@ struct CreateWalletView: View {
         !isCreating &&
         hasNetworkSelected
     }
-    
+
     private var hasNetworkSelected: Bool {
         createForMainnet || createForTestnet || createForDevnet
     }
-    
+
     private func setupInitialNetworkSelection() {
         // Set the current network as selected by default
         switch currentNetwork {
@@ -230,11 +231,13 @@ struct CreateWalletView: View {
             createForMainnet = true
         case .testnet:
             createForTestnet = true
+        case .regtest:
+            createForRegtest = true
         case .devnet:
             createForDevnet = true
         }
     }
-    
+
     private func onCreateTapped() {
         // If importing, go straight to creation with provided mnemonic
         if showImportOption {
@@ -260,23 +263,23 @@ struct CreateWalletView: View {
             print("PIN length valid: \(walletPin.count >= 4 && walletPin.count <= 6)")
             return
         }
-        
+
         isCreating = true
-        
+
         Task {
             do {
                 print("=== STARTING WALLET CREATION ===")
-                
+
                 let mnemonic: String? = (showImportOption ? importMnemonic : mnemonic)
                 print("Has mnemonic: \(mnemonic != nil)")
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
-                
+
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [Network] = [
-                    createForMainnet ? Network.mainnet : nil,
-                    createForTestnet ? Network.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                let selectedNetworks: [AppNetwork] = [
+                    createForMainnet ? AppNetwork.mainnet : nil,
+                    createForTestnet ? AppNetwork.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {
@@ -284,32 +287,25 @@ struct CreateWalletView: View {
                 }
 
                 // Create exactly one wallet in the SDK; do not append network to label
-                let wallet = try await walletService.createWallet(
+                _ = try await walletService.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,
-                    network: primaryNetwork,
-                    networks: selectedNetworks,
                     isImport: showImportOption
                 )
 
                 // Update wallet.networks bitfield to reflect all user selections
-                var networksBitfield: UInt32 = 0
-                if createForMainnet { networksBitfield |= 1 }
-                if createForTestnet { networksBitfield |= 2 }
-                if createForDevnet && shouldShowDevnet { networksBitfield |= 8 }
-                wallet.networks = networksBitfield
                 try? modelContext.save()
 
                 print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
-                
+
                 await MainActor.run {
                     dismiss()
                 }
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")
-                
+
                 await MainActor.run {
                     self.error = error
                     isCreating = false
@@ -328,9 +324,9 @@ struct CheckboxToggleStyle: ToggleStyle {
                 .onTapGesture {
                     configuration.isOn.toggle()
                 }
-            
+
             configuration.label
-            
+
             Spacer()
         }
     }

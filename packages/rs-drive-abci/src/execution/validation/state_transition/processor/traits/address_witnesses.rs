@@ -81,6 +81,13 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityCreditTransferToAddresses(_) => {
                         return Ok(SimpleConsensusValidationResult::new());
                     }
+                    StateTransition::Shield(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_) => {
+                        todo!("shielded transitions not yet implemented")
+                    }
                 };
 
                 // Add operations to execution context for fee calculation
@@ -191,6 +198,13 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
                     | StateTransition::IdentityCreditTransferToAddresses(_) => false,
+                    StateTransition::Shield(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_) => {
+                        todo!("shielded transitions not yet implemented")
+                    }
                 };
 
                 Ok(has_address_witness_validation)

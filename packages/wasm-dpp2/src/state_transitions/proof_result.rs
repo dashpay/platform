@@ -246,7 +246,7 @@ impl_wasm_conversions!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
 #[wasm_bindgen(js_name = "VerifiedTokenIdentitiesBalances")]
 #[derive(Clone)]
 pub struct VerifiedTokenIdentitiesBalancesWasm {
-    balances: Map, // Map<IdentifierWasm, BigInt>
+    balances: Map, // Map<string(base58), BigInt>
 }
 
 #[wasm_bindgen(js_class = VerifiedTokenIdentitiesBalances)]
@@ -319,7 +319,7 @@ impl_wasm_conversions!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
 #[wasm_bindgen(js_name = "VerifiedDocuments")]
 #[derive(Clone)]
 pub struct VerifiedDocumentsWasm {
-    documents: Map, // Map<IdentifierWasm, DocumentWasm | undefined>
+    documents: Map, // Map<string(base58), DocumentWasm | undefined>
 }
 
 #[wasm_bindgen(js_class = VerifiedDocuments)]
@@ -786,7 +786,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedTokenIdentitiesBalances(balances) => {
             let map = Map::from_entries(balances.into_iter().map(|(id, amount)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = BigInt::from(amount).into();
                 (key, val)
             }));
@@ -808,7 +808,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedDocuments(docs) => {
             let map = Map::from_entries(docs.into_iter().map(|(id, maybe_doc)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = match maybe_doc {
                     Some(doc) => doc_to_wasm(doc).into(),
                     None => JsValue::undefined(),
@@ -893,6 +893,13 @@ pub fn convert_proof_result(
                 address_infos: build_address_infos_map(infos),
             }
             .into()
+        }
+
+        StateTransitionProofResult::VerifiedAssetLockConsumed(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiers(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(_, _)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(_, _) => {
+            todo!("shielded proof results not yet implemented in wasm")
         }
     };
 

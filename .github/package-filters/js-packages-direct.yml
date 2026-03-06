@@ -22,6 +22,9 @@
 '@dashevo/wasm-dpp':
   - packages/wasm-dpp/**
 
+'@dashevo/wasm-dpp2':
+  - packages/wasm-dpp2/**
+
 '@dashevo/dapi-grpc':
   - packages/dapi-grpc/**
 

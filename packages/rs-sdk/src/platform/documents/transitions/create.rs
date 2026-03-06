@@ -107,7 +107,7 @@ impl DocumentCreateTransitionBuilder {
     ///
     /// # Arguments
     ///
-    /// * `settings` - The settings to add
+    /// * `creation_options` - The creation options to add
     ///
     /// # Returns
     ///
@@ -128,7 +128,6 @@ impl DocumentCreateTransitionBuilder {
     /// * `identity_public_key` - The public key of the identity
     /// * `signer` - The signer instance
     /// * `platform_version` - The platform version
-    /// * `options` - Optional state transition creation options
     ///
     /// # Returns
     ///

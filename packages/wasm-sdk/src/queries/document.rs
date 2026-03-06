@@ -306,7 +306,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getDocuments",
-        unchecked_return_type = "Map<Identifier, Document | undefined>"
+        unchecked_return_type = "Map<string, Document | undefined>"
     )]
     pub async fn get_documents(&self, query: DocumentsQueryJs) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::FetchMany;
@@ -322,7 +322,7 @@ impl WasmSdk {
         let doc_type_name = document_type_name;
 
         for (doc_id, doc_opt) in documents_result {
-            let key = JsValue::from(IdentifierWasm::from(doc_id));
+            let key: JsValue = IdentifierWasm::from(doc_id).to_base58().into();
 
             match doc_opt {
                 Some(doc) => {
@@ -340,7 +340,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDocumentsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, Document | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, Document | undefined>>"
     )]
     pub async fn get_documents_with_proof_info(
         &self,
@@ -357,7 +357,7 @@ impl WasmSdk {
         let doc_type_name = document_type_name;
 
         for (doc_id, doc_opt) in documents_result {
-            let key = JsValue::from(IdentifierWasm::from(doc_id));
+            let key: JsValue = IdentifierWasm::from(doc_id).to_base58().into();
 
             match doc_opt {
                 Some(doc) => {

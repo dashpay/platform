@@ -66,7 +66,7 @@ async fn test_contested_resource_voters_for_identity_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn contested_resource_voters_for_existing_contestant() {
     setup_logs();
@@ -76,7 +76,7 @@ async fn contested_resource_voters_for_existing_contestant() {
         .setup_api("contested_resource_voters_for_existing_contestant")
         .await;
 
-    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+    super::contested_resource::check_mn_voting_prerequisites(&cfg)
         .await
         .expect("prerequisites");
 

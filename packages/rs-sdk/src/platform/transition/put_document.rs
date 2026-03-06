@@ -32,7 +32,7 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Puts an identity on platform and waits for the confirmation proof
+    /// Puts a document on platform and waits for the confirmation proof
     #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response(
         &self,

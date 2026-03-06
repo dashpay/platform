@@ -7,8 +7,8 @@ use drive::error::proof::ProofError;
 /// Constructs a `BlockInfo` structure from the provided response metadata. This function
 /// translates metadata received from a platform response into a format that is specific to the
 /// application's needs, particularly focusing on block-related information. It ensures that
-/// the epoch value from the metadata does not exceed the maximum allowed for a 16-bit integer,
-/// as this is a constraint for the `BlockInfo` structure.
+/// the epoch value from the metadata does not exceed `MAX_EPOCH`,
+/// as this is a constraint for the `Epoch` type used in the `BlockInfo` structure.
 ///
 /// # Parameters
 /// - `response_metadata`: A reference to `ResponseMetadata` obtained from a platform response.
@@ -20,18 +20,18 @@ use drive::error::proof::ProofError;
 /// - `time_ms`: The timestamp of the block in milliseconds.
 /// - `height`: The height of the block.
 /// - `core_height`: The core chain locked height, indicating the height of the block in the core blockchain that is considered final and securely linked to this block.
-/// - `epoch`: The epoch number, converted to a 16-bit integer.
+/// - `epoch`: The epoch number, converted to an `Epoch` struct via a 16-bit number.
 ///
 /// # Errors
 /// Returns an error if:
-/// - The `epoch` value in the response metadata exceeds the maximum value that can be represented by a 16-bit integer. This is considered a data validity error as it indicates Platform returned an unexpectedly high epoch number.
+/// - The `epoch` value in the response metadata exceeds `MAX_EPOCH`. This is considered a data validity error as it indicates Platform returned an unexpectedly high epoch number.
 ///
 /// The function encapsulates errors into the application's own `Error` type, providing a unified interface for error handling across the application.
 pub fn block_info_from_metadata(response_metadata: &ResponseMetadata) -> Result<BlockInfo, Error> {
     if response_metadata.epoch > MAX_EPOCH as u32 {
         return Err(
             drive::error::Error::Proof(ProofError::InvalidMetadata(format!(
-                "platform returned an epoch {} that was higher that maximum of a 16 bit integer",
+                "platform returned an epoch {} that was higher than the maximum allowed epoch",
                 response_metadata.epoch
             )))
             .into(),

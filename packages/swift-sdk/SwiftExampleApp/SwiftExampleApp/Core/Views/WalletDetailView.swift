@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
 
@@ -10,7 +11,7 @@ struct WalletDetailView: View {
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Network indicator
@@ -26,11 +27,11 @@ struct WalletDetailView: View {
             }
             .padding(.horizontal)
             .padding(.top, 8)
-            
+
             // Balance Card
             BalanceCardView(wallet: wallet)
                 .padding()
-            
+
             // Action Buttons
             HStack(spacing: 16) {
                 Button {
@@ -40,7 +41,7 @@ struct WalletDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                
+
                 Button {
                     showReceiveAddress = true
                 } label: {
@@ -154,11 +155,12 @@ struct WalletInfoView: View {
     @Environment(\.modelContext) var modelContext
     let wallet: HDWallet
     var onWalletDeleted: () -> Void = {}
-    
+
     @State private var editedName: String = ""
     @State private var isEditingName = false
     @State private var mainnetEnabled: Bool = false
     @State private var testnetEnabled: Bool = false
+    @State private var regtestEnabled: Bool = false
     @State private var devnetEnabled: Bool = false
     @State private var isUpdatingNetworks = false
     @State private var errorMessage: String?
@@ -168,7 +170,7 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -178,13 +180,13 @@ struct WalletInfoView: View {
                         HStack {
                             TextField("Wallet Name", text: $editedName)
                                 .textFieldStyle(.plain)
-                            
+
                             Button("Cancel") {
                                 editedName = wallet.label
                                 isEditingName = false
                             }
                             .buttonStyle(.bordered)
-                            
+
                             Button("Save") {
                                 saveWalletName()
                             }
@@ -202,7 +204,7 @@ struct WalletInfoView: View {
                         }
                     }
                 }
-                
+
                 // Networks Section
                 Section("Networks") {
                     HStack {
@@ -223,7 +225,7 @@ struct WalletInfoView: View {
                             .disabled(isUpdatingNetworks)
                         }
                     }
-                    
+
                     HStack {
                         Text("Testnet")
                         Spacer()
@@ -242,7 +244,7 @@ struct WalletInfoView: View {
                             .disabled(isUpdatingNetworks)
                         }
                     }
-                    
+
                     HStack {
                         Text("Devnet")
                         Spacer()
@@ -262,13 +264,13 @@ struct WalletInfoView: View {
                         }
                     }
                 }
-                
+
                 Section {
                     Text("Once a network is enabled, it cannot be removed. Tap + to add a network.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 // Wallet Info Section
                 Section("Information") {
                     HStack {
@@ -277,7 +279,7 @@ struct WalletInfoView: View {
                         Text(wallet.createdAt, style: .date)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     if let walletId = wallet.walletId {
                         HStack {
                             Text("Wallet ID")
@@ -289,7 +291,7 @@ struct WalletInfoView: View {
                                 .multilineTextAlignment(.trailing)
                         }
                     }
-                    
+
                     if mainnetEnabled {
                         HStack {
                             Text("Mainnet Accounts")
@@ -316,39 +318,6 @@ struct WalletInfoView: View {
                     }
                 }
 
-                // Sync From (per-network) Section
-                Section("Sync From (Block Height)") {
-                    // Show only enabled networks for clarity
-                    if mainnetEnabled {
-                        HStack {
-                            Text("Mainnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromMainnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if testnetEnabled {
-                        HStack {
-                            Text("Testnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromTestnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if devnetEnabled {
-                        HStack {
-                            Text("Devnet")
-                            Spacer()
-                            Text(formatHeight(wallet.syncFromDevnet))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    if !mainnetEnabled && !testnetEnabled && !devnetEnabled {
-                        Text("No networks enabled")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                
                 // Delete Wallet Section
                 Section {
                     Button(action: {
@@ -401,31 +370,39 @@ struct WalletInfoView: View {
             }
         }
     }
-    
+
     private func loadNetworkStates() {
-        // Check which networks this wallet is on
-        let networks = wallet.networks
-        mainnetEnabled = (networks & 1) != 0  // DASH
-        testnetEnabled = (networks & 2) != 0  // TESTNET
-        devnetEnabled = (networks & 8) != 0   // DEVNET
+        // TODO: Probably not needed this way anymore?
+        switch wallet.dashNetwork {
+        case .mainnet:
+            mainnetEnabled = true
+        case .testnet:
+            testnetEnabled = true
+        case .regtest:
+            // TODO: Handle this properly in the UI or somehow ignore it.
+            regtestEnabled = true
+        case .devnet:
+            devnetEnabled = true
+        }
     }
 
     private func loadAccountCounts() async {
+        // TODO: This can probably be refactored now with with single network manager?
         guard let manager = walletService.walletManager else { return }
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .mainnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 mainnetAccountCount = list.count
             }
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .testnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 testnetAccountCount = list.count
             }
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet, network: .devnet) {
+            if let list = try? await manager.getAccounts(for: wallet) {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
@@ -437,7 +414,7 @@ struct WalletInfoView: View {
         f.numberStyle = .decimal
         return f.string(from: NSNumber(value: h)) ?? "\(h)"
     }
-    
+
     private func saveWalletName() {
         wallet.label = editedName
         do {
@@ -448,36 +425,25 @@ struct WalletInfoView: View {
             showError = true
         }
     }
-    
-    private func enableNetwork(_ network: Network) async {
+
+    private func enableNetwork(_ network: AppNetwork) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
-        
+
         do {
-            // Add the network to the wallet
-            let networkBit: UInt32
-            switch network {
-            case .mainnet:
-                networkBit = 1  // DASH
-            case .testnet:
-                networkBit = 2  // TESTNET
-            case .devnet:
-                networkBit = 8  // DEVNET
-            }
-            
-            // Update the wallet's networks bitfield
-            wallet.networks = wallet.networks | networkBit
-            
+
+            // TODO: This needs some love after single wallet refactoring.
+
             // Save to Core Data
             try modelContext.save()
-            
+
             // Reload network states
             loadNetworkStates()
             await loadAccountCounts()
-            
+
             // TODO: Call FFI to actually add the network to the wallet
             // This would involve reinitializing the wallet with the new networks
-            
+
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to enable network: \(error.localizedDescription)"
@@ -485,29 +451,30 @@ struct WalletInfoView: View {
             }
         }
     }
-    
+
     private func deleteWallet() async {
         isDeleting = true
-        defer { 
+        defer {
             Task { @MainActor in
                 isDeleting = false
             }
         }
-        
+
         do {
-            // Delete the wallet from Core Data
-            modelContext.delete(wallet)
-            try modelContext.save()
-            
-            // Dismiss both the info view and the wallet detail view
+            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+            // This prevents "Never access a full future backing data" crash
             await MainActor.run {
                 dismiss()
                 onWalletDeleted()
             }
-            
-            // Notify the wallet service to reload
+
+            // Notify the wallet service (removes wallet from observable arrays)
             await walletService.walletDeleted(wallet)
-            
+
+            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
+            modelContext.delete(wallet)
+            try modelContext.save()
+
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
@@ -520,17 +487,17 @@ struct WalletInfoView: View {
 struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
-    
+
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
-        
+
         // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
         // don't show any platform balance
         guard let walletId = wallet.walletId else {
             return 0
         }
-        
+
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
@@ -542,7 +509,7 @@ struct BalanceCardView: View {
                 sum + identity.balance
             }
     }
-    
+
     var body: some View {
         VStack(spacing: 12) {
             // Show main balance or "Empty Wallet"
@@ -554,11 +521,11 @@ struct BalanceCardView: View {
                 Text("Wallet Balance")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
+
                 Text(formatBalance(wallet.totalBalance))
                     .font(.system(size: 36, weight: .bold, design: .rounded))
             }
-            
+
             HStack(spacing: 20) {
                 // Incoming (unconfirmed) balance
                 VStack(spacing: 4) {
@@ -576,10 +543,10 @@ struct BalanceCardView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
                 Divider()
                     .frame(height: 30)
-                
+
                 // Platform balance
                 VStack(spacing: 4) {
                     Text("Platform Balance")
@@ -602,10 +569,10 @@ struct BalanceCardView: View {
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(12)
     }
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         // Format with up to 8 decimal places, removing trailing zeros
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
@@ -613,11 +580,11 @@ struct BalanceCardView: View {
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-        
+
         return String(format: "%.8f DASH", dash).replacingOccurrences(of: "0+$", with: "", options: .regularExpression).replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
     }
 }
@@ -629,7 +596,7 @@ struct BalanceCardView: View {
 /*
 struct TransactionListView: View {
     let transactions: [HDTransaction]
-    
+
     var body: some View {
         if transactions.isEmpty {
             ContentUnavailableView(
@@ -648,31 +615,31 @@ struct TransactionListView: View {
 
 struct TransactionRowView: View {
     let transaction: HDTransaction
-    
+
     var body: some View {
         HStack {
             Image(systemName: transaction.amount < 0 ? "arrow.up.circle" : "arrow.down.circle")
                 .font(.title2)
                 .foregroundColor(transaction.amount < 0 ? .red : .green)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(transaction.type.capitalized)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                
+
                 Text(transaction.timestamp, style: .date)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing, spacing: 4) {
                 Text(formatAmount(transaction.amount))
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(transaction.amount < 0 ? .red : .green)
-                
+
                 if transaction.isPending {
                     Text("Pending")
                         .font(.caption)
@@ -686,7 +653,7 @@ struct TransactionRowView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     private func formatAmount(_ amount: Int64) -> String {
         let dash = Double(abs(amount)) / 100_000_000.0
         let sign = amount < 0 ? "-" : "+"
@@ -696,7 +663,7 @@ struct TransactionRowView: View {
 
 struct AddressListView: View {
     let addresses: [HDAddress]
-    
+
     var body: some View {
         if addresses.isEmpty {
             ContentUnavailableView(
@@ -715,23 +682,23 @@ struct AddressListView: View {
 
 struct AddressRowView: View {
     let address: HDAddress
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Address #\(address.index)")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                
+
                 Spacer()
-                
+
                 if address.isUsed {
                     Label("Used", systemImage: "checkmark.circle.fill")
                         .font(.caption)
                         .foregroundColor(.green)
                 }
             }
-            
+
             Text(address.address)
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
@@ -744,7 +711,7 @@ struct AddressRowView: View {
 
 struct UTXOListView: View {
     let utxos: [HDUTXO]
-    
+
     var body: some View {
         if utxos.isEmpty {
             ContentUnavailableView(
@@ -763,16 +730,16 @@ struct UTXOListView: View {
 
 struct UTXORowView: View {
     let utxo: HDUTXO
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(formatAmount(utxo.amount))
                     .font(.subheadline)
                     .fontWeight(.medium)
-                
+
                 Spacer()
-                
+
                 if utxo.isConfirmed {
                     Label("Confirmed", systemImage: "checkmark.circle.fill")
                         .font(.caption)
@@ -783,7 +750,7 @@ struct UTXORowView: View {
                         .foregroundColor(.orange)
                 }
             }
-            
+
             Text("\(utxo.txid):\(utxo.outputIndex)")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
@@ -792,7 +759,7 @@ struct UTXORowView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     private func formatAmount(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
         return String(format: "%.8f DASH", dash)

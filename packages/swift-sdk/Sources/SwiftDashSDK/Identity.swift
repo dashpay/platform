@@ -6,13 +6,13 @@ public class Identity {
     public let id: String
     public let balance: UInt64
     public let revision: UInt64
-    
+
     public init(id: String, balance: UInt64, revision: UInt64) {
         self.id = id
         self.balance = balance
         self.revision = revision
     }
-    
+
     /// Create an Identity from a C handle
     public init?(handle: UnsafeMutablePointer<IdentityHandle>) {
         // In a real implementation, this would extract data from the C handle
@@ -21,6 +21,6 @@ public class Identity {
         self.balance = 0
         self.revision = 0
     }
-    
+
     /// Get the balance (already accessible as property)
 }

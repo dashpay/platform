@@ -157,4 +157,10 @@ impl From<ProTxHash> for ProTxHashWasm {
     }
 }
 
+impl From<dpp::platform_value::Identifier> for ProTxHashWasm {
+    fn from(id: dpp::platform_value::Identifier) -> Self {
+        ProTxHashWasm(ProTxHash::from_byte_array(id.to_buffer()))
+    }
+}
+
 impl_wasm_type_info!(ProTxHashWasm, ProTxHash);

@@ -4,6 +4,8 @@ set -euo pipefail
 # Always run from the package root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 
 echo "=== Module Combination Analysis ==="
 echo "Building different feature combinations to analyze bundle sizes..."
@@ -47,28 +49,28 @@ declare -A COMBINATIONS=(
 build_combination() {
     local name=$1
     local features=$2
-    
+
     echo "Building ${name} (features: ${features})..."
-    
+
     # Build with specific features
     cargo build --target wasm32-unknown-unknown --release --no-default-features --features "${features}" 2>&1 | tail -5
-    
+
     # Run wasm-bindgen
     local out_dir="${RESULTS_DIR}/${name}"
     mkdir -p "${out_dir}"
-    
-    wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
+
+    wasm-bindgen "$CARGO_OUT_DIR/wasm32-unknown-unknown/release/wasm_drive_verify.wasm" \
         --out-dir "${out_dir}" \
         --target web \
         --out-name "bundle" > /dev/null 2>&1
-    
+
     # Optimize with wasm-opt if available
     if command -v wasm-opt &> /dev/null; then
         wasm-opt -Oz \
             "${out_dir}/bundle_bg.wasm" \
             -o "${out_dir}/bundle_bg_opt.wasm" 2>/dev/null || true
     fi
-    
+
     # Get sizes
     local wasm_size=$(stat -f%z "${out_dir}/bundle_bg.wasm" 2>/dev/null || stat -c%s "${out_dir}/bundle_bg.wasm" 2>/dev/null || echo "0")
     local js_size=$(stat -f%z "${out_dir}/bundle.js" 2>/dev/null || stat -c%s "${out_dir}/bundle.js" 2>/dev/null || echo "0")
@@ -76,7 +78,7 @@ build_combination() {
     if [ -f "${out_dir}/bundle_bg_opt.wasm" ]; then
         opt_size=$(stat -f%z "${out_dir}/bundle_bg_opt.wasm" 2>/dev/null || stat -c%s "${out_dir}/bundle_bg_opt.wasm" 2>/dev/null || echo "0")
     fi
-    
+
     # Store results
     echo "${name}|${features}|${wasm_size}|${js_size}|${opt_size}" >> "${RESULTS_DIR}/results.csv"
 }
@@ -98,7 +100,7 @@ generate_powerset() {
     local -a arr=("$@")
     local n=${#arr[@]}
     local max=$((2**n))
-    
+
     for ((i=1; i<max; i++)); do
         local combination=""
         local combo_name=""
@@ -114,7 +116,7 @@ generate_powerset() {
                 combo_name+="${arr[j]:0:3}"  # First 3 chars of feature name
             fi
         done
-        
+
         # Skip if we already built this combination
         if ! grep -q "auto-${combo_name}" "${RESULTS_DIR}/results.csv"; then
             build_combination "auto-${combo_name}" "$combination"
@@ -150,18 +152,18 @@ while IFS='|' read -r name features wasm_size js_size opt_size; do
         js_kb=$((js_size / 1024))
         opt_kb=$((opt_size / 1024))
         total_kb=$((wasm_kb + js_kb))
-        
+
         # Calculate reduction percentage
         if [ "$FULL_SIZE" -gt 0 ] && [ "$name" != "full" ]; then
             reduction=$(awk "BEGIN {printf \"%.1f\", (1 - $wasm_size / $FULL_SIZE) * 100}")
         else
             reduction="baseline"
         fi
-        
+
         # Format features list
         features_display=$(echo "$features" | sed 's/console_error_panic_hook,//' | sed 's/,/, /g')
         [ -z "$features_display" ] && features_display="core only"
-        
+
         echo "| $name | $features_display | ${wasm_kb}KB | ${js_kb}KB | ${opt_kb}KB | $reduction |" >> "${RESULTS_DIR}/analysis-report.md"
     fi
 done < "${RESULTS_DIR}/results.csv" | sort -t'|' -k3 -n
@@ -179,7 +181,7 @@ EOF
 for feature in "${FEATURES[@]}"; do
     only_size=$(grep "^${feature}-only|" "${RESULTS_DIR}/results.csv" | cut -d'|' -f3 || echo "0")
     minimal_size=$(grep "^minimal|" "${RESULTS_DIR}/results.csv" | cut -d'|' -f3 || echo "0")
-    
+
     if [ "$only_size" -gt 0 ] && [ "$minimal_size" -gt 0 ]; then
         module_size=$((only_size - minimal_size))
         module_kb=$((module_size / 1024))

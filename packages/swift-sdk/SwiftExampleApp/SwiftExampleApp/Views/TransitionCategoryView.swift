@@ -4,9 +4,12 @@ import SwiftDashSDK
 struct TransitionCategoryView: View {
     let category: StateTransitionsView.TransitionCategory
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     var transitions: [(key: String, label: String, description: String)] {
         switch category {
+        case .address:
+            // Address transitions use dedicated SwiftUI flows (not the generic TransitionDetailView).
+            return []
         case .identity:
             return [
                 ("identityCreate", "Create Identity", "Create a new identity with initial credits"),
@@ -46,8 +49,85 @@ struct TransitionCategoryView: View {
             ]
         }
     }
-    
+
     var body: some View {
+        if category == .address {
+            List {
+                NavigationLink(destination: TransferAddressFundsView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Transfer Address Funds")
+                            .font(.headline)
+                        Text("Transfer credits between Platform addresses")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                NavigationLink(destination: WithdrawAddressFundsView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Withdraw Address Funds")
+                            .font(.headline)
+                        Text("Withdraw credits from Platform to Core (L1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                NavigationLink(destination: TopUpAddressFromAssetLockView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Top Up Address (Asset Lock)")
+                            .font(.headline)
+                        Text("Fund Platform addresses from Dash Core asset lock")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                NavigationLink(destination: TopUpIdentityFromAddressesView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Top Up Identity (From Addresses)")
+                            .font(.headline)
+                        Text("Top up identity using Platform address balances")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                NavigationLink(destination: TransferIdentityToAddressesView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Transfer Identity → Addresses")
+                            .font(.headline)
+                        Text("Transfer credits from identity to Platform addresses")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                NavigationLink(destination: CreateIdentityFromAddressesView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Create Identity (From Addresses)")
+                            .font(.headline)
+                        Text("Create identity funded by Platform addresses")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .navigationTitle(category.rawValue)
+            .navigationBarTitleDisplayMode(.inline)
+        } else {
         List {
             ForEach(transitions, id: \.key) { transition in
                 NavigationLink(destination: TransitionDetailView(
@@ -68,6 +148,7 @@ struct TransitionCategoryView: View {
         }
         .navigationTitle(category.rawValue)
         .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 

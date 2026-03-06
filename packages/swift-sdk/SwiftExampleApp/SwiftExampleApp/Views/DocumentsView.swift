@@ -1,10 +1,11 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct DocumentsView: View {
     @EnvironmentObject var appState: AppState
     @State private var showingCreateDocument = false
     @State private var selectedDocument: DocumentModel?
-    
+
     var body: some View {
         NavigationView {
             List {
@@ -48,7 +49,7 @@ struct DocumentsView: View {
             }
         }
     }
-    
+
     private func loadSampleDocuments() {
         // Add sample documents for demonstration
         appState.documents = [
@@ -79,7 +80,7 @@ struct DocumentsView: View {
             )
         ]
     }
-    
+
     private func deleteDocuments(at offsets: IndexSet) {
         for index in offsets {
             if index < appState.documents.count {
@@ -94,7 +95,7 @@ struct DocumentsView: View {
 struct DocumentRow: View {
     let document: DocumentModel
     let onTap: () -> Void
-    
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 4) {
@@ -110,13 +111,13 @@ struct DocumentRow: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: 100)
                 }
-                
+
                 Text("Owner: \(document.ownerIdString)")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                
+
                 if let createdAt = document.createdAt {
                     Text("Created: \(createdAt, formatter: dateFormatter)")
                         .font(.caption)
@@ -132,7 +133,7 @@ struct DocumentRow: View {
 struct DocumentDetailView: View {
     let document: DocumentModel
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -143,11 +144,11 @@ struct DocumentDetailView: View {
                             DetailRow(label: "Document ID", value: document.id)
                             DetailRow(label: "Contract ID", value: document.contractId)
                             DetailRow(label: "Owner ID", value: document.ownerIdString)
-                            
+
                             if let createdAt = document.createdAt {
                                 DetailRow(label: "Created", value: createdAt.formatted())
                             }
-                            
+
                             if let updatedAt = document.updatedAt {
                                 DetailRow(label: "Updated", value: updatedAt.formatted())
                             }
@@ -156,12 +157,12 @@ struct DocumentDetailView: View {
                         .background(Color.gray.opacity(0.1))
                         .cornerRadius(10)
                     }
-                    
+
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Document Data")
                                 .font(.headline)
-                            
+
                             Text(document.formattedData)
                                 .font(.system(.caption, design: .monospaced))
                                 .padding()
@@ -195,7 +196,7 @@ struct CreateDocumentView: View {
     @State private var dataValueToAdd = ""
     @State private var documentData: [String: Any] = [:]
     @State private var isLoading = false
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -206,7 +207,7 @@ struct CreateDocumentView: View {
                             Text(contract.name).tag(contract as ContractModel?)
                         }
                     }
-                    
+
                     if let contract = selectedContract {
                         Picker("Document Type", selection: $selectedDocumentType) {
                             Text("Select type").tag("")
@@ -215,7 +216,7 @@ struct CreateDocumentView: View {
                             }
                         }
                     }
-                    
+
                     Picker("Owner", selection: $selectedOwnerId) {
                         Text("Select owner").tag("")
                         ForEach(appState.identities) { identity in
@@ -224,7 +225,7 @@ struct CreateDocumentView: View {
                         }
                     }
                 }
-                
+
                 Section("Document Data") {
                     ForEach(Array(documentData.keys), id: \.self) { key in
                         HStack {
@@ -236,7 +237,7 @@ struct CreateDocumentView: View {
                                 .font(.subheadline)
                         }
                     }
-                    
+
                     HStack {
                         TextField("Key", text: $dataKeyToAdd)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -281,7 +282,7 @@ struct CreateDocumentView: View {
             }
         }
     }
-    
+
     private func createDocument() async {
         guard appState.sdk != nil,
               let contract = selectedContract,
@@ -289,9 +290,9 @@ struct CreateDocumentView: View {
             appState.showError(message: "Please select a contract and document type")
             return
         }
-        
+
         isLoading = true
-        
+
         // In a real app, we would use the SDK's document creation functionality
         let document = DocumentModel(
             id: UUID().uuidString,
@@ -302,13 +303,13 @@ struct CreateDocumentView: View {
             createdAt: Date(),
             updatedAt: Date()
         )
-        
+
         appState.documents.append(document)
         appState.showError(message: "Document created successfully")
-        
+
         isLoading = false
     }
-    
+
     private func loadSampleContracts() {
         // Add sample contracts for demonstration
         appState.contracts = [
@@ -352,7 +353,7 @@ struct CreateDocumentView: View {
 struct DetailRow: View {
     let label: String
     let value: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)

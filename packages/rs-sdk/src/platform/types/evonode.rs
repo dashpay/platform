@@ -111,7 +111,7 @@ impl TransportRequest for EvoNode {
 
 impl From<EvoNode> for GetStatusRequest {
     fn from(_node: EvoNode) -> Self {
-        // we don't need to send any data to the node, and address is handled in impl TrasportRequest
+        // we don't need to send any data to the node, and address is handled in impl TransportRequest
         GetStatusRequestV0 {}.into()
     }
 }

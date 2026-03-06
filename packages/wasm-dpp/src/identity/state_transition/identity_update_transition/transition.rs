@@ -18,6 +18,7 @@ use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use dpp::version::PlatformVersion;

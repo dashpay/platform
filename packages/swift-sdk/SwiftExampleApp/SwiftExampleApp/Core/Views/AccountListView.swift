@@ -1,63 +1,8 @@
 import SwiftUI
+import SwiftDashSDK
 import SwiftData
 
-// MARK: - Account Model (UI)
-
-public enum AccountCategory: Equatable, Hashable {
-    case bip44
-    case bip32
-    case coinjoin
-    case identityRegistration
-    case identityInvitation
-    case identityTopupNotBound
-    case identityTopup
-    case providerVotingKeys
-    case providerOwnerKeys
-    case providerOperatorKeys
-    case providerPlatformKeys
-}
-
-public struct AccountInfo: Identifiable, Hashable {
-    public let id: String
-    public let category: AccountCategory
-    public let index: UInt32? // present only for indexed account types
-    public let label: String
-    public let balance: (confirmed: UInt64, unconfirmed: UInt64)
-    public let addressCount: (external: Int, internal: Int)
-    public let nextReceiveAddress: String?
-
-    public init(category: AccountCategory,
-                index: UInt32? = nil,
-                label: String,
-                balance: (confirmed: UInt64, unconfirmed: UInt64),
-                addressCount: (external: Int, internal: Int),
-                nextReceiveAddress: String?) {
-        self.category = category
-        self.index = index
-        self.label = label
-        self.balance = balance
-        self.addressCount = addressCount
-        self.nextReceiveAddress = nextReceiveAddress
-        // Build a stable id
-        if let idx = index {
-            self.id = "\(category)-\(idx)"
-        } else {
-            self.id = "\(category)"
-        }
-    }
-}
-
-extension AccountInfo: Equatable {
-    public static func == (lhs: AccountInfo, rhs: AccountInfo) -> Bool {
-        return lhs.id == rhs.id
-    }
-}
-
-extension AccountInfo {
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
+// AccountInfo and AccountCategory are imported from SwiftDashSDK
 
 // MARK: - Account List View
 struct AccountListView: View {
@@ -66,7 +11,7 @@ struct AccountListView: View {
     @State private var accounts: [AccountInfo] = []
     @State private var isLoading = true
     @State private var errorMessage: String?
-    
+
     var body: some View {
         ZStack {
             if isLoading {
@@ -100,11 +45,11 @@ struct AccountListView: View {
             await loadAccounts()
         }
     }
-    
+
     private func loadAccounts() async {
         isLoading = true
         errorMessage = nil
-        
+
         do {
             // Get accounts from wallet manager
             let fetchedAccounts = try await walletService.walletManager?.getAccounts(for: wallet) ?? []
@@ -124,7 +69,7 @@ struct AccountListView: View {
 // MARK: - Account Row View
 struct AccountRowView: View {
     let account: AccountInfo
-    
+
     /// Determines if this account type should show balance in UI
     var shouldShowBalance: Bool {
         switch account.category {
@@ -134,7 +79,7 @@ struct AccountRowView: View {
             return false
         }
     }
-    
+
     var accountTypeBadge: String {
         switch account.category {
         case .bip44: return (account.index == 0) ? "Main" : (account.index.map { "#\($0)" } ?? "BIP44")
@@ -150,7 +95,7 @@ struct AccountRowView: View {
         case .providerPlatformKeys: return "Platform"
         }
     }
-    
+
     var accountTypeIcon: String {
         switch account.category {
         case .bip44: return account.index == 0 ? "star.circle.fill" : "folder"
@@ -165,7 +110,7 @@ struct AccountRowView: View {
         case .providerPlatformKeys: return "network"
         }
     }
-    
+
     var accountTypeColor: Color {
         switch account.category {
         case .bip44: return (account.index == 0) ? .green : .blue
@@ -178,7 +123,7 @@ struct AccountRowView: View {
         case .providerPlatformKeys: return .teal
         }
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Account header
@@ -186,9 +131,9 @@ struct AccountRowView: View {
                 Label(account.label, systemImage: accountTypeIcon)
                     .font(.headline)
                     .foregroundColor(accountTypeColor)
-                
+
                 Spacer()
-                
+
                 // Account type badge
                 Text(accountTypeBadge)
                     .font(.caption)
@@ -197,7 +142,7 @@ struct AccountRowView: View {
                     .background(accountTypeColor.opacity(0.2))
                     .cornerRadius(4)
             }
-            
+
             // Balance information - only show for appropriate account types
             if shouldShowBalance {
                 HStack(spacing: 16) {
@@ -209,7 +154,7 @@ struct AccountRowView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
-                    
+
                     if account.balance.unconfirmed > 0 {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pending")
@@ -221,9 +166,9 @@ struct AccountRowView: View {
                                 .foregroundColor(.orange)
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     // Total balance
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("Total")
@@ -245,7 +190,7 @@ struct AccountRowView: View {
                     Spacer()
                 }
             }
-            
+
             // Address count information (only for accounts with addresses)
             if account.addressCount.external > 0 || account.addressCount.internal > 0 {
                 HStack(spacing: 16) {
@@ -254,30 +199,30 @@ struct AccountRowView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     if account.addressCount.internal > 0 {
                         Label("\(account.addressCount.internal) change", systemImage: "arrow.up.arrow.down.circle")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     Spacer()
                 }
             }
-            
+
             // Next receive address (if available and appropriate for account type)
             if shouldShowBalance, let address = account.nextReceiveAddress {
                 HStack {
                     Text("Receive:")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+
                     Text(address)
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .foregroundColor(.secondary)
-                    
+
                     Button(action: {
                         // Copy address to clipboard
                         #if os(iOS)
@@ -294,21 +239,21 @@ struct AccountRowView: View {
         }
         .padding(.vertical, 8)
     }
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-        
+
         return String(format: "%.8f DASH", dash)
     }
 }

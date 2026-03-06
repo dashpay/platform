@@ -210,7 +210,7 @@ describe('TransactionHashesCache', () => {
     });
   });
 
-  describe('#getUnretrievedTrasactions', () => {
+  describe('#getUnretrievedTransactions', () => {
     it('should return unsent transactions and mark them as sent', () => {
       transactionHashesCache.addTransaction(transactions[0]);
       transactionHashesCache.addTransaction(transactions[1]);
