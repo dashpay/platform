@@ -45,9 +45,8 @@ describe('TokenConfiguration', () => {
     });
   }
   function createPreProgrammedDistribution(timestamp: number, identifierBase58: string, amount: bigint) {
-    const identifier = new wasm.Identifier(identifierBase58);
     const innerMap = new Map();
-    innerMap.set(identifier, amount);
+    innerMap.set(identifierBase58, amount);
     const outerMap = new Map();
     outerMap.set(timestamp.toString(), innerMap);
     return new wasm.TokenPreProgrammedDistribution(outerMap);
