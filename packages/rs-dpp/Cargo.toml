@@ -328,6 +328,10 @@ extended-document = [
 ]
 token-reward-explanations = ["dep:chrono-tz"]
 
+# Gates client-side Orchard helpers (address encoding, bundle building, proving).
+# Clients that don't need to create shielded transactions can omit this to avoid
+# compiling the Orchard/Halo 2 dependency tree. The shielded state transition
+# types themselves are always available — only the client tooling is behind this gate.
 shielded-client = [
   "state-transition-signing",
   "dep:grovedb-commitment-tree",
