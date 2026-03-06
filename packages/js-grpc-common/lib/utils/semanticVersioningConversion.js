@@ -1,5 +1,5 @@
 /**
- * Convert a sematic versioning string into an 32-bit integer.
+ * Convert a semantic versioning string into an 32-bit integer.
  *
  * Make sure the input string is compatible with the standard found
  * at semver.org. Since this only uses 10-bit per major/minor/patch version,

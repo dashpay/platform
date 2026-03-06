@@ -95,7 +95,7 @@ pub trait CanRetry {
 
     /// Get boolean flag that indicates if the error is retryable.
     ///
-    /// Depreacted in favor of [CanRetry::can_retry].
+    /// Deprecated in favor of [CanRetry::can_retry].
     #[deprecated = "Use !can_retry() instead"]
     fn is_node_failure(&self) -> bool {
         !self.can_retry()

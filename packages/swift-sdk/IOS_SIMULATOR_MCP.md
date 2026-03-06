@@ -429,4 +429,3 @@ Claude Code CLI can manage MCP servers using the `claude mcp` commands or by edi
 ## License
 
 MIT
-

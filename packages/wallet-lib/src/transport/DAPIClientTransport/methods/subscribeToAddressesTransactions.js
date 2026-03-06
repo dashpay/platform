@@ -3,9 +3,9 @@ const logger = require('../../../logger');
 // Artifact from previous optimisation made in SyncWorker plugin
 // Kept for reminder when Bloomfilters
 
-// Thoses are addresses that were used only once, and long time ago.
+// Those are addresses that were used only once, and long time ago.
 // Low chance of receiving fund. We still check every ten minutes
-// const slowFetchThresold = 5 * 60 * 1000;
+// const slowFetchThreshold = 5 * 60 * 1000;
 // Those are addresses that we consider standard, InstantSend promise a one minute time,
 // That is what we offer here (will be changed with streams)
 // const fetchThreshold = 60 * 1000;

@@ -140,7 +140,7 @@ pub type CanSignCallback = unsafe extern "C" fn(
     identity_public_key_len: usize,
 ) -> bool;
 
-/// Function pointer type for destructor callback  
+/// Function pointer type for destructor callback
 /// This is an Option to allow for NULL pointers from C
 pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw::c_void)>;
 

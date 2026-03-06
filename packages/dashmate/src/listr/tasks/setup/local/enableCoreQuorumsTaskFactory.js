@@ -255,7 +255,7 @@ export default function enableCoreQuorumsTaskFactory(generateBlocks) {
           const { result: quorumInfo } = await ctx.seedRpcClient.quorum('info', llmqType, ctx.quorumHash);
 
           // Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure
-          // that the new quorum gets eligable for signing sessions
+          // that the new quorum gets eligible for signing sessions
           await generateBlocks(
             ctx.seedCoreService,
             8,

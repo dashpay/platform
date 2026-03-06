@@ -10,7 +10,7 @@ const {
 } = require('../../utils/semanticVersioningConversion');
 
 /**
- * Check version wrapper hanldler (factory)
+ * Check version wrapper handler (factory)
  *
  * @param {string} serverProtocolVersionString
  *

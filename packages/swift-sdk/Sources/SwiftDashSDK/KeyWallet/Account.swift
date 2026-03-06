@@ -5,21 +5,21 @@ import DashSDKFFI
 public class Account {
     private let handle: UnsafeMutablePointer<FFIAccount>
     private weak var wallet: Wallet?
-    
+
     internal init(handle: UnsafeMutablePointer<FFIAccount>, wallet: Wallet) {
         self.handle = handle
         self.wallet = wallet
     }
-    
+
     deinit {
         account_free(handle)
     }
-    
+
     // The account-specific functionality would be implemented here
     // For now, this is a placeholder that manages the FFI handle lifecycle
-    
+
     // MARK: - Derivation (account-based)
-    
+
     /// Derive a private key (WIF) using this account and a master xpriv derived from the given path.
     /// - Parameters:
     ///   - wallet: The parent wallet used to derive the master extended private key
@@ -32,7 +32,7 @@ public class Account {
         let masterPtr = masterPath.withCString { pathCStr in
             wallet_derive_extended_private_key(wallet.ffiHandle, pathCStr, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
@@ -41,20 +41,20 @@ public class Account {
                 extended_private_key_free(m)
             }
         }
-        
+
         guard let master = masterPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         // Derive child private key as WIF at the given index
         let wifPtr = account_derive_private_key_as_wif_at(self.handle, master, index, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard let ptr = wifPtr else {
             throw KeyWalletError(ffiError: error)
         }

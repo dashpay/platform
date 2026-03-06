@@ -4,7 +4,7 @@ import DashSDKFFI
 /// Swift wrapper for managed wallet with address pool management and transaction checking
 public class ManagedWallet {
     private let handle: UnsafeMutablePointer<FFIManagedWalletInfo>
-    
+
     /// Create a managed wallet wrapper from a regular wallet
     /// - Parameter wallet: The wallet to manage
     public init(wallet: Wallet) throws {
@@ -17,16 +17,16 @@ public class ManagedWallet {
             }
             throw KeyWalletError(ffiError: error)
         }
-        
+
         self.handle = managedPointer
     }
-    
+
     deinit {
         ffi_managed_wallet_free(handle)
     }
-    
+
     // MARK: - Address Generation
-    
+
     /// Get the next unused receive address for a BIP44 account
     /// - Parameters:
     ///   - wallet: The wallet for key derivation
@@ -34,30 +34,30 @@ public class ManagedWallet {
     /// - Returns: The next receive address
     public func getNextReceiveAddress(wallet: Wallet, accountIndex: UInt32 = 0) throws -> String {
         var error = FFIError()
-        
+
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         let addressPtr = managed_wallet_get_next_bip44_receive_address(
             infoHandle, wallet.ffiHandle, accountIndex, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard let ptr = addressPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         let address = String(cString: ptr)
         address_free(ptr)
-        
+
         return address
     }
-    
+
     /// Get the next unused change address for a BIP44 account
     /// - Parameters:
     ///   - wallet: The wallet for key derivation
@@ -65,30 +65,30 @@ public class ManagedWallet {
     /// - Returns: The next change address
     public func getNextChangeAddress(wallet: Wallet, accountIndex: UInt32 = 0) throws -> String {
         var error = FFIError()
-        
+
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         let addressPtr = managed_wallet_get_next_bip44_change_address(
             infoHandle, wallet.ffiHandle, accountIndex, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard let ptr = addressPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         let address = String(cString: ptr)
         address_free(ptr)
-        
+
         return address
     }
-    
+
     /// Get a range of external (receive) addresses
     /// - Parameters:
     ///   - wallet: The wallet for key derivation
@@ -101,19 +101,19 @@ public class ManagedWallet {
         guard endIndex > startIndex else {
             throw KeyWalletError.invalidInput("End index must be greater than start index")
         }
-        
+
         var error = FFIError()
         var addressesPtr: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
         var count: size_t = 0
-        
+
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         let success = managed_wallet_get_bip_44_external_address_range(
             infoHandle, wallet.ffiHandle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
@@ -122,21 +122,21 @@ public class ManagedWallet {
                 address_array_free(ptr, count)
             }
         }
-        
+
         guard success, let ptr = addressesPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         var addresses: [String] = []
         for i in 0..<count {
             if let addressCStr = ptr[i] {
                 addresses.append(String(cString: addressCStr))
             }
         }
-        
+
         return addresses
     }
-    
+
     /// Get a range of internal (change) addresses
     /// - Parameters:
     ///   - wallet: The wallet for key derivation
@@ -149,19 +149,19 @@ public class ManagedWallet {
         guard endIndex > startIndex else {
             throw KeyWalletError.invalidInput("End index must be greater than start index")
         }
-        
+
         var error = FFIError()
         var addressesPtr: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
         var count: size_t = 0
-        
+
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         let success = managed_wallet_get_bip_44_internal_address_range(
             infoHandle, wallet.ffiHandle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
@@ -170,23 +170,23 @@ public class ManagedWallet {
                 address_array_free(ptr, count)
             }
         }
-        
+
         guard success, let ptr = addressesPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         var addresses: [String] = []
         for i in 0..<count {
             if let addressCStr = ptr[i] {
                 addresses.append(String(cString: addressCStr))
             }
         }
-        
+
         return addresses
     }
-    
+
     // MARK: - Address Pool Management
-    
+
     /// Get address pool information
     /// - Parameters:
     ///   - accountType: The account type
@@ -197,24 +197,24 @@ public class ManagedWallet {
                                   poolType: AddressPoolType) throws -> AddressPoolInfo {
         var error = FFIError()
         var ffiInfo = FFIAddressPoolInfo()
-        
+
         let success = managed_wallet_get_address_pool_info(
             handle, accountType.ffiValue, accountIndex,
             poolType.ffiValue, &ffiInfo, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return AddressPoolInfo(ffiInfo: ffiInfo)
     }
-    
+
     /// Set the gap limit for an address pool
     /// - Parameters:
     ///   - accountType: The account type
@@ -224,22 +224,22 @@ public class ManagedWallet {
     public func setGapLimit(accountType: AccountType, accountIndex: UInt32 = 0,
                            poolType: AddressPoolType, gapLimit: UInt32) throws {
         var error = FFIError()
-        
+
         let success = managed_wallet_set_gap_limit(
             handle, accountType.ffiValue, accountIndex,
             poolType.ffiValue, gapLimit, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
     }
-    
+
     /// Generate addresses up to a specific index
     /// - Parameters:
     ///   - wallet: The wallet for key derivation
@@ -252,44 +252,44 @@ public class ManagedWallet {
                                         poolType: AddressPoolType,
                                         targetIndex: UInt32) throws {
         var error = FFIError()
-        
+
         let success = managed_wallet_generate_addresses_to_index(
             handle, wallet.ffiHandle, accountType.ffiValue,
             accountIndex, poolType.ffiValue, targetIndex, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
     }
-    
+
     /// Mark an address as used
     /// - Parameter address: The address to mark as used
     public func markAddressUsed(_ address: String) throws {
         var error = FFIError()
-        
+
         let success = address.withCString { addressCStr in
             managed_wallet_mark_address_used(handle, addressCStr, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
     }
-    
+
     // MARK: - Transaction Checking
-    
+
     /// Check if a transaction belongs to the wallet
     /// - Parameters:
     ///   - wallet: The wallet to check against
@@ -308,14 +308,14 @@ public class ManagedWallet {
                                 updateState: Bool = true) throws -> TransactionCheckResult {
         var error = FFIError()
         var result = FFITransactionCheckResult()
-        
+
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-            
+
             if let hash = blockHash {
                 return hash.withUnsafeBytes { hashBytes in
                     let hashPtr = hashBytes.bindMemory(to: UInt8.self).baseAddress
-                    
+
                     return managed_wallet_check_transaction(
                         handle, wallet.ffiHandle,
                         txPtr, transactionData.count,
@@ -330,23 +330,23 @@ public class ManagedWallet {
                     UInt64(timestamp), updateState, &result, &error)
             }
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
             transaction_check_result_free(&result)
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return TransactionCheckResult(ffiResult: result)
     }
-    
+
     // MARK: - Balance and UTXOs
-    
+
     /// Get the wallet balance from managed wallet info
     public func getBalance() throws -> Balance {
         guard let infoHandle = getInfoHandle() else {
@@ -383,20 +383,20 @@ public class ManagedWallet {
 
         return Balance(ffiBalance: ffiBalance)
     }
-    
+
     /// Get all UTXOs from the managed wallet
     public func getUTXOs() throws -> [UTXO] {
         guard let infoHandle = getInfoHandle() else {
             throw KeyWalletError.invalidState("Failed to get managed wallet info")
         }
-        
+
         var error = FFIError()
         var utxosPtr: UnsafeMutablePointer<FFIUTXO>?
         var count: size_t = 0
-        
+
         let success = managed_wallet_get_utxos(
             infoHandle, &utxosPtr, &count, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
@@ -405,21 +405,21 @@ public class ManagedWallet {
                 utxo_array_free(ptr, count)
             }
         }
-        
+
         guard success, let ptr = utxosPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         var utxos: [UTXO] = []
         for i in 0..<count {
             utxos.append(UTXO(ffiUTXO: ptr[i]))
         }
-        
+
         return utxos
     }
-    
+
     // MARK: - Private Helpers
-    
+
     private func getInfoHandle() -> UnsafeMutablePointer<FFIManagedWalletInfo>? {
         // The handle is an FFIManagedWalletInfo* (opaque C handle)
         return handle

@@ -8,4 +8,3 @@ Parameters:
 | **id**                 | String             | yes            | A valid registered identity |
 
 Returns : Promise<!Buffer|null>
-

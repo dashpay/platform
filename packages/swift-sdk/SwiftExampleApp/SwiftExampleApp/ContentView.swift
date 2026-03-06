@@ -9,7 +9,7 @@ enum RootTab: Hashable {
 struct ContentView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
-    
+
     @State private var selectedTab: RootTab = .wallets
 
     var body: some View {
@@ -17,19 +17,19 @@ struct ContentView: View {
             VStack(spacing: 20) {
                 ProgressView("Initializing...")
                     .scaleEffect(1.5)
-                
+
                 if let error = unifiedState.error {
                     VStack(spacing: 10) {
                         Text("Initialization Error")
                             .font(.headline)
                             .foregroundColor(.red)
-                        
+
                         Text(error.localizedDescription)
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
-                        
+
                         Button("Retry") {
                             Task {
                                 unifiedState.error = nil
@@ -53,28 +53,28 @@ struct ContentView: View {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
                     .tag(RootTab.wallets)
-                
+
                 // Tab 2: Identities
                 IdentitiesView()
                     .tabItem {
                         Label("Identities", systemImage: "person.circle")
                     }
                     .tag(RootTab.identities)
-                
+
                 // Tab 3: Friends
                 FriendsView()
                     .tabItem {
                         Label("Friends", systemImage: "person.2")
                     }
                     .tag(RootTab.friends)
-                
+
                 // Tab 4: Platform
                 PlatformView()
                     .tabItem {
                         Label("Platform", systemImage: "network")
                     }
                     .tag(RootTab.platform)
-                
+
                 // Tab 5: Settings
                 SettingsView()
                     .tabItem {
@@ -95,7 +95,7 @@ struct ContentView: View {
 struct GlobalSyncIndicator: View {
     @EnvironmentObject var walletService: WalletService
     let showDetails: Bool
-    
+
     // Helpers
     private var phaseTitle: String {
         switch walletService.syncProgress.state {
@@ -154,7 +154,7 @@ struct GlobalSyncIndicator: View {
 // Wrapper views
 struct CoreWalletView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
-    
+
     var body: some View {
         NavigationStack {
             CoreContentView()
@@ -167,7 +167,7 @@ struct CoreWalletView: View {
 
 struct SettingsView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
-    
+
     var body: some View {
         OptionsView()
             .environmentObject(unifiedState.platformState)

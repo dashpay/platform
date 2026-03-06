@@ -11,4 +11,3 @@ const onNewUnconfirmedTx = (tx)=>{
 }
 account.events.on(EVENTS.FETCHED_UNCONFIRMED_TRANSACTION, onNewUnconfirmedTx);
 ```
-
