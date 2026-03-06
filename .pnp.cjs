@@ -149,7 +149,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
-          ["dompurify", "npm:3.3.1"],\
+          ["dompurify", "npm:3.3.2"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["eslint-config-airbnb-extended", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:3.0.1"],\
           ["eslint-plugin-jsdoc", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:50.8.0"],\
@@ -2909,7 +2909,7 @@ const RAW_RUNTIME_STATE =
           ["add-stream", "npm:1.0.0"],\
           ["conventional-changelog", "npm:3.1.24"],\
           ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
-          ["dompurify", "npm:3.3.1"],\
+          ["dompurify", "npm:3.3.2"],\
           ["eslint", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:9.39.2"],\
           ["eslint-config-airbnb-extended", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:3.0.1"],\
           ["eslint-plugin-jsdoc", "virtual:de32c10d523830f1843784ae863166d6ef2e074b6da9615f2b3296a1f90385ed3f59e274e3957326ba7cf3442d82470d9e1ec01e6720989a570c075c95d90dbc#npm:50.8.0"],\
@@ -10367,11 +10367,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["dompurify", [\
-      ["npm:3.3.1", {\
-        "packageLocation": "./.yarn/cache/dompurify-npm-3.3.1-5bbe58c5ff-f71cca489e.zip/node_modules/dompurify/",\
+      ["npm:3.3.2", {\
+        "packageLocation": "./.yarn/cache/dompurify-npm-3.3.2-7ead7ae3aa-3ca0255967.zip/node_modules/dompurify/",\
         "packageDependencies": [\
           ["@types/trusted-types", "npm:2.0.7"],\
-          ["dompurify", "npm:3.3.1"]\
+          ["dompurify", "npm:3.3.2"]\
         ],\
         "linkType": "HARD"\
       }]\

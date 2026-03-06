@@ -126,7 +126,7 @@
     "serialize-javascript": "^7.0.4"
   },
   "dependencies": {
-    "dompurify": "^3.2.7",
+    "dompurify": "^3.3.2",
     "node-gyp": "^10.0.1"
   }
 }
