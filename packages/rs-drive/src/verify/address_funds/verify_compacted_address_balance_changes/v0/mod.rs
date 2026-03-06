@@ -77,6 +77,7 @@ impl Drive {
         // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedAddressBalances ('c' = 0x63)
         let root_layer = match &grovedb_proof {
             GroveDBProof::V0(v0) => &v0.root_layer,
+            _ => todo!("GroveDBProof::V1 not yet implemented"),
         };
 
         let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];

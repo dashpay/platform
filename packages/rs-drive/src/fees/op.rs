@@ -579,6 +579,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
+            _ => todo!("new tree types not yet implemented"),
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
@@ -599,6 +600,7 @@ impl DriveCost for OperationCost {
             storage_cost,
             storage_loaded_bytes,
             hash_node_calls,
+            sinsemilla_hash_calls: _,
         } = self;
         let epoch_cost_for_processing_credit_per_byte =
             fee_version.storage.storage_processing_credit_per_byte;

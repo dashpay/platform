@@ -18,4 +18,5 @@ pub struct SystemLimits {
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
     // do this that much
     pub max_token_redemption_cycles: u32,
+    pub max_shielded_transition_actions: u16,
 }

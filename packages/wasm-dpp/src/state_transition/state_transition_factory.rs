@@ -79,6 +79,13 @@ impl StateTransitionFactoryWasm {
                 StateTransition::AddressCreditWithdrawal(st) => {
                     serde_wasm_bindgen::to_value(&st).map_err(|e| JsValue::from(e.to_string()))
                 }
+                StateTransition::Shield(_)
+                | StateTransition::ShieldedTransfer(_)
+                | StateTransition::Unshield(_)
+                | StateTransition::ShieldFromAssetLock(_)
+                | StateTransition::ShieldedWithdrawal(_) => {
+                    todo!("shielded transitions not yet implemented in state_transition_factory")
+                }
             },
             Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
                 StateTransitionError::InvalidStateTransitionError {

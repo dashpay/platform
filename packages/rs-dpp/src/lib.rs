@@ -73,6 +73,7 @@ pub mod core_types;
 
 pub mod address_funds;
 pub mod group;
+pub mod shielded;
 pub mod withdrawal;
 
 pub use async_trait;
