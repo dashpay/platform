@@ -88,9 +88,9 @@ impl Drive {
                         SomeSumTrees {
                             sum_trees_weight: 0,
                             big_sum_trees_weight: 0,
-                            count_trees_weight: 0,
+                            count_trees_weight: 1, // nullifiers (ProvableCountTree)
                             count_sum_trees_weight: 0,
-                            non_sum_trees_weight: 2, // nullifiers + anchors
+                            non_sum_trees_weight: 1, // anchors
                         },
                         None,
                         3, // 3 subtrees: notes (CommitmentTree), nullifiers, anchors
@@ -113,11 +113,11 @@ impl Drive {
         );
 
         // Nullifiers tree: [AddressBalances, "s", 2]
-        // NormalTree - stores spent nullifiers (32-byte key -> empty item)
+        // ProvableCountTree - stores spent nullifiers (32-byte key -> empty item)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_nullifiers_path()),
             EstimatedLayerInformation {
-                tree_type: TreeType::NormalTree,
+                tree_type: TreeType::ProvableCountTree,
                 estimated_layer_count: EstimatedLevel(16, false),
                 estimated_layer_sizes: AllItems(NULLIFIER_KEY_SIZE, 0, None),
             },
