@@ -1,4 +1,3 @@
-import { Buffer } from 'buffer';
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
@@ -42,7 +41,7 @@ describe('ContenderWithSerializedDocument', () => {
       const contender = createContender();
       const doc = contender.serializedDocument;
       expect(doc).to.be.instanceOf(Uint8Array);
-      expect(Array.from(doc!)).to.deep.equal([1, 2, 3, 4, 5]);
+      expect(Array.from(doc)).to.deep.equal([1, 2, 3, 4, 5]);
     });
 
     it('should return voteTally', () => {

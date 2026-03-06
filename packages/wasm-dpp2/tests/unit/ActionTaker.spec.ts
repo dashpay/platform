@@ -31,7 +31,7 @@ describe('ActionTaker', () => {
       const id = wasm.Identifier.fromHex(id1Hex);
       const taker = new wasm.ActionTaker(id);
 
-      const value = taker.value;
+      const { value } = taker;
       expect(value).to.be.instanceOf(wasm.Identifier);
       expect(value.toHex()).to.equal(id1Hex);
     });
@@ -41,7 +41,7 @@ describe('ActionTaker', () => {
       const id2 = wasm.Identifier.fromHex(id2Hex);
       const taker = new wasm.ActionTaker([id1, id2]);
 
-      const value = taker.value;
+      const { value } = taker;
       expect(Array.isArray(value)).to.be.true();
       expect(value).to.have.length(2);
     });

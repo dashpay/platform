@@ -37,7 +37,7 @@ describe('GroupAction', () => {
 
     it('should expose event getter as GroupActionEvent', () => {
       const action = wasm.GroupAction.fromJSON(jsonFixture);
-      const event = action.event;
+      const { event } = action;
 
       expect(event).to.be.instanceOf(wasm.GroupActionEvent);
       expect(event.variant).to.equal(wasm.GroupActionEventVariant.TokenEvent);

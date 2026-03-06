@@ -55,7 +55,7 @@ describe('MasternodeVoteTransition', () => {
 
     it('should return vote', () => {
       const transition = createTransition();
-      const vote = transition.vote;
+      const { vote } = transition;
       expect(vote).to.be.instanceOf(wasm.Vote);
     });
 
