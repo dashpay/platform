@@ -15,9 +15,15 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>), Error> {
+        if max_elements == 0 {
+            return Err(Error::Drive(DriveError::CorruptedElementType(
+                "max_elements must be greater than zero",
+            )));
+        }
+
         // start_index must be chunk-aligned (multiple of max_elements)
         let chunk_size = max_elements as u64;
-        if chunk_size > 0 && start_index % chunk_size != 0 {
+        if start_index % chunk_size != 0 {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "start_index is not chunk-aligned; must be a multiple of max_elements",
             )));
