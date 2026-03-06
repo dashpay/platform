@@ -2,7 +2,7 @@ const { Transaction } = require('@dashevo/dashcore-lib');
 const STRATEGIES = require('./strategies');
 const InvalidUTXO = require('../../errors/InvalidUTXO');
 const InvalidOutput = require('../../errors/InvalidOutput');
-const CoinSelectionUnsufficientUTXOS = require('../../errors/CoinSelectionUnsufficientUTXOS');
+const CoinSelectionInsufficientUTXOS = require('../../errors/CoinSelectionUnsufficientUTXOS');
 
 module.exports = function coinSelection(utxosList, outputsList, deductFee = false, feeCategory = 'normal', strategy = STRATEGIES.simpleDescendingAccumulator) {
   if (!utxosList) { throw new Error('A utxosList is required'); }
@@ -30,7 +30,7 @@ module.exports = function coinSelection(utxosList, outputsList, deductFee = fals
     outputValue += output.satoshis;
   });
   if (utxosValue < outputValue) {
-    throw new CoinSelectionUnsufficientUTXOS({ utxosValue, outputValue });
+    throw new CoinSelectionInsufficientUTXOS({ utxosValue, outputValue });
   }
   return strategy(utxosList, outputsList, deductFee, feeCategory);
 };

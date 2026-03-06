@@ -23,7 +23,7 @@ function impactAffectedInputs({ transaction }) {
   const txid = transaction.hash;
 
   const addresses = storage.getChainStore(network).getAddresses();
-  // We iterate out input to substract their balance.
+  // We iterate out input to subtract their balance.
   inputs.forEach((input) => {
     const potentiallySelectedAddresses = [...addresses]
       .reduce((acc, [address, { transactions }]) => {

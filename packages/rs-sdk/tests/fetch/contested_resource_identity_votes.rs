@@ -49,7 +49,7 @@ async fn contested_resource_identity_votes_not_found() {
 /// In order to setup this test, you need to:
 ///
 /// 0. Ensure you have at least 1 contested DPNS name in the system.
-/// See [check_mn_voting_prerequisities](super::contested_resource::check_mn_voting_prerequisities) for more details.
+/// See [check_mn_voting_prerequisites](super::contested_resource::check_mn_voting_prerequisites) for more details.
 ///
 /// 1. Grep log output of `yarn setup` (see logs/setup.log) to find `ProRegTx transaction ID` and `Owner Private Key`:
 ///  ```bash

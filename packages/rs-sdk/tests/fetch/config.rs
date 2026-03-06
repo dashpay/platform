@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
+/// Variable names in the environment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
 /// and written as SCREAMING_SNAKE_CASE (e.g. `DASH_SDK_PLATFORM_HOST`).
 pub struct Config {
     /// Hostname of the Dash Platform node to connect to

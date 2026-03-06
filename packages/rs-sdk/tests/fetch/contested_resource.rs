@@ -28,7 +28,7 @@ use drive_proof_verifier::types::ContestedResource;
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn test_contested_resources_ok() {
     setup_logs();
@@ -36,9 +36,9 @@ async fn test_contested_resources_ok() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("test_contested_resources_ok").await;
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     let query = base_query(&cfg);
 
@@ -65,7 +65,7 @@ fn base_query(cfg: &Config) -> VotePollsByDocumentTypeQuery {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 /// Test [ContestedResource] start index (`start_at_value`)
 ///
@@ -78,9 +78,9 @@ async fn contested_resources_start_at_value() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("contested_resources_start_at_value").await;
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     // Given all contested resources sorted ascending
     let index_name = "parentNameAndLabel";
@@ -145,7 +145,7 @@ async fn contested_resources_start_at_value() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 #[allow(non_snake_case)]
 async fn contested_resources_limit_PLAN_656() {
@@ -154,9 +154,9 @@ async fn contested_resources_limit_PLAN_656() {
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("contested_resources_limit").await;
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     const LIMIT: u16 = 2;
     const LIMIT_ALL: u16 = 100;
@@ -287,7 +287,7 @@ async fn contested_resources_limit_PLAN_656() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn contested_resources_fields(
     query_mut_fn: fn(&mut VotePollsByDocumentTypeQuery),
@@ -297,9 +297,9 @@ async fn contested_resources_fields(
 
     let cfg = Config::new();
 
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     tracing::debug!(?expect, "Running test case");
     // handle panics to not stop other test cases from running
@@ -371,8 +371,8 @@ async fn contested_resources_fields(
 }
 
 /// Ensure prerequsities for masternode voting tests are met
-pub async fn check_mn_voting_prerequisities(cfg: &Config) -> Result<(), Vec<String>> {
-    let sdk = cfg.setup_api("check_mn_voting_prerequisities").await;
+pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<String>> {
+    let sdk = cfg.setup_api("check_mn_voting_prerequisites").await;
     let mut errors = Vec::new();
 
     let index_name = "parentNameAndLabel".to_string();
@@ -432,7 +432,7 @@ pub async fn check_mn_voting_prerequisities(cfg: &Config) -> Result<(), Vec<Stri
     if errors.is_empty() {
         Ok(())
     } else {
-        tracing::error!(?errors, "Prerequisities for masternode voting tests not met, please configure the network accordingly");
+        tracing::error!(?errors, "Prerequisites for masternode voting tests not met, please configure the network accordingly");
         Err(errors)
     }
 }

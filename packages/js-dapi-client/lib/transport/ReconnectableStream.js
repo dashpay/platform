@@ -214,7 +214,7 @@ class ReconnectableStream extends EventEmitter {
     this.logger.debug(`[ReconnectableStream] Error in stream, code ${e.code}, e:`, e);
 
     // In case of cancellation nothing has to happen.
-    // Do not retry UNKNOWN error code - HACH for grpc-web that ignores following error that happens
+    // Do not retry UNKNOWN error code - HASH for grpc-web that ignores following error that happens
     // in a while after stream cancellation
     // Error message:
     // "Response closed without grpc-status (Headers only) {
@@ -285,7 +285,7 @@ class ReconnectableStream extends EventEmitter {
       this.clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
       // eslint-disable-next-line no-unused-expressions
-      this.logger.debug('[ReconnectableStream] Stoped auto reconnect');
+      this.logger.debug('[ReconnectableStream] Stopped auto reconnect');
     }
   }
 

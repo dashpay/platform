@@ -28,7 +28,7 @@ async fn test_prefunded_specialized_balance_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn test_prefunded_specialized_balance_ok() {
     setup_logs();

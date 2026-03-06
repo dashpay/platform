@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 /// 1. At least one vote poll exists
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn vote_polls_by_ts_ok() {
@@ -23,9 +23,9 @@ async fn vote_polls_by_ts_ok() {
     let cfg = Config::new();
 
     let sdk = cfg.setup_api("vote_polls_by_ts_ok").await;
-    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+    super::contested_resource::check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     let query = VotePollsByEndDateDriveQuery {
         limit: None,
@@ -50,7 +50,7 @@ async fn vote_polls_by_ts_ok() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 #[allow(non_snake_case)]
 async fn vote_polls_by_ts_order_PLAN_661() {
@@ -58,9 +58,9 @@ async fn vote_polls_by_ts_order_PLAN_661() {
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("vote_polls_by_ts_order").await;
-    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+    super::contested_resource::check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     let base_query = VotePollsByEndDateDriveQuery {
         limit: None,
@@ -117,16 +117,16 @@ async fn vote_polls_by_ts_order_PLAN_661() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn vote_polls_by_ts_limit() {
     setup_logs();
 
     let cfg = Config::new();
     let sdk = cfg.setup_api("vote_polls_by_ts_limit").await;
-    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+    super::contested_resource::check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     // Given index with more than 2 contested resources; note LIMIT must be > 1
     const LIMIT: usize = 2;
