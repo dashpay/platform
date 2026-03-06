@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -60,8 +61,15 @@ jobs:
           fi
 
       - name: Commit cache updates
-        if: steps.coverage.outputs.cache_modified == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/v'))
+        if: steps.coverage.outputs.cache_modified == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          EXPECTED_BRANCH: ${{ github.head_ref }}
         run: |
+          BRANCH=$(git branch --show-current)
+          if [ "$BRANCH" != "$EXPECTED_BRANCH" ]; then
+            echo "::error::Expected branch '${EXPECTED_BRANCH}' but on '${BRANCH}'. Refusing to push."
+            exit 1
+          fi
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add .github/grpc-queries-cache.json
