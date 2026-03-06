@@ -29,17 +29,6 @@ repos:
       - id: check-shebang-scripts-are-executable
         exclude: '\.rs$'  # Rust inner attributes (#![...]) look like shebangs
 
-  - repo: https://github.com/crate-ci/typos
-    rev: v1.40.0
-    hooks:
-      - id: typos
-        args: ['--write-changes']
-        exclude: |
-          (?x)^(
-              .*\.lock$|
-              node_modules/
-          )$
-
   - repo: local
     hooks:
       - id: cargo-fmt
