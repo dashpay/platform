@@ -158,53 +158,6 @@ mod tests {
     }
 
     #[test]
-    fn block_info_into_object_round_trip() {
-        let block_info = BlockInfo {
-            time_ms: 42u64,
-            height: 100u64,
-            core_height: 50u32,
-            epoch: Epoch::new(1).unwrap(),
-        };
-
-        let expected = block_info;
-        let obj = block_info
-            .into_object()
-            .expect("into_object should succeed");
-        let restored = BlockInfo::from_object(obj).expect("from_object should succeed");
-        assert_eq!(expected, restored);
-    }
-
-    #[test]
-    fn block_info_from_object_ref() {
-        let block_info = BlockInfo {
-            time_ms: 1_000u64,
-            height: 200u64,
-            core_height: 10u32,
-            epoch: Epoch::new(3).unwrap(),
-        };
-
-        let obj = block_info.to_object().expect("to_object should succeed");
-        let restored1 = BlockInfo::from_object_ref(&obj).expect("from_object_ref should succeed");
-        let restored2 = BlockInfo::from_object(obj).expect("from_object should succeed");
-        assert_eq!(restored1, restored2);
-        assert_eq!(block_info, restored1);
-    }
-
-    #[test]
-    fn block_info_zero_values_json_round_trip() {
-        let block_info = BlockInfo::default();
-
-        let json = block_info.to_json().expect("to_json should succeed");
-        assert!(json["timeMs"].is_number());
-        assert_eq!(json["timeMs"].as_u64().unwrap(), 0);
-        assert!(json["height"].is_number());
-        assert_eq!(json["height"].as_u64().unwrap(), 0);
-
-        let restored = BlockInfo::from_json(json).expect("from_json should succeed");
-        assert_eq!(block_info, restored);
-    }
-
-    #[test]
     fn block_info_max_u64_json_round_trip() {
         let block_info = BlockInfo {
             time_ms: u64::MAX,

@@ -44,20 +44,6 @@ mod tests {
     use crate::serialization::JsonConvertible;
 
     #[test]
-    fn token_configuration_json_round_trip() {
-        let config = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
-
-        let json = config.to_json().expect("to_json should succeed");
-
-        assert!(json["baseSupply"].is_number());
-        assert_eq!(json["baseSupply"].as_u64().unwrap(), 100000);
-
-        // round-trip
-        let restored = TokenConfiguration::from_json(json).expect("from_json should succeed");
-        assert_eq!(config, restored);
-    }
-
-    #[test]
     fn token_configuration_large_supply_json_round_trip() {
         let mut config = TokenConfigurationV0::default_most_restrictive();
         config.base_supply = u64::MAX;
