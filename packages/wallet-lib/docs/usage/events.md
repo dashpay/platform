@@ -42,5 +42,3 @@ Events types :
 | ---------------------------- |:----------------------------------------------------------------------:|
 | UNCONFIRMED_BALANCE_CHANGED  | When unconfirmed balance change, we gives the delta + totalValue       |
 | BALANCE_CHANGED              | When the balance change, we gives the delta + totalValue               |
-
-

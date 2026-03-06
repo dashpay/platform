@@ -249,7 +249,7 @@ fn get_contested_resource_vote_state(
                         .iter()
                         .map(|(id, contender)| {
                             let document_json = if let Some(ref document) = contender.serialized_document() {
-                                format!(r#""document":"{}""#, 
+                                format!(r#""document":"{}""#,
                                     hex::encode(document))
                             } else {
                                 r#""document":null"#.to_string()

@@ -31,10 +31,10 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
     // Wallet association
     public var walletId: Data?
     public var network: String
-    
+
     // Cache the base58 representation
     private let _base58String: String
-    
+
     /// Get the identity ID as a base58 string (for FFI calls)
     public var idString: String {
         _base58String
@@ -65,13 +65,13 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
         self.walletId = walletId
         self.network = network
     }
-    
+
     /// Initialize with hex string ID for convenience
     public init?(idString: String, balance: UInt64 = 0, isLocal: Bool = true, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], votingPrivateKey: Data? = nil, ownerPrivateKey: Data? = nil, payoutPrivateKey: Data? = nil, dpnsName: String? = nil, mainDpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:], publicKeys: [IdentityPublicKey] = [], walletId: Data? = nil, network: String = "testnet") {
         guard let idData = Data(hexString: idString), idData.count == 32 else { return nil }
         self.init(id: idData, balance: balance, isLocal: isLocal, alias: alias, type: type, privateKeys: privateKeys, votingPrivateKey: votingPrivateKey, ownerPrivateKey: ownerPrivateKey, payoutPrivateKey: payoutPrivateKey, dpnsName: dpnsName, mainDpnsName: mainDpnsName, dpnsNames: dpnsNames, contestedDpnsNames: contestedDpnsNames, contestedDpnsInfo: contestedDpnsInfo, publicKeys: publicKeys, walletId: walletId, network: network)
     }
-    
+
     public init?(from identity: SwiftDashSDK.Identity) {
         guard let idData = Data(hexString: identity.id), idData.count == 32 else { return nil }
         self.id = idData
@@ -93,7 +93,7 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
         self.walletId = nil
         self.network = "testnet"
     }
-    
+
     /// Create from DPP Identity
     public init(from dppIdentity: DPPIdentity, alias: String? = nil, type: IdentityType = .user, privateKeys: [Data] = [], dpnsName: String? = nil, mainDpnsName: String? = nil, dpnsNames: [String] = [], contestedDpnsNames: [String] = [], contestedDpnsInfo: [String: Any] = [:], walletId: Data? = nil, network: String = "testnet") {
         self.id = dppIdentity.id  // DPPIdentity already uses Data for id
@@ -111,7 +111,7 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
         self.publicKeys = Array(dppIdentity.publicKeys.values)
         self.walletId = walletId
         self.network = network
-        
+
         // Extract specific keys for masternodes
         if type == .masternode || type == .evonode {
             self.votingPrivateKey = nil // Would be set separately
@@ -123,7 +123,7 @@ public struct IdentityModel: Identifiable, Equatable, Hashable {
             self.payoutPrivateKey = nil
         }
     }
-    
+
     public var formattedBalance: String {
         let dashAmount = Double(balance) / 100_000_000_000 // 1 DASH = 100B credits
         return String(format: "%.8f DASH", dashAmount)

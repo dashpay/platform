@@ -11,5 +11,3 @@ Parameters:
 | **opts.log**         | Boolean    | no             | Indicates whether storage should be logged in the console             |
 
 Returns : {String}
-
-

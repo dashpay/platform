@@ -15,4 +15,3 @@ Parameters:
 | **opts.keys**                      | object          | no             | If required, allow to create KeyChain by passing it a set of keys  |
 
 Returns : Keychain instance.
-

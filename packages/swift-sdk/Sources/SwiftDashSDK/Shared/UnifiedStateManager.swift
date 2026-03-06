@@ -14,32 +14,32 @@ public class UnifiedStateManager: ObservableObject {
     // Platform state
     @Published public var platformIdentities: [DPPIdentity] = []
     @Published public var platformDocuments: [DPPDocument] = []
-    
+
     // Cross-layer state
     @Published public var assetLocks: [AssetLock] = []
     @Published public var pendingTransfers: [CrossLayerTransfer] = []
-    
+
     // SDKs (using Any for now - will be replaced with real types)
     private var coreSDK: Any?
     private var platformWrapper: Any?
-    
+
     public init(coreSDK: Any? = nil, platformWrapper: Any? = nil) {
         self.coreSDK = coreSDK
         self.platformWrapper = platformWrapper
     }
-    
+
     public func updateCoreSDK(_ sdk: Any) async {
         coreSDK = sdk
         isCoreSynced = true
     }
-    
+
     public func updatePlatformWrapper(_ wrapper: Any) async {
         platformWrapper = wrapper
         isPlatformSynced = true
     }
-    
+
     // MARK: - Core Operations
-    
+
     public func refreshCoreBalance() async {
         // Mock implementation
         coreBalance = Balance(
@@ -47,14 +47,14 @@ public class UnifiedStateManager: ObservableObject {
             unconfirmed: 0
         )
     }
-    
+
     public func sendCoreTransaction(to address: String, amount: UInt64) async throws -> String {
         // Mock implementation
         return UUID().uuidString
     }
-    
+
     // MARK: - Platform Operations
-    
+
     public func createIdentity(withCredits credits: UInt64) async throws -> DPPIdentity {
         // Mock implementation
         let idData = Data(UUID().uuidString.utf8).prefix(32)
@@ -68,7 +68,7 @@ public class UnifiedStateManager: ObservableObject {
         platformIdentities.append(identity)
         return identity
     }
-    
+
     public func createDocument(type: String, data: [String: Any]) async throws -> DPPDocument {
         // Mock implementation
         let idData = Data(UUID().uuidString.utf8).prefix(32)
@@ -95,9 +95,9 @@ public class UnifiedStateManager: ObservableObject {
         platformDocuments.append(document)
         return document
     }
-    
+
     // MARK: - Cross-Layer Operations
-    
+
     public func createAssetLock(amount: UInt64) async throws -> AssetLock {
         // Mock implementation
         let assetLock = AssetLock(
@@ -108,11 +108,11 @@ public class UnifiedStateManager: ObservableObject {
         assetLocks.append(assetLock)
         return assetLock
     }
-    
+
     public func transferToPlatform(amount: UInt64) async throws {
         // Create asset lock
         let assetLock = try await createAssetLock(amount: amount)
-        
+
         // Create pending transfer
         let transfer = CrossLayerTransfer(
             id: UUID().uuidString,

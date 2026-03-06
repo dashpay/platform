@@ -228,7 +228,7 @@ impl LowLevelDriveOperation {
                 }),
                 _ => {
                     let cost = operation.operation_cost()?;
-                    // There is no need for a checked multiply here because added bytes are u64 and 
+                    // There is no need for a checked multiply here because added bytes are u64 and
                     // storage disk usage credit per byte should never be high enough to cause an overflow
                     let storage_fee = cost.storage_cost.added_bytes as u64 * fee_version.storage.storage_disk_usage_credit_per_byte;
                     let processing_fee = cost.ephemeral_cost(fee_version)?;

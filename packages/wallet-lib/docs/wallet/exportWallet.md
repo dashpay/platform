@@ -13,5 +13,3 @@ Parameters:
 | **outputType**         | String    | no             | The required output type of the exported wallet             |
 
 Returns : {Mnemonic|HDPrivateKey|HDPublicKey|PrivateKey}
-
-

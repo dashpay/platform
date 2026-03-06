@@ -20,7 +20,7 @@ fi
 if grep -q "typedef struct FFIDashSpvClient FFIDashSpvClient;" "$HEADER_FILE"; then
     # Create a temporary file
     TEMP_FILE=$(mktemp)
-    
+
     # Process the file to add typedefs
     awk '
     /typedef struct FFIDashSpvClient FFIDashSpvClient;/ {
@@ -36,7 +36,7 @@ if grep -q "typedef struct FFIDashSpvClient FFIDashSpvClient;" "$HEADER_FILE"; t
     }
     { print }
     ' "$HEADER_FILE" > "$TEMP_FILE"
-    
+
     # Replace original file
     mv "$TEMP_FILE" "$HEADER_FILE"
     echo "Successfully added Core SDK type aliases"

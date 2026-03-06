@@ -32,7 +32,7 @@ fn main() {
             export: cbindgen::ExportConfig {
                 include: vec![
                     "dash_sdk_*".to_string(),      // Platform SDK functions
-                    "dash_core_*".to_string(),     // Core SDK wrapper functions  
+                    "dash_core_*".to_string(),     // Core SDK wrapper functions
                     "dash_spv_*".to_string(),      // Core SDK direct functions
                     "dash_unified_*".to_string(),  // Unified SDK functions
                     "FFI*".to_string(),            // All FFI types

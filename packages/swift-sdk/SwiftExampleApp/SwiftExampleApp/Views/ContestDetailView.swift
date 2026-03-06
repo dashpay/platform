@@ -5,14 +5,14 @@ struct ContestDetailView: View {
     let contestName: String
     let contestInfo: [String: Any]
     let currentIdentityId: String
-    
+
     @EnvironmentObject var appState: AppState
     @State private var contenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
     @State private var abstainVotes: Int? = nil
     @State private var lockVotes: Int? = nil
     @State private var endTime: Date? = nil
     @State private var isRefreshing = false
-    
+
     var body: some View {
         List {
             // Show refresh indicator if refreshing
@@ -29,7 +29,7 @@ struct ContestDetailView: View {
                 }
                 .padding(.vertical, 8)
             }
-            
+
             // Contest Header
             Section("Contest Information") {
                 HStack {
@@ -39,7 +39,7 @@ struct ContestDetailView: View {
                         .font(.headline)
                         .foregroundColor(.blue)
                 }
-                
+
                 if let hasWinner = contestInfo["hasWinner"] as? Bool {
                     HStack {
                         Label("Status", systemImage: "flag.fill")
@@ -53,7 +53,7 @@ struct ContestDetailView: View {
                         }
                     }
                 }
-                
+
                 if let endTime = endTime {
                     HStack {
                         Label("Voting Ends", systemImage: "clock")
@@ -67,7 +67,7 @@ struct ContestDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     // Show time remaining as progress if contest is active
                     if let hasWinner = contestInfo["hasWinner"] as? Bool, !hasWinner {
                         VStack(spacing: 4) {
@@ -77,7 +77,7 @@ struct ContestDetailView: View {
                                         .fill(Color.gray.opacity(0.2))
                                         .frame(height: 4)
                                         .cornerRadius(2)
-                                    
+
                                     Rectangle()
                                         .fill(timeRemainingColor(for: endTime))
                                         .frame(width: progressWidth(for: endTime, in: geometry.size.width), height: 4)
@@ -86,7 +86,7 @@ struct ContestDetailView: View {
                                 }
                             }
                             .frame(height: 4)
-                            
+
                             Text(timeRemainingText(for: endTime))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
@@ -95,7 +95,7 @@ struct ContestDetailView: View {
                     }
                 }
             }
-            
+
             // Contenders Section
             Section("Contenders") {
                 // Show special message if this is a newly registered contest
@@ -105,15 +105,15 @@ struct ContestDetailView: View {
                     let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
                         (14 * 24 * 60 * 60) : // 14 days for mainnet
                         (90 * 60) // 90 minutes for testnet
-                    
+
                     let timeRemaining = endTime?.timeIntervalSinceNow ?? 0
                     let elapsedTime = totalDuration - timeRemaining
-                    
+
                     // Only show "newly registered" if less than 5% of total time has elapsed
                     // For testnet (90 min): show if less than 4.5 minutes elapsed
                     // For mainnet (14 days): show if less than ~17 hours elapsed
                     let isNewlyRegistered = elapsedTime < (totalDuration * 0.05)
-                    
+
                     if isNewlyRegistered {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
@@ -145,7 +145,7 @@ struct ContestDetailView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                
+
                 ForEach(contenders, id: \.id) { contender in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -159,7 +159,7 @@ struct ContestDetailView: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
-                        
+
                         HStack {
                             Label("Votes", systemImage: "hand.thumbsup.fill")
                                 .font(.caption)
@@ -173,7 +173,7 @@ struct ContestDetailView: View {
                     .padding(.vertical, 4)
                 }
             }
-            
+
             // Vote Tallies Section - Always show to give complete picture
             Section("Vote Summary") {
                 HStack {
@@ -184,7 +184,7 @@ struct ContestDetailView: View {
                         .font(.headline)
                         .foregroundColor(abstainVotes ?? 0 > 0 ? .orange : .secondary)
                 }
-                
+
                 HStack {
                     Label("Lock Votes", systemImage: "lock.fill")
                         .foregroundColor(.red)
@@ -193,10 +193,10 @@ struct ContestDetailView: View {
                         .font(.headline)
                         .foregroundColor(lockVotes ?? 0 > 0 ? .red : .secondary)
                 }
-                
+
                 // Add a divider and total vote count
                 Divider()
-                
+
                 HStack {
                     Label("Total Votes", systemImage: "sum")
                         .foregroundColor(.primary)
@@ -207,7 +207,7 @@ struct ContestDetailView: View {
                         .foregroundColor(.primary)
                 }
             }
-            
+
             // Info Section
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -229,7 +229,7 @@ struct ContestDetailView: View {
             parseContestInfo()
         }
     }
-    
+
     private func parseContestInfo() {
         // Parse contenders
         if let contendersArray = contestInfo["contenders"] as? [[String: Any]] {
@@ -238,13 +238,13 @@ struct ContestDetailView: View {
                       let votes = contenderDict["votes"] as? String else {
                     return nil
                 }
-                
+
                 let isCurrentIdentity = contenderDict["isQueriedIdentity"] as? Bool ?? false ||
                                        id == currentIdentityId
-                
+
                 return (id: id, votes: votes, isCurrentIdentity: isCurrentIdentity)
             }
-            
+
             // Sort contenders by vote count (if we can parse them)
             contenders.sort { first, second in
                 // Try to extract numeric vote count for sorting
@@ -253,11 +253,11 @@ struct ContestDetailView: View {
                 return firstVotes > secondVotes
             }
         }
-        
+
         // Parse vote tallies
         abstainVotes = contestInfo["abstainVotes"] as? Int
         lockVotes = contestInfo["lockVotes"] as? Int
-        
+
         // Parse end time (milliseconds since epoch)
         // Check for various numeric types since it could be stored as UInt64, Double, or Int
         if let endTimeMillis = contestInfo["endTime"] as? UInt64 {
@@ -267,11 +267,11 @@ struct ContestDetailView: View {
         } else if let endTimeMillis = contestInfo["endTime"] as? Int {
             endTime = Date(timeIntervalSince1970: Double(endTimeMillis) / 1000.0)
         }
-        
+
         // Debug logging
         print("🔵 Contest endTime parsing - contestInfo[endTime]: \(String(describing: contestInfo["endTime"])), parsed date: \(String(describing: endTime))")
     }
-    
+
     private func formatVotes(_ votesString: String) -> String {
         // The votes string comes in format like "ResourceVote { vote_choice: TowardsIdentity(...), strength: 1 }"
         // Try to extract the strength value
@@ -280,7 +280,7 @@ struct ContestDetailView: View {
             let strengthValue = String(votesString[strengthRange.upperBound..<endRange.lowerBound])
             return "\(strengthValue) vote\(strengthValue == "1" ? "" : "s")"
         }
-        
+
         // If we can't parse it, just show a simplified version
         if votesString.contains("TowardsIdentity") {
             return "Supporting"
@@ -289,10 +289,10 @@ struct ContestDetailView: View {
         } else if votesString.contains("Lock") {
             return "Lock"
         }
-        
+
         return "Unknown"
     }
-    
+
     private func extractVoteCount(from votesString: String) -> Int {
         // Try to extract the strength value as an integer
         if let strengthRange = votesString.range(of: "strength: "),
@@ -302,7 +302,7 @@ struct ContestDetailView: View {
         }
         return 0
     }
-    
+
     private func getTotalVotes() -> Int {
         // Sum up all votes: contender votes + abstain + lock
         let contenderVotes = contenders.reduce(0) { total, contender in
@@ -312,11 +312,11 @@ struct ContestDetailView: View {
         let lock = lockVotes ?? 0
         return contenderVotes + abstain + lock
     }
-    
+
     private func timeRemainingColor(for endTime: Date) -> Color {
         let timeRemaining = endTime.timeIntervalSinceNow
         let oneDay: TimeInterval = 24 * 60 * 60
-        
+
         if timeRemaining < 0 {
             return .red // Expired
         } else if timeRemaining < oneDay {
@@ -327,72 +327,72 @@ struct ContestDetailView: View {
             return .green // More than 3 days
         }
     }
-    
+
     private func progressWidth(for endTime: Date, in totalWidth: CGFloat) -> CGFloat {
         // Get total duration based on network
         let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
             (14 * 24 * 60 * 60) : // 14 days for mainnet
             (90 * 60) // 90 minutes for testnet
-        
+
         // Calculate elapsed time
         let timeRemaining = max(0, endTime.timeIntervalSinceNow)
         let elapsedTime = totalDuration - timeRemaining
-        
+
         // Calculate progress (how much time has passed)
         let progress = min(1.0, max(0, elapsedTime / totalDuration))
-        
+
         return totalWidth * CGFloat(progress)
     }
-    
+
     private func timeRemainingText(for endTime: Date) -> String {
         let timeRemaining = endTime.timeIntervalSinceNow
-        
+
         if timeRemaining < 0 {
             return "Contest has ended"
         }
-        
+
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = [.day, .hour, .minute]
         formatter.unitsStyle = .abbreviated
         formatter.maximumUnitCount = 2
-        
+
         if let formattedTime = formatter.string(from: timeRemaining) {
             return "Time remaining: \(formattedTime)"
         }
-        
+
         return "Contest ending soon"
     }
-    
+
     private func refreshVoteState() async {
         guard let sdk = appState.sdk else { return }
-        
+
         // Don't refresh if already refreshing
         guard !isRefreshing else { return }
-        
+
         await MainActor.run {
             isRefreshing = true
         }
-        
+
         do {
             // Call the SDK to get the latest vote state for this contested name
             let voteState = try await sdk.dpnsGetContestedVoteState(name: contestName, limit: 100)
-            
+
             await MainActor.run {
                 // Parse the updated vote state
                 var newContenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
-                
+
                 if let contendersArray = voteState["contenders"] as? [[String: Any]] {
                     newContenders = contendersArray.compactMap { contenderDict in
                         guard let id = contenderDict["identifier"] as? String,
                               let votes = contenderDict["votes"] as? String else {
                             return nil
                         }
-                        
+
                         let isCurrentIdentity = id == currentIdentityId
-                        
+
                         return (id: id, votes: votes, isCurrentIdentity: isCurrentIdentity)
                     }
-                    
+
                     // Sort contenders by vote count
                     newContenders.sort { first, second in
                         let firstVotes = extractVoteCount(from: first.votes)
@@ -400,7 +400,7 @@ struct ContestDetailView: View {
                         return firstVotes > secondVotes
                     }
                 }
-                
+
                 // Update vote tallies
                 if let abstain = voteState["abstainVotes"] as? Int {
                     abstainVotes = abstain
@@ -408,28 +408,28 @@ struct ContestDetailView: View {
                 if let lock = voteState["lockVotes"] as? Int {
                     lockVotes = lock
                 }
-                
+
                 // Update contenders
                 contenders = newContenders
-                
+
                 // Update the identity's contested info if we have access
                 if let identityIndex = appState.identities.firstIndex(where: { $0.idString == currentIdentityId }) {
                     var updatedIdentity = appState.identities[identityIndex]
-                    
+
                     // Update the contest info for this name
                     var updatedContestInfo = updatedIdentity.contestedDpnsInfo[contestName] as? [String: Any] ?? [:]
                     updatedContestInfo["contenders"] = voteState["contenders"]
                     updatedContestInfo["abstainVotes"] = abstainVotes
                     updatedContestInfo["lockVotes"] = lockVotes
-                    
+
                     // Check if there's a winner
                     if let winner = voteState["winner"] {
                         updatedContestInfo["hasWinner"] = !(winner is NSNull)
                     }
-                    
+
                     updatedIdentity.contestedDpnsInfo[contestName] = updatedContestInfo
                     appState.identities[identityIndex] = updatedIdentity
-                    
+
                     // Persist the update
                     appState.updateIdentityDPNSNames(
                         id: updatedIdentity.id,
@@ -438,7 +438,7 @@ struct ContestDetailView: View {
                         contestedInfo: updatedIdentity.contestedDpnsInfo
                     )
                 }
-                
+
                 isRefreshing = false
             }
         } catch {

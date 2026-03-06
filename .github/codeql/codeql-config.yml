@@ -1,5 +1,5 @@
 name: "Platform CodeQL config"
 
-paths-ignore: 
+paths-ignore:
   - '**/*.spec.js'
   - 'scripts/**'

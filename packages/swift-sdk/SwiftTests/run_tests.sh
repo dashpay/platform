@@ -30,16 +30,16 @@ if [ $? -eq 0 ]; then
     echo ""
     echo "✅ All tests passed!"
     echo ""
-    
+
     # Optionally run with coverage
     if [[ "$1" == "--coverage" ]]; then
         echo "📊 Generating code coverage..."
         swift test --enable-code-coverage
-        
+
         # Find the coverage data
         COV_BUILD_DIR=$(swift build --show-bin-path)
         COV_DATA="${COV_BUILD_DIR}/codecov/default.profdata"
-        
+
         if [ -f "$COV_DATA" ]; then
             echo "Coverage data generated at: $COV_DATA"
         fi

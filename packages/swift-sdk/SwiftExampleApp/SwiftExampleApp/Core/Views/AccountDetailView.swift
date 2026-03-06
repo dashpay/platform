@@ -11,7 +11,7 @@ struct AccountDetailView: View {
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     let wallet: HDWallet
     let account: AccountInfo
-    
+
     @State private var detailInfo: AccountDetailInfo?
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -22,7 +22,7 @@ struct AccountDetailView: View {
     @State private var showingPINPrompt = false
     @State private var pinInput = ""
     @State private var pendingAddressDetail: AddressDetail? // Store the address detail while waiting for PIN
-    
+
     var body: some View {
         ScrollView {
             if isLoading {
@@ -39,20 +39,20 @@ struct AccountDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     // Account Overview Card
                     accountOverviewCard(info: info)
-                    
+
                     // Extended Public Key Card
                     if let xpub = info.xpub {
                         xpubCard(xpub: xpub)
                     }
-                    
+
                     // Balance Card (only for BIP44/BIP32/CoinJoin)
                     if shouldShowBalanceInDetail {
                         balanceCard()
                     }
-                    
+
                     // Address Pool Information
                     addressPoolCard(info: info)
-                    
+
                     // Address Lists
                     addressListsSection(info: info)
                 }
@@ -81,17 +81,17 @@ struct AccountDetailView: View {
         }
         .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
-    
+
     // MARK: - View Components
-    
+
     private func accountOverviewCard(info: AccountDetailInfo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Account Information", systemImage: "info.circle.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             Divider()
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Type:")
@@ -100,7 +100,7 @@ struct AccountDetailView: View {
                     Text(accountTypeName)
                         .fontWeight(.medium)
                 }
-                
+
                 // Only show index for account types that have one
                 if hasAccountIndex {
                     HStack {
@@ -111,7 +111,7 @@ struct AccountDetailView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                 }
-                
+
                 HStack {
                     Text("Derivation Path:")
                         .foregroundColor(.secondary)
@@ -121,7 +121,7 @@ struct AccountDetailView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                
+
                 HStack {
                     Text("Network:")
                         .foregroundColor(.secondary)
@@ -143,9 +143,9 @@ struct AccountDetailView: View {
                 Label("Extended Public Key", systemImage: "key.horizontal.fill")
                     .font(.headline)
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
+
                 Button(action: {
                     copyToClipboard(xpub, label: "Extended public key")
                 }) {
@@ -153,9 +153,9 @@ struct AccountDetailView: View {
                         .foregroundColor(copiedText == xpub ? .green : .blue)
                 }
             }
-            
+
             Divider()
-            
+
             Text(xpub)
                 .font(.system(.caption, design: .monospaced))
                 .padding(8)
@@ -168,15 +168,15 @@ struct AccountDetailView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func balanceCard() -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Balance", systemImage: "bitcoinsign.circle.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             Divider()
-            
+
             HStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Confirmed")
@@ -186,9 +186,9 @@ struct AccountDetailView: View {
                         .font(.title3)
                         .fontWeight(.semibold)
                 }
-                
+
                 Spacer()
-                
+
                 if account.balance.unconfirmed > 0 {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("Pending")
@@ -201,9 +201,9 @@ struct AccountDetailView: View {
                     }
                 }
             }
-            
+
             Divider()
-            
+
             HStack {
                 Text("Total Balance")
                     .font(.caption)
@@ -220,15 +220,15 @@ struct AccountDetailView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func addressPoolCard(info: AccountDetailInfo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Address Pool", systemImage: "square.stack.3d.up.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             Divider()
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Gap Limit:")
@@ -237,7 +237,7 @@ struct AccountDetailView: View {
                     Text("\(info.gapLimit)")
                         .fontWeight(.medium)
                 }
-                
+
                 // Only show external/internal for BIP44/BIP32 accounts
                 if hasInternalExternalAddresses {
                     HStack {
@@ -247,7 +247,7 @@ struct AccountDetailView: View {
                         Text("\(info.externalAddresses.count)")
                             .fontWeight(.medium)
                     }
-                    
+
                     HStack {
                         Text("Internal Addresses:")
                             .foregroundColor(.secondary)
@@ -264,7 +264,7 @@ struct AccountDetailView: View {
                             .fontWeight(.medium)
                     }
                 }
-                
+
                 HStack {
                     Text("Used Addresses:")
                         .foregroundColor(.secondary)
@@ -272,7 +272,7 @@ struct AccountDetailView: View {
                     Text("\(info.usedAddresses)")
                         .fontWeight(.medium)
                 }
-                
+
                 HStack {
                     Text("Unused Addresses:")
                         .foregroundColor(.secondary)
@@ -288,13 +288,13 @@ struct AccountDetailView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func addressListsSection(info: AccountDetailInfo) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Addresses", systemImage: "list.bullet.rectangle.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
-            
+
             if hasInternalExternalAddresses {
                 Picker("Address Type", selection: $selectedTab) {
                     Text("Receive (\(info.externalAddresses.count))").tag(0)
@@ -302,7 +302,7 @@ struct AccountDetailView: View {
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding(.bottom, 8)
-                
+
                 if selectedTab == 0 {
                     addressList(addresses: info.externalAddresses, type: "Receive")
                 } else {
@@ -314,7 +314,7 @@ struct AccountDetailView: View {
             }
         }
     }
-    
+
     private func addressList(addresses: [AddressDetail], type: String) -> some View {
         VStack(spacing: 8) {
             if addresses.isEmpty {
@@ -332,7 +332,7 @@ struct AccountDetailView: View {
             }
         }
     }
-    
+
     private func addressRow(detail: AddressDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -342,7 +342,7 @@ struct AccountDetailView: View {
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(.secondary)
-                        
+
                         if detail.isUsed {
                             Label("Used", systemImage: "checkmark.circle.fill")
                                 .font(.caption)
@@ -353,12 +353,12 @@ struct AccountDetailView: View {
                                 .foregroundColor(.orange)
                         }
                     }
-                    
+
                     Text(detail.address)
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    
+
                     if !detail.publicKey.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Public Key:")
@@ -370,14 +370,14 @@ struct AccountDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     Text(detail.path)
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 VStack(spacing: 4) {
                     Button(action: {
                         copyToClipboard(detail.address, label: "Address")
@@ -385,7 +385,7 @@ struct AccountDetailView: View {
                         Image(systemName: copiedText == detail.address ? "checkmark.circle.fill" : "doc.on.doc")
                             .foregroundColor(copiedText == detail.address ? .green : .blue)
                     }
-                    
+
                     // Show private key button for non-BIP32/BIP44/CoinJoin accounts
                     if shouldShowPrivateKeyButton {
                         Button(action: {
@@ -401,7 +401,7 @@ struct AccountDetailView: View {
             .padding(12)
             .background(detail.isUsed ? Color(.tertiarySystemBackground) : Color(.secondarySystemBackground))
             .cornerRadius(8)
-            
+
             // Show private key if requested
             if showingPrivateKey == detail.path, let privateKeyData = privateKeyToShow {
                 VStack(alignment: .leading, spacing: 12) {
@@ -418,7 +418,7 @@ struct AccountDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    
+
                     // Hex format
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -434,7 +434,7 @@ struct AccountDetailView: View {
                                     .foregroundColor(copiedText == privateKeyData.hex ? .green : .blue)
                             }
                         }
-                        
+
                         Text(privateKeyData.hex)
                             .font(.system(size: 11, design: .monospaced))
                             .fixedSize(horizontal: false, vertical: true)
@@ -445,7 +445,7 @@ struct AccountDetailView: View {
                             .background(Color(.tertiarySystemBackground))
                             .cornerRadius(4)
                     }
-                    
+
                     // WIF format
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -461,7 +461,7 @@ struct AccountDetailView: View {
                                     .foregroundColor(copiedText == privateKeyData.wif ? .green : .blue)
                             }
                         }
-                        
+
                         Text(privateKeyData.wif)
                             .font(.system(size: 11, design: .monospaced))
                             .fixedSize(horizontal: false, vertical: true)
@@ -479,15 +479,15 @@ struct AccountDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Helper Properties
-    
+
     private var hasAccountIndex: Bool {
         return account.index != nil
     }
-    
+
     private var accountDisplayIndex: UInt32 { account.index ?? 0 }
-    
+
     private var hasInternalExternalAddresses: Bool {
         guard let info = detailInfo else { return false }
         switch info.accountType {
@@ -497,7 +497,7 @@ struct AccountDetailView: View {
             return false
         }
     }
-    
+
     private var shouldShowPrivateKeyButton: Bool {
         guard let info = detailInfo else { return false }
         switch info.accountType {
@@ -512,7 +512,7 @@ struct AccountDetailView: View {
             return false
         }
     }
-    
+
     private var accountTypeName: String {
         guard let info = detailInfo else { return "Unknown Account" }
         switch info.accountType {
@@ -542,7 +542,7 @@ struct AccountDetailView: View {
             return "Special Account"
         }
     }
-    
+
     private var accountTypeColor: Color {
         guard let info = detailInfo else { return .gray }
         switch info.accountType {
@@ -566,33 +566,33 @@ struct AccountDetailView: View {
             return .gray
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-        
+
         return String(format: "%.8f DASH", dash)
     }
-    
+
     private func copyToClipboard(_ text: String, label: String) {
         #if os(iOS)
         UIPasteboard.general.string = text
         #endif
-        
+
         copiedText = text
-        
+
         // Reset after 2 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             if copiedText == text {
@@ -600,7 +600,7 @@ struct AccountDetailView: View {
             }
         }
     }
-    
+
     private func derivePrivateKeyWithPIN(for detail: AddressDetail, pin: String) async {
         do {
             // Gate with PIN but derive via account-based FFI (no seed passage required)
@@ -622,24 +622,24 @@ struct AccountDetailView: View {
             }
         }
     }
-    
+
     // MARK: - Data Loading
-    
+
     private func loadAccountDetails() async {
         isLoading = true
         errorMessage = nil
-        
+
         do {
             guard let walletManager = walletService.walletManager else {
                 throw WalletError.walletError("Wallet manager not available")
             }
-            
+
             // Get extended public key and other details
             let details = try await walletManager.getAccountDetails(
                 for: wallet,
                 accountInfo: account
             )
-            
+
             await MainActor.run {
                 self.detailInfo = details
                 self.isLoading = false
@@ -659,31 +659,31 @@ struct PINPromptView: View {
     @Binding var pinInput: String
     @Binding var isPresented: Bool
     let onSubmit: () -> Void
-    
+
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
                 Text("Enter Wallet PIN")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
+
                 Text("Your PIN is required to access private keys")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                
+
                 SecureField("PIN", text: $pinInput)
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.numberPad)
                     .padding(.horizontal)
-                
+
                 HStack(spacing: 20) {
                     Button("Cancel") {
                         pinInput = ""
                         isPresented = false
                     }
                     .buttonStyle(.bordered)
-                    
+
                     Button("Unlock") {
                         onSubmit()
                         isPresented = false
@@ -691,7 +691,7 @@ struct PINPromptView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(pinInput.isEmpty)
                 }
-                
+
                 Spacer()
             }
             .padding()

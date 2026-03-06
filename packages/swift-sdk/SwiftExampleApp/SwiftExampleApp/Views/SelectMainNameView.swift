@@ -5,14 +5,14 @@ struct SelectMainNameView: View {
     let identity: IdentityModel
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var selectedName: String?
-    
+
     var availableNames: [String] {
         // Only show non-contested names that the user actually owns
         identity.dpnsNames
     }
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -21,7 +21,7 @@ struct SelectMainNameView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 if availableNames.isEmpty {
                     Section {
                         VStack(spacing: 12) {
@@ -54,7 +54,7 @@ struct SelectMainNameView: View {
                         .onTapGesture {
                             selectedName = nil
                         }
-                        
+
                         // List all available names
                         ForEach(availableNames, id: \.self) { name in
                             HStack {
@@ -67,9 +67,9 @@ struct SelectMainNameView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 if selectedName == name {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.blue)
@@ -81,7 +81,7 @@ struct SelectMainNameView: View {
                             }
                         }
                     }
-                    
+
                     // Show current selection
                     if let currentMain = identity.mainDpnsName {
                         Section("Current Main Name") {
@@ -95,7 +95,7 @@ struct SelectMainNameView: View {
                         }
                     }
                 }
-                
+
                 // Show contested names as information only
                 if !identity.contestedDpnsNames.isEmpty {
                     Section("Contested Names") {
@@ -109,7 +109,7 @@ struct SelectMainNameView: View {
                                     .foregroundColor(.orange)
                             }
                         }
-                        
+
                         Text("Contested names cannot be selected as main names until they are won.")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -124,7 +124,7 @@ struct SelectMainNameView: View {
                         dismiss()
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         saveSelection()
@@ -138,18 +138,18 @@ struct SelectMainNameView: View {
             }
         }
     }
-    
+
     private func saveSelection() {
         // Update the identity with the new main name
         if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
             var updatedIdentity = appState.identities[index]
             updatedIdentity.mainDpnsName = selectedName
             appState.identities[index] = updatedIdentity
-            
+
             // Persist the selection
             appState.updateIdentityMainName(id: identity.id, mainName: selectedName)
         }
-        
+
         dismiss()
     }
 }

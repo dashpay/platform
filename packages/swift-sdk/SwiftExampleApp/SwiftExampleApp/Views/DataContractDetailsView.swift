@@ -8,7 +8,7 @@ struct DataContractDetailsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
     @State private var showCopiedAlert = false
-    
+
     var displayName: String {
         // Check if this is a token-only contract
         if let tokens = contract.tokens,
@@ -23,11 +23,11 @@ struct DataContractDetailsView: View {
                 return "Token Contract"
             }
         }
-        
+
         // Otherwise use the stored name
         return contract.name
     }
-    
+
     var body: some View {
         NavigationView {
             List {
@@ -61,9 +61,9 @@ struct DataContractDetailsView: View {
             updateLastAccessedDate()
         }
     }
-    
+
     // MARK: - Section Views
-    
+
     @ViewBuilder
     private var contractConfigurationSection: some View {
         Section("Contract Configuration") {
@@ -74,19 +74,19 @@ struct DataContractDetailsView: View {
                         .foregroundColor(contract.canBeDeleted ? .green : .red)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Read Only", systemImage: contract.readonly ? "lock.fill" : "lock.open")
                         .foregroundColor(contract.readonly ? .orange : .green)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Keeps History", systemImage: contract.keepsHistory ? "clock.fill" : "clock")
                         .foregroundColor(contract.keepsHistory ? .blue : .secondary)
                     Spacer()
                 }
-                
+
                 // Document defaults
                 if contract.documentsKeepHistoryContractDefault {
                     HStack {
@@ -95,7 +95,7 @@ struct DataContractDetailsView: View {
                         Spacer()
                     }
                 }
-                
+
                 if contract.documentsMutableContractDefault {
                     HStack {
                         Label("Documents Mutable (Default)", systemImage: "pencil.circle.fill")
@@ -103,7 +103,7 @@ struct DataContractDetailsView: View {
                         Spacer()
                     }
                 }
-                
+
                 if contract.documentsCanBeDeletedContractDefault {
                     HStack {
                         Label("Documents Can Be Deleted (Default)", systemImage: "trash.circle.fill")
@@ -111,7 +111,7 @@ struct DataContractDetailsView: View {
                         Spacer()
                     }
                 }
-                
+
                 // Schema information
                 if let schemaDefs = contract.schemaDefs {
                     InfoRow(label: "Schema Definitions:", value: "\(schemaDefs)")
@@ -121,35 +121,35 @@ struct DataContractDetailsView: View {
             .padding(.vertical, 4)
         }
     }
-    
+
     @ViewBuilder
     private var contractInfoSection: some View {
         Section("Contract Information") {
             VStack(alignment: .leading, spacing: 8) {
                 InfoRow(label: "Name:", value: displayName)
                 InfoRow(label: "ID:", value: contract.idBase58, font: .caption, truncate: true)
-                
+
                 if let version = contract.version {
                     InfoRow(label: "Version:", value: "\(version)")
                 }
-                
+
                 if let ownerId = contract.ownerIdBase58 {
                     InfoRow(label: "Owner:", value: ownerId, font: .caption, truncate: true)
                 }
-                
+
                 InfoRow(label: "JSON Size:", value: ByteCountFormatter.string(fromByteCount: Int64(contract.serializedContract.count), countStyle: .binary))
-                
+
                 if let binaryData = contract.binarySerialization {
                     InfoRow(label: "Binary Size:", value: ByteCountFormatter.string(fromByteCount: Int64(binaryData.count), countStyle: .binary))
                 }
-                
+
                 InfoRow(label: "Created:", value: contract.createdAt, style: .date)
                 InfoRow(label: "Last Used:", value: contract.lastAccessedAt, style: .relative)
             }
             .padding(.vertical, 4)
         }
     }
-    
+
     @ViewBuilder
     private var tokensSection: some View {
         if let tokens = contract.tokens, !tokens.isEmpty {
@@ -162,7 +162,7 @@ struct DataContractDetailsView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var documentTypesSection: some View {
         if let documentTypes = contract.documentTypes, !documentTypes.isEmpty {
@@ -175,7 +175,7 @@ struct DataContractDetailsView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var actionsSection: some View {
         Section {
@@ -183,7 +183,7 @@ struct DataContractDetailsView: View {
                 Label("Export Contract", systemImage: "square.and.arrow.up")
                     .foregroundColor(.blue)
             }
-            
+
             if contract.binarySerializationHex != nil {
                 Button(action: copyContractHex) {
                     Label("Copy Contract Hex", systemImage: "doc.on.doc")
@@ -192,23 +192,23 @@ struct DataContractDetailsView: View {
             }
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     private func copyContractHex() {
         guard let hexString = contract.binarySerializationHex else { return }
-        
+
         UIPasteboard.general.string = hexString
         showCopiedAlert = true
-        
+
         print("📋 Copied contract hex to clipboard: \(hexString.prefix(20))...")
     }
-    
+
     private func exportContract() -> URL? {
         do {
             let fileName = "\(contract.name.replacingOccurrences(of: " ", with: "_"))_\(contract.idBase58.prefix(8)).json"
             let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            
+
             try contract.serializedContract.write(to: tempURL)
             return tempURL
         } catch {
@@ -216,7 +216,7 @@ struct DataContractDetailsView: View {
             return nil
         }
     }
-    
+
     private func updateLastAccessedDate() {
         contract.lastAccessedAt = Date()
         do {
@@ -234,14 +234,14 @@ struct InfoRow: View {
     let value: String
     var font: Font = .body
     var truncate: Bool = false
-    
+
     init(label: String, value: String, font: Font = .body, truncate: Bool = false) {
         self.label = label
         self.value = value
         self.font = font
         self.truncate = truncate
     }
-    
+
     init(label: String, value: Date, style: Text.DateStyle) {
         self.label = label
         if style == .date {
@@ -252,7 +252,7 @@ struct InfoRow: View {
         self.font = .body
         self.truncate = false
     }
-    
+
     var body: some View {
         HStack {
             Text(label)
@@ -272,7 +272,7 @@ struct InfoRow: View {
 
 struct TokenRowView: View {
     let token: PersistentToken
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -283,13 +283,13 @@ struct TokenRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             tokenSupplyInfo
             tokenFeatures
         }
         .padding(.vertical, 4)
     }
-    
+
     @ViewBuilder
     private var tokenSupplyInfo: some View {
         HStack {
@@ -298,7 +298,7 @@ struct TokenRowView: View {
                 .foregroundColor(.secondary)
             Text(token.formattedBaseSupply)
                 .font(.caption)
-            
+
             if let maxSupply = token.maxSupply {
                 Spacer()
                 Text("Max Supply:")
@@ -309,7 +309,7 @@ struct TokenRowView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var tokenFeatures: some View {
         HStack(spacing: 12) {
@@ -334,7 +334,7 @@ struct TokenRowView: View {
 
 struct DocumentTypeRowView: View {
     let docType: PersistentDocumentType
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -347,18 +347,18 @@ struct DocumentTypeRowView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             if let properties = docType.properties {
                 Text("\(properties.count) properties")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             documentFeatures
         }
         .padding(.vertical, 4)
     }
-    
+
     @ViewBuilder
     private var documentFeatures: some View {
         HStack(spacing: 12) {
@@ -388,11 +388,11 @@ struct DocumentTypeRowView: View {
 
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
-    
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
-    
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 

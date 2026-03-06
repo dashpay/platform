@@ -13,41 +13,41 @@ struct FriendsView: View {
     @State private var showAddFriend = false
     @State private var showIncomingRequests = false
     @State private var errorMessage: String?
-    
+
     var availableIdentities: [IdentityModel] {
         appState.platformState.identities
     }
-    
+
     var selectedIdentity: IdentityModel? {
         availableIdentities.first { $0.idString == selectedIdentityId }
     }
-    
+
     var body: some View {
         NavigationStack {
             if availableIdentities.isEmpty {
                 // No identities view
                 VStack(spacing: 20) {
                     Spacer()
-                    
+
                     Image(systemName: "person.crop.circle.badge.exclamationmark")
                         .font(.system(size: 60))
                         .foregroundColor(.gray)
-                    
+
                     Text("No Identity Found")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+
                     Text("Please create or load an identity first\nto manage your friends")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
-                    
+
                     HStack(spacing: 20) {
                         NavigationLink(destination: LoadIdentityView()) {
                             Label("Load Identity", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        
+
                         NavigationLink(destination: TransitionDetailView(transitionKey: "identityCreate", transitionLabel: "Create Identity")) {
                             Label("Create Identity", systemImage: "plus.circle")
                                 .frame(maxWidth: .infinity)
@@ -55,7 +55,7 @@ struct FriendsView: View {
                         .buttonStyle(.borderedProminent)
                     }
                     .padding(.horizontal)
-                    
+
                     Spacer()
                 }
                 .navigationTitle("Friends")
@@ -72,7 +72,7 @@ struct FriendsView: View {
                         }
                         .padding(.horizontal)
                         .padding(.top, 8)
-                        
+
                         Picker("Identity", selection: $selectedIdentityId) {
                             ForEach(availableIdentities) { identity in
                                 HStack {
@@ -98,7 +98,7 @@ struct FriendsView: View {
                         .padding(.bottom, 8)
                         .background(Color(UIColor.secondarySystemBackground))
                     }
-                    
+
                     // Incoming requests section
                     if !incomingRequests.isEmpty {
                         Section {
@@ -182,7 +182,7 @@ struct FriendsView: View {
             }
         }
     }
-    
+
     private func loadFriends() {
         guard selectedIdentity != nil else { return }
 
@@ -227,25 +227,25 @@ struct FriendsView: View {
             loadFriends()
         }
     }
-    
+
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-        
+
         if dash == 0 {
             return "0 DASH"
         }
-        
+
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        
+
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return formatted
         }
-        
+
         return String(format: "%.8f", dash)
     }
 }
@@ -349,7 +349,7 @@ struct AddFriendView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
     @State private var searchMethod = 0 // 0: DPNS, 1: Identity ID
-    
+
     var body: some View {
         NavigationStack {
             VStack {
@@ -359,7 +359,7 @@ struct AddFriendView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                
+
                 Form {
                     Section {
                         TextField(
@@ -371,11 +371,11 @@ struct AddFriendView: View {
                     } header: {
                         Text(searchMethod == 0 ? "DPNS Name" : "Identity ID")
                     } footer: {
-                        Text(searchMethod == 0 ? 
+                        Text(searchMethod == 0 ?
                             "Search for friends by their Dash Platform Name Service (DPNS) username" :
                             "Search for friends by their unique identity identifier")
                     }
-                    
+
                     Section {
                         Button {
                             // TODO: Implement friend search and add
