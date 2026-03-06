@@ -371,7 +371,7 @@ describe('StateTransitionProofResult types', () => {
     it('should round-trip through fromObject/toObject with Map', () => {
       const id1 = new wasm.Identifier(identifier);
       const balancesMap = new Map();
-      balancesMap.set(id1, 999000n);
+      balancesMap.set(id1.toBase58(), 999000n);
 
       const data = { balances: balancesMap };
       const result = wasm.VerifiedTokenIdentitiesBalances.fromObject(data);
@@ -399,7 +399,7 @@ describe('StateTransitionProofResult types', () => {
       const id1 = new wasm.Identifier(identifier);
       const docsMap = new Map();
       // null values represent absent documents
-      docsMap.set(id1, null);
+      docsMap.set(id1.toBase58(), null);
 
       const data = { documents: docsMap };
       const result = wasm.VerifiedDocuments.fromObject(data);

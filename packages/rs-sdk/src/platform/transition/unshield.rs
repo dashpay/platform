@@ -15,9 +15,8 @@ pub trait UnshieldFunds {
     async fn unshield_funds(
         &self,
         output_address: PlatformAddress,
-        amount: u64,
+        unshielding_amount: u64,
         bundle: OrchardBundleParams,
-        value_balance: i64,
         settings: Option<PutSettings>,
     ) -> Result<(), Error>;
 }
@@ -27,14 +26,12 @@ impl UnshieldFunds for Sdk {
     async fn unshield_funds(
         &self,
         output_address: PlatformAddress,
-        amount: u64,
+        unshielding_amount: u64,
         bundle: OrchardBundleParams,
-        value_balance: i64,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
         let OrchardBundleParams {
             actions,
-            flags,
             anchor,
             proof,
             binding_signature,
@@ -42,10 +39,8 @@ impl UnshieldFunds for Sdk {
 
         let state_transition = UnshieldTransition::try_from_bundle(
             output_address,
-            amount,
             actions,
-            flags,
-            value_balance,
+            unshielding_amount,
             anchor,
             proof,
             binding_signature,

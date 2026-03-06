@@ -115,7 +115,7 @@ impl WasmSdk {
     /// @returns Map of PlatformAddress to PlatformAddressInfo (or undefined for unfunded addresses)
     #[wasm_bindgen(
         js_name = "getAddressesInfos",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo | undefined>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo | undefined>"
     )]
     pub async fn get_addresses_infos(
         &self,
@@ -132,7 +132,7 @@ impl WasmSdk {
         let results_map = Map::new();
 
         for address in platform_addresses {
-            let key = JsValue::from(PlatformAddressWasm::from(address));
+            let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());
@@ -152,7 +152,7 @@ impl WasmSdk {
     /// @returns ProofMetadataResponse containing Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "getAddressesInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<PlatformAddress, PlatformAddressInfo | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, PlatformAddressInfo | undefined>>"
     )]
     pub async fn get_addresses_infos_with_proof_info(
         &self,
@@ -174,7 +174,7 @@ impl WasmSdk {
         let results_map = Map::new();
 
         for address in platform_addresses {
-            let key = JsValue::from(PlatformAddressWasm::from(address));
+            let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());

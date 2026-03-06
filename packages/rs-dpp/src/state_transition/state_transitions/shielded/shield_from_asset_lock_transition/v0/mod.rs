@@ -6,7 +6,6 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::prelude::UserFeeIncrease;
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -36,22 +35,19 @@ pub struct ShieldFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
-    pub flags: u8,
-    /// Net value flowing into the shielded pool (must be negative for shielding)
-    pub value_balance: i64,
-    /// Merkle root of the commitment tree at time of bundle creation
+    /// Amount of credits flowing into the shielded pool from the asset lock.
+    /// Must be > 0 and <= i64::MAX.
+    pub value_balance: u64,
+    /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "crate::shielded::serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
-    /// Fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
     /// ECDSA signature over the signable bytes (excluded from sig hash)
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
@@ -93,12 +89,10 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            flags: 0u8,
-            value_balance: -1000i64,
+            value_balance: 1000u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
-            user_fee_increase: 0u16,
             signature: BinaryData::new(vec![10u8; 65]),
         };
 

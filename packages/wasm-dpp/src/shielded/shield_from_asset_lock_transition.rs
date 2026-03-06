@@ -48,17 +48,9 @@ impl ShieldFromAssetLockTransitionWasm {
         serde_wasm_bindgen::to_value(inner).map_err(|e| JsValue::from(e.to_string()))
     }
 
-    /// Returns the bundle flags byte.
-    #[wasm_bindgen(js_name = getFlags)]
-    pub fn get_flags(&self) -> u8 {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.flags,
-        }
-    }
-
     /// Returns the net value balance.
     #[wasm_bindgen(js_name = getValueBalance)]
-    pub fn get_value_balance(&self) -> i64 {
+    pub fn get_value_balance(&self) -> u64 {
         match &self.0 {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
         }
@@ -89,14 +81,6 @@ impl ShieldFromAssetLockTransitionWasm {
             ShieldFromAssetLockTransition::V0(v0) => &v0.binding_signature,
         };
         Buffer::from_bytes(sig)
-    }
-
-    /// Returns the user fee increase multiplier.
-    #[wasm_bindgen(js_name = getUserFeeIncrease)]
-    pub fn get_user_fee_increase(&self) -> u16 {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.user_fee_increase,
-        }
     }
 
     /// Returns the ECDSA signature as a Buffer.

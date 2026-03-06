@@ -30,14 +30,6 @@ impl ShieldedWithdrawalTransitionWasm {
         self.0.state_transition_type() as u8
     }
 
-    /// Returns the withdrawal amount in credits.
-    #[wasm_bindgen(js_name = getAmount)]
-    pub fn get_amount(&self) -> u64 {
-        match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => v0.amount,
-        }
-    }
-
     /// Returns the serialized Orchard actions as a JS array.
     #[wasm_bindgen(js_name = getActions)]
     pub fn get_actions(&self) -> Result<JsValue, JsValue> {
@@ -47,19 +39,11 @@ impl ShieldedWithdrawalTransitionWasm {
         serde_wasm_bindgen::to_value(inner).map_err(|e| JsValue::from(e.to_string()))
     }
 
-    /// Returns the bundle flags byte.
-    #[wasm_bindgen(js_name = getFlags)]
-    pub fn get_flags(&self) -> u8 {
-        match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => v0.flags,
-        }
-    }
-
     /// Returns the net value balance.
-    #[wasm_bindgen(js_name = getValueBalance)]
-    pub fn get_value_balance(&self) -> i64 {
+    #[wasm_bindgen(js_name = getUnshieldingAmount)]
+    pub fn get_unshielding_amount(&self) -> u64 {
         match &self.0 {
-            ShieldedWithdrawalTransition::V0(v0) => v0.value_balance,
+            ShieldedWithdrawalTransition::V0(v0) => v0.unshielding_amount,
         }
     }
 

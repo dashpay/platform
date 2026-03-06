@@ -16,9 +16,8 @@ pub trait WithdrawShielded {
     #[allow(clippy::too_many_arguments)]
     async fn withdraw_shielded(
         &self,
-        amount: u64,
+        unshielding_amount: u64,
         bundle: OrchardBundleParams,
-        value_balance: i64,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -31,9 +30,8 @@ impl WithdrawShielded for Sdk {
     #[allow(clippy::too_many_arguments)]
     async fn withdraw_shielded(
         &self,
-        amount: u64,
+        unshielding_amount: u64,
         bundle: OrchardBundleParams,
-        value_balance: i64,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -41,17 +39,14 @@ impl WithdrawShielded for Sdk {
     ) -> Result<(), Error> {
         let OrchardBundleParams {
             actions,
-            flags,
             anchor,
             proof,
             binding_signature,
         } = bundle;
 
         let state_transition = ShieldedWithdrawalTransition::try_from_bundle(
-            amount,
             actions,
-            flags,
-            value_balance,
+            unshielding_amount,
             anchor,
             proof,
             binding_signature,

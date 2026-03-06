@@ -30,22 +30,18 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 pub struct ShieldedWithdrawalTransitionV0 {
-    /// Withdrawal amount in credits
-    pub amount: u64,
     /// Orchard actions (spends + change outputs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
-    pub flags: u8,
-    /// Net value balance (amount + fee flowing out of shielded pool)
-    pub value_balance: i64,
-    /// Merkle root of the commitment tree used for spends
+    /// Total credits leaving the shielded pool (recipient amount + fee)
+    pub unshielding_amount: u64,
+    /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "crate::shielded::serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
     /// Core transaction fee rate
@@ -76,7 +72,6 @@ mod tests {
     #[test]
     fn test_shielded_withdrawal_transition_v0_serialization_round_trip() {
         let transition = ShieldedWithdrawalTransitionV0 {
-            amount: 500u64,
             actions: vec![SerializedAction {
                 nullifier: [1u8; 32],
                 rk: [2u8; 32],
@@ -85,8 +80,7 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            flags: 0u8,
-            value_balance: 1000i64,
+            unshielding_amount: 1000u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],

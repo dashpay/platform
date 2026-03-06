@@ -2,7 +2,6 @@ mod transformer;
 
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::fee::Credits;
-use dpp::prelude::UserFeeIncrease;
 
 /// Shield from asset lock transition action v0
 #[derive(Debug, Clone)]
@@ -17,8 +16,6 @@ pub struct ShieldFromAssetLockTransitionActionV0 {
     pub shield_amount: Credits,
     /// Notes from the orchard bundle actions
     pub notes: Vec<ShieldedActionNote>,
-    /// fee multiplier
-    pub user_fee_increase: UserFeeIncrease,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,
 }

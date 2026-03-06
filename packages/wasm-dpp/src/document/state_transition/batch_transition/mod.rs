@@ -14,6 +14,7 @@ use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use wasm_bindgen::prelude::*;
 

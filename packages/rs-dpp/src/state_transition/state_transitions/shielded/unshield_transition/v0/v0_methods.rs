@@ -13,10 +13,8 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         output_address: PlatformAddress,
-        amount: u64,
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        unshielding_amount: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
@@ -24,10 +22,8 @@ impl UnshieldTransitionMethodsV0 for UnshieldTransitionV0 {
     ) -> Result<StateTransition, ProtocolError> {
         let transition = UnshieldTransitionV0 {
             output_address,
-            amount,
             actions,
-            flags,
-            value_balance,
+            unshielding_amount,
             anchor,
             proof,
             binding_signature,

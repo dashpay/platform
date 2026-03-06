@@ -1,4 +1,4 @@
-#[cfg(feature = "shielded-bundle-building")]
+#[cfg(feature = "shielded-client")]
 pub mod builder;
 
 use bincode::{Decode, Encode};
@@ -23,9 +23,10 @@ const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
 /// The sighash is computed as:
 ///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
 ///
-/// This binds transparent state transition fields (like `output_address` and `amount`
-/// in unshield transitions) to the Orchard signatures, preventing replay attacks
-/// where an attacker substitutes transparent fields while reusing a valid Orchard bundle.
+/// This binds transparent state transition fields (like `output_address` in unshield
+/// or `output_script` in shielded withdrawal) to the Orchard signatures, preventing
+/// replay attacks where an attacker substitutes transparent fields while reusing a
+/// valid Orchard bundle.
 ///
 /// The same computation must be used on both the signing (client) and verification
 /// (platform) sides. For transitions without transparent fields (shield and
@@ -63,35 +64,19 @@ pub fn compute_minimum_shielded_fee(
     constants.shielded_proof_verification_fee + num_actions as u64 * per_action
 }
 
-/// Serde helper for `[u8; 64]` fields (serde only supports arrays up to 32).
-#[cfg(feature = "state-transition-serde-conversion")]
-pub(crate) mod serde_bytes_64 {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(bytes: &[u8; 64], serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(bytes)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 64], D::Error> {
-        let vec = <Vec<u8>>::deserialize(deserializer)?;
-        vec.try_into().map_err(|v: Vec<u8>| {
-            serde::de::Error::custom(format!("expected 64 bytes, got {}", v.len()))
-        })
-    }
-}
-
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:
-/// the serialized actions, bundle flags, commitment tree anchor, Halo 2 proof,
-/// and RedPallas binding signature. Using this struct reduces parameter counts
-/// in SDK helper functions from 10-12 down to 5-8.
+/// the serialized actions, Sinsemilla anchor, Halo 2 proof, and RedPallas
+/// binding signature. Using this struct reduces parameter counts in SDK
+/// helper functions from 10-12 down to 5-8.
 pub struct OrchardBundleParams {
     /// The serialized Orchard actions (spends + outputs).
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags byte.
-    pub flags: u8,
-    /// Merkle root of the commitment tree at bundle creation time (32 bytes).
+    /// Sinsemilla root of the note commitment tree at bundle creation time (32 bytes).
+    /// This is the Orchard Anchor — the root of the depth-32 Sinsemilla Merkle
+    /// tree over extracted note commitments (cmx values), NOT the GroveDB
+    /// commitment tree state root.
     pub anchor: [u8; 32],
     /// Halo 2 zero-knowledge proof bytes.
     pub proof: Vec<u8>,
@@ -146,6 +131,7 @@ pub struct SerializedAction {
     /// - `epk`: ephemeral public key for Diffie-Hellman key agreement (32 bytes)
     /// - `enc_ciphertext`: note plaintext encrypted to the recipient (104 bytes = 52 compact + 36 memo + 16 AEAD tag)
     /// - `out_ciphertext`: encrypted to the sender for wallet recovery (80 bytes)
+    ///
     /// Stored on-chain so recipients can scan and decrypt notes addressed to them.
     /// Only the intended recipient (or sender) can decrypt; all others see random bytes.
     pub encrypted_note: Vec<u8>,
@@ -164,7 +150,7 @@ pub struct SerializedAction {
     /// signature from one transition cannot be reused in another.
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub spend_auth_sig: [u8; 64],
 }

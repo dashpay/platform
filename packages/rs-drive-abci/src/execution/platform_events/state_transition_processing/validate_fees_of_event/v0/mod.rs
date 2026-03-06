@@ -227,7 +227,6 @@ where
                 fees_to_add_to_pool,
                 operations,
                 execution_operations,
-                user_fee_increase,
             } => {
                 let mut estimated_fee_result = self
                     .drive
@@ -246,8 +245,6 @@ where
                     &mut estimated_fee_result,
                     platform_version,
                 )?;
-
-                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
                 let required_fee = estimated_fee_result.total_base_fee();
                 if *fees_to_add_to_pool >= required_fee {

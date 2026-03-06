@@ -84,23 +84,13 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
                         ) => {
-                            let fee = if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
-                                0
-                            } else {
-                                (v0.value_balance as u64 - v0.amount) as i64
-                            };
-                            (fee, v0.actions.len())
+                            // unshielding_amount is the total leaving the pool (fee is validated separately)
+                            (v0.unshielding_amount as i64, v0.actions.len())
                         }
                     },
-                    // ShieldedWithdrawal: fee = value_balance - amount.
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            let fee = if v0.value_balance <= 0 || (v0.value_balance as u64) <= v0.amount {
-                                0
-                            } else {
-                                (v0.value_balance as u64 - v0.amount) as i64
-                            };
-                            (fee, v0.actions.len())
+                            (v0.unshielding_amount as i64, v0.actions.len())
                         }
                     },
                     // Other transitions don't go through shielded fee validation.
@@ -169,8 +159,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                         dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                v0.flags,
-                                v0.value_balance,
+                                -(v0.amount as i64),
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -182,8 +171,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                v0.flags,
-                                v0.value_balance as i64,
+                                0, // value_balance is 0 for shielded transfers (no net flow)
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -195,11 +183,10 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
                             let mut extra_sighash_data = v0.output_address.to_bytes();
                             extra_sighash_data
-                                .extend_from_slice(&v0.amount.to_le_bytes());
+                                .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                v0.flags,
-                                v0.value_balance,
+                                v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -212,11 +199,10 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             let mut extra_sighash_data =
                                 v0.output_script.as_bytes().to_vec();
                             extra_sighash_data
-                                .extend_from_slice(&v0.amount.to_le_bytes());
+                                .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                v0.flags,
-                                v0.value_balance,
+                                v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,

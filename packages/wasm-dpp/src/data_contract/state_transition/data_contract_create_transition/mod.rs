@@ -10,6 +10,7 @@ use dpp::errors::consensus::ConsensusError;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::{
     StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
 };

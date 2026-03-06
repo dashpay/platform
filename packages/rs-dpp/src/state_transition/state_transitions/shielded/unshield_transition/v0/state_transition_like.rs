@@ -1,7 +1,7 @@
 use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use crate::state_transition::unshield_transition::UnshieldTransition;
 use crate::{
-    prelude::{Identifier, UserFeeIncrease},
+    prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
@@ -38,13 +38,5 @@ impl StateTransitionLike for UnshieldTransitionV0 {
             .iter()
             .map(|action| hex::encode(action.nullifier))
             .collect()
-    }
-
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        0
-    }
-
-    fn set_user_fee_increase(&mut self, _user_fee_increase: UserFeeIncrease) {
-        // No-op: fee is cryptographically locked by the Orchard binding signature
     }
 }

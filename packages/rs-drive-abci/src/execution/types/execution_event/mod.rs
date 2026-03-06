@@ -106,8 +106,6 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
-        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
-        user_fee_increase: UserFeeIncrease,
     },
     /// A drive event that is free
     #[allow(dead_code)] // TODO investigate why `variant `Free` is never constructed`
@@ -501,7 +499,6 @@ impl ExecutionEvent<'_> {
             }
             StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
                 // Fee = asset_lock_value - shield_amount (excess from asset lock)
-                let user_fee_increase = shield_from_asset_lock_action.user_fee_increase();
                 let fee_amount = shield_from_asset_lock_action
                     .asset_lock_value_to_be_consumed()
                     .saturating_sub(shield_from_asset_lock_action.shield_amount());
@@ -511,7 +508,6 @@ impl ExecutionEvent<'_> {
                     fees_to_add_to_pool: fee_amount,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    user_fee_increase,
                 })
             }
             StateTransitionAction::ShieldedWithdrawalAction(ref shielded_withdrawal_action) => {

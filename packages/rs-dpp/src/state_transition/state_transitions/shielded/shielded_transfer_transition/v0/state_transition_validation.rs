@@ -14,13 +14,14 @@ impl StateTransitionStructureValidation for ShieldedTransferTransitionV0 {
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         // Actions count must be in [1, max]
-        if let Some(err) = validate_actions_count(
+        let result = validate_actions_count(
             &self.actions,
             platform_version
                 .system_limits
                 .max_shielded_transition_actions,
-        ) {
-            return err;
+        );
+        if !result.is_valid() {
+            return result;
         }
 
         // value_balance must fit in i64 (required for Orchard protocol)
@@ -36,13 +37,15 @@ impl StateTransitionStructureValidation for ShieldedTransferTransitionV0 {
         }
 
         // Proof must not be empty
-        if let Some(err) = validate_proof_not_empty(&self.proof) {
-            return err;
+        let result = validate_proof_not_empty(&self.proof);
+        if !result.is_valid() {
+            return result;
         }
 
         // Anchor must not be all zeros
-        if let Some(err) = validate_anchor_not_zero(&self.anchor) {
-            return err;
+        let result = validate_anchor_not_zero(&self.anchor);
+        if !result.is_valid() {
+            return result;
         }
 
         SimpleConsensusValidationResult::new()

@@ -75,20 +75,17 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         }
 
         // Verify the pool has sufficient balance for the withdrawal.
-        // value_balance is the total amount leaving the pool (amount + fee).
-        let value_balance = match self {
-            ShieldedWithdrawalTransition::V0(v0) => v0.value_balance,
+        let unshielding_amount = match self {
+            ShieldedWithdrawalTransition::V0(v0) => v0.unshielding_amount,
         };
 
-        // value_balance > 0 is already validated in structure validation,
-        // so the cast to u64 is safe here.
-        if current_total_balance < (value_balance as u64) {
+        if current_total_balance < unshielding_amount {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidShieldedProofError(
                     dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError::new(
                         format!(
                             "shielded pool has insufficient balance: pool has {} but withdrawal requires {}",
-                            current_total_balance, value_balance
+                            current_total_balance, unshielding_amount
                         ),
                     ),
                 )

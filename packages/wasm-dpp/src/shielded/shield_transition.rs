@@ -49,19 +49,11 @@ impl ShieldTransitionWasm {
         serde_wasm_bindgen::to_value(inner).map_err(|e| JsValue::from(e.to_string()))
     }
 
-    /// Returns the bundle flags byte.
-    #[wasm_bindgen(js_name = getFlags)]
-    pub fn get_flags(&self) -> u8 {
+    /// Returns the shield amount (credits entering the pool).
+    #[wasm_bindgen(js_name = getAmount)]
+    pub fn get_amount(&self) -> u64 {
         match &self.0 {
-            ShieldTransition::V0(v0) => v0.flags,
-        }
-    }
-
-    /// Returns the net value balance.
-    #[wasm_bindgen(js_name = getValueBalance)]
-    pub fn get_value_balance(&self) -> i64 {
-        match &self.0 {
-            ShieldTransition::V0(v0) => v0.value_balance,
+            ShieldTransition::V0(v0) => v0.amount,
         }
     }
 

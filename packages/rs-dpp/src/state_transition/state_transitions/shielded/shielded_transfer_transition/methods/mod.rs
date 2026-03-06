@@ -19,7 +19,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_bundle(
         actions: Vec<SerializedAction>,
-        flags: u8,
         value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
@@ -34,7 +33,6 @@ impl ShieldedTransferTransitionMethodsV0 for ShieldedTransferTransition {
         {
             0 => ShieldedTransferTransitionV0::try_from_bundle(
                 actions,
-                flags,
                 value_balance,
                 anchor,
                 proof,

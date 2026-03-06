@@ -10,42 +10,42 @@ use crate::validation::SimpleConsensusValidationResult;
 pub fn validate_actions_count(
     actions: &[SerializedAction],
     max_actions: u16,
-) -> Option<SimpleConsensusValidationResult> {
+) -> SimpleConsensusValidationResult {
     if actions.is_empty() {
-        Some(SimpleConsensusValidationResult::new_with_error(
+        SimpleConsensusValidationResult::new_with_error(
             BasicError::ShieldedNoActionsError(ShieldedNoActionsError::new()).into(),
-        ))
+        )
     } else if actions.len() > max_actions as usize {
-        Some(SimpleConsensusValidationResult::new_with_error(
+        SimpleConsensusValidationResult::new_with_error(
             BasicError::ShieldedTooManyActionsError(ShieldedTooManyActionsError::new(
                 actions.len().min(u16::MAX as usize) as u16,
                 max_actions,
             ))
             .into(),
-        ))
+        )
     } else {
-        None
+        SimpleConsensusValidationResult::new()
     }
 }
 
 /// Validate that the proof is not empty.
-pub fn validate_proof_not_empty(proof: &[u8]) -> Option<SimpleConsensusValidationResult> {
+pub fn validate_proof_not_empty(proof: &[u8]) -> SimpleConsensusValidationResult {
     if proof.is_empty() {
-        Some(SimpleConsensusValidationResult::new_with_error(
+        SimpleConsensusValidationResult::new_with_error(
             BasicError::ShieldedEmptyProofError(ShieldedEmptyProofError::new()).into(),
-        ))
+        )
     } else {
-        None
+        SimpleConsensusValidationResult::new()
     }
 }
 
 /// Validate that the anchor is not all zeros (for transitions that consume notes).
-pub fn validate_anchor_not_zero(anchor: &[u8; 32]) -> Option<SimpleConsensusValidationResult> {
+pub fn validate_anchor_not_zero(anchor: &[u8; 32]) -> SimpleConsensusValidationResult {
     if *anchor == [0u8; 32] {
-        Some(SimpleConsensusValidationResult::new_with_error(
+        SimpleConsensusValidationResult::new_with_error(
             BasicError::ShieldedZeroAnchorError(ShieldedZeroAnchorError::new()).into(),
-        ))
+        )
     } else {
-        None
+        SimpleConsensusValidationResult::new()
     }
 }

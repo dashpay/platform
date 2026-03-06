@@ -68,7 +68,6 @@ const ENCRYPTED_NOTE_SIZE: usize = EPK_SIZE + ENC_CIPHERTEXT_SIZE + OUT_CIPHERTE
 /// if reconstruction or any verification step fails.
 pub fn reconstruct_and_verify_bundle(
     actions: &[SerializedAction],
-    flags: u8,
     value_balance: i64,
     anchor: &[u8; 32],
     proof: &[u8],
@@ -138,9 +137,8 @@ pub fn reconstruct_and_verify_bundle(
     );
 
     // Reconstruct Bundle
-    let orchard_flags = Flags::from_byte(flags).ok_or_else(|| {
-        InvalidShieldedProofError::new(format!("invalid bundle flags byte: {flags:#04x}"))
-    })?;
+    // Shielded transitions always have both spends and outputs enabled (0x03)
+    let orchard_flags = Flags::from_byte(0x03).expect("0x03 is a valid flags byte");
 
     let orchard_anchor = Option::from(Anchor::from_bytes(*anchor))
         .ok_or_else(|| InvalidShieldedProofError::new("invalid anchor bytes".to_string()))?;

@@ -21,7 +21,6 @@ impl ShieldFromAssetLockTransitionActionV0 {
             signable_bytes_hasher,
             shield_amount,
             notes,
-            user_fee_increase: value.user_fee_increase,
             current_total_balance,
         })
     }

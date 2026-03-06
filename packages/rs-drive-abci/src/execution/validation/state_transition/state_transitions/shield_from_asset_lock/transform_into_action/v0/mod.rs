@@ -79,30 +79,9 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 .collect(),
         };
 
-        // Step 1: The value_balance must be negative for shielding (funds flowing into the pool)
-        let value_balance = match self {
+        // Step 1: Get the shield amount (value_balance is u64, the amount entering the pool)
+        let shield_amount: Credits = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
-        };
-        if value_balance >= 0 {
-            return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidShieldedProofError(InvalidShieldedProofError::new(
-                    "shield_from_asset_lock value_balance must be negative".to_string(),
-                ))
-                .into(),
-            ));
-        }
-
-        // Step 2: Safely negate to get the shield amount, guarding against overflow (i64::MIN)
-        let shield_amount: Credits = match value_balance.checked_neg() {
-            Some(positive) => positive as u64,
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    StateError::InvalidShieldedProofError(InvalidShieldedProofError::new(
-                        "shield_from_asset_lock value_balance overflow (i64::MIN)".to_string(),
-                    ))
-                    .into(),
-                ));
-            }
         };
 
         // Step 3: Calculate minimum required fee from platform_version
@@ -261,10 +240,9 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
         // Use EMPTY extra_sighash_data -- no transparent binding needed since
         // the asset lock proof authenticates the source of funds.
-        let (actions, flags, anchor, proof, binding_signature) = match self {
+        let (actions, anchor, proof, binding_signature) = match self {
             ShieldFromAssetLockTransition::V0(v0) => (
                 &v0.actions,
-                v0.flags,
                 &v0.anchor,
                 v0.proof.as_slice(),
                 &v0.binding_signature,
@@ -273,8 +251,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 
         if let Err(e) = reconstruct_and_verify_bundle(
             actions,
-            flags,
-            value_balance,
+            -(shield_amount as i64),
             anchor,
             proof,
             binding_signature,
@@ -310,10 +287,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 remaining_credit_value.saturating_sub(desired_used_credits);
             let used_credits = std::cmp::min(remaining_credit_value, desired_used_credits);
 
-            let user_fee_increase = match self {
-                ShieldFromAssetLockTransition::V0(v0) => v0.user_fee_increase,
-            };
-
             let partially_use_action =
                 PartiallyUseAssetLockAction::from(PartiallyUseAssetLockActionV0 {
                     asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
@@ -322,7 +295,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                     asset_lock_script: asset_lock_value_to_be_consumed.tx_out_script().clone(),
                     remaining_credit_value: remaining_after_penalty,
                     used_credits,
-                    user_fee_increase,
+                    user_fee_increase: 0,
                     inputs_with_remaining_balance: None,
                     fee_strategy: None,
                 });

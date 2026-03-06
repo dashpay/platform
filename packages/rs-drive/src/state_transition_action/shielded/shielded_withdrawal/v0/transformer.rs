@@ -35,7 +35,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
         );
 
         let document_data = platform_value!({
-            withdrawal::properties::AMOUNT: value.amount,
+            withdrawal::properties::AMOUNT: value.unshielding_amount,
             withdrawal::properties::CORE_FEE_PER_BYTE: value.core_fee_per_byte,
             withdrawal::properties::POOLING: value.pooling,
             withdrawal::properties::OUTPUT_SCRIPT: value.output_script.as_bytes(),
@@ -62,17 +62,14 @@ impl ShieldedWithdrawalTransitionActionV0 {
         }
         .into();
 
-        // fee_amount = value_balance - amount (validated to be >= 0 in structure validation)
-        let fee_amount = (value.value_balance as u64).saturating_sub(value.amount);
-
         ConsensusValidationResult::new_with_data(ShieldedWithdrawalTransitionActionV0 {
-            amount: value.amount,
+            amount: value.unshielding_amount,
             notes,
             anchor,
             core_fee_per_byte: value.core_fee_per_byte,
             pooling: value.pooling,
             output_script: value.output_script.clone(),
-            fee_amount,
+            fee_amount: 0, // TODO: fee calculation for shielded withdrawals
             current_total_balance,
             prepared_withdrawal_document: withdrawal_document,
         })

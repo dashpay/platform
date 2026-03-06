@@ -107,7 +107,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
 
         // Verify the pool has sufficient balance for the unshield amount
         let amount = match self {
-            UnshieldTransition::V0(v0) => v0.amount,
+            UnshieldTransition::V0(v0) => v0.unshielding_amount,
         };
 
         if current_total_balance < amount {

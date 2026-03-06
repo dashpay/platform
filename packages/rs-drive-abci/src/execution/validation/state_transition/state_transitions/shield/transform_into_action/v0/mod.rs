@@ -55,30 +55,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
                 .collect(),
         };
 
-        // The value_balance must be negative for shield (funds flowing into the pool).
-        // Safely negate to get the shield amount, guarding against overflow (i64::MIN).
         let shield_amount: Credits = match self {
-            ShieldTransition::V0(v0) => {
-                if v0.value_balance >= 0 {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        StateError::InvalidShieldedProofError(InvalidShieldedProofError::new(
-                            "shield value_balance must be negative".to_string(),
-                        ))
-                        .into(),
-                    ));
-                }
-                match v0.value_balance.checked_neg() {
-                    Some(positive) => positive as u64,
-                    None => {
-                        return Ok(ConsensusValidationResult::new_with_error(
-                            StateError::InvalidShieldedProofError(InvalidShieldedProofError::new(
-                                "shield value_balance overflow (i64::MIN)".to_string(),
-                            ))
-                            .into(),
-                        ));
-                    }
-                }
-            }
+            ShieldTransition::V0(v0) => v0.amount,
         };
 
         // Read current shielded pool state from GroveDB

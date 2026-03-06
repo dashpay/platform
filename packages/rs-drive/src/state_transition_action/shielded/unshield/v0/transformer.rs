@@ -12,15 +12,12 @@ impl UnshieldTransitionActionV0 {
         anchor: [u8; 32],
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
-        // fee_amount = value_balance - amount (validated to be >= 0 in structure validation)
-        let fee_amount = (value.value_balance as u64).saturating_sub(value.amount);
-
         ConsensusValidationResult::new_with_data(UnshieldTransitionActionV0 {
             output_address: value.output_address.clone(),
-            amount: value.amount,
+            amount: value.unshielding_amount,
             notes,
             anchor,
-            fee_amount,
+            fee_amount: 0, // TODO: fee calculation for unshield
             current_total_balance,
         })
     }

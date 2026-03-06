@@ -29,7 +29,6 @@ impl TransferShielded for Sdk {
     ) -> Result<(), Error> {
         let OrchardBundleParams {
             actions,
-            flags,
             anchor,
             proof,
             binding_signature,
@@ -37,7 +36,6 @@ impl TransferShielded for Sdk {
 
         let state_transition = ShieldedTransferTransition::try_from_bundle(
             actions,
-            flags,
             value_balance,
             anchor,
             proof,

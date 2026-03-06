@@ -45,6 +45,13 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => Ok(false),
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 

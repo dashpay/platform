@@ -60,23 +60,19 @@ mod tests {
         asset_lock_proof: dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         asset_lock_private_key: &[u8],
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
-        user_fee_increase: u16,
     ) -> StateTransition {
         // Create unsigned transition to compute signable bytes
         let unsigned = ShieldFromAssetLockTransitionV0 {
             asset_lock_proof: asset_lock_proof.clone(),
             actions: actions.clone(),
-            flags,
             value_balance,
             anchor,
             proof: proof.clone(),
             binding_signature,
-            user_fee_increase,
             signature: Default::default(),
         };
 
@@ -93,12 +89,10 @@ mod tests {
             ShieldFromAssetLockTransitionV0 {
                 asset_lock_proof,
                 actions,
-                flags,
                 value_balance,
                 anchor,
                 proof,
                 binding_signature,
-                user_fee_increase,
                 signature: BinaryData::new(signature.to_vec()),
             },
         ))
@@ -109,8 +103,7 @@ mod tests {
     fn create_unsigned_shield_from_asset_lock_transition(
         asset_lock_proof: dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
@@ -119,12 +112,10 @@ mod tests {
             ShieldFromAssetLockTransitionV0 {
                 asset_lock_proof,
                 actions,
-                flags,
                 value_balance,
                 anchor,
                 proof,
                 binding_signature,
-                user_fee_increase: 0,
                 signature: BinaryData::new(vec![0u8; 65]), // dummy signature
             },
         ))

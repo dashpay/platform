@@ -162,7 +162,9 @@ impl StateTransitionAction {
             StateTransitionAction::UnshieldAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
             }
-            StateTransitionAction::ShieldFromAssetLockAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldFromAssetLockAction(_) => {
+                UserFeeIncrease::default() // 0 (fee comes from asset lock excess)
+            }
             StateTransitionAction::ShieldedWithdrawalAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
             }

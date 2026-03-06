@@ -30,18 +30,16 @@ use serde::{Deserialize, Serialize};
 pub struct ShieldedTransferTransitionV0 {
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
-    /// Bundle flags (spends_enabled | outputs_enabled)
-    pub flags: u8,
     /// Net value balance (fee amount extracted from shielded pool)
     pub value_balance: u64,
-    /// Merkle root of the commitment tree used for spends
+    /// Sinsemilla root of the note commitment tree (Orchard Anchor)
     pub anchor: [u8; 32],
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
-        serde(with = "crate::shielded::serde_bytes_64")
+        serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],
 }
@@ -74,7 +72,6 @@ mod tests {
                 cv_net: [5u8; 32],
                 spend_auth_sig: [6u8; 64],
             }],
-            flags: 0u8,
             value_balance: 0u64,
             anchor: [7u8; 32],
             proof: vec![8u8; 100],

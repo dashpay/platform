@@ -656,7 +656,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesBalances",
-        unchecked_return_type = "Map<Identifier, bigint | undefined>"
+        unchecked_return_type = "Map<string, bigint | undefined>"
     )]
     pub async fn get_identities_balances(
         &self,
@@ -675,7 +675,7 @@ impl WasmSdk {
         let results_map = Map::new();
 
         for identifier in identifiers {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
+            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
             let value = match balances_result.get(&identifier) {
                 Some(Some(balance)) => BigInt::from(*balance).into(),
                 _ => JsValue::NULL,
@@ -807,7 +807,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenBalances",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_identity_token_balances(
         &self,
@@ -838,7 +838,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for token_id in token_identifiers {
             if let Some(Some(balance)) = balances.get(&token_id) {
-                let key = JsValue::from(IdentifierWasm::from(token_id));
+                let key: JsValue = IdentifierWasm::from(token_id).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
@@ -939,7 +939,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesBalancesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint | undefined>>"
     )]
     pub async fn get_identities_balances_with_proof_info(
         &self,
@@ -965,7 +965,7 @@ impl WasmSdk {
 
         let balances_map = Map::new();
         for identifier in identifiers {
-            let key = JsValue::from(IdentifierWasm::from(identifier));
+            let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
             let value = match balances_result.get(&identifier) {
                 Some(Some(balance)) => BigInt::from(*balance).into(),
                 _ => JsValue::NULL,
@@ -1135,7 +1135,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenBalancesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_identity_token_balances_with_proof_info(
         &self,
@@ -1169,7 +1169,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for token_id in token_identifiers {
             if let Some(Some(balance)) = balances.get(&token_id) {
-                let key = JsValue::from(IdentifierWasm::from(token_id));
+                let key: JsValue = IdentifierWasm::from(token_id).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }

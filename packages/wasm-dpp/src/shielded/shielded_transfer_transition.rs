@@ -39,14 +39,6 @@ impl ShieldedTransferTransitionWasm {
         serde_wasm_bindgen::to_value(inner).map_err(|e| JsValue::from(e.to_string()))
     }
 
-    /// Returns the bundle flags byte.
-    #[wasm_bindgen(js_name = getFlags)]
-    pub fn get_flags(&self) -> u8 {
-        match &self.0 {
-            ShieldedTransferTransition::V0(v0) => v0.flags,
-        }
-    }
-
     /// Returns the value balance (fee amount leaving the pool).
     #[wasm_bindgen(js_name = getValueBalance)]
     pub fn get_value_balance(&self) -> u64 {

@@ -7,7 +7,6 @@ use crate::state_transition_action::shielded::shield_from_asset_lock::v0::Shield
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
 use dpp::fee::Credits;
-use dpp::prelude::UserFeeIncrease;
 
 /// Shield from asset lock transition action
 #[derive(Debug, Clone, From)]
@@ -49,12 +48,6 @@ impl ShieldFromAssetLockTransitionAction {
     pub fn notes(&self) -> &[ShieldedActionNote] {
         match self {
             ShieldFromAssetLockTransitionAction::V0(transition) => &transition.notes,
-        }
-    }
-    /// fee multiplier
-    pub fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            ShieldFromAssetLockTransitionAction::V0(transition) => transition.user_fee_increase,
         }
     }
 }
