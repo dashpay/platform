@@ -9,9 +9,9 @@ describe('Group', () => {
   const memberIdHex = '1111111111111111111111111111111111111111111111111111111111111111';
   const member2IdHex = '2222222222222222222222222222222222222222222222222222222222222222';
   function createMembersMap(membersArray: Array<[InstanceType<typeof wasm.Identifier>, number]>) {
-    const map = new Map<InstanceType<typeof wasm.Identifier>, number>();
+    const map = new Map<string, number>();
     for (const [identifier, power] of membersArray) {
-      map.set(identifier, power);
+      map.set(identifier.toBase58(), power);
     }
     return map;
   }

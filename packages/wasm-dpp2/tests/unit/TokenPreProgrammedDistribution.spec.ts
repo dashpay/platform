@@ -6,15 +6,10 @@ before(async () => {
 });
 
 describe('TokenPreProgrammedDistribution', () => {
-  // Helper to create an Identifier object for testing
-  function createIdentifier(base58String: string) {
-    return new wasm.Identifier(base58String);
-  }
-
   // Helper to create distributions Map in the expected format
   function createDistributionsMap(timestamp: string, identifierStr: string, amount: bigint) {
     const innerMap = new Map();
-    innerMap.set(createIdentifier(identifierStr), amount);
+    innerMap.set(identifierStr, amount);
 
     const outerMap = new Map();
     outerMap.set(timestamp.toString(), innerMap);
