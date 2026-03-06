@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 #[derive(Debug, Deserialize)]
 /// Configuration for dash-platform-sdk.
 ///
-/// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
+/// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/tests/.env` file
 /// when the [Config::new()] is called.
 /// Variable names in the environment and `.env` file must be prefixed with [DASH_SDK_](Config::CONFIG_PREFIX)
 /// and written as SCREAMING_SNAKE_CASE (e.g. `DASH_SDK_PLATFORM_HOST`).

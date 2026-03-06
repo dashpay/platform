@@ -1,7 +1,7 @@
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 
 /**
- * Get a specific addresses based on the index and type of address.
+ * Get a specific address based on the index and type of address.
  * @param {number} index - The index on the type
  * @param {AddressType} [addressType="external"] - Type of the address (external, internal, misc)
  * @return <AddressInfo>

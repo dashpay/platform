@@ -370,7 +370,7 @@ async fn contested_resources_fields(
     }
 }
 
-/// Ensure prerequsities for masternode voting tests are met
+/// Ensure prerequisites for masternode voting tests are met
 pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<String>> {
     let sdk = cfg.setup_api("check_mn_voting_prerequisites").await;
     let mut errors = Vec::new();
