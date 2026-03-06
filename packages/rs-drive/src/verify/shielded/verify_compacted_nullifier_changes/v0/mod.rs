@@ -113,16 +113,11 @@ impl Drive {
             if key.len() != 16 {
                 return None;
             }
-            let range_start = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
-            let range_end = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
+            // Safety: length verified to be 16 above
+            let range_start =
+                u64::from_be_bytes(key[0..8].try_into().expect("len checked to be 16"));
+            let range_end =
+                u64::from_be_bytes(key[8..16].try_into().expect("len checked to be 16"));
 
             // Check if this range contains start_block_height
             if range_start <= start_block_height && start_block_height <= range_end {
@@ -175,12 +170,20 @@ impl Drive {
             let range_start = u64::from_be_bytes(
                 key[0..8]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Proof(ProofError::CorruptedProof(
+                            "invalid key slice length for block height".to_string(),
+                        ))
+                    })?,
             );
             let range_end = u64::from_be_bytes(
                 key[8..16]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Proof(ProofError::CorruptedProof(
+                            "invalid key slice length for block height".to_string(),
+                        ))
+                    })?,
             );
 
             // Get the serialized data from the Item element

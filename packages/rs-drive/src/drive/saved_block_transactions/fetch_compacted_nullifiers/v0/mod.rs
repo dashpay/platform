@@ -77,12 +77,20 @@ impl Drive {
             let start_block = u64::from_be_bytes(
                 key[0..8]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                            "invalid compacted key slice".to_string(),
+                        )))
+                    })?,
             );
             let end_block = u64::from_be_bytes(
                 key[8..16]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                            "invalid compacted key slice".to_string(),
+                        )))
+                    })?,
             );
 
             // Only include if end_block >= start_block_height (range contains our block)
@@ -157,12 +165,20 @@ impl Drive {
             let start_block = u64::from_be_bytes(
                 key[0..8]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                            "invalid compacted key slice".to_string(),
+                        )))
+                    })?,
             );
             let end_block = u64::from_be_bytes(
                 key[8..16]
                     .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
+                    .map_err(|_| {
+                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                            "invalid compacted key slice".to_string(),
+                        )))
+                    })?,
             );
 
             // Skip if this is the same range we got from descending query
@@ -235,7 +251,11 @@ impl Drive {
                 let end_block = u64::from_be_bytes(
                     key[8..16]
                         .try_into()
-                        .expect("slice is exactly 8 bytes from a 16-byte key"),
+                        .map_err(|_| {
+                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                            "invalid compacted key slice".to_string(),
+                        )))
+                    })?,
                 );
                 // If this range contains start_block_height, use its exact key
                 if end_block >= start_block_height {
