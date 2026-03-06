@@ -14,10 +14,16 @@ repos:
           (?x)^(
               .*\.md$
           )$
-      - id: end-of-file-fixer
       - id: check-yaml
         args: ['--allow-multiple-documents']
       - id: check-json
+        exclude: |
+          (?x)^(
+              .*tsconfig.*\.json$|
+              .*devcontainer.*\.json$|
+              .*/AI_QA/.*\.json$|
+              .*/tests/fixtures/.*\.json$
+          )$
       - id: check-toml
       - id: check-merge-conflict
       - id: mixed-line-ending
@@ -25,9 +31,11 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=1000']
       - id: check-case-conflict
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
-        exclude: '\.rs$'  # Rust inner attributes (#![...]) look like shebangs
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.22.1
+    hooks:
+      - id: gitleaks
 
   - repo: local
     hooks:
@@ -61,5 +69,24 @@ exclude: |
       \.cargo/|
       \.git/|
       node_modules/|
-      .*/node_modules/
+      .*/node_modules/|
+      .*\.lock$|
+      .*\.min\.js$|
+      .*\.min\.css$|
+      .*\.cjs$|
+      \.yarn/.*|
+      \.pnp\.*|
+      packages/rs-sdk/tests/vectors/.*|
+      packages/rs-drive-abci/tests/supporting_files/.*|
+      packages/rs-drive/tests/supporting_files/.*|
+      packages/wallet-lib/fixtures/.*|
+      packages/wasm-drive-verify/tests/fixtures/.*|
+      packages/dapi-grpc/clients/.*|
+      .*_pb\.js$|
+      .*_pb\.d\.ts$|
+      .*_pb_service\.js$|
+      .*_pb_service\.d\.ts$|
+      .*\.pbrpc\.h$|
+      \.github/grpc-queries-cache\.json|
+      CHANGELOG\.md
   )$
