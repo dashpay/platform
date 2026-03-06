@@ -56,7 +56,6 @@ pub enum StateTransitionProofResult {
         PartialIdentity,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
     VerifiedAssetLockConsumed(StoredAssetLockInfo),
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
     VerifiedShieldedNullifiersWithAddressInfos(

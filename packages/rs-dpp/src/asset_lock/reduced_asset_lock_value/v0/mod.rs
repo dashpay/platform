@@ -2,7 +2,7 @@ use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use platform_value::Bytes32;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AssetLockValueV0 {
     pub(super) initial_credit_value: Credits,
     pub(super) tx_out_script: Vec<u8>,
