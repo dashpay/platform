@@ -104,4 +104,3 @@ const expectedTx = {
   ],
   "nLockTime": 555505
 }
-

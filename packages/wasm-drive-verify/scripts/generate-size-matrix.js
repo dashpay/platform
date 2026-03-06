@@ -33,67 +33,67 @@ function getFileSize(filePath) {
 function generateCombinations(features) {
   const combinations = [];
   const n = features.length;
-  
+
   // Add empty combination (base only)
   combinations.push({
     name: 'base',
     features: [],
     featureString: BASE_FEATURES
   });
-  
+
   // Generate all possible combinations
   for (let i = 1; i < Math.pow(2, n); i++) {
     const combo = [];
     let name = '';
-    
+
     for (let j = 0; j < n; j++) {
       if (i & (1 << j)) {
         combo.push(features[j]);
         name += features[j].substring(0, 3);
       }
     }
-    
+
     combinations.push({
       name: combo.length === 1 ? combo[0] : name,
       features: combo,
       featureString: [BASE_FEATURES, ...combo].join(',')
     });
   }
-  
+
   // Add full combination
   combinations.push({
     name: 'full',
     features: ['full'],
     featureString: BASE_FEATURES + ',full'
   });
-  
+
   return combinations;
 }
 
 // Build a specific combination
 function buildCombination(combination, outputDir) {
   console.log(`Building ${combination.name}...`);
-  
+
   const buildDir = path.join(outputDir, combination.name);
   fs.mkdirSync(buildDir, { recursive: true });
-  
+
   try {
     // Build with cargo
     execSync(
       `cargo build --target wasm32-unknown-unknown --release --no-default-features --features "${combination.featureString}"`,
       { cwd: projectRoot, stdio: 'pipe' }
     );
-    
+
     // Run wasm-bindgen
     execSync(
       `wasm-bindgen ${path.join(projectRoot, '../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm')} --out-dir ${buildDir} --target web --out-name bundle`,
       { stdio: 'pipe' }
     );
-    
+
     // Get sizes
     const wasmSize = getFileSize(path.join(buildDir, 'bundle_bg.wasm'));
     const jsSize = getFileSize(path.join(buildDir, 'bundle.js'));
-    
+
     // Try to optimize with wasm-opt
     let optimizedSize = wasmSize;
     try {
@@ -105,7 +105,7 @@ function buildCombination(combination, outputDir) {
     } catch (e) {
       // wasm-opt not available
     }
-    
+
     return {
       ...combination,
       wasmSize,
@@ -129,7 +129,7 @@ function buildCombination(combination, outputDir) {
 // Generate size matrix
 function generateMatrix(results) {
   const matrix = {};
-  
+
   // Initialize matrix
   FEATURES.forEach(f1 => {
     matrix[f1] = {};
@@ -137,7 +137,7 @@ function generateMatrix(results) {
       matrix[f1][f2] = null;
     });
   });
-  
+
   // Fill matrix with combination sizes
   results.forEach(result => {
     if (result.features.length === 2) {
@@ -146,7 +146,7 @@ function generateMatrix(results) {
       matrix[f2][f1] = result.wasmSize;
     }
   });
-  
+
   return matrix;
 }
 
@@ -154,7 +154,7 @@ function generateMatrix(results) {
 function generateVisualization(results, outputPath) {
   const baseSize = results.find(r => r.name === 'base').wasmSize;
   const fullSize = results.find(r => r.name === 'full').wasmSize;
-  
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -262,7 +262,7 @@ function generateVisualization(results, outputPath) {
 <body>
     <div class="container">
         <h1>WASM Drive Verify - Module Size Analysis</h1>
-        
+
         <div class="stats">
             <div class="stat-card">
                 <div class="stat-value">${formatBytes(baseSize)}</div>
@@ -344,7 +344,7 @@ function generateVisualization(results, outputPath) {
               { name: 'Governance App', features: ['governance'] },
               { name: 'Lite Client', features: ['identity', 'document'] }
             ].map(useCase => {
-              const result = results.find(r => 
+              const result = results.find(r =>
                 r.features.length === useCase.features.length &&
                 useCase.features.every(f => r.features.includes(f))
               );
@@ -415,40 +415,40 @@ function generateVisualization(results, outputPath) {
 </body>
 </html>
   `;
-  
+
   fs.writeFileSync(outputPath, html);
 }
 
 // Main execution
 async function main() {
   console.log('=== WASM Drive Verify Size Matrix Analysis ===\n');
-  
+
   const outputDir = path.join(projectRoot, 'size-analysis');
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(outputDir, { recursive: true });
-  
+
   // Generate all combinations
   const combinations = generateCombinations(FEATURES);
   console.log(`Generated ${combinations.length} combinations to test\n`);
-  
+
   // Build each combination
   const results = [];
   for (const combo of combinations) {
     const result = buildCombination(combo, outputDir);
     results.push(result);
-    
+
     // Show progress
     process.stdout.write(`\rProgress: ${results.length}/${combinations.length} combinations built`);
   }
   console.log('\n');
-  
+
   // Generate reports
   const reportPath = path.join(outputDir, 'report.json');
   fs.writeFileSync(reportPath, JSON.stringify(results, null, 2));
-  
+
   const htmlPath = path.join(outputDir, 'visualization.html');
   generateVisualization(results, htmlPath);
-  
+
   // Generate CSV for further analysis
   const csvPath = path.join(outputDir, 'results.csv');
   const csv = [
@@ -460,7 +460,7 @@ async function main() {
     })
   ].join('\n');
   fs.writeFileSync(csvPath, csv);
-  
+
   // Print summary
   console.log('=== Analysis Complete ===\n');
   console.log(`Results saved to: ${outputDir}/`);
@@ -468,14 +468,14 @@ async function main() {
   console.log(`- results.csv: CSV format for spreadsheet analysis`);
   console.log(`- visualization.html: Interactive visualization`);
   console.log('\nTop 10 smallest combinations:');
-  
+
   results
     .sort((a, b) => a.wasmSize - b.wasmSize)
     .slice(0, 10)
     .forEach((r, i) => {
       console.log(`${(i + 1).toString().padStart(2)}. ${r.name.padEnd(20)} ${formatBytes(r.wasmSize).padStart(10)}`);
     });
-    
+
   console.log(`\nOpen ${htmlPath} in a browser to view the interactive report.`);
 }
 

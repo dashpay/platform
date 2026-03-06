@@ -14,26 +14,26 @@ public struct CoreTransaction: Identifiable, Equatable {
     public let isInstantSend: Bool
     public let isAssetLock: Bool
     public let rawData: Data?
-    
+
     public var isConfirmed: Bool {
         confirmations >= 6
     }
-    
+
     public var isPending: Bool {
         confirmations == 0
     }
-    
+
     public var formattedAmount: String {
         let dash = Double(abs(amount)) / 100_000_000.0
         let sign = amount < 0 ? "-" : "+"
         return "\(sign)\(String(format: "%.8f", dash)) DASH"
     }
-    
+
     public var formattedFee: String {
         let dash = Double(fee) / 100_000_000.0
         return String(format: "%.8f DASH", dash)
     }
-    
+
     public init(
         id: String,
         amount: Int64,
@@ -71,7 +71,7 @@ public struct CoreTransactionInput: Equatable {
     public let address: String?
     public let amount: UInt64?
     public let scriptSignature: Data
-    
+
     public init(
         previousTxid: String,
         previousOutputIndex: UInt32,
@@ -93,7 +93,7 @@ public struct CoreTransactionOutput: Equatable {
     public let amount: UInt64
     public let scriptPubKey: Data
     public let isChange: Bool
-    
+
     public init(
         index: UInt32,
         address: String,
@@ -117,13 +117,13 @@ public struct CoreTransactionBuilder {
     public var isInstantSend: Bool = false
     public var isAssetLock: Bool = false
     public var memo: String?
-    
+
     public init() {}
-    
+
     public mutating func addInput(_ input: CoreTransactionInput) {
         inputs.append(input)
     }
-    
+
     public mutating func addOutput(to address: String, amount: UInt64, isChange: Bool = false) {
         let output = CoreTransactionOutput(
             index: UInt32(outputs.count),
@@ -134,15 +134,15 @@ public struct CoreTransactionBuilder {
         )
         outputs.append(output)
     }
-    
+
     public var totalInputAmount: UInt64 {
         inputs.compactMap { $0.amount }.reduce(0, +)
     }
-    
+
     public var totalOutputAmount: UInt64 {
         outputs.reduce(0) { $0 + $1.amount }
     }
-    
+
     public var calculatedFee: UInt64 {
         guard totalInputAmount >= totalOutputAmount else { return 0 }
         return totalInputAmount - totalOutputAmount

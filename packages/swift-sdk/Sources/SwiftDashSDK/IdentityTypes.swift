@@ -8,7 +8,7 @@ public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
     case ecdsaHash160 = 2
     case bip13ScriptHash = 3
     case eddsa25519Hash160 = 4
-    
+
     public var name: String {
         switch self {
         case .ecdsaSecp256k1: return "ECDSA secp256k1"
@@ -18,7 +18,7 @@ public enum KeyType: UInt8, CaseIterable, Codable, Sendable {
         case .eddsa25519Hash160: return "EdDSA 25519 Hash160"
         }
     }
-    
+
     /// FFI representation value
     public var ffiValue: UInt8 {
         return self.rawValue
@@ -35,7 +35,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
     case system = 4
     case voting = 5
     case owner = 6
-    
+
     public var name: String {
         switch self {
         case .authentication: return "Authentication"
@@ -47,7 +47,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
         case .owner: return "Owner"
         }
     }
-    
+
     public var description: String {
         switch self {
         case .authentication: return "Used for platform authentication"
@@ -59,7 +59,7 @@ public enum KeyPurpose: UInt8, CaseIterable, Codable, Sendable {
         case .owner: return "Owner key (masternodes)"
         }
     }
-    
+
     /// FFI representation value
     public var ffiValue: UInt8 {
         return self.rawValue
@@ -73,7 +73,7 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
     case critical = 1
     case high = 2
     case medium = 3
-    
+
     public var name: String {
         switch self {
         case .master: return "Master"
@@ -82,7 +82,7 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
         case .medium: return "Medium"
         }
     }
-    
+
     public var description: String {
         switch self {
         case .master: return "Highest security level - can perform any action"
@@ -91,11 +91,11 @@ public enum SecurityLevel: UInt8, CaseIterable, Codable, Comparable, Sendable {
         case .medium: return "Standard operations"
         }
     }
-    
+
     public static func < (lhs: SecurityLevel, rhs: SecurityLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
-    
+
     /// FFI representation value
     public var ffiValue: UInt8 {
         return self.rawValue
@@ -113,14 +113,14 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
     public let readOnly: Bool
     public let data: BinaryData
     public let disabledAt: TimestampMillis?
-    
+
     /// Check if the key is currently disabled
     public var isDisabled: Bool {
         guard let disabledAt = disabledAt else { return false }
         let currentTime = TimestampMillis(Date().timeIntervalSince1970 * 1000)
         return disabledAt <= currentTime
     }
-    
+
     public init(
         id: KeyID,
         purpose: KeyPurpose,
@@ -147,7 +147,7 @@ public struct IdentityPublicKey: Codable, Equatable, Sendable {
 public enum ContractBounds: Codable, Equatable, Sendable {
     case singleContract(id: Identifier)
     case singleContractDocumentType(id: Identifier, documentTypeName: String)
-    
+
     public var description: String {
         switch self {
         case .singleContract(let id):
@@ -156,7 +156,7 @@ public enum ContractBounds: Codable, Equatable, Sendable {
             return "Limited to \(docType) in contract: \(id.toBase58())"
         }
     }
-    
+
     public var contractId: Identifier {
         switch self {
         case .singleContract(let id):

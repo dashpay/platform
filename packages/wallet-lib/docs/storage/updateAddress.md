@@ -24,4 +24,3 @@ storage.updateAddress({
     used: true,
   }, "a3771aaf93");
 ```
-

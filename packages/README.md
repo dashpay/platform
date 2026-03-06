@@ -29,4 +29,3 @@
 |---------|---------|-------------|
 | [`@dashevo/drive`](/packages/js-drive) | [![docker](https://img.shields.io/docker/v/dashpay/drive?label=docker&&maxAge=3600)](https://hub.docker.com/r/dashpay/drive) | Platform replicated state machine |
 | [`@dashevo/dapi`](/packages/dapi) | [![docker](https://img.shields.io/docker/v/dashpay/dapi?label=docker&maxAge=3600)](https://hub.docker.com/r/dashpay/dapi) | Platform Decentralized API |
-

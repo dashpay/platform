@@ -75,7 +75,7 @@ async fn contested_resource_identity_votes_not_found() {
 ///  * Select one of displayed names, use `v - Vote`, select some identity.
 ///
 /// Now, vote should be casted and you can run this test.
-///   
+///
 #[cfg_attr(
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"

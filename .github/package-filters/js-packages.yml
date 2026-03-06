@@ -113,5 +113,3 @@ dashmate:
   - .github/workflows/tests*
   - packages/js-evo-sdk/**
   - *wasm-sdk
-
-

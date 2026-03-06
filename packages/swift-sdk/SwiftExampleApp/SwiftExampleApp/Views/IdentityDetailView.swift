@@ -5,7 +5,7 @@ import SwiftDashSDK
 struct IdentityDetailView: View {
     let identityId: Data
     @EnvironmentObject var appState: AppState
-    
+
     private var identity: IdentityModel? {
         appState.identities.first { $0.id == identityId }
     }
@@ -15,20 +15,20 @@ struct IdentityDetailView: View {
     @State private var isLoadingDPNS = false
     @State private var showingRegisterName = false
     @State private var showingSelectMainName = false
-    
+
     // Computed properties that get DPNS names from the identity model
     private var dpnsNames: [String] {
         identity?.dpnsNames ?? []
     }
-    
+
     private var contestedDpnsNames: [String] {
         identity?.contestedDpnsNames ?? []
     }
-    
+
     private var contestedDpnsInfo: [String: Any] {
         identity?.contestedDpnsInfo ?? [:]
     }
-    
+
     var body: some View {
         if let identity = identity {
             List {
@@ -39,7 +39,7 @@ struct IdentityDetailView: View {
                             Label(alias, systemImage: "person.text.rectangle")
                                 .font(.headline)
                         }
-                    
+
                     // Show the main name if selected, otherwise show first registered name
                     if let mainName = identity.mainDpnsName {
                         HStack {
@@ -60,13 +60,13 @@ struct IdentityDetailView: View {
                             .font(.subheadline)
                             .foregroundColor(.blue)
                     }
-                    
+
                     Label(identity.idHexString, systemImage: "number")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
-                
+
                 HStack {
                     Label("Balance", systemImage: "dollarsign.circle")
                     Spacer()
@@ -74,15 +74,15 @@ struct IdentityDetailView: View {
                         .foregroundColor(.blue)
                         .fontWeight(.medium)
                 }
-                
+
                 HStack {
                     Label("Type", systemImage: "person.badge.shield.checkmark")
                     Spacer()
                     Text(identity.type.rawValue)
-                        .foregroundColor(identity.type == .user ? .primary : 
+                        .foregroundColor(identity.type == .user ? .primary :
                                       identity.type == .masternode ? .purple : .orange)
                 }
-                
+
                 if identity.isLocal {
                     HStack {
                         Label("Status", systemImage: "location")
@@ -92,7 +92,7 @@ struct IdentityDetailView: View {
                     }
                 }
             }
-            
+
             // DPNS Names Section
             if !dpnsNames.isEmpty || !contestedDpnsNames.isEmpty || !identity.isLocal {
                 Section("DPNS Names") {
@@ -115,7 +115,7 @@ struct IdentityDetailView: View {
                                     .foregroundColor(.green)
                             }
                         }
-                        
+
                         // Show contested names
                         ForEach(contestedDpnsNames, id: \.self) { name in
                             NavigationLink(destination: ContestDetailView(
@@ -133,7 +133,7 @@ struct IdentityDetailView: View {
                             }
                         }
                     }
-                    
+
                     // Select main name button (only show if user has registered names)
                     if !dpnsNames.isEmpty {
                         Button(action: { showingSelectMainName = true }) {
@@ -144,7 +144,7 @@ struct IdentityDetailView: View {
                             .foregroundColor(.purple)
                         }
                     }
-                    
+
                     // Register name button
                     if !identity.isLocal {
                         Button(action: { showingRegisterName = true }) {
@@ -157,7 +157,7 @@ struct IdentityDetailView: View {
                     }
                 }
             }
-            
+
             // Keys Section
             Section("Keys") {
                 NavigationLink(destination: KeysListView(identity: identity)) {
@@ -167,12 +167,12 @@ struct IdentityDetailView: View {
                             Text("Identity Keys")
                                 .fontWeight(.medium)
                         }
-                        
+
                         HStack(spacing: 16) {
                             Label("\(identity.publicKeys.count) public", systemImage: "key")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
+
                             if !identity.privateKeys.isEmpty {
                                 Label("\(identity.privateKeys.count) private", systemImage: "key.fill")
                                     .font(.caption)
@@ -183,7 +183,7 @@ struct IdentityDetailView: View {
                     .padding(.vertical, 4)
                 }
             }
-            
+
             // Actions Section
             if !identity.isLocal {
                 Section {
@@ -226,7 +226,7 @@ struct IdentityDetailView: View {
         }
         .onAppear {
             print("🔵 IdentityDetailView onAppear - dpnsName: \(identity.dpnsName ?? "nil"), isLocal: \(identity.isLocal)")
-            
+
             // Load DPNS names from network if we don't have any cached or if they're empty
             if (dpnsNames.isEmpty && contestedDpnsNames.isEmpty) && !identity.isLocal {
                 print("🔵 No cached DPNS names, loading from network...")
@@ -239,19 +239,19 @@ struct IdentityDetailView: View {
             // No identity found view
             VStack(spacing: 20) {
                 Spacer()
-                
+
                 Image(systemName: "person.crop.circle.badge.questionmark")
                     .font(.system(size: 60))
                     .foregroundColor(.gray)
-                
+
                 Text("No Identity Found")
                     .font(.title2)
                     .fontWeight(.semibold)
-                
+
                 Text("The identity could not be found.\nIt may have been deleted or doesn't exist.")
                     .multilineTextAlignment(.center)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -259,19 +259,19 @@ struct IdentityDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-    
+
     private func refreshIdentityData() {
         Task {
             isRefreshing = true
             defer { isRefreshing = false }
-            
+
             guard let sdk = appState.sdk,
                   let identity = identity else { return }
-            
+
             do {
                 // Refresh identity data
                 let fetchedIdentity = try await sdk.identityGet(identityId: identity.idString)
-                
+
                 // Update balance
                 if let balanceValue = fetchedIdentity["balance"] {
                     if let balanceNum = balanceValue as? NSNumber {
@@ -281,7 +281,7 @@ struct IdentityDetailView: View {
                         appState.updateIdentityBalance(id: identity.id, newBalance: balanceUInt)
                     }
                 }
-                
+
                 // Parse and update public keys
                 var parsedPublicKeys: [IdentityPublicKey] = []
                 print("🔵 Checking for public keys in fetched identity...")
@@ -297,10 +297,10 @@ struct IdentityDetailView: View {
                               let data = Data(base64Encoded: dataStr) else {
                             return nil
                         }
-                        
+
                         let readOnly = keyData["readOnly"] as? Bool ?? false
                         let disabledAt = keyData["disabledAt"] as? UInt64
-                        
+
                         return IdentityPublicKey(
                             id: UInt32(id),
                             purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
@@ -315,13 +315,13 @@ struct IdentityDetailView: View {
                 } else {
                     print("❌ No public keys found in fetched identity")
                 }
-                
+
                 print("🔵 Parsed \(parsedPublicKeys.count) public keys total")
-                
+
                 // Update the identity with public keys
                 appState.updateIdentityPublicKeys(id: identity.id, publicKeys: parsedPublicKeys)
                 print("🔵 Called updateIdentityPublicKeys")
-                
+
                 // Refresh DPNS names from network
                 await loadDPNSNamesFromNetwork()
             } catch {
@@ -331,59 +331,59 @@ struct IdentityDetailView: View {
             }
         }
     }
-    
+
     private func loadDPNSNames() {
         guard let identity = identity,
               !identity.isLocal else { return }
-        
+
         Task {
             await loadDPNSNamesFromNetwork()
         }
     }
-    
+
     private func loadDPNSNamesFromNetwork() async {
         guard let identity = identity,
               !identity.isLocal else { return }
-        
+
         print("🔵 loadDPNSNamesFromNetwork called for identity \(identity.idString)")
-        
+
         isLoadingDPNS = true
         defer { isLoadingDPNS = false }
-        
+
         guard appState.sdk != nil else { return }
-        
+
         // Fetch regular and contested names sequentially to avoid sending non-Sendable results across tasks
         let regular = await fetchRegularDPNSNames(identity: identity)
         let contested = await fetchContestedDPNSNames(identity: identity)
-        
+
         await MainActor.run {
             let regularNames = regular.0
             let contestedNames = contested.0
             let contestedInfo = contested.1
-            
+
             // Update all DPNS names in the identity model
             appState.updateIdentityDPNSNames(
-                id: identity.id, 
-                dpnsNames: regularNames, 
-                contestedNames: contestedNames, 
+                id: identity.id,
+                dpnsNames: regularNames,
+                contestedNames: contestedNames,
                 contestedInfo: contestedInfo
             )
-            
+
             print("🔵 Updated identity with \(regularNames.count) regular names and \(contestedNames.count) contested names")
         }
     }
-    
+
     @MainActor
     private func fetchRegularDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
         guard let sdk = appState.sdk else { return ([], [:]) }
-        
+
         do {
             print("🔵 Fetching regular DPNS names from network...")
             let usernames = try await sdk.dpnsGetUsername(
                 identityId: identity.idString,
                 limit: 10
             )
-            
+
             print("🔵 Got \(usernames.count) regular DPNS names from network")
             return (usernames.compactMap { $0["label"] as? String }, [:])
         } catch {
@@ -391,29 +391,29 @@ struct IdentityDetailView: View {
             return ([], [:])
         }
     }
-    
+
     @MainActor
     private func fetchContestedDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
         guard let sdk = appState.sdk else { return ([], [:]) }
-        
+
         do {
             print("🔵 Fetching contested DPNS names from network...")
-            
+
             // Use the new dedicated FFI function for getting non-resolved contests for this identity
             let contestsResult = try await sdk.dpnsGetNonResolvedContestsForIdentity(
                 identityId: identity.idString,
                 limit: 20
             )
-            
+
             var contestedNames: [String] = []
             var contestInfo: [String: Any] = [:]
-            
+
             // Parse the result - it's a dictionary where keys are the contested names
             for (name, info) in contestsResult {
                 contestedNames.append(name)
                 contestInfo[name] = info
             }
-            
+
             print("🔵 Found \(contestedNames.count) contested DPNS names")
             return (contestedNames, contestInfo)
         } catch {
@@ -428,7 +428,7 @@ struct EditAliasView: View {
     @Binding var newAlias: String
     @EnvironmentObject var appState: AppState
     @Environment(\.dismiss) var dismiss
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -436,7 +436,7 @@ struct EditAliasView: View {
                     TextField("Enter alias", text: $newAlias)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
-                
+
                 Section {
                     Text("An alias helps you identify this identity in the app. It's stored locally and not saved to the network.")
                         .font(.caption)
@@ -460,11 +460,11 @@ struct EditAliasView: View {
             }
         }
     }
-    
+
     private func saveAlias() {
         let trimmedAlias = newAlias.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedAlias.isEmpty else { return }
-        
+
         // Create updated identity with alias
         var updatedIdentity = identity
         updatedIdentity = IdentityModel(
@@ -484,10 +484,10 @@ struct EditAliasView: View {
             contestedDpnsInfo: identity.contestedDpnsInfo,
             publicKeys: identity.publicKeys
         )
-        
+
         // Update in app state
         appState.updateIdentity(updatedIdentity)
-        
+
         dismiss()
     }
 }
