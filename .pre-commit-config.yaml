@@ -56,7 +56,7 @@ repos:
       - id: clippy
         name: clippy (workspace)
         description: Run clippy on entire workspace
-        entry: cargo clippy --workspace
+        entry: cargo clippy --workspace --all-features -- -D warnings
         language: system
         types: [rust]
         pass_filenames: false
