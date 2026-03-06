@@ -60,7 +60,11 @@ impl Drive {
         })?;
 
         // The sum value is the number of nullifiers
-        let entry_count = nullifiers.len() as i64;
+        let entry_count = i64::try_from(nullifiers.len()).map_err(|_| {
+            Error::Drive(crate::error::drive::DriveError::CorruptedDriveState(
+                "nullifier count exceeds i64::MAX".to_string(),
+            ))
+        })?;
 
         // Store in the SavedBlockTransactions/Nullifiers count sum tree with block height as key
         let path: [&[u8]; 2] = Drive::saved_block_transactions_nullifiers_path();
