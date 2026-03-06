@@ -1,11 +1,9 @@
+use crate::drive::saved_block_transactions::COMPACTED_NULLIFIERS_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-
-/// The subtree key for compacted nullifiers storage as u8
-const COMPACTED_NULLIFIERS_KEY_U8: u8 = b'o';
 use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{
     GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,

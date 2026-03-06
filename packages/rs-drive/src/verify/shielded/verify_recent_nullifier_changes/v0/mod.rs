@@ -1,11 +1,9 @@
+use crate::drive::saved_block_transactions::NULLIFIERS_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-
-/// The subtree key for nullifiers storage as u8
-const NULLIFIERS_KEY_U8: u8 = b'n';
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
