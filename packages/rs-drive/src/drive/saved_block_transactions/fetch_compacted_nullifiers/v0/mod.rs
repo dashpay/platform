@@ -74,24 +74,16 @@ impl Drive {
                 )));
             }
 
-            let start_block = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                            "invalid compacted key slice".to_string(),
-                        )))
-                    })?,
-            );
-            let end_block = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                            "invalid compacted key slice".to_string(),
-                        )))
-                    })?,
-            );
+            let start_block = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                    "invalid compacted key slice".to_string(),
+                )))
+            })?);
+            let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                    "invalid compacted key slice".to_string(),
+                )))
+            })?);
 
             // Only include if end_block >= start_block_height (range contains our block)
             if end_block >= start_block_height {
@@ -162,24 +154,16 @@ impl Drive {
                 )));
             }
 
-            let start_block = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                            "invalid compacted key slice".to_string(),
-                        )))
-                    })?,
-            );
-            let end_block = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                            "invalid compacted key slice".to_string(),
-                        )))
-                    })?,
-            );
+            let start_block = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                    "invalid compacted key slice".to_string(),
+                )))
+            })?);
+            let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                    "invalid compacted key slice".to_string(),
+                )))
+            })?);
 
             // Skip if this is the same range we got from descending query
             if Some(start_block) == desc_start_block {
@@ -248,15 +232,11 @@ impl Drive {
         // Otherwise use (start_block_height, start_block_height) since end_block >= start_block always
         let start_key = if let Some((key, _)) = desc_results.to_key_elements().into_iter().next() {
             if key.len() == 16 {
-                let end_block = u64::from_be_bytes(
-                    key[8..16]
-                        .try_into()
-                        .map_err(|_| {
-                        Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                            "invalid compacted key slice".to_string(),
-                        )))
-                    })?,
-                );
+                let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                        "invalid compacted key slice".to_string(),
+                    )))
+                })?);
                 // If this range contains start_block_height, use its exact key
                 if end_block >= start_block_height {
                     key

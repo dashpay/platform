@@ -1,4 +1,5 @@
-use crate::drive::saved_block_transactions::NULLIFIERS_KEY_U8;
+/// The subtree key for nullifiers storage as u8 (must match saved_block_transactions::NULLIFIERS_KEY_U8)
+const NULLIFIERS_KEY_U8: u8 = b'n';
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;

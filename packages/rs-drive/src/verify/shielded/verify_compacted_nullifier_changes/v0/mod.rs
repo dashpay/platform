@@ -1,4 +1,5 @@
-use crate::drive::saved_block_transactions::COMPACTED_NULLIFIERS_KEY_U8;
+/// The subtree key for compacted nullifiers storage as u8 (must match saved_block_transactions::COMPACTED_NULLIFIERS_KEY_U8)
+const COMPACTED_NULLIFIERS_KEY_U8: u8 = b'o';
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
@@ -165,24 +166,16 @@ impl Drive {
                 )));
             }
 
-            let range_start = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Proof(ProofError::CorruptedProof(
-                            "invalid key slice length for block height".to_string(),
-                        ))
-                    })?,
-            );
-            let range_end = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Proof(ProofError::CorruptedProof(
-                            "invalid key slice length for block height".to_string(),
-                        ))
-                    })?,
-            );
+            let range_start = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
+                Error::Proof(ProofError::CorruptedProof(
+                    "invalid key slice length for block height".to_string(),
+                ))
+            })?);
+            let range_end = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+                Error::Proof(ProofError::CorruptedProof(
+                    "invalid key slice length for block height".to_string(),
+                ))
+            })?);
 
             // Get the serialized data from the Item element
             let grovedb::Element::Item(serialized_data, _) = element else {

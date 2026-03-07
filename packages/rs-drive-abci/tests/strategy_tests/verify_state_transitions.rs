@@ -1445,6 +1445,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     }
                 }
                 StateTransitionAction::BumpAddressInputNoncesAction(_) => {}
+                StateTransitionAction::ShieldAction(_) => {}
+                StateTransitionAction::ShieldedTransferAction(_) => {}
+                StateTransitionAction::UnshieldAction(_) => {}
+                StateTransitionAction::ShieldFromAssetLockAction(_) => {}
+                StateTransitionAction::ShieldedWithdrawalAction(_) => {}
+                StateTransitionAction::PenalizeShieldedPoolAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

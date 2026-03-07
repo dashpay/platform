@@ -20,13 +20,11 @@ impl Drive {
             path: shielded_credit_pool_nullifiers_path_vec(),
             query: SizedQuery {
                 query,
-                limit: Some(
-                    u16::try_from(nullifiers.len()).map_err(|_| {
-                        Error::Drive(crate::error::drive::DriveError::CorruptedDriveState(
-                            "nullifier count exceeds u16::MAX".to_string(),
-                        ))
-                    })?,
-                ),
+                limit: Some(u16::try_from(nullifiers.len()).map_err(|_| {
+                    Error::Drive(crate::error::drive::DriveError::CorruptedDriveState(
+                        "nullifier count exceeds u16::MAX".to_string(),
+                    ))
+                })?),
                 offset: None,
             },
         };
