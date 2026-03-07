@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
@@ -50,7 +51,11 @@ impl Drive {
 
         // Insert each item with a sequential key
         for (i, element) in items.into_iter().enumerate() {
-            let index = current_count + i as u64;
+            let index = current_count.checked_add(i as u64).ok_or(
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "auto-incremented count tree index overflow",
+                )),
+            )?;
             drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
                 insert_path.clone(),
                 index.to_be_bytes().to_vec(),

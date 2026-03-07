@@ -135,8 +135,10 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        // Track the start_block from descending query to avoid duplicates
-        let desc_start_block = compacted_changes.first().map(|(start, _, _)| *start);
+        // Track the (start_block, end_block) from descending query to avoid duplicates
+        let desc_range_key = compacted_changes
+            .first()
+            .map(|(start, end, _)| (*start, *end));
 
         for (key, element) in asc_results.to_key_elements() {
             // Check if we've reached the limit
@@ -166,7 +168,7 @@ impl Drive {
             })?);
 
             // Skip if this is the same range we got from descending query
-            if Some(start_block) == desc_start_block {
+            if Some((start_block, end_block)) == desc_range_key {
                 continue;
             }
 

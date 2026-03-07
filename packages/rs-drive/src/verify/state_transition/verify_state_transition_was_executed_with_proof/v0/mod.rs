@@ -1274,7 +1274,12 @@ impl Drive {
                     )));
                 }
 
-                let documents = BTreeMap::from([(document_id, maybe_doc)]);
+                let doc = maybe_doc.ok_or_else(|| {
+                    Error::Proof(ProofError::CorruptedProof(
+                        "shielded withdrawal was executed but withdrawal document is missing from proof".to_string(),
+                    ))
+                })?;
+                let documents = BTreeMap::from([(document_id, Some(doc))]);
 
                 Ok((
                     root_hash_nf,
@@ -1333,10 +1338,16 @@ impl Drive {
                                 "expected an item element for asset lock outpoint".to_string(),
                             )));
                         }
-                        None => StoredAssetLockInfo::NotPresent,
+                        None => {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                            )));
+                        }
                     }
                 } else {
-                    StoredAssetLockInfo::NotPresent
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "shield from asset lock was executed but no proved key values returned".to_string(),
+                    )));
                 };
 
                 Ok((root_hash, VerifiedAssetLockConsumed(info)))
