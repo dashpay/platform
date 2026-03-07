@@ -1,5 +1,7 @@
 #![allow(clippy::from_over_into)]
 
+#[cfg(feature = "identity-value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use bincode::{Decode, Encode};
@@ -48,6 +50,7 @@ pub type TimestampMillis = u64;
     PartialOrd,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
+#[cfg_attr(feature = "identity-value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]

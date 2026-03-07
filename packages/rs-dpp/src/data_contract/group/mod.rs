@@ -1,11 +1,11 @@
+use crate::serialization::ValueConvertible;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::v0::GroupV0;
 use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -23,7 +23,9 @@ pub type RequiredSigners = u8;
 pub type GroupMemberPower = u32;
 pub type GroupSumPower = u32;
 pub type GroupRequiredPower = u32;
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(
+    ValueConvertible,
     Serialize,
     Deserialize,
     Decode,
@@ -105,6 +107,3 @@ impl GroupMethodsV0 for Group {
     }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for Group {}
-impl ValueConvertible for Group {}

@@ -8,6 +8,7 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use std::convert::TryFrom;
 
 use bincode::{Decode, Encode};
@@ -29,6 +30,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+#[json_safe_fields]
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

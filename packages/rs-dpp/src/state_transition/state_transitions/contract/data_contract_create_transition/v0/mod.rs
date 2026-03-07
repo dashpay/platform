@@ -8,6 +8,7 @@ pub(crate) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::BinaryData;
@@ -28,6 +29,7 @@ use crate::version::PlatformVersion;
 
 ///DataContractCreateTransitionV0 has the same encoding structure
 
+#[json_safe_fields]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

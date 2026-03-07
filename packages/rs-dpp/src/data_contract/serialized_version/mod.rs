@@ -18,6 +18,8 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::{IntoPlatformVersioned, TryFromPlatformVersioned};
 use platform_versioning::PlatformVersioned;
+#[cfg(all(feature = "json-conversion", feature = "data-contract-serde-conversion"))]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "data-contract-serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -91,6 +93,10 @@ impl fmt::Display for DataContractMismatch {
     }
 }
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "data-contract-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
     feature = "data-contract-serde-conversion",

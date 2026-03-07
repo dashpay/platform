@@ -11,6 +11,10 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::masternode_vote_transition::fields::property_names::PRO_TX_HASH;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0Signable;
@@ -29,6 +33,10 @@ use serde::{Deserialize, Serialize};
 
 pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -46,6 +54,7 @@ pub type MasternodeVoteTransitionLatest = MasternodeVoteTransitionV0;
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.masternode_vote_state_transition"

@@ -1,3 +1,6 @@
+#[cfg(feature = "identity-value-conversion")]
+use crate::serialization::ValueConvertible;
+use crate::serialization::json_safe_fields;
 use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
@@ -35,6 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
     platform_serialize(limit = 15000, unversioned)
 )]
+#[cfg_attr(feature = "identity-value-conversion", derive(ValueConvertible))]
 pub enum Identity {
     #[cfg_attr(
         any(
@@ -47,6 +51,7 @@ pub enum Identity {
 }
 
 /// An identity struct that represent partially set/loaded identity data.
+#[json_safe_fields]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
     any(

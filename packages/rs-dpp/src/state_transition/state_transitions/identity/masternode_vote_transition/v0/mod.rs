@@ -8,6 +8,7 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use crate::identity::KeyID;
 
 use crate::prelude::{Identifier, IdentityNonce};
@@ -20,6 +21,7 @@ use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[json_safe_fields]
 #[derive(
     Debug,
     Clone,

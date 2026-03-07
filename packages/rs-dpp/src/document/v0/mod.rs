@@ -26,8 +26,10 @@ use crate::document::document_methods::{
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::prelude::{BlockHeight, CoreBlockHeight, Identifier};
+use crate::serialization::json_safe_fields;
 
 /// Documents contain the data that goes into data contracts.
+#[json_safe_fields]
 #[derive(Clone, Debug, PartialEq, Default)]
 #[cfg_attr(
     any(

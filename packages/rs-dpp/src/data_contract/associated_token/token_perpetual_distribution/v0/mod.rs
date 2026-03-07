@@ -1,11 +1,13 @@
 mod methods;
 
 use bincode::{Encode, Decode};
+use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 
+#[json_safe_fields]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPerpetualDistributionV0 {

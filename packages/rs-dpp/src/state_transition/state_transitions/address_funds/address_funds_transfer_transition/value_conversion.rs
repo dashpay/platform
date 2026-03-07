@@ -9,11 +9,8 @@ use crate::state_transition::address_funds_transfer_transition::AddressFundsTran
 use crate::state_transition::state_transitions::address_funds_transfer_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-
-impl ValueConvertible for AddressFundsTransferTransition {}
 
 impl StateTransitionValueConvert<'_> for AddressFundsTransferTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

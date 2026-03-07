@@ -1,10 +1,10 @@
+use crate::serialization::{json_safe_fields, ValueConvertible};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
 
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::{identifier::Identifier, ProtocolError};
 use dashcore::OutPoint;
@@ -13,7 +13,9 @@ use dashcore::OutPoint;
 /// transitions. It is a proof that specific output of dash is locked in credits
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, a height where transaction was chain locked is provided.
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ValueConvertible)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     /// Core height on which the asset lock transaction was chain locked or higher
@@ -54,9 +56,6 @@ impl ChainAssetLockProof {
     }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for ChainAssetLockProof {}
-impl ValueConvertible for ChainAssetLockProof {}
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

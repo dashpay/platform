@@ -5,12 +5,14 @@ use crate::data_contract::associated_token::token_pre_programmed_distribution::T
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[json_safe_fields]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenDistributionRulesV0 {

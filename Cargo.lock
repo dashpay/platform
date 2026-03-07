@@ -1980,6 +1980,7 @@ dependencies = [
  "data-contracts",
  "derive_more 1.0.0",
  "dpp",
+ "dpp-json-convertible-derive",
  "env_logger 0.11.9",
  "getrandom 0.2.17",
  "grovedb-commitment-tree",
@@ -2014,6 +2015,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "dpp-json-convertible-derive"
+version = "3.1.0-dev.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -8037,6 +8047,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "dpp",
+ "dpp-json-convertible-derive",
  "hex",
  "js-sys",
  "serde",
@@ -8111,6 +8122,7 @@ dependencies = [
  "console_error_panic_hook",
  "dapi-grpc",
  "dash-sdk",
+ "dpp-json-convertible-derive",
  "drive",
  "drive-proof-verifier",
  "getrandom 0.2.17",

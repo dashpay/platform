@@ -11,6 +11,10 @@ mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use fields::*;
 
 use crate::data_contract::DataContract;
@@ -33,6 +37,10 @@ pub use v0::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -50,6 +58,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
@@ -176,7 +185,7 @@ mod test {
     pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None, 0, 1);
 
-        let state_transition = DataContractCreateTransition::from_object(
+        let state_transition = <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
             Value::from([
                 (STATE_TRANSITION_PROTOCOL_VERSION, Value::U16(0)),
                 (

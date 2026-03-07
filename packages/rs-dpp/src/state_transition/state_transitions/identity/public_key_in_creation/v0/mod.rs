@@ -5,6 +5,7 @@ mod types;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
 use std::convert::TryFrom;
@@ -30,6 +31,7 @@ use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyI
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
+#[json_safe_fields]
 #[derive(
     Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
 )]

@@ -1,5 +1,6 @@
 mod accessors;
 
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -9,6 +10,7 @@ use std::fmt;
 /// `TokenConfigurationLocalizationV0` enables tokens to present user-friendly names
 /// across different locales. This information is not used for validation or consensus
 /// but enhances UX by allowing consistent display in multilingual interfaces.
+#[json_safe_fields]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationLocalizationV0 {

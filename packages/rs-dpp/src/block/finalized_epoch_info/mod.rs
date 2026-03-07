@@ -1,18 +1,20 @@
 mod getters;
 pub mod v0;
 
-use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
-use crate::protocol_error::ProtocolError;
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
+use crate::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+use crate::protocol_error::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 
 /// Finalized Epoch information
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(
+    ValueConvertible,
     Clone,
     Debug,
     PartialEq,
@@ -31,9 +33,6 @@ pub enum FinalizedEpochInfo {
     V0(FinalizedEpochInfoV0),
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for FinalizedEpochInfo {}
-impl ValueConvertible for FinalizedEpochInfo {}
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

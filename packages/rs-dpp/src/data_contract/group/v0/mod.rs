@@ -1,3 +1,4 @@
+use crate::serialization::json_safe_fields;
 use crate::consensus::basic::data_contract::{
     GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
     GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
@@ -16,6 +17,7 @@ use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[json_safe_fields]
 #[derive(
     Serialize,
     Deserialize,

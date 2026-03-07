@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
@@ -21,6 +25,10 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From)]
 //here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable
 #[platform_signable(derive_into)]
@@ -29,6 +37,7 @@ mod version;
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),

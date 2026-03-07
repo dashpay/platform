@@ -11,6 +11,7 @@ pub use crate::identity::SecurityLevel;
 use bincode::{Decode, Encode};
 
 use platform_value::BinaryData;
+use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
@@ -21,6 +22,7 @@ use crate::identity::{KeyID, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
+#[json_safe_fields]
 #[derive(
     Default,
     Debug,

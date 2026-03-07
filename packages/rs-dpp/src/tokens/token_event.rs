@@ -1,3 +1,5 @@
+#[cfg(feature = "state-transition-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -12,7 +14,6 @@ use crate::prelude::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -61,7 +62,7 @@ pub type FrozenIdentifier = Identifier;
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize),
+    derive(serde::Serialize, serde::Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
@@ -155,8 +156,6 @@ pub enum TokenEvent {
     feature = "state-transition-serde-conversion"
 ))]
 impl JsonConvertible for TokenEvent {}
-#[cfg(feature = "state-transition-serde-conversion")]
-impl ValueConvertible for TokenEvent {}
 
 impl fmt::Display for TokenEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

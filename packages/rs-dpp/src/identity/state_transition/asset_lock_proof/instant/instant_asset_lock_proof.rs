@@ -1,3 +1,6 @@
+use crate::serialization::{ValueConvertible, json_safe_fields};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{deserialize, Encodable};
@@ -14,9 +17,6 @@ use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::prelude::Identifier;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_double;
@@ -28,7 +28,9 @@ use crate::ProtocolError;
 /// transitions. It is a proof that specific output of dash is locked in credits
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, an Instant Lock is provided.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[derive(Clone, Debug, Eq, PartialEq, ValueConvertible)]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock
     pub instant_lock: InstantLock,
@@ -195,9 +197,6 @@ impl InstantAssetLockProof {
     }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for InstantAssetLockProof {}
-impl ValueConvertible for InstantAssetLockProof {}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]

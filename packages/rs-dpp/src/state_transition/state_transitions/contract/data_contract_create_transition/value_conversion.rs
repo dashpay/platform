@@ -10,15 +10,8 @@ use crate::state_transition::data_contract_create_transition::{
 use crate::state_transition::state_transitions::data_contract_create_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for DataContractCreateTransition {}
-impl ValueConvertible for DataContractCreateTransition {}
 
 impl StateTransitionValueConvert<'_> for DataContractCreateTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

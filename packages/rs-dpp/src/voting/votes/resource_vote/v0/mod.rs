@@ -1,3 +1,4 @@
+use crate::serialization::json_safe_fields;
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
@@ -7,6 +8,7 @@ use platform_value::Identifier;
 #[cfg(feature = "vote-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[json_safe_fields]
 #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
 #[cfg_attr(
     feature = "vote-serde-conversion",

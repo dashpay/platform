@@ -1,8 +1,8 @@
-use crate::block::epoch::{Epoch, EPOCH_0};
-use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+use crate::serialization::{json_safe_fields, ValueConvertible};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
+use crate::block::epoch::{Epoch, EPOCH_0};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -18,7 +18,12 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // Extended block info however is not immutable
 // @immutable
 /// Block information
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[json_safe_fields]
+#[cfg_attr(
+    feature = "json-conversion",
+    derive(JsonConvertible)
+)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize, ValueConvertible)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     /// Block time in milliseconds
@@ -102,9 +107,6 @@ impl BlockInfo {
     }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for BlockInfo {}
-impl ValueConvertible for BlockInfo {}
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {
@@ -167,9 +169,11 @@ mod tests {
         };
 
         let json = block_info.to_json().expect("to_json should succeed");
-        assert!(json["timeMs"].is_number());
-        assert_eq!(json["timeMs"].as_u64().unwrap(), u64::MAX);
-        assert_eq!(json["height"].as_u64().unwrap(), u64::MAX);
+        // u64::MAX > JS MAX_SAFE_INTEGER, serialized as string
+        assert!(json["timeMs"].is_string());
+        assert_eq!(json["timeMs"].as_str().unwrap(), u64::MAX.to_string());
+        assert!(json["height"].is_string());
+        assert_eq!(json["height"].as_str().unwrap(), u64::MAX.to_string());
 
         let restored = BlockInfo::from_json(json).expect("from_json should succeed");
         assert_eq!(block_info, restored);

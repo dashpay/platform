@@ -16,9 +16,11 @@ use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use platform_version::FromPlatformVersioned;
+use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[json_safe_fields]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInSerializationFormatV1 {

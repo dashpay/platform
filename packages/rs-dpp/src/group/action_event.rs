@@ -1,6 +1,7 @@
+#[cfg(feature = "state-transition-serde-conversion")]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use crate::tokens::token_event::TokenEvent;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize, Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
@@ -26,8 +27,6 @@ pub enum GroupActionEvent {
     feature = "state-transition-serde-conversion"
 ))]
 impl JsonConvertible for GroupActionEvent {}
-#[cfg(feature = "state-transition-serde-conversion")]
-impl ValueConvertible for GroupActionEvent {}
 
 use std::fmt;
 

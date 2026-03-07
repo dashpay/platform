@@ -1,6 +1,7 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
+#[cfg(feature = "vote-serde-conversion")]
 use crate::serialization::ValueConvertible;
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+use crate::serialization::JsonConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -13,10 +14,14 @@ use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "vote-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize, Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
@@ -24,11 +29,6 @@ pub mod contested_document_resource_vote_poll;
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
 }
-
-#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
-impl JsonConvertible for VotePoll {}
-#[cfg(feature = "vote-serde-conversion")]
-impl ValueConvertible for VotePoll {}
 
 impl fmt::Display for VotePoll {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

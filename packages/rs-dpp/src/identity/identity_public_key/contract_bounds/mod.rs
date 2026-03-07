@@ -1,10 +1,10 @@
+use crate::serialization::ValueConvertible;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
 };
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -17,9 +17,10 @@ pub type ContractBoundsType = u8;
 /// For encryption decryption this tells clients to only use these keys for specific
 /// contracts.
 ///
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
+    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash, ValueConvertible,
 )]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ContractBounds {
@@ -160,9 +161,6 @@ impl ContractBounds {
     // }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for ContractBounds {}
-impl ValueConvertible for ContractBounds {}
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

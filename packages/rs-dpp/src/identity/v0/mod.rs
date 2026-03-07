@@ -2,6 +2,9 @@ mod conversion;
 #[cfg(feature = "random-identities")]
 pub mod random;
 
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "identity-value-conversion")]
+use crate::serialization::ValueConvertible;
 use std::collections::BTreeMap;
 #[cfg(feature = "identity-value-conversion")]
 use std::convert::TryFrom;
@@ -20,6 +23,7 @@ use bincode::{Decode, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
+#[json_safe_fields]
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
@@ -30,6 +34,7 @@ use bincode::{Decode, Encode};
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "identity-value-conversion", derive(ValueConvertible))]
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(

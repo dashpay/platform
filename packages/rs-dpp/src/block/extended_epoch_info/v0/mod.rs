@@ -1,9 +1,11 @@
+use crate::serialization::json_safe_fields;
 use crate::block::epoch::EpochIndex;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// Extended Epoch information
+#[json_safe_fields]
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtendedEpochInfoV0 {

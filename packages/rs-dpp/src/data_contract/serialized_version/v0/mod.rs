@@ -5,6 +5,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
@@ -12,6 +13,7 @@ use platform_version::FromPlatformVersioned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[json_safe_fields]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInSerializationFormatV0 {

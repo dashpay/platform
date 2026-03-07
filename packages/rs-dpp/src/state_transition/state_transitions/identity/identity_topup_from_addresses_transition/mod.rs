@@ -12,6 +12,8 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use fields::*;
 
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
@@ -44,6 +46,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_top_up_from_addresses_state_transition"

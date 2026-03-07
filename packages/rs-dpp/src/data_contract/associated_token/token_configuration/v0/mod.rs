@@ -1,5 +1,6 @@
 mod accessors;
 
+use crate::serialization::json_safe_fields;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
@@ -30,6 +31,7 @@ use std::fmt;
 ///
 /// This configuration is designed to be deterministic and versioned for compatibility
 /// across protocol upgrades and validation environments.
+#[json_safe_fields]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {

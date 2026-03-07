@@ -726,6 +726,7 @@ fn deserialize_token_transfer_options(
 /// - Group-managed tokens: returns group power and document
 ///
 /// Check which optional fields are present to determine the result type.
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "TokenTransferResult")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

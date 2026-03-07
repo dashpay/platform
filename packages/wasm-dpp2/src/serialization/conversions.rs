@@ -29,64 +29,6 @@ use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
-const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
-
-/// Recursively stringify JSON numbers that exceed JS Number.MAX_SAFE_INTEGER (2^53-1).
-/// This ensures safe round-tripping through JavaScript where large numbers lose precision.
-pub fn stringify_large_numbers(value: JsonValue) -> JsonValue {
-    match value {
-        JsonValue::Number(ref n) => {
-            if let Some(u) = n.as_u64() {
-                if u > JS_MAX_SAFE_INTEGER {
-                    return JsonValue::String(u.to_string());
-                }
-            } else if let Some(i) = n.as_i64()
-                && (i > JS_MAX_SAFE_INTEGER as i64 || i < -(JS_MAX_SAFE_INTEGER as i64))
-            {
-                return JsonValue::String(i.to_string());
-            }
-            value
-        }
-        JsonValue::Array(arr) => {
-            JsonValue::Array(arr.into_iter().map(stringify_large_numbers).collect())
-        }
-        JsonValue::Object(map) => JsonValue::Object(
-            map.into_iter()
-                .map(|(k, v)| (k, stringify_large_numbers(v)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
-/// Recursively parse JSON strings back to numbers if they represent values above
-/// JS Number.MAX_SAFE_INTEGER. This is the reverse of [`stringify_large_numbers`].
-pub fn unstringify_large_numbers(value: JsonValue) -> JsonValue {
-    match value {
-        JsonValue::String(ref s) => {
-            if let Ok(n) = s.parse::<u64>() {
-                if n > JS_MAX_SAFE_INTEGER {
-                    return JsonValue::Number(serde_json::Number::from(n));
-                }
-            } else if let Ok(n) = s.parse::<i64>()
-                && n < -(JS_MAX_SAFE_INTEGER as i64)
-            {
-                return JsonValue::Number(serde_json::Number::from(n));
-            }
-            value
-        }
-        JsonValue::Array(arr) => {
-            JsonValue::Array(arr.into_iter().map(unstringify_large_numbers).collect())
-        }
-        JsonValue::Object(map) => JsonValue::Object(
-            map.into_iter()
-                .map(|(k, v)| (k, unstringify_large_numbers(v)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
 /// Try to call toJSON() on a WASM object if it has one.
 ///
 /// Returns Some(result) if the object has a toJSON method and it succeeds,
@@ -327,12 +269,11 @@ pub fn from_object<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
 /// Serialize to JsValue as JSON-compatible (human-readable).
 ///
 /// Uses serde_json (human-readable) so types like Identifier serialize as base58 strings,
-/// BinaryData as base64 strings, etc. Then `stringify_large_numbers()` converts
-/// u64/i64 values above JS MAX_SAFE_INTEGER to strings for safe round-tripping.
+/// BinaryData as base64 strings, etc. Large u64/i64 values are stringified at the serde
+/// level via `#[serde(with = "...")]` on the fields.
 pub fn to_json<T: Serialize>(value: &T) -> WasmDppResult<JsValue> {
     let json = serde_json::to_value(value)
         .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
-    let json = stringify_large_numbers(json);
     json_to_js_value(&json)
 }
 
@@ -351,11 +292,10 @@ pub fn json_value_to_js(value: &serde_json::Value) -> WasmDppResult<JsValue> {
 
 /// Deserialize from JsValue (human-readable JSON).
 ///
-/// Converts JsValue to serde_json::Value then deserializes with string-to-number
-/// support for large numbers that were stringified by `to_json`.
+/// Converts JsValue to serde_json::Value then deserializes. Large number strings
+/// are handled at the serde level via `#[serde(with = "...")]` on the fields.
 pub fn from_json<T: DeserializeOwned>(value: JsValue) -> WasmDppResult<T> {
     let json = js_value_to_json(&value)?;
-    let json = unstringify_large_numbers(json);
     serde_json::from_value(json)
         .map_err(|e| WasmDppError::serialization(format!("fromJSON: {}", e)))
 }
@@ -378,12 +318,13 @@ pub fn platform_value_to_object(value: &platform_value::Value) -> WasmDppResult<
 /// Serialize platform_value::Value to JsValue as JSON-compatible (human-readable).
 ///
 /// Converts Value::Identifier and Value::Bytes to base58/base64 strings for JSON compatibility.
-/// Large numbers (> JS MAX_SAFE_INTEGER) are stringified for JavaScript safety.
+/// Note: platform_value routes all integers through u64/i64, so large number stringification
+/// at the serde level doesn't apply here. Values from platform_value are already safely
+/// represented as JS numbers or BigInt.
 pub fn platform_value_to_json(value: &platform_value::Value) -> WasmDppResult<JsValue> {
     let converted = convert_value_for_json(value);
     let json = serde_json::to_value(&converted)
         .map_err(|e| WasmDppError::serialization(format!("platform_value_to_json: {}", e)))?;
-    let json = stringify_large_numbers(json);
     json_to_js_value(&json)
 }
 
@@ -606,7 +547,6 @@ macro_rules! impl_wasm_conversions_inner {
                 let json = self.0.to_json().map_err(|e| {
                     $crate::error::WasmDppError::serialization(format!("toJSON: {}", e))
                 })?;
-                let json = $crate::serialization::conversions::stringify_large_numbers(json);
                 $crate::serialization::conversions::json_to_js_value(&json)
             }
 
@@ -616,7 +556,6 @@ macro_rules! impl_wasm_conversions_inner {
             ) -> Result<$wasm_ty, $crate::error::WasmDppError> {
                 use dpp::serialization::JsonConvertible;
                 let json = $crate::serialization::conversions::js_value_to_json(&js)?;
-                let json = $crate::serialization::conversions::unstringify_large_numbers(json);
                 let inner = <$inner_ty>::from_json(json).map_err(|e| {
                     $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e))
                 })?;
@@ -656,7 +595,6 @@ macro_rules! impl_wasm_conversions_inner {
                 let json = self.0.to_json().map_err(|e| {
                     $crate::error::WasmDppError::serialization(format!("toJSON: {}", e))
                 })?;
-                let json = $crate::serialization::conversions::stringify_large_numbers(json);
                 $crate::serialization::conversions::json_to_js_value(&json).map(Into::into)
             }
 
@@ -664,7 +602,6 @@ macro_rules! impl_wasm_conversions_inner {
             pub fn from_json(js: $json_type) -> Result<$wasm_ty, $crate::error::WasmDppError> {
                 use dpp::serialization::JsonConvertible;
                 let json = $crate::serialization::conversions::js_value_to_json(&js.into())?;
-                let json = $crate::serialization::conversions::unstringify_large_numbers(json);
                 let inner = <$inner_ty>::from_json(json).map_err(|e| {
                     $crate::error::WasmDppError::serialization(format!("fromJSON: {}", e))
                 })?;

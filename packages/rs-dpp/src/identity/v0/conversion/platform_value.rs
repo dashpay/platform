@@ -1,11 +1,8 @@
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::{property_names, IdentityV0};
 use crate::serialization::ValueConvertible;
-
 use crate::ProtocolError;
 use platform_value::Value;
-
-impl ValueConvertible for IdentityV0 {}
 
 impl IdentityPlatformValueConversionMethodsV0 for IdentityV0 {
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {

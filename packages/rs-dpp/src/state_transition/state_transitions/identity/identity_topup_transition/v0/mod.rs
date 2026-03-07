@@ -8,6 +8,7 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
@@ -30,6 +31,7 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
+#[json_safe_fields]
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

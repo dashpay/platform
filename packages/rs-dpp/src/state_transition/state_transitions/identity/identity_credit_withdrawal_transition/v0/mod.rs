@@ -7,6 +7,7 @@ mod types;
 mod value_conversion;
 mod version;
 
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::BinaryData;
@@ -21,6 +22,7 @@ use crate::{
     ProtocolError,
 };
 
+#[json_safe_fields]
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

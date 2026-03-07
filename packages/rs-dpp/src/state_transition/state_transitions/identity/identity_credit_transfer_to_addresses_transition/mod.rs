@@ -12,6 +12,8 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::fields::property_names::RECIPIENT_ID;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0Signable;
@@ -48,6 +50,7 @@ pub type IdentityCreditTransferToAddressesTransitionLatest =
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_credit_transfer_to_addresses_state_transition"

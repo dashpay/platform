@@ -1,6 +1,7 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
+#[cfg(feature = "vote-serde-conversion")]
 use crate::serialization::ValueConvertible;
+#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+use crate::serialization::JsonConvertible;
 use crate::voting::votes::resource_vote::v0::ResourceVoteV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -11,10 +12,14 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 pub mod v0;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "vote-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
     feature = "vote-serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize, Deserialize, ValueConvertible),
     serde(tag = "$formatVersion")
 )]
 #[platform_serialize(limit = 15000, unversioned)]
@@ -23,10 +28,6 @@ pub enum ResourceVote {
     V0(ResourceVoteV0),
 }
 
-#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
-impl JsonConvertible for ResourceVote {}
-#[cfg(feature = "vote-serde-conversion")]
-impl ValueConvertible for ResourceVote {}
 
 impl Default for ResourceVote {
     fn default() -> Self {

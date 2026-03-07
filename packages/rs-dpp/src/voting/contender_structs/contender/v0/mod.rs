@@ -1,3 +1,4 @@
+use crate::serialization::json_safe_fields;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -26,6 +27,7 @@ pub struct ContenderV0 {
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
+#[json_safe_fields]
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

@@ -12,6 +12,10 @@ mod v0_methods;
 mod value_conversion;
 mod version;
 
+#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::identity_update_transition::fields::property_names::ADD_PUBLIC_KEYS_SIGNATURE;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
@@ -28,6 +32,10 @@ use platform_versioning::PlatformVersioned;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -45,6 +53,7 @@ use serde::{Deserialize, Serialize};
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_update_state_transition"

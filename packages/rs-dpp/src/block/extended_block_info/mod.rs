@@ -1,12 +1,11 @@
+use crate::serialization::ValueConvertible;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::block::block_info::BlockInfo;
 use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
 use crate::protocol_error::ProtocolError;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
-
 use crate::version::FeatureVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -16,7 +15,9 @@ use serde::{Deserialize, Serialize};
 pub mod v0;
 
 /// Extended Block information
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(
+    ValueConvertible,
     Clone,
     Debug,
     PartialEq,
@@ -144,9 +145,6 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
     }
 }
 
-#[cfg(feature = "json-conversion")]
-impl JsonConvertible for ExtendedBlockInfo {}
-impl ValueConvertible for ExtendedBlockInfo {}
 
 #[cfg(test)]
 mod tests {

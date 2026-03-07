@@ -1,12 +1,12 @@
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize, ValueConvertible)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
@@ -29,4 +29,3 @@ impl fmt::Display for ContestedDocumentVotePollWinnerInfo {
 
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for ContestedDocumentVotePollWinnerInfo {}
-impl ValueConvertible for ContestedDocumentVotePollWinnerInfo {}

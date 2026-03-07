@@ -62,6 +62,7 @@ platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
+dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 derive_more = { version = "1.0", features = ["from", "display", "try_into"] }
 nohash-hasher = "0.2.0"
 rust_decimal = { version = "1.39.0", optional = true }
@@ -218,7 +219,7 @@ validation = [
 ]
 # TODO: Tring to remove regexp
 create-contested-document = []
-json-conversion = []
+json-conversion = ["platform-value/json"]
 platform-value-json = ["platform-value/json", "json-conversion"]
 platform-value-cbor = ["platform-value/cbor"]
 json-schema-validation = [

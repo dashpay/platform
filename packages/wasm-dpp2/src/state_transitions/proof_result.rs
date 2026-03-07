@@ -172,6 +172,7 @@ impl_wasm_conversions_serde!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalan
 
 // --- VerifiedTokenBalance ---
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dpp")]
 #[wasm_bindgen(js_name = "VerifiedTokenBalance")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
