@@ -175,7 +175,7 @@ pub trait ValueConvertible: Serialize + DeserializeOwned {
 #[cfg(feature = "json-conversion")]
 pub trait JsonConvertible: Serialize + DeserializeOwned {
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        serde_json::to_value(self).map_err(|e| ProtocolError::DecodingError(e.to_string()))
+        serde_json::to_value(self).map_err(|e| ProtocolError::EncodingError(e.to_string()))
     }
 
     fn from_json(json: JsonValue) -> Result<Self, ProtocolError> {

@@ -471,7 +471,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
             // Single-key map → externally tagged variant
             // e.g., {"TowardsIdentity": <data>} or {"ResourceVote": {...}}
             Value::Map(entries) if entries.len() == 1 => {
-                let (key, value) = entries.into_iter().next().unwrap();
+                let (key, value) = entries.into_iter().next().expect("guard guarantees len == 1");
                 let variant = match key {
                     Value::Text(s) => s,
                     other => {
