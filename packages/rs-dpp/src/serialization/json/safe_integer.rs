@@ -1,10 +1,21 @@
-//! Serde `with` helpers that stringify large integers for JS safety.
+//! Serde `with` modules for bare u64/i64 fields and their Option variants.
 //!
-//! When the serializer is human-readable (JSON), u64 values > `MAX_SAFE_INTEGER`
-//! are serialized as strings. Non-human-readable formats (platform_value, bincode)
-//! keep native integer representation.
+//! These are automatically added by the `#[json_safe_fields]` attribute macro.
+//! You should not normally need to reference them directly.
 //!
-//! Usage: `#[serde(with = "json_safe_u64")]` (after `use crate::serialization::json_safe_u64;`)
+//! ## Behavior
+//!
+//! - **JSON** (`is_human_readable() == true`): values > `MAX_SAFE_INTEGER` (2^53 - 1)
+//!   are serialized as strings. Deserialization accepts both numbers and strings.
+//! - **platform_value / bincode** (`is_human_readable() == false`): native integer
+//!   representation, no transformation.
+//!
+//! ## Available modules
+//!
+//! - [`json_safe_u64`] — for `u64` fields
+//! - [`json_safe_i64`] — for `i64` fields
+//! - [`json_safe_option_u64`] — for `Option<u64>` fields
+//! - [`json_safe_option_i64`] — for `Option<i64>` fields
 
 pub(crate) const JS_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 

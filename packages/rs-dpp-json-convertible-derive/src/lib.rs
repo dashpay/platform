@@ -2,7 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{parse_macro_input, Data, DeriveInput, Fields, Ident, Item, Type};
 
 const DEFAULT_BASE_PATH: &str = "crate::serialization";
@@ -250,9 +250,11 @@ fn annotate_fields(fields: &mut syn::FieldsNamed, base_path: &str) -> Vec<Type> 
         } else {
             // This field is not u64/i64 — its type must implement JsonSafeFields
             // to guarantee it doesn't contain unprotected large integers.
-            // Skip fields with #[serde(skip)] or #[serde(flatten)] as they may
-            // have special handling.
-            let has_serde_skip_or_flatten = field.attrs.iter().any(|attr| {
+            // Skip fields that have explicit serde handling:
+            // - skip/skip_serializing/skip_deserializing: not serialized
+            // - flatten: special serde handling
+            // - with: developer explicitly controls serialization
+            let has_serde_override = field.attrs.iter().any(|attr| {
                 if attr.path().is_ident("serde") {
                     let mut found = false;
                     let _ = attr.parse_nested_meta(|meta| {
@@ -260,6 +262,7 @@ fn annotate_fields(fields: &mut syn::FieldsNamed, base_path: &str) -> Vec<Type> 
                             || meta.path.is_ident("skip_serializing")
                             || meta.path.is_ident("skip_deserializing")
                             || meta.path.is_ident("flatten")
+                            || meta.path.is_ident("with")
                         {
                             found = true;
                         }
@@ -270,7 +273,17 @@ fn annotate_fields(fields: &mut syn::FieldsNamed, base_path: &str) -> Vec<Type> 
                     false
                 }
             });
-            if !has_serde_skip_or_flatten {
+            // Also check for serde(with) inside cfg_attr, e.g.
+            // #[cfg_attr(feature = "json-conversion", serde(with = "..."))]
+            let has_cfg_attr_serde_with = field.attrs.iter().any(|attr| {
+                if attr.path().is_ident("cfg_attr") {
+                    let tokens = attr.meta.to_token_stream().to_string();
+                    tokens.contains("serde") && tokens.contains("with")
+                } else {
+                    false
+                }
+            });
+            if !has_serde_override && !has_cfg_attr_serde_with {
                 unannotated_types.push(field.ty.clone());
             }
         }

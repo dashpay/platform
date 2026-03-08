@@ -1,11 +1,26 @@
-//! Serde `with` helpers for maps containing u64 keys and/or values.
+//! Serde `with` modules for `BTreeMap` fields containing u64 keys and/or values.
 //!
-//! These complement `safe_integer.rs` by handling `BTreeMap<u64, u64>`,
-//! `BTreeMap<K, u64>`, and nested maps where u64 values need JS-safe
-//! serialization (stringifying values > `MAX_SAFE_INTEGER`).
+//! Unlike bare u64 fields (handled automatically by `#[json_safe_fields]`), map
+//! fields need explicit `#[serde(with = "...")]` annotations because the macro
+//! cannot inject `serde(with)` into generic container internals.
 //!
-//! Like `safe_integer.rs`, these use `is_human_readable()` to only stringify
-//! in JSON mode — platform_value and bincode stay native.
+//! ## When to use
+//!
+//! If a `#[json_safe_fields]`-annotated struct has a `BTreeMap<K, u64>` field,
+//! the compile-time `JsonSafeFields` check will fail (u64 doesn't implement the
+//! trait). Add one of these modules as a `serde(with)` annotation to fix it.
+//!
+//! ## Available modules
+//!
+//! - [`json_safe_u64_u64_map`] — `BTreeMap<u64, u64>`
+//! - [`json_safe_identifier_u64_map`] — `BTreeMap<Identifier, u64>`
+//! - [`json_safe_generic_u64_value_map`] — `BTreeMap<K, u64>` for any serializable key
+//! - [`json_safe_u64_nested_identifier_u64_map`] — `BTreeMap<u64, BTreeMap<Identifier, u64>>`
+//!
+//! ## Behavior
+//!
+//! Same as `safe_integer.rs`: uses `is_human_readable()` to only stringify in
+//! JSON mode. platform_value and bincode stay native.
 
 use super::safe_integer::JS_MAX_SAFE_INTEGER;
 
@@ -252,6 +267,88 @@ pub mod json_safe_u64_nested_identifier_u64_map {
                     .collect::<Result<_, M::Error>>()?;
 
                 map.insert(k, inner);
+            }
+            Ok(map)
+        }
+    }
+}
+
+/// Generic serde `with` module for `BTreeMap<K, u64>` fields where K is any
+/// serializable/deserializable key type.
+///
+/// - Keys: Use their own serde impl (unchanged).
+/// - Values: Large u64 values are serialized as strings in JSON.
+/// - Non-HR (platform_value): native serialization.
+pub mod json_safe_generic_u64_value_map {
+    use serde::de::{self, Deserializer, MapAccess, Visitor};
+    use serde::ser::{SerializeMap, Serializer};
+    use std::collections::BTreeMap;
+    use std::marker::PhantomData;
+
+    use super::JS_MAX_SAFE_INTEGER;
+
+    pub fn serialize<K, S>(map: &BTreeMap<K, u64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        K: serde::Serialize + Ord,
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            let mut s = serializer.serialize_map(Some(map.len()))?;
+            for (k, v) in map {
+                s.serialize_entry(
+                    k,
+                    &if *v > JS_MAX_SAFE_INTEGER {
+                        serde_json::Value::String(v.to_string())
+                    } else {
+                        serde_json::Value::Number((*v).into())
+                    },
+                )?;
+            }
+            s.end()
+        } else {
+            serde::Serialize::serialize(map, serializer)
+        }
+    }
+
+    pub fn deserialize<'de, K, D>(deserializer: D) -> Result<BTreeMap<K, u64>, D::Error>
+    where
+        K: serde::Deserialize<'de> + Ord,
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_map(GenericU64ValueMapVisitor(PhantomData))
+        } else {
+            serde::Deserialize::deserialize(deserializer)
+        }
+    }
+
+    struct GenericU64ValueMapVisitor<K>(PhantomData<K>);
+
+    impl<'de, K> Visitor<'de> for GenericU64ValueMapVisitor<K>
+    where
+        K: serde::Deserialize<'de> + Ord,
+    {
+        type Value = BTreeMap<K, u64>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a map with u64 values (numbers or strings)")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, mut access: M) -> Result<Self::Value, M::Error> {
+            let mut map = BTreeMap::new();
+            while let Some((key, value)) = access.next_entry::<K, serde_json::Value>()? {
+                let v = match &value {
+                    serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| {
+                        de::Error::custom(format!("expected u64 number, got: {n}"))
+                    }),
+                    serde_json::Value::String(s) => s
+                        .parse::<u64>()
+                        .map_err(|_| de::Error::custom(format!("invalid u64 string: {s}"))),
+                    other => Err(de::Error::custom(format!(
+                        "expected u64 or string, got: {other}"
+                    ))),
+                }?;
+                map.insert(key, v);
             }
             Ok(map)
         }
