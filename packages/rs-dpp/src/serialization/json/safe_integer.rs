@@ -233,8 +233,14 @@ mod tests {
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestOptionU64 {
-        #[serde(with = "json_safe_option_u64")]
+        #[serde(default, with = "json_safe_option_u64")]
         value: Option<u64>,
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TestOptionI64 {
+        #[serde(default, with = "json_safe_option_i64")]
+        value: Option<i64>,
     }
 
     #[test]
@@ -337,6 +343,54 @@ mod tests {
         // platform_value is non-human-readable, so u64 stays as u64
         let restored: TestU64 = platform_value::from_value(pv).unwrap();
         assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_none_round_trip() {
+        let t = TestOptionI64 { value: None };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_null());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_large_round_trip() {
+        let t = TestOptionI64 {
+            value: Some(i64::MAX),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_large_negative_round_trip() {
+        let t = TestOptionI64 {
+            value: Some(i64::MIN),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_missing_field_deserializes_as_none() {
+        let json = serde_json::json!({});
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.value, None);
+    }
+
+    #[test]
+    fn option_u64_missing_field_deserializes_as_none() {
+        let json = serde_json::json!({});
+        let restored: TestOptionU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.value, None);
     }
 
     #[test]

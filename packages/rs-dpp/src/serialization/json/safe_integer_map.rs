@@ -426,6 +426,61 @@ mod tests {
         assert_eq!(t, restored);
     }
 
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+    struct CustomKey(String);
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TestGenericMap {
+        #[serde(with = "json_safe_generic_u64_value_map")]
+        data: BTreeMap<CustomKey, u64>,
+    }
+
+    #[test]
+    fn generic_map_small_values_stay_numbers() {
+        let mut data = BTreeMap::new();
+        data.insert(CustomKey("alice".into()), 42u64);
+        let t = TestGenericMap { data };
+        let json = serde_json::to_value(&t).unwrap();
+
+        let val = &json["data"]["alice"];
+        assert!(val.is_number());
+        assert_eq!(val.as_u64().unwrap(), 42);
+
+        let restored: TestGenericMap = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn generic_map_large_values_become_strings() {
+        let mut data = BTreeMap::new();
+        data.insert(CustomKey("bob".into()), u64::MAX);
+        let t = TestGenericMap { data };
+        let json = serde_json::to_value(&t).unwrap();
+
+        let val = &json["data"]["bob"];
+        assert!(val.is_string());
+        assert_eq!(val.as_str().unwrap(), "18446744073709551615");
+
+        let restored: TestGenericMap = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn generic_map_mixed_values_round_trip() {
+        let mut data = BTreeMap::new();
+        data.insert(CustomKey("small".into()), 100u64);
+        data.insert(CustomKey("large".into()), u64::MAX);
+        let t = TestGenericMap { data };
+        let json = serde_json::to_value(&t).unwrap();
+
+        // Small stays number, large becomes string
+        assert!(json["data"]["small"].is_number());
+        assert!(json["data"]["large"].is_string());
+
+        let restored: TestGenericMap = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
     #[test]
     fn nested_map_round_trip() {
         let id = Identifier::random();

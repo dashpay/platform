@@ -301,27 +301,27 @@ fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
     match ty {
         Type::Path(type_path) => {
             let segments = &type_path.path.segments;
-            if segments.len() == 1 {
-                let ident = &segments[0].ident;
-                if is_u64_type(ident) {
-                    return Some("json_safe_u64");
-                }
-                if is_i64_type(ident) {
-                    return Some("json_safe_i64");
-                }
-                // Check for Option<u64/i64/alias>
-                if ident == "Option" {
-                    if let syn::PathArguments::AngleBracketed(args) = &segments[0].arguments {
-                        if args.args.len() == 1 {
-                            if let syn::GenericArgument::Type(Type::Path(inner)) = &args.args[0] {
-                                if inner.path.segments.len() == 1 {
-                                    let inner_ident = &inner.path.segments[0].ident;
-                                    if is_u64_type(inner_ident) {
-                                        return Some("json_safe_option_u64");
-                                    }
-                                    if is_i64_type(inner_ident) {
-                                        return Some("json_safe_option_i64");
-                                    }
+            // Get the last segment — handles both `u64` and `std::u64` / `crate::prelude::Credits`
+            let last = segments.last()?;
+            let ident = &last.ident;
+
+            if is_u64_type(ident) {
+                return Some("json_safe_u64");
+            }
+            if is_i64_type(ident) {
+                return Some("json_safe_i64");
+            }
+            // Check for Option<u64/i64/alias> — handles both `Option<T>` and `std::option::Option<T>`
+            if ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &last.arguments {
+                    if args.args.len() == 1 {
+                        if let syn::GenericArgument::Type(Type::Path(inner)) = &args.args[0] {
+                            if let Some(inner_last) = inner.path.segments.last() {
+                                if is_u64_type(&inner_last.ident) {
+                                    return Some("json_safe_option_u64");
+                                }
+                                if is_i64_type(&inner_last.ident) {
+                                    return Some("json_safe_option_i64");
                                 }
                             }
                         }
@@ -385,33 +385,29 @@ fn has_serde_derive(attrs: &[syn::Attribute]) -> bool {
     false
 }
 
-/// Check if a field already has `#[serde(default)]` in any of its attributes,
-/// including inside `#[cfg_attr(..., serde(..., default))]`.
+/// Check if a field already has `#[serde(default)]` or `#[serde(default = "...")]`
+/// in any of its attributes, including inside `#[cfg_attr(..., serde(..., default))]`.
+///
 /// Note: cfg_attr on fields inside a struct body is NOT evaluated before
-/// the outer attribute macro processes the struct.
+/// the outer attribute macro processes the struct, so we must scan tokens manually.
 fn has_serde_default(attrs: &[syn::Attribute]) -> bool {
     for attr in attrs {
         let full_tokens = quote! { #attr }.to_string();
-        // Check if this attribute contains "serde" and a standalone "default" token
-        if full_tokens.contains("serde") {
-            // Look for "default" as a standalone item (not part of another word)
-            // by checking token trees
+        // Check if this attribute contains "serde" and a "default" token
+        if full_tokens.contains("serde") && full_tokens.contains("default") {
             if let Ok(list) = attr.meta.require_list() {
                 let token_str = list.tokens.to_string();
-                // Split on commas and check for standalone "default"
-                if token_str.split(',').any(|part| part.trim() == "default") {
+                // Match "default" as standalone or "default = ..." (custom fn)
+                if has_default_in_token_str(&token_str) {
                     return true;
                 }
-                // Also check inside nested parentheses (cfg_attr case)
+                // Also check inside nested groups (cfg_attr case)
                 // e.g., cfg_attr(feature = "...", serde(rename = "...", default))
-                if token_str.contains("default") {
-                    // Deeper check: look for "default" as a standalone word
-                    for tt in list.tokens.clone() {
-                        if let proc_macro2::TokenTree::Group(group) = tt {
-                            let inner = group.stream().to_string();
-                            if inner.split(',').any(|part| part.trim() == "default") {
-                                return true;
-                            }
+                for tt in list.tokens.clone() {
+                    if let proc_macro2::TokenTree::Group(group) = tt {
+                        let inner = group.stream().to_string();
+                        if has_default_in_token_str(&inner) {
+                            return true;
                         }
                     }
                 }
@@ -419,6 +415,15 @@ fn has_serde_default(attrs: &[syn::Attribute]) -> bool {
         }
     }
     false
+}
+
+/// Check if a comma-separated token string contains a "default" item,
+/// either standalone (`default`) or with a custom function (`default = "..."`).
+fn has_default_in_token_str(s: &str) -> bool {
+    s.split(',').any(|part| {
+        let trimmed = part.trim();
+        trimmed == "default" || trimmed.starts_with("default =") || trimmed.starts_with("default=")
+    })
 }
 
 fn is_u64_type(ident: &Ident) -> bool {

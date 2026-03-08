@@ -86,10 +86,11 @@ This means:
 | `Vec<String>` | Passes (String: JsonSafeFields) |
 | `Vec<u64>` | **Compile error** — u64 doesn't implement JsonSafeFields |
 | `BTreeMap<K, u64>` | **Compile error** — needs manual `serde(with)` |
-| `type Foo = u64` (unknown alias) | **Compile error** — Foo is u64, doesn't implement JsonSafeFields |
+| `type Foo = u64` (unknown alias) | **Compile error** — macro doesn't recognize the alias, `JsonSafeFields` assertion fails |
 | Custom struct without `#[json_safe_fields]` | **Compile error** |
-| Field with `#[serde(with = "...")]` | Skipped — developer handles it |
-| Field with `#[serde(skip)]` | Skipped — not serialized |
+| Field with `#[serde(with = "...")]` | Skipped — both auto-annotation and `JsonSafeFields` assertion are skipped; developer takes full responsibility |
+| Field with `#[serde(skip)]` / `skip_serializing` / `skip_deserializing` | Skipped — not serialized |
+| Field with `#[serde(flatten)]` | Skipped — special serde handling, not checked |
 
 ## Maintenance Guide
 
@@ -107,15 +108,17 @@ Add it to `U64_ALIASES` in `src/lib.rs`. If you forget, any struct using the ali
 
 Add `#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]`. The derive will verify that all inner V0 types implement `JsonSafeFields`.
 
-### Adding a `Vec<u64>` or `BTreeMap<K, u64>` field
+### Adding a `BTreeMap<K, u64>` field
 
 These need manual `#[serde(with = "...")]` because the macro can't auto-annotate container internals. Use one of the modules from `serialization::json::safe_integer_map`:
 - `json_safe_u64_u64_map` — for `BTreeMap<u64, u64>`
 - `json_safe_identifier_u64_map` — for `BTreeMap<Identifier, u64>`
-- `json_safe_generic_u64_value_map` — for `BTreeMap<AnyKey, u64>`
+- `json_safe_generic_u64_value_map` — for `BTreeMap<AnyKey, u64>` (works with any serializable key)
 - `json_safe_u64_nested_identifier_u64_map` — for `BTreeMap<u64, BTreeMap<Identifier, u64>>`
 
-Gate the annotation: `#[cfg_attr(feature = "state-transition-json-conversion", serde(with = "..."))]`
+For `Vec<u64>` fields, there is no ready-made module — write a custom `serde(with)` module following the same pattern, or restructure the data.
+
+Gate the annotation with a feature that enables both serde and the json module, e.g.: `#[cfg_attr(feature = "state-transition-json-conversion", serde(with = "..."))]`
 
 ### Adding a simple enum/struct used as a field
 
@@ -130,7 +133,7 @@ All json-safe machinery is behind the `json-conversion` feature:
 
 ### Why not a wrapper serializer?
 
-We considered wrapping the serde `Serializer` to intercept `serialize_u64` globally. This won't work because serde's tagged enum processing (`#[serde(tag)]`, adjacently-tagged) uses internal paths like `serialize_any`/`collect_str` that bypass `serialize_u64`. The per-field `#[serde(with)]` approach intercepts at the field level before serde's enum machinery, so it always works.
+We considered wrapping the serde `Serializer` to intercept `serialize_u64` globally. This won't work because serde's tagged enum processing (`#[serde(tag)]`, adjacently-tagged) buffers field values into an intermediate `Content` representation and re-serializes them, bypassing the custom serializer's `serialize_u64` method. The per-field `#[serde(with)]` approach intercepts at the field level before serde's enum machinery, so it always works.
 
 ## Files
 
