@@ -1,8 +1,9 @@
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use derive_more::From;
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",

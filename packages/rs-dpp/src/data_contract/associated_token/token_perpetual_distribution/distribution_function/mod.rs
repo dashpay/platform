@@ -1,4 +1,5 @@
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -42,7 +43,7 @@ pub const MAX_EXP_N_PARAM: u64 = 32;
 pub const MIN_POL_A_PARAM: i64 = -255;
 pub const MAX_POL_A_PARAM: i64 = 256;
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum DistributionFunction {
     /// Emits a constant (fixed) number of tokens for every period.
@@ -162,7 +163,7 @@ pub enum DistributionFunction {
     /// # Example
     /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
     Stepwise(
-        #[serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_u64_map")] BTreeMap<u64, TokenAmount>,
+        #[cfg_attr(feature = "json-conversion", serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_u64_map"))] BTreeMap<u64, TokenAmount>,
     ),
 
     /// Emits tokens following a linear function that can increase or decrease over time

@@ -5,6 +5,7 @@ mod types;
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
@@ -31,7 +32,7 @@ use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyI
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
 )]

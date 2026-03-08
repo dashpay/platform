@@ -1,5 +1,6 @@
 use crate::balances::credits::TokenAmount;
 use crate::prelude::TimestampMillis;
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
@@ -8,11 +9,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPreProgrammedDistributionV0 {
-    #[serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_nested_identifier_u64_map")]
+    #[cfg_attr(feature = "json-conversion", serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_nested_identifier_u64_map"))]
     pub distributions: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
 }
 

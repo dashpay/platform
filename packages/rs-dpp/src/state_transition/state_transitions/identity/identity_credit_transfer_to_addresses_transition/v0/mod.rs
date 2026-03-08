@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 
 use crate::fee::Credits;
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -34,7 +35,7 @@ use serde::{Deserialize, Serialize};
     PlatformSignable,
     PartialEq,
 )]
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),

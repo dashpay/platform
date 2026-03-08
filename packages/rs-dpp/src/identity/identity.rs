@@ -1,5 +1,6 @@
 #[cfg(feature = "identity-value-conversion")]
 use crate::serialization::ValueConvertible;
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
@@ -51,7 +52,7 @@ pub enum Identity {
 }
 
 /// An identity struct that represent partially set/loaded identity data.
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
     any(

@@ -1,4 +1,6 @@
-use crate::serialization::{json_safe_fields, ValueConvertible};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use crate::block::epoch::{Epoch, EPOCH_0};
@@ -18,7 +20,7 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // Extended block info however is not immutable
 // @immutable
 /// Block information
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     feature = "json-conversion",
     derive(JsonConvertible)

@@ -1,3 +1,4 @@
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::data_contract::TokenContractPosition;
 use crate::group::action_event::GroupActionEvent;
@@ -9,7 +10,7 @@ use platform_value::Identifier;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]

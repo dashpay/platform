@@ -1,3 +1,4 @@
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "vote-serde-conversion")]
 use crate::serialization::ValueConvertible;
@@ -13,7 +14,7 @@ use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
     all(feature = "json-conversion", feature = "vote-serde-conversion"),
     derive(JsonConvertible)

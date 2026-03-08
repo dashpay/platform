@@ -2,6 +2,7 @@ mod conversion;
 #[cfg(feature = "random-identities")]
 pub mod random;
 
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "identity-value-conversion")]
 use crate::serialization::ValueConvertible;
@@ -23,7 +24,7 @@ use bincode::{Decode, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(

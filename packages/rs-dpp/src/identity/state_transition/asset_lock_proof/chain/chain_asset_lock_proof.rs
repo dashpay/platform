@@ -1,4 +1,6 @@
-use crate::serialization::{json_safe_fields, ValueConvertible};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use ::serde::{Deserialize, Serialize};
@@ -13,7 +15,7 @@ use dashcore::OutPoint;
 /// transitions. It is a proof that specific output of dash is locked in credits
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, a height where transaction was chain locked is provided.
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ValueConvertible)]
 #[serde(rename_all = "camelCase")]

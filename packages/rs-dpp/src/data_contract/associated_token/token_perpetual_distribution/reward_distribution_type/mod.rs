@@ -5,6 +5,7 @@ mod validation;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::{DistributionFunction, MAX_DISTRIBUTION_CYCLES_PARAM};
 use crate::prelude::{BlockHeightInterval, DataContract, EpochInterval, TimestampMillisInterval};
 use bincode::{Decode, Encode};
+#[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -12,7 +13,7 @@ use crate::data_contract::accessors::v1::DataContractV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use crate::ProtocolError;
 
-#[json_safe_fields]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks.
