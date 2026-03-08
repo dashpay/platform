@@ -1,4 +1,8 @@
-use crate::drive::saved_block_transactions::compact_nullifiers::ONE_WEEK_IN_MS;
+use super::ONE_WEEK_IN_MS;
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_compacted_nullifiers_path_vec, shielded_nullifiers_expiration_time_path,
+    shielded_nullifiers_expiration_time_path_vec, shielded_recent_nullifiers_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -22,7 +26,7 @@ impl Drive {
     /// nullifiers expiration time tree with the same (start_block, end_block) key.
     ///
     /// Returns the range of blocks that were compacted (start_block, end_block).
-    pub(super) fn compact_nullifiers_with_current_block_v0(
+    pub(in crate::drive) fn compact_nullifiers_with_current_block_v0(
         &self,
         current_nullifiers: &[[u8; 32]],
         current_block_height: u64,
@@ -30,7 +34,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(u64, u64), Error> {
-        let path = Self::saved_block_transactions_nullifiers_path_vec();
+        let path = shielded_recent_nullifiers_path_vec();
 
         // Query all entries from the nullifiers tree
         let mut query = Query::new();
@@ -129,7 +133,7 @@ impl Drive {
 
         // Insert the compacted entry as a plain Item (not ItemWithSumItem)
         batch.add_insert(
-            Self::saved_compacted_block_transactions_nullifiers_path_vec(),
+            shielded_compacted_nullifiers_path_vec(),
             compacted_key.clone(),
             Element::new_item(serialized),
         );
@@ -140,7 +144,7 @@ impl Drive {
 
         // Check if an entry with this expiration time already exists
         // If so, we need to append to the existing vec of block ranges
-        let expiration_path = Self::saved_nullifiers_expiration_time_path();
+        let expiration_path = shielded_nullifiers_expiration_time_path();
 
         let mut drive_operations = vec![];
         let existing_ranges = self.grove_get_raw_optional(
@@ -181,7 +185,7 @@ impl Drive {
 
         // Store in the expiration tree: key = expiration_time, value = vec of (start_block, end_block)
         batch.add_insert(
-            Self::saved_nullifiers_expiration_time_path_vec(),
+            shielded_nullifiers_expiration_time_path_vec(),
             expiration_key,
             Element::new_item(expiration_value),
         );

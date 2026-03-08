@@ -9,3 +9,7 @@ pub(crate) mod estimated_costs;
 /// Prove methods for shielded pool queries
 #[cfg(feature = "server")]
 pub mod prove;
+
+/// Per-block nullifier storage for catch-up sync
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod nullifiers;

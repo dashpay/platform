@@ -1,7 +1,5 @@
-/// The subtree key for nullifiers storage as u8 (must match saved_block_transactions::NULLIFIERS_KEY_U8)
-const NULLIFIERS_KEY_U8: u8 = b'n';
+use crate::drive::shielded::nullifiers::queries::shielded_recent_nullifiers_path_vec;
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
@@ -22,10 +20,7 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, VerifiedNullifierChangesPerBlock), Error> {
-        let path = vec![
-            vec![RootTree::SavedBlockTransactions as u8],
-            vec![NULLIFIERS_KEY_U8],
-        ];
+        let path = shielded_recent_nullifiers_path_vec();
 
         let config = bincode::config::standard()
             .with_big_endian()

@@ -1,3 +1,4 @@
+use crate::drive::shielded::nullifiers::queries::shielded_recent_nullifiers_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::ProtocolError;
@@ -13,14 +14,14 @@ impl Drive {
     ///
     /// Retrieves all nullifier change records from `start_height` onwards.
     /// Returns a vector of (block_height, nullifiers) tuples.
-    pub(super) fn fetch_recent_nullifier_changes_v0(
+    pub(in crate::drive) fn fetch_recent_nullifier_changes_v0(
         &self,
         start_height: u64,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<NullifierChangesPerBlock, Error> {
-        let path = Self::saved_block_transactions_nullifiers_path_vec();
+        let path = shielded_recent_nullifiers_path_vec();
 
         // Create a range query starting from the specified height
         let mut query = Query::new();
@@ -76,14 +77,14 @@ impl Drive {
     }
 
     /// Version 0 implementation for proving nullifier changes from a start height.
-    pub(super) fn prove_recent_nullifier_changes_v0(
+    pub(in crate::drive) fn prove_recent_nullifier_changes_v0(
         &self,
         start_height: u64,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path = Self::saved_block_transactions_nullifiers_path_vec();
+        let path = shielded_recent_nullifiers_path_vec();
 
         // Create a range query starting from the specified height
         let mut query = Query::new();

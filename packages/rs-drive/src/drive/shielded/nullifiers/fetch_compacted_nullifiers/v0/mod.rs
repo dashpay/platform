@@ -1,3 +1,4 @@
+use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::ProtocolError;
@@ -17,14 +18,14 @@ impl Drive {
     /// from block 505) as well as ranges that start after `start_block_height`.
     ///
     /// Returns a vector of (start_block, end_block, nullifiers) tuples.
-    pub(super) fn fetch_compacted_nullifier_changes_v0(
+    pub(in crate::drive) fn fetch_compacted_nullifier_changes_v0(
         &self,
         start_block_height: u64,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<CompactedNullifierChanges, Error> {
-        let path = Self::saved_compacted_block_transactions_nullifiers_path_vec();
+        let path = shielded_compacted_nullifiers_path_vec();
 
         // Keys are 16 bytes: (start_block, end_block), both big-endian.
         // We want ranges where end_block >= start_block_height, which includes:
@@ -201,14 +202,14 @@ impl Drive {
     /// 2. Second query (proving): ascending from the found start_block or start_block_height
     ///
     /// This ensures the proof covers all relevant ranges efficiently.
-    pub(super) fn prove_compacted_nullifier_changes_v0(
+    pub(in crate::drive) fn prove_compacted_nullifier_changes_v0(
         &self,
         start_block_height: u64,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let path = Self::saved_compacted_block_transactions_nullifiers_path_vec();
+        let path = shielded_compacted_nullifiers_path_vec();
 
         // Step 1: Non-proving descending query to find any range containing start_block_height
         let mut desc_end_key = Vec::with_capacity(16);

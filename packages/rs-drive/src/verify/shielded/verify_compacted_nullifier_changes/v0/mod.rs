@@ -1,5 +1,7 @@
-/// The subtree key for compacted nullifiers storage as u8 (must match saved_block_transactions::COMPACTED_NULLIFIERS_KEY_U8)
-const COMPACTED_NULLIFIERS_KEY_U8: u8 = b'o';
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
+};
+use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
@@ -70,9 +72,10 @@ impl Drive {
             })?;
 
         // Navigate to the compacted nullifiers layer
-        // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedNullifiers ('o' = 0x6f)
-        let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];
-        let compacted_key = vec![COMPACTED_NULLIFIERS_KEY_U8];
+        // Path: AddressBalances -> SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
+        let address_balances_key = vec![RootTree::AddressBalances as u8];
+        let pool_key = vec![SHIELDED_CREDIT_POOL_KEY_U8];
+        let compacted_key = vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8];
 
         // Extract KV entries from the compacted layer's merk proof to find
         // if there's a containing range for start_block_height.
@@ -83,7 +86,8 @@ impl Drive {
                 let compacted_layer = v0
                     .root_layer
                     .lower_layers
-                    .get(&saved_block_key)
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
                     .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
@@ -94,7 +98,8 @@ impl Drive {
                 let compacted_layer = v1
                     .root_layer
                     .lower_layers
-                    .get(&saved_block_key)
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
                     .map(|layer| match &layer.merk_proof {
@@ -139,10 +144,7 @@ impl Drive {
         });
 
         // Verify the proof and get results using subset query
-        let path = vec![
-            vec![RootTree::SavedBlockTransactions as u8],
-            vec![COMPACTED_NULLIFIERS_KEY_U8],
-        ];
+        let path = shielded_compacted_nullifiers_path_vec();
 
         let mut query = Query::new();
         query.insert_range_from(start_key..);

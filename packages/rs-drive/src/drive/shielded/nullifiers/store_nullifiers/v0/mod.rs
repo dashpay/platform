@@ -1,18 +1,21 @@
-use crate::drive::saved_block_transactions::NULLIFIERS_KEY_U8;
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_recent_nullifiers_path, SHIELDED_RECENT_NULLIFIERS_KEY_U8,
+};
+use crate::drive::shielded::paths::shielded_credit_pool_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::ProtocolError;
 use grovedb::Element;
 use grovedb::TransactionArg;
-use grovedb_path::SubtreePath;
+
 use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Version 0 implementation of storing nullifiers for a block.
     ///
     /// Serializes the nullifier list using bincode and stores it in the
-    /// SavedBlockTransactions/Nullifiers count sum tree keyed by block height.
+    /// shielded credit pool per-block nullifiers count sum tree keyed by block height.
     /// Each entry is an ItemWithSumItem where:
     /// - The item contains the serialized nullifiers
     /// - The sum value is the number of nullifiers
@@ -20,7 +23,7 @@ impl Drive {
     /// Before storing, checks if compaction thresholds are exceeded and triggers
     /// compaction if necessary. If compaction occurs, the current block's nullifiers
     /// are included in the compaction rather than stored separately.
-    pub(super) fn store_nullifiers_for_block_v0(
+    pub(in crate::drive) fn store_nullifiers_for_block_v0(
         &self,
         nullifiers: &[[u8; 32]],
         block_height: u64,
@@ -66,8 +69,8 @@ impl Drive {
             ))
         })?;
 
-        // Store in the SavedBlockTransactions/Nullifiers count sum tree with block height as key
-        let path: [&[u8]; 2] = Drive::saved_block_transactions_nullifiers_path();
+        // Store in the shielded pool per-block nullifiers count sum tree with block height as key
+        let path = shielded_recent_nullifiers_path();
 
         // Use block height as the key (big-endian for proper ordering)
         let key = block_height.to_be_bytes();
@@ -110,13 +113,13 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        let saved_block_tx_path = Self::saved_block_transactions_path();
+        let pool_path = shielded_credit_pool_path();
 
         // Get the count sum tree element to check current count and sum
         let mut drive_operations = vec![];
         let tree_element = self.grove_get_raw(
-            SubtreePath::from(saved_block_tx_path.as_slice()),
-            &[NULLIFIERS_KEY_U8],
+            (&pool_path).into(),
+            &[SHIELDED_RECENT_NULLIFIERS_KEY_U8],
             DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,

@@ -75,25 +75,26 @@ impl Drive {
         );
 
         // Shielded credit pool: [AddressBalances, "s"]
-        // SumTree containing: notes (CommitmentTree), nullifiers (NormalTree),
-        // total balance (SumItem), anchors (NormalTree)
+        // SumTree containing: notes (CommitmentTree), permanent nullifiers (ProvableCountTree),
+        // total balance (SumItem), anchors (NormalTree), recent nullifiers (CountSumTree),
+        // compacted nullifiers (NormalTree), expiration time (NormalTree)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                estimated_layer_count: EstimatedLevel(4, false),
+                estimated_layer_count: EstimatedLevel(7, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((
                         1,
                         SomeSumTrees {
                             sum_trees_weight: 0,
                             big_sum_trees_weight: 0,
-                            count_trees_weight: 1, // nullifiers (ProvableCountTree)
-                            count_sum_trees_weight: 0,
-                            non_sum_trees_weight: 1, // anchors
+                            count_trees_weight: 1, // permanent nullifiers (ProvableCountTree)
+                            count_sum_trees_weight: 1, // recent nullifiers (CountSumTree)
+                            non_sum_trees_weight: 3, // anchors, compacted nullifiers, expiration time
                         },
                         None,
-                        3, // 3 subtrees: notes (CommitmentTree), nullifiers, anchors
+                        6, // 6 subtrees: notes, permanent nullifiers, anchors, recent nullifiers, compacted nullifiers, expiration time
                     )),
                     items_size: Some((1, 8, None, 1)), // 1 item: total balance
                     references_size: None,

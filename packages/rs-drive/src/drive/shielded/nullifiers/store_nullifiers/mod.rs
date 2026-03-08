@@ -7,7 +7,7 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Stores nullifiers for a block in the SavedBlockTransactions tree.
+    /// Stores nullifiers for a block in the shielded credit pool.
     ///
     /// This method serializes the nullifiers using bincode and stores
     /// them keyed by block height. If compaction thresholds are exceeded, it will

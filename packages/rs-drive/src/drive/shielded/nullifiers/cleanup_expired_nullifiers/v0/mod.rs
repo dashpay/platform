@@ -1,3 +1,6 @@
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_compacted_nullifiers_path_vec, shielded_nullifiers_expiration_time_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -12,13 +15,13 @@ impl Drive {
     ///
     /// Queries for all expiration entries with time <= current_block_time_ms,
     /// then deletes the corresponding compacted entries and the expiration entries.
-    pub(super) fn cleanup_expired_nullifiers_v0(
+    pub(in crate::drive) fn cleanup_expired_nullifiers_v0(
         &self,
         current_block_time_ms: u64,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<usize, Error> {
-        let expiration_path = Self::saved_nullifiers_expiration_time_path_vec();
+        let expiration_path = shielded_nullifiers_expiration_time_path_vec();
 
         // Query all entries with expiration time <= current_block_time_ms
         let mut query = Query::new();
@@ -51,7 +54,7 @@ impl Drive {
         let mut batch = GroveDbOpBatch::new();
         let mut total_cleaned = 0usize;
 
-        let compacted_path = Self::saved_compacted_block_transactions_nullifiers_path_vec();
+        let compacted_path = shielded_compacted_nullifiers_path_vec();
 
         for (expiration_key, element) in key_elements {
             // Get the vec of block ranges from the element
