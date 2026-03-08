@@ -78,11 +78,13 @@ impl DriveLowLevelOperationConverter for ShieldedPoolOperationType {
             }
             ShieldedPoolOperationType::InsertNullifier { nullifier } => {
                 let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
-                Ok(vec![GroveOperation(QualifiedGroveDbOp::insert_only_op(
-                    nullifiers_path,
-                    nullifier.to_vec(),
-                    Element::new_item(vec![]),
-                ))])
+                Ok(vec![GroveOperation(
+                    QualifiedGroveDbOp::insert_only_known_to_not_already_exist_op(
+                        nullifiers_path,
+                        nullifier.to_vec(),
+                        Element::new_item(vec![]),
+                    ),
+                )])
             }
             ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance } => {
                 let pool_path = shielded_credit_pool_path_vec();

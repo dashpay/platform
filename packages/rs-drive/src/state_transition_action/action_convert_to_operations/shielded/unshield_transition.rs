@@ -25,7 +25,7 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                 UnshieldTransitionAction::V0(v0) => {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
-                    // 1. Insert each nullifier (InsertOnly to prevent double-spend)
+                    // 1. Insert each nullifier (known to not exist after validation)
                     insert_nullifiers(&mut ops, &v0.notes);
 
                     // 2. Credit the output address with the unshielded amount

@@ -20,7 +20,7 @@ use crate::version::drive_versions::{
     DriveProveMethodVersions, DriveSavedBlockTransactionsMethodVersions,
     DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
-use grovedb_version::version::v2::GROVE_V2;
+use grovedb_version::version::v3::GROVE_V3;
 
 /// This was introduced in protocol v12 for shielded transactions.
 pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
@@ -127,5 +127,5 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
         },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    grove_version: GROVE_V2,
+    grove_version: GROVE_V3,
 };

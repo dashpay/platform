@@ -85,7 +85,7 @@ impl Drive {
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER),
+            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)?,
         );
 
         // 3. Nullifiers tree (ProvableCountTree)

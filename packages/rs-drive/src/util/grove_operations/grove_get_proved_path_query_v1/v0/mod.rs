@@ -18,7 +18,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let CostContext { value, cost } =
             self.grove
-                .prove_query_v1(path_query, None, &drive_version.grove_version);
+                .prove_query(path_query, None, &drive_version.grove_version);
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::from)
     }

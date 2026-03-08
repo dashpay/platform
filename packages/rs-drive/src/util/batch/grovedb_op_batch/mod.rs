@@ -341,7 +341,9 @@ impl fmt::Display for GroveDbOpBatch {
             writeln!(f, "   Path: {}", path_string)?;
             writeln!(f, "   Key: {}", key_string)?;
             match &op.op {
-                GroveOp::InsertOrReplace { element } | GroveOp::InsertOnly { element } => {
+                GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertWithKnownToNotAlreadyExist { element }
+                | GroveOp::InsertIfNotExists { element, .. } => {
                     let flags = element.get_flags();
                     let flag_info = match flags {
                         None => "No Flags".to_string(),
@@ -694,7 +696,8 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
             let op = if matches!(
                 op,
                 &GroveOp::InsertOrReplace { .. }
-                    | &GroveOp::InsertOnly { .. }
+                    | &GroveOp::InsertWithKnownToNotAlreadyExist { .. }
+                    | &GroveOp::InsertIfNotExists { .. }
                     | &GroveOp::Replace { .. }
                     | &GroveOp::Patch { .. }
             ) {

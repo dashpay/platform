@@ -36,7 +36,7 @@ impl Drive {
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -103,7 +103,7 @@ impl Drive {
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -168,7 +168,7 @@ impl Drive {
                     path_items,
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -233,7 +233,7 @@ impl Drive {
                     path_items,
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;

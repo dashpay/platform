@@ -8,7 +8,7 @@ use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
 use crate::util::batch::DriveOperation;
 
-/// Insert each nullifier (InsertOnly to prevent double-spend).
+/// Insert each nullifier (known to not exist after validation).
 pub(super) fn insert_nullifiers<'a>(
     ops: &mut Vec<DriveOperation<'a>>,
     notes: &[ShieldedActionNote],
