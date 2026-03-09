@@ -82,7 +82,7 @@ def extract_sdk_ignore_annotations(proto_file):
         if not reason:
             continue
 
-        for j in range(i + 1, min(i + 5, len(lines))):
+        for j in range(i + 1, len(lines)):
             rpc_match = re.match(r"\s*rpc\s+(\w+)\s*\(", lines[j])
             if rpc_match:
                 ignored[rpc_match.group(1)] = reason
@@ -93,28 +93,33 @@ def extract_sdk_ignore_annotations(proto_file):
     return ignored
 
 
-def check_query_implementation(query_name, sdk_path):
-    """Check if a query is implemented in the SDK."""
-    if query_name in QUERY_MAPPINGS:
-        patterns = QUERY_MAPPINGS[query_name]
-    else:
-        patterns = [query_name[0].upper() + query_name[1:] + "Request"]
-
+def index_sdk_sources(sdk_path):
+    """Read all .rs files once and return {path: content} dict."""
+    sources = {}
     for root, dirnames, filenames in os.walk(sdk_path):
         dirnames[:] = [d for d in dirnames if d not in {"tests", "test"}]
-
         for file in filenames:
             if file.endswith(".rs"):
                 file_path = os.path.join(root, file)
                 try:
                     with open(file_path, "r") as f:
-                        content = f.read()
-
-                    for pattern in patterns:
-                        if pattern in content:
-                            return True, file_path
+                        sources[file_path] = f.read()
                 except Exception as e:
                     print(f"Warning: Could not read {file_path}: {e}")
+    return sources
+
+
+def check_query_implementation(query_name, sdk_sources):
+    """Check if a query is implemented in the indexed SDK sources."""
+    if query_name in QUERY_MAPPINGS:
+        patterns = QUERY_MAPPINGS[query_name]
+    else:
+        patterns = [query_name[0].upper() + query_name[1:] + "Request"]
+
+    for file_path, content in sdk_sources.items():
+        for pattern in patterns:
+            if pattern in content:
+                return True, file_path
 
     return False, None
 
@@ -193,25 +198,25 @@ def main():
     ignored_queries = extract_sdk_ignore_annotations(proto_file)
 
     query_names = [name for name, _ in all_queries]
-    query_line_map = {name: line for name, line in all_queries}
 
     print(f"Found {len(all_queries)} total queries")
     print(f"Queries with @sdk-ignore: {len(ignored_queries)}")
     print(f"Cached implemented queries: {len(known_queries)}")
 
+    # Index SDK sources once for all lookups
+    sdk_sources = index_sdk_sources(sdk_path)
+
     # Re-check previously implemented queries (detect removed implementations)
     removed_queries = []
     for query in list(known_queries.keys()):
         if query not in query_names:
-            # Query removed from proto entirely
             del known_queries[query]
             removed_queries.append(query)
             continue
         if query in ignored_queries:
-            # Now ignored, remove from implemented cache
             del known_queries[query]
             continue
-        implemented, _ = check_query_implementation(query, sdk_path)
+        implemented, _ = check_query_implementation(query, sdk_sources)
         if not implemented:
             del known_queries[query]
             removed_queries.append(query)
@@ -222,7 +227,6 @@ def main():
     # Check all queries
     implemented_queries = []
     missing_queries = []
-    new_implemented = []
 
     for query_name, line_number in all_queries:
         if query_name in ignored_queries:
@@ -233,12 +237,11 @@ def main():
             continue
 
         print(f"Checking {query_name}...", end=" ")
-        implemented, location = check_query_implementation(query_name, sdk_path)
+        implemented, _ = check_query_implementation(query_name, sdk_sources)
 
         if implemented:
             print("IMPLEMENTED")
             implemented_queries.append(query_name)
-            new_implemented.append(query_name)
             known_queries[query_name] = {"status": "implemented"}
         else:
             print("MISSING")
