@@ -151,7 +151,7 @@ def check_wasm_sdk_documentation():
     import subprocess
 
     result = subprocess.run(
-        ["python3", str(check_script)],
+        [sys.executable, str(check_script)],
         cwd=wasm_sdk_path,
         capture_output=True,
         text=True,
@@ -159,9 +159,11 @@ def check_wasm_sdk_documentation():
 
     errors = []
     if result.returncode != 0:
-        output_lines = result.stdout.strip().split("\n")
-        for line in output_lines:
+        for line in result.stdout.strip().split("\n"):
             if line.startswith("ERROR:"):
+                errors.append(line)
+        for line in result.stderr.strip().split("\n"):
+            if line.strip():
                 errors.append(line)
 
     return result.returncode == 0, errors
