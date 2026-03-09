@@ -93,7 +93,6 @@ service Platform {
       returns (GetTokenDirectPurchasePricesResponse);
   rpc getTokenContractInfo(GetTokenContractInfoRequest)
       returns (GetTokenContractInfoResponse);
-  // @sdk-ignore: Not yet implemented, tracking in backlog
   rpc getTokenPreProgrammedDistributions(
       GetTokenPreProgrammedDistributionsRequest)
       returns (GetTokenPreProgrammedDistributionsResponse);
