@@ -702,7 +702,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4520280);
 
         assert_eq!(
             processing_result
@@ -746,7 +746,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 69131280);
     }
 
     #[test]
@@ -1219,7 +1219,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4345280);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4790840);
 
         assert_eq!(
             processing_result
@@ -1263,7 +1263,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68956280);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 69401840);
     }
 
     #[test]
@@ -1601,7 +1601,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4520280);
 
         assert_eq!(
             processing_result
@@ -1645,7 +1645,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 69131280);
     }
 
     #[test]

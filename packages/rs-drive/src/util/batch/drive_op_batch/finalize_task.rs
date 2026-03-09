@@ -18,11 +18,7 @@ pub trait DriveOperationFinalizationTasks {
 }
 
 impl DriveOperationFinalizeTask {
-    pub fn execute(
-        self,
-        drive: &Drive,
-        _platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
+    pub fn execute(self, drive: &Drive, _platform_version: &PlatformVersion) -> Result<(), Error> {
         match self {
             DriveOperationFinalizeTask::RemoveDataContractFromCache { contract_id } => {
                 drive.cache.data_contracts.remove(contract_id.to_buffer());

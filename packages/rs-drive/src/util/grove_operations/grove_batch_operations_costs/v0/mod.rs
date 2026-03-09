@@ -26,8 +26,6 @@ impl Drive {
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
-                allow_deleting_non_empty_trees: false,
-                deleting_non_empty_trees_returns_error: true,
                 disable_operation_consistency_check: false,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,

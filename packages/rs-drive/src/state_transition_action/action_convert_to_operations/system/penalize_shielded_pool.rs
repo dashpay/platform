@@ -27,14 +27,15 @@ impl DriveHighLevelOperationConverter for PenalizeShieldedPoolAction {
                 }
 
                 // 2. Deduct penalty from pool total balance
-                let new_total_balance =
-                    v0.current_total_balance
-                        .checked_sub(v0.penalty_amount)
-                        .ok_or_else(|| {
-                            Error::Drive(DriveError::CorruptedDriveState(
-                                "shielded pool total balance underflow when subtracting penalty_amount".to_string(),
-                            ))
-                        })?;
+                let new_total_balance = v0
+                    .current_total_balance
+                    .checked_sub(v0.penalty_amount)
+                    .ok_or_else(|| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "shielded pool total balance underflow when subtracting penalty_amount"
+                                .to_string(),
+                        ))
+                    })?;
                 ops.push(DriveOperation::ShieldedPoolOperation(
                     ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
                 ));
