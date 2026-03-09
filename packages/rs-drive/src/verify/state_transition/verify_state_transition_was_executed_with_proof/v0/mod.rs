@@ -960,12 +960,14 @@ impl Drive {
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_id = st.identity_id();
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         st.recipient_addresses().keys(),
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {
@@ -1039,12 +1041,14 @@ impl Drive {
                     .inputs()
                     .keys()
                     .chain(st.output().into_iter().map(|(address, _)| address));
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         addresses_to_check,
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {

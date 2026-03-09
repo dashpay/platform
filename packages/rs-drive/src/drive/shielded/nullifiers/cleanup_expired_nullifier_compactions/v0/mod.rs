@@ -22,6 +22,7 @@ impl Drive {
     /// 2048 nullifiers. With 3s blocks (201,600 blocks/week) and 1-week expiry:
     /// - Normal load (~1 shielded TPS): ~3,150 entries/week
     /// - Extreme load (683 shielded TPS, compaction every block): ~201,600 entries/week
+    ///
     /// Both are well within GroveDB query capacity.
     pub(in crate::drive) fn cleanup_expired_nullifier_compactions_v0(
         &self,

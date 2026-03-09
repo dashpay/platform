@@ -66,5 +66,4 @@ impl Drive {
 
         Ok(nullifier_changes)
     }
-
 }

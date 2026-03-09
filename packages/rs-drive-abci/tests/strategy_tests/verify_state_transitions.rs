@@ -797,10 +797,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 }
                 StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
                     // we expect to get an identity that matches the state transition
+                    // Use verify_subset_of_proof=true because the response proof is a merged
+                    // proof covering both revision (Identities tree) and balance (Balances tree)
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
                         identity_top_up_transition.identity_id().into_buffer(),
-                        false,
+                        true,
                         platform_version,
                     )
                     .expect("expected to verify balance identity for top up");
@@ -828,12 +830,14 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 ) => {
                     // todo: we should also verify the document
                     // we expect to get an identity that matches the state transition
+                    // Use verify_subset_of_proof=true because GroveDB proofs may include
+                    // lower layers for sibling subtrees at the root level
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                         &response_proof.grovedb_proof,
                         identity_credit_withdrawal_transition
                             .identity_id()
                             .into_buffer(),
-                        false,
+                        true,
                         platform_version,
                     )
                     .expect("expected to verify balance identity for withdrawal");

@@ -184,5 +184,4 @@ impl Drive {
 
         Ok(compacted_changes)
     }
-
 }
