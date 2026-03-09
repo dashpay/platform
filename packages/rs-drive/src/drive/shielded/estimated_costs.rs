@@ -78,11 +78,12 @@ impl Drive {
         // SumTree containing: notes (CommitmentTree), permanent nullifiers (ProvableCountTree),
         // total balance (SumItem), anchors (NormalTree), recent nullifiers (CountSumTree),
         // compacted nullifiers (NormalTree), expiration time (NormalTree)
+        // 7 elements total (6 subtrees + 1 item) → balanced Merk depth = ceil(log2(8)) = 3
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                estimated_layer_count: EstimatedLevel(7, false),
+                estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((
                         1,
@@ -91,7 +92,7 @@ impl Drive {
                             big_sum_trees_weight: 0,
                             count_trees_weight: 1, // permanent nullifiers (ProvableCountTree)
                             count_sum_trees_weight: 1, // recent nullifiers (CountSumTree)
-                            non_sum_trees_weight: 3, // anchors, compacted nullifiers, expiration time
+                            non_sum_trees_weight: 4, // notes (CommitmentTree), anchors, compacted nullifiers, expiration time
                         },
                         None,
                         6, // 6 subtrees: notes, permanent nullifiers, anchors, recent nullifiers, compacted nullifiers, expiration time

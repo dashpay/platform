@@ -53,7 +53,6 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_insert_empty_sum_tree: 0,
         batch_move: 0,
         batch_insert_item_with_sum_item_if_not_exists: 0,
-        batch_insert_auto_incremented_items_in_count_tree: 0,
     },
     apply: DriveGroveApplyMethodVersions {
         grove_apply_operation: 0,

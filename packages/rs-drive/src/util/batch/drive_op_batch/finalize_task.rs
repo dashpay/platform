@@ -2,7 +2,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
 
 #[derive(Clone, Debug)]
 pub enum DriveOperationFinalizeTask {
@@ -22,7 +21,6 @@ impl DriveOperationFinalizeTask {
     pub fn execute(
         self,
         drive: &Drive,
-        _transaction: TransactionArg,
         _platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match self {
