@@ -21,7 +21,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
-use drive::util::grove_operations::BatchApplyDriveOperation;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -149,7 +148,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             &platform_version.drive,
         )?;
 
-        self.drive.apply_drive_operations_with_options(
+        self.drive.apply_drive_operations(
             batch,
             true,
             &block_info.to_block_info(epoch_info.try_into()?),
@@ -160,10 +159,6 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                     .block_platform_state()
                     .previous_fee_versions(),
             ),
-            BatchApplyDriveOperation {
-                allow_deleting_non_empty_trees: true,
-                deleting_non_empty_trees_returns_error: false,
-            },
         )?;
 
         let outcome = processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome {

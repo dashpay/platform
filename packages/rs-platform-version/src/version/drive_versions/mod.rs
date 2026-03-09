@@ -161,16 +161,13 @@ pub struct DriveOperationsMethodVersion {
     pub apply_partial_batch_low_level_drive_operations: FeatureVersion,
     pub apply_partial_batch_grovedb_operations: FeatureVersion,
     pub apply_batch_low_level_drive_operations: FeatureVersion,
-    pub apply_batch_low_level_drive_operations_with_options: FeatureVersion,
     pub apply_batch_grovedb_operations: FeatureVersion,
-    pub apply_batch_grovedb_operations_with_options: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveBatchOperationsMethodVersion {
     pub convert_drive_operations_to_grove_operations: FeatureVersion,
     pub apply_drive_operations: FeatureVersion,
-    pub apply_drive_operations_with_options: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
