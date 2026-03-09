@@ -25,6 +25,7 @@ pub enum Vote {
     ResourceVote(ResourceVote),
 }
 
+// Manual impl because Vote is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
 impl JsonConvertible for Vote {}
 

@@ -151,6 +151,12 @@ pub enum TokenEvent {
     DirectPurchase(TokenAmount, Credits),
 }
 
+// Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
+// (TokenAmount, Credits). `#[derive(JsonConvertible)]` would fail: it asserts inner
+// variant types implement `JsonSafeFields`, but TokenAmount/Credits are u64 aliases
+// which intentionally don't. The `#[json_safe_fields]` macro can't annotate tuple
+// variant fields either. Safety is ensured by manual `impl JsonSafeFields` in
+// safe_fields.rs — the developer takes responsibility for these fields.
 #[cfg(all(
     feature = "json-conversion",
     feature = "state-transition-serde-conversion"

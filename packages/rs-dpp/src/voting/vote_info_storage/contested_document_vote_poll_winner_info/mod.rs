@@ -27,5 +27,7 @@ impl fmt::Display for ContestedDocumentVotePollWinnerInfo {
     }
 }
 
+// Manual impl because ContestedDocumentVotePollWinnerInfo is a flat enum
+// (not versioned V0/V1).
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for ContestedDocumentVotePollWinnerInfo {}

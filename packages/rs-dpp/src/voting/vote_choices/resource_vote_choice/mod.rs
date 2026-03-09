@@ -46,6 +46,7 @@ impl fmt::Display for ResourceVoteChoice {
     }
 }
 
+// Manual impl because ResourceVoteChoice is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
 impl JsonConvertible for ResourceVoteChoice {}
 

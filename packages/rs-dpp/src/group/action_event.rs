@@ -22,6 +22,8 @@ pub enum GroupActionEvent {
     TokenEvent(TokenEvent),
 }
 
+// Manual impl because GroupActionEvent is a flat enum (not versioned V0/V1).
+// Its inner type TokenEvent also has a manual impl — see token_event.rs.
 #[cfg(all(
     feature = "json-conversion",
     feature = "state-transition-serde-conversion"

@@ -89,4 +89,7 @@ impl JsonSafeFields for crate::identity::core_script::CoreScript {}
 impl JsonSafeFields for crate::voting::votes::Vote {}
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
+// TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that
+// `#[json_safe_fields]` can't auto-annotate. Developer takes responsibility for
+// JS-safe serialization of these fields. See token_event.rs for details.
 impl JsonSafeFields for crate::tokens::token_event::TokenEvent {}
