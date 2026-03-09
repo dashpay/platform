@@ -1,9 +1,9 @@
 pub mod getters;
 
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::fee::Credits;
 use crate::prelude::{BlockHeight, BlockHeightInterval, CoreBlockHeight, TimestampMillis};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,10 @@ pub struct FinalizedEpochInfoV0 {
     /// Total rewards given from core subsidy
     pub core_block_rewards: Credits,
     /// Block proposers
-    #[cfg_attr(feature = "json-conversion", serde(with = "crate::serialization::json::safe_integer_map::json_safe_identifier_u64_map"))]
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::serialization::json::safe_integer_map::json_safe_identifier_u64_map")
+    )]
     pub block_proposers: BTreeMap<Identifier, u64>,
     /// Fee multiplier that you would divide by 1000 to get float value
     pub fee_multiplier_permille: u64,

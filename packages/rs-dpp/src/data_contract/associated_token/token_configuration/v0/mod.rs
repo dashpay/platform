@@ -1,7 +1,5 @@
 mod accessors;
 
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use crate::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
@@ -19,6 +17,8 @@ use crate::data_contract::change_control_rules::authorized_action_takers::Author
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;

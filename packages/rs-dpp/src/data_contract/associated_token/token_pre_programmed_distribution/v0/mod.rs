@@ -13,7 +13,12 @@ use std::fmt;
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPreProgrammedDistributionV0 {
-    #[cfg_attr(feature = "json-conversion", serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_nested_identifier_u64_map"))]
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(
+            with = "crate::serialization::json::safe_integer_map::json_safe_u64_nested_identifier_u64_map"
+        )
+    )]
     pub distributions: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
 }
 
@@ -30,4 +35,3 @@ impl fmt::Display for TokenPreProgrammedDistributionV0 {
         write!(f, "}}")
     }
 }
-

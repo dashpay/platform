@@ -73,9 +73,18 @@ impl JsonSafeFields for dashcore::OutPoint {}
 // type is a simple enum/struct without u64/i64. The compiler will tell you which
 // type is missing via a `JsonSafeFields is not satisfied` error.
 
-impl JsonSafeFields for crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers {}
-impl JsonSafeFields for crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements {}
-impl JsonSafeFields for crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode {}
+impl JsonSafeFields
+    for crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers
+{
+}
+impl JsonSafeFields
+    for crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements
+{
+}
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode
+{
+}
 impl JsonSafeFields for crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient {}
 impl JsonSafeFields for crate::identity::Purpose {}
 impl JsonSafeFields for crate::identity::SecurityLevel {}

@@ -8,9 +8,9 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
+use crate::identity::KeyID;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::identity::KeyID;
 
 use crate::prelude::{Identifier, IdentityNonce};
 

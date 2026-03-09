@@ -1,8 +1,8 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::data_contract::TokenContractPosition;
 use crate::group::action_event::GroupActionEvent;
 use crate::group::group_action::GroupActionAccessors;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

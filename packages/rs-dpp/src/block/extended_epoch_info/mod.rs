@@ -1,11 +1,11 @@
 pub mod v0;
 
-use crate::serialization::ValueConvertible;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
 use crate::block::epoch::EpochIndex;
 use crate::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
 use crate::protocol_error::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -71,7 +71,6 @@ impl ExtendedEpochInfoV0Getters for ExtendedEpochInfo {
         }
     }
 }
-
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

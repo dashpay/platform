@@ -1,11 +1,11 @@
-#[cfg(feature = "identity-value-conversion")]
-use crate::serialization::ValueConvertible;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AddressNonce, Revision};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "identity-value-conversion")]
+use crate::serialization::ValueConvertible;
 
 #[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;

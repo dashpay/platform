@@ -1,9 +1,9 @@
 pub mod resource_vote;
 
-#[cfg(feature = "vote-serde-conversion")]
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "vote-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use crate::voting::votes::resource_vote::ResourceVote;
 use crate::ProtocolError;

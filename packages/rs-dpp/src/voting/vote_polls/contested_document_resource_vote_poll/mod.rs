@@ -1,10 +1,10 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-#[cfg(feature = "vote-serde-conversion")]
-use crate::serialization::ValueConvertible;
 #[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
 use crate::serialization::JsonConvertible;
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "vote-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

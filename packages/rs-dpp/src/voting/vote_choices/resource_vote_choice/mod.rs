@@ -1,7 +1,7 @@
-#[cfg(feature = "vote-serde-conversion")]
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "vote-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::{
     Abstain, Lock, TowardsIdentity,
 };

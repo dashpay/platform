@@ -1,5 +1,3 @@
-#[cfg(any(feature = "fixtures-and-mocks", feature = "state-transition-serde-conversion"))]
-use crate::serialization::ValueConvertible;
 #[cfg(all(
     feature = "json-conversion",
     any(
@@ -8,6 +6,11 @@ use crate::serialization::ValueConvertible;
     )
 ))]
 use crate::serialization::JsonConvertible;
+#[cfg(any(
+    feature = "fixtures-and-mocks",
+    feature = "state-transition-serde-conversion"
+))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::info::v0::IdentityTokenInfoV0;
 use crate::ProtocolError;
 use bincode::Encode;
@@ -59,7 +62,6 @@ pub enum IdentityTokenInfo {
     )]
     V0(IdentityTokenInfoV0),
 }
-
 
 impl IdentityTokenInfo {
     pub fn new(frozen: bool, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {

@@ -1,7 +1,10 @@
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
+use crate::serialization::JsonConvertible;
 #[cfg(feature = "state-transition-serde-conversion")]
 use crate::serialization::ValueConvertible;
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
-use crate::serialization::JsonConvertible;
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
 use bincode::Encode;
@@ -14,7 +17,10 @@ mod methods;
 pub mod v0;
 
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    all(
+        feature = "json-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
     derive(JsonConvertible)
 )]
 #[derive(

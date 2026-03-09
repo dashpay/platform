@@ -1,9 +1,9 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
 use crate::errors::ProtocolError;
-use bincode::{Decode, Encode};
-use derive_more::From;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use bincode::{Decode, Encode};
+use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt;

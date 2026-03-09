@@ -45,11 +45,14 @@ pub mod json_safe_u64_u64_map {
             let mut s = serializer.serialize_map(Some(map.len()))?;
             for (k, v) in map {
                 // JSON keys are always strings
-                s.serialize_entry(&k.to_string(), &if *v > JS_MAX_SAFE_INTEGER {
-                    serde_json::Value::String(v.to_string())
-                } else {
-                    serde_json::Value::Number((*v).into())
-                })?;
+                s.serialize_entry(
+                    &k.to_string(),
+                    &if *v > JS_MAX_SAFE_INTEGER {
+                        serde_json::Value::String(v.to_string())
+                    } else {
+                        serde_json::Value::Number((*v).into())
+                    },
+                )?;
             }
             s.end()
         } else {
@@ -78,7 +81,9 @@ pub mod json_safe_u64_u64_map {
 
         fn visit_map<M: MapAccess<'de>>(self, mut access: M) -> Result<Self::Value, M::Error> {
             let mut map = BTreeMap::new();
-            while let Some((key, value)) = access.next_entry::<serde_json::Value, serde_json::Value>()? {
+            while let Some((key, value)) =
+                access.next_entry::<serde_json::Value, serde_json::Value>()?
+            {
                 let k = json_value_to_u64(&key).map_err(de::Error::custom)?;
                 let v = json_value_to_u64(&value).map_err(de::Error::custom)?;
                 map.insert(k, v);
@@ -106,9 +111,9 @@ pub mod json_safe_u64_u64_map {
 /// - Values: Large u64 values are serialized as strings in JSON.
 /// - Non-HR (platform_value): native serialization.
 pub mod json_safe_identifier_u64_map {
+    use platform_value::Identifier;
     use serde::de::{self, Deserializer, MapAccess, Visitor};
     use serde::ser::{SerializeMap, Serializer};
-    use platform_value::Identifier;
     use std::collections::BTreeMap;
 
     use super::JS_MAX_SAFE_INTEGER;
@@ -120,11 +125,14 @@ pub mod json_safe_identifier_u64_map {
         if serializer.is_human_readable() {
             let mut s = serializer.serialize_map(Some(map.len()))?;
             for (k, v) in map {
-                s.serialize_entry(k, &if *v > JS_MAX_SAFE_INTEGER {
-                    serde_json::Value::String(v.to_string())
-                } else {
-                    serde_json::Value::Number((*v).into())
-                })?;
+                s.serialize_entry(
+                    k,
+                    &if *v > JS_MAX_SAFE_INTEGER {
+                        serde_json::Value::String(v.to_string())
+                    } else {
+                        serde_json::Value::Number((*v).into())
+                    },
+                )?;
             }
             s.end()
         } else {
@@ -179,9 +187,9 @@ pub mod json_safe_identifier_u64_map {
 /// - Inner values: u64, stringified when large.
 /// - Non-HR (platform_value): native serialization.
 pub mod json_safe_u64_nested_identifier_u64_map {
+    use platform_value::Identifier;
     use serde::de::{self, Deserializer, MapAccess, Visitor};
     use serde::ser::{SerializeMap, Serializer};
-    use platform_value::Identifier;
     use std::collections::BTreeMap;
 
     use super::JS_MAX_SAFE_INTEGER;
@@ -243,9 +251,7 @@ pub mod json_safe_u64_nested_identifier_u64_map {
                     serde_json::Value::String(s) => s
                         .parse::<u64>()
                         .map_err(|_| de::Error::custom(format!("invalid u64 key: {s}"))),
-                    other => Err(de::Error::custom(format!(
-                        "expected u64 key, got: {other}"
-                    ))),
+                    other => Err(de::Error::custom(format!("expected u64 key, got: {other}"))),
                 }?;
 
                 let inner: BTreeMap<Identifier, u64> = inner_json
@@ -255,9 +261,9 @@ pub mod json_safe_u64_nested_identifier_u64_map {
                             serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| {
                                 de::Error::custom(format!("expected u64 value, got: {n}"))
                             }),
-                            serde_json::Value::String(s) => s.parse::<u64>().map_err(|_| {
-                                de::Error::custom(format!("invalid u64 string: {s}"))
-                            }),
+                            serde_json::Value::String(s) => s
+                                .parse::<u64>()
+                                .map_err(|_| de::Error::custom(format!("invalid u64 string: {s}"))),
                             other => Err(de::Error::custom(format!(
                                 "expected u64 or string, got: {other}"
                             ))),
@@ -338,9 +344,9 @@ pub mod json_safe_generic_u64_value_map {
             let mut map = BTreeMap::new();
             while let Some((key, value)) = access.next_entry::<K, serde_json::Value>()? {
                 let v = match &value {
-                    serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| {
-                        de::Error::custom(format!("expected u64 number, got: {n}"))
-                    }),
+                    serde_json::Value::Number(n) => n
+                        .as_u64()
+                        .ok_or_else(|| de::Error::custom(format!("expected u64 number, got: {n}"))),
                     serde_json::Value::String(s) => s
                         .parse::<u64>()
                         .map_err(|_| de::Error::custom(format!("invalid u64 string: {s}"))),
@@ -493,5 +499,4 @@ mod tests {
         let restored: TestNestedMap = serde_json::from_value(json).unwrap();
         assert_eq!(t, restored);
     }
-
 }

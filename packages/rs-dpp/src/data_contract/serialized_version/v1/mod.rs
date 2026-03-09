@@ -12,12 +12,12 @@ use crate::data_contract::{
 };
 use crate::identity::TimestampMillis;
 use crate::prelude::BlockHeight;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use platform_version::FromPlatformVersioned;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

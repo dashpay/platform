@@ -56,7 +56,8 @@ pub mod json_safe_u64 {
         }
 
         fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
-            u64::try_from(v).map_err(|_| de::Error::custom(format!("i64 value {v} out of u64 range")))
+            u64::try_from(v)
+                .map_err(|_| de::Error::custom(format!("i64 value {v} out of u64 range")))
         }
 
         fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {

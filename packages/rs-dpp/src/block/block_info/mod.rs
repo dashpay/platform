@@ -1,10 +1,10 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
-use crate::serialization::ValueConvertible;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
 use crate::block::epoch::{Epoch, EPOCH_0};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -21,11 +21,20 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // @immutable
 /// Block information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[cfg_attr(
-    feature = "json-conversion",
-    derive(JsonConvertible)
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    Debug,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    Serialize,
+    Deserialize,
+    ValueConvertible,
 )]
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize, ValueConvertible)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     /// Block time in milliseconds
@@ -108,7 +117,6 @@ impl BlockInfo {
         }
     }
 }
-
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

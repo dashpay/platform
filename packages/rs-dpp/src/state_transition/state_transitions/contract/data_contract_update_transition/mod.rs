@@ -1,4 +1,7 @@
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::serialization::ValueConvertible;
@@ -40,7 +43,10 @@ pub use v0::*;
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    all(
+        feature = "json-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
     derive(JsonConvertible)
 )]
 #[derive(
@@ -60,7 +66,10 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
+#[cfg_attr(
+    feature = "state-transition-value-conversion",
+    derive(ValueConvertible)
+)]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_update_state_transition"

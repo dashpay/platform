@@ -1,5 +1,3 @@
-#[cfg(feature = "state-transition-serde-conversion")]
-use crate::serialization::ValueConvertible;
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,6 +12,8 @@ use crate::prelude::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;

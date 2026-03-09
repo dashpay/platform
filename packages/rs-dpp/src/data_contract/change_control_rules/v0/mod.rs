@@ -1,9 +1,9 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};

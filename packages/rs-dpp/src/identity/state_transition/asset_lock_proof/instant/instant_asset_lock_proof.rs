@@ -1,8 +1,8 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{deserialize, Encodable};
@@ -198,7 +198,6 @@ impl InstantAssetLockProof {
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]

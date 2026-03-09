@@ -48,7 +48,10 @@ pub type UTXOTransferTransitionLatest = AddressFundsTransferTransitionV0;
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
+#[cfg_attr(
+    feature = "state-transition-value-conversion",
+    derive(ValueConvertible)
+)]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.address_funds_transfer_state_transition"

@@ -1,4 +1,7 @@
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::serialization::ValueConvertible;
@@ -47,7 +50,10 @@ pub const MIN_WITHDRAWAL_AMOUNT: u64 =
 pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTransitionV1;
 
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    all(
+        feature = "json-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
     derive(JsonConvertible)
 )]
 #[derive(
@@ -67,7 +73,10 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(feature = "state-transition-value-conversion", derive(ValueConvertible))]
+#[cfg_attr(
+    feature = "state-transition-value-conversion",
+    derive(ValueConvertible)
+)]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"

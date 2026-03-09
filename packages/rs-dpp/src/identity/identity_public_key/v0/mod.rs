@@ -10,9 +10,9 @@ pub use crate::identity::SecurityLevel;
 
 use bincode::{Decode, Encode};
 
-use platform_value::BinaryData;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;

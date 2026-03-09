@@ -1,7 +1,7 @@
-use crate::serialization::ValueConvertible;
+use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,9 @@ mod methods;
 pub mod v0;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From, ValueConvertible)]
+#[derive(
+    Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From, ValueConvertible,
+)]
 #[serde(tag = "$formatVersion")]
 pub enum TokenConfiguration {
     #[serde(rename = "0")]
@@ -54,10 +56,7 @@ mod tests {
             "baseSupply should be a string for large values, got: {:?}",
             json["baseSupply"]
         );
-        assert_eq!(
-            json["baseSupply"].as_str().unwrap(),
-            u64::MAX.to_string()
-        );
+        assert_eq!(json["baseSupply"].as_str().unwrap(), u64::MAX.to_string());
 
         let restored = TokenConfiguration::from_json(json).expect("from_json should succeed");
         assert_eq!(config, restored);

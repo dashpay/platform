@@ -1,6 +1,6 @@
+use crate::block::block_info::BlockInfo;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::block::block_info::BlockInfo;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};

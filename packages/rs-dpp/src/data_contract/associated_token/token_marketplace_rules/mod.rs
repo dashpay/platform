@@ -1,7 +1,7 @@
-use bincode::{Decode, Encode};
-use derive_more::From;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use bincode::{Decode, Encode};
+use derive_more::From;
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;

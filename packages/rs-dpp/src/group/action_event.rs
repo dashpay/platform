@@ -1,7 +1,7 @@
-#[cfg(feature = "state-transition-serde-conversion")]
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::tokens::token_event::TokenEvent;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

@@ -5,9 +5,9 @@ mod types;
 mod value_conversion;
 mod version;
 
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
 use std::convert::TryFrom;
 

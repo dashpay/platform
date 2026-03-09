@@ -1,7 +1,7 @@
 mod accessors;
-use bincode::Encode;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 use std::fmt;

@@ -1,6 +1,6 @@
+use crate::block::epoch::EpochIndex;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::block::epoch::EpochIndex;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};

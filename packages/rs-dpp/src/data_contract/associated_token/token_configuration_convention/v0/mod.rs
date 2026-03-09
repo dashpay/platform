@@ -1,10 +1,10 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
 };
 use crate::data_contract::associated_token::token_configuration_localization::accessors::v0::TokenConfigurationLocalizationV0Getters;
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};

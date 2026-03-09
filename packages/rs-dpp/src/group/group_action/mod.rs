@@ -1,12 +1,15 @@
 pub mod v0;
 
-#[cfg(feature = "state-transition-serde-conversion")]
-use crate::serialization::ValueConvertible;
-#[cfg(all(feature = "json-conversion", feature = "state-transition-serde-conversion"))]
-use crate::serialization::JsonConvertible;
 use crate::data_contract::TokenContractPosition;
 use crate::group::action_event::GroupActionEvent;
 use crate::group::group_action::v0::GroupActionV0;
+#[cfg(all(
+    feature = "json-conversion",
+    feature = "state-transition-serde-conversion"
+))]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "state-transition-serde-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -15,7 +18,10 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "state-transition-serde-conversion"),
+    all(
+        feature = "json-conversion",
+        feature = "state-transition-serde-conversion"
+    ),
     derive(JsonConvertible)
 )]
 #[derive(

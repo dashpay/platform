@@ -1,8 +1,8 @@
 use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
-use bincode::{Decode, Encode};
-use derive_more::From;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use bincode::{Decode, Encode};
+use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

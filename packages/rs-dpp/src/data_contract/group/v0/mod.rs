@@ -1,5 +1,3 @@
-#[cfg(feature = "json-conversion")]
-use crate::serialization::json_safe_fields;
 use crate::consensus::basic::data_contract::{
     GroupExceedsMaxMembersError, GroupHasTooFewMembersError, GroupMemberHasPowerOfZeroError,
     GroupMemberHasPowerOverLimitError, GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError,
@@ -9,6 +7,8 @@ use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters}
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
 use crate::data_contract::GroupContractPosition;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

@@ -60,12 +60,9 @@ pub fn json_safe_fields(attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
             Ok(meta) => {
-                return syn::Error::new_spanned(
-                    meta.path,
-                    "expected `crate = \"...\"`",
-                )
-                .to_compile_error()
-                .into();
+                return syn::Error::new_spanned(meta.path, "expected `crate = \"...\"`")
+                    .to_compile_error()
+                    .into();
             }
             Err(e) => return e.to_compile_error().into(),
         }

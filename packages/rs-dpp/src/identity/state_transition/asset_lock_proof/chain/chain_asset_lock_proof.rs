@@ -1,8 +1,8 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
@@ -57,7 +57,6 @@ impl ChainAssetLockProof {
         Identifier::new(hash)
     }
 }
-
 
 #[cfg(all(test, feature = "json-conversion"))]
 mod tests {

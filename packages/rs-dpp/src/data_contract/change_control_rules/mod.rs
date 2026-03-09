@@ -1,14 +1,14 @@
 pub mod authorized_action_takers;
 pub mod v0;
 
-use crate::serialization::ValueConvertible;
-#[cfg(feature = "json-conversion")]
-use crate::serialization::JsonConvertible;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::group::Group;
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From, ValueConvertible)]
+#[derive(
+    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From, ValueConvertible,
+)]
 #[serde(tag = "$formatVersion")]
 pub enum ChangeControlRules {
     #[serde(rename = "0")]
