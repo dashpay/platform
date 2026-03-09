@@ -7,6 +7,7 @@ package org.dash.platform.dapi.v0;
 import "google/protobuf/timestamp.proto";
 
 service Platform {
+  // @sdk-ignore: Write-only endpoint, not a query
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
   rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
@@ -42,6 +43,7 @@ service Platform {
       returns (GetIdentityByNonUniquePublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
       returns (WaitForStateTransitionResultResponse);
+  // @sdk-ignore: Consensus params fetched via Tenderdash RPC
   rpc getConsensusParams(GetConsensusParamsRequest)
       returns (GetConsensusParamsResponse);
   rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest)
@@ -91,6 +93,7 @@ service Platform {
       returns (GetTokenDirectPurchasePricesResponse);
   rpc getTokenContractInfo(GetTokenContractInfoRequest)
       returns (GetTokenContractInfoResponse);
+  // @sdk-ignore: Not yet implemented, tracking in backlog
   rpc getTokenPreProgrammedDistributions(
       GetTokenPreProgrammedDistributionsRequest)
       returns (GetTokenPreProgrammedDistributionsResponse);
