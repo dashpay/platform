@@ -627,13 +627,6 @@ struct AccountDetailView: View {
         errorMessage = nil
 
         do {
-<<<<<<< HEAD
-            guard let walletManager = walletService.walletManager else {
-                throw WalletError.walletError("Wallet manager not available")
-            }
-
-=======
->>>>>>> db8ce6d36 (refactoring  wallet service optional fields into not optional)
             // Get extended public key and other details
             let details = try await walletService.walletManager.getAccountDetails(
                 for: wallet,

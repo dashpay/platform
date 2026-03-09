@@ -236,10 +236,11 @@ public class WalletService: ObservableObject {
 
     public func switchNetwork(to network: AppNetwork) async {
         guard network != self.network else { return }
-        self.network = network
         
         print("=== WalletService.switchNetwork START ===")
         print("Switching from \(self.network.rawValue) to \(network.rawValue)")
+        
+        self.network = network
 
         self.stopSync()
         

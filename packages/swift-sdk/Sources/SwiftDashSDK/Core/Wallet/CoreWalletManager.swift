@@ -83,8 +83,7 @@ public class CoreWalletManager: ObservableObject {
         
         do {
             let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonic)
-            let encryptedSeed = try storage.storeSeed(seed, pin: pin)
-            // TODO: Disabled while refactoring wallet.encryptedSeed = encryptedSeed
+            _ = try storage.storeSeed(seed, pin: pin)
         } catch {
             print("Failed to store seed: \(error)")
             // Continue anyway - wallet is already created
@@ -173,7 +172,7 @@ public class CoreWalletManager: ObservableObject {
     }
     
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
-        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: 0)
+        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
     }
     
     /// Get detailed account information including xpub and addresses
@@ -439,7 +438,7 @@ public class CoreWalletManager: ObservableObject {
 
                 // Update wallet ID if it changed (shouldn't happen, but good to verify)
                 if wallet.walletId != restoredWalletId {
-                    print("Warning: Wallet ID changed during restoration. Old: \(wallet.walletId.hexString ?? "nil"), New: \(restoredWalletId.hexString)")
+                    print("Warning: Wallet ID changed during restoration. Old: \(wallet.walletId.hexString), New: \(restoredWalletId.hexString)")
                     wallet.walletId = restoredWalletId
                 }
 
@@ -447,7 +446,6 @@ public class CoreWalletManager: ObservableObject {
                 
                 print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
             } catch {
-                let errorString = String(describing: error)
                 modelContainer.mainContext.delete(wallet)
             }
         }

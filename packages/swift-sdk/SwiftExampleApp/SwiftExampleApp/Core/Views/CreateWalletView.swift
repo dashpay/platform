@@ -271,7 +271,6 @@ struct CreateWalletView: View {
                 print("=== STARTING WALLET CREATION ===")
                 
                 let mnemonic = (showImportOption ? importMnemonic : mnemonic)
-                print("Has mnemonic: \(mnemonic)")
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
@@ -287,7 +286,7 @@ struct CreateWalletView: View {
                 }
 
                 // Create exactly one wallet in the SDK; do not append network to label
-                _ = try await walletService.createWallet(
+                _ = try await walletService.walletManager.createWallet(
                     label: walletLabel,
                     mnemonic: mnemonic,
                     pin: walletPin,
