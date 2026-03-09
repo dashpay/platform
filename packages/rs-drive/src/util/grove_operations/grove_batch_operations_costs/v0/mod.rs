@@ -4,6 +4,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
+use crate::util::grove_operations::BatchApplyDriveOperation;
 use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
 use grovedb::batch::{BatchApplyOptions, KeyInfoPath};
 use grovedb::{EstimatedLayerInformation, GroveDb};
@@ -20,14 +21,37 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
+        self.grove_batch_operations_costs_with_options_v0(
+            ops,
+            estimated_layer_info,
+            validate,
+            BatchApplyDriveOperation::default(),
+            drive_operations,
+            drive_version,
+        )
+    }
+
+    /// Like `grove_batch_operations_costs_v0` but with custom options controlling
+    /// tree deletion behavior.
+    pub(super) fn grove_batch_operations_costs_with_options_v0(
+        &self,
+        ops: GroveDbOpBatch,
+        estimated_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        validate: bool,
+        batch_apply_drive_operation: BatchApplyDriveOperation,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
         let cost_context = GroveDb::estimated_case_operations_for_batch(
             AverageCaseCostsType(estimated_layer_info),
             ops.operations,
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
-                allow_deleting_non_empty_trees: false,
-                deleting_non_empty_trees_returns_error: true,
+                allow_deleting_non_empty_trees: batch_apply_drive_operation
+                    .allow_deleting_non_empty_trees,
+                deleting_non_empty_trees_returns_error: batch_apply_drive_operation
+                    .deleting_non_empty_trees_returns_error,
                 disable_operation_consistency_check: false,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,

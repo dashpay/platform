@@ -58,6 +58,7 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
     apply: DriveGroveApplyMethodVersions {
         grove_apply_operation: 0,
         grove_apply_batch: 0,
+        grove_apply_batch_with_options: 0,
         grove_apply_partial_batch: 0,
     },
     costs: DriveGroveCostMethodVersions {

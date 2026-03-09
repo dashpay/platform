@@ -69,6 +69,7 @@ pub struct DriveGroveBatchMethodVersions {
 pub struct DriveGroveApplyMethodVersions {
     pub grove_apply_operation: FeatureVersion,
     pub grove_apply_batch: FeatureVersion,
+    pub grove_apply_batch_with_options: FeatureVersion,
     pub grove_apply_partial_batch: FeatureVersion,
 }
 

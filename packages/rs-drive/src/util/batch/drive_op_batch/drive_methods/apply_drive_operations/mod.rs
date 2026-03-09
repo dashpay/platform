@@ -1,6 +1,7 @@
 mod v0;
 
 use crate::util::batch::DriveOperation;
+use crate::util::grove_operations::BatchApplyDriveOperation;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
@@ -57,6 +58,42 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_drive_operations".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Like `apply_drive_operations` but with custom options controlling
+    /// tree deletion behavior.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_drive_operations_with_options(
+        &self,
+        operations: Vec<DriveOperation>,
+        apply: bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        batch_apply_drive_operation: BatchApplyDriveOperation,
+    ) -> Result<FeeResult, Error> {
+        match platform_version
+            .drive
+            .methods
+            .batch_operations
+            .apply_drive_operations_with_options
+        {
+            0 => self.apply_drive_operations_with_options_v0(
+                operations,
+                apply,
+                block_info,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+                batch_apply_drive_operation,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "apply_drive_operations_with_options".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

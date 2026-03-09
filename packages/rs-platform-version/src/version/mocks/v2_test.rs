@@ -118,11 +118,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 apply_partial_batch_low_level_drive_operations: 0,
                 apply_partial_batch_grovedb_operations: 0,
                 apply_batch_low_level_drive_operations: 0,
+                apply_batch_low_level_drive_operations_with_options: 0,
                 apply_batch_grovedb_operations: 0,
+                apply_batch_grovedb_operations_with_options: 0,
             },
             batch_operations: DriveBatchOperationsMethodVersion {
                 convert_drive_operations_to_grove_operations: 0,
                 apply_drive_operations: 0,
+                apply_drive_operations_with_options: 0,
             },
             state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1,
             platform_state: DrivePlatformStateMethodVersions {

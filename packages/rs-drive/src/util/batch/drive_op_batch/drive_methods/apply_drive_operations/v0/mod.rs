@@ -1,4 +1,5 @@
 use crate::util::batch::DriveOperation;
+use crate::util::grove_operations::BatchApplyDriveOperation;
 
 use crate::drive::Drive;
 use crate::error::Error;
@@ -21,21 +22,6 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
-    ///
-    /// # Arguments
-    ///
-    /// * `operations` - A vector of `DriveOperation`s to apply to the drive.
-    /// * `apply` - A boolean flag indicating whether to apply the changes or only estimate costs.
-    /// * `block_info` - A reference to information about the current block.
-    /// * `transaction` - Transaction arguments.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the `FeeResult` if the operations are successfully applied,
-    /// otherwise an `Error`.
-    ///
-    /// If `apply` is set to true, it applies the low-level drive operations and updates side info accordingly.
-    /// If not, it only estimates the costs and updates estimated costs with layer info.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v0(
         &self,
@@ -45,6 +31,31 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+    ) -> Result<FeeResult, Error> {
+        self.apply_drive_operations_with_options_v0(
+            operations,
+            apply,
+            block_info,
+            transaction,
+            platform_version,
+            previous_fee_versions,
+            BatchApplyDriveOperation::default(),
+        )
+    }
+
+    /// Like `apply_drive_operations_v0` but with custom options controlling
+    /// tree deletion behavior.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn apply_drive_operations_with_options_v0(
+        &self,
+        operations: Vec<DriveOperation>,
+        apply: bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
+        batch_apply_drive_operation: BatchApplyDriveOperation,
     ) -> Result<FeeResult, Error> {
         if operations.is_empty() {
             return Ok(FeeResult::default());
@@ -74,10 +85,11 @@ impl Drive {
 
         let mut cost_operations = vec![];
 
-        self.apply_batch_low_level_drive_operations(
+        self.apply_batch_low_level_drive_operations_with_options(
             estimated_costs_only_with_layer_info,
             transaction,
             low_level_operations,
+            batch_apply_drive_operation,
             &mut cost_operations,
             &platform_version.drive,
         )?;
