@@ -120,3 +120,47 @@ impl Deref for NullifierExpirationRanges {
         &self.0
     }
 }
+
+/// A single compacted nullifier change entry, representing nullifiers from a range of blocks.
+///
+/// The key in GroveDB is 16 bytes: `(start_block, end_block)` in big-endian.
+pub struct CompactedNullifierChange {
+    /// First block height in the compacted range.
+    pub start_block: u64,
+    /// Last block height in the compacted range.
+    pub end_block: u64,
+    /// The nullifiers from this range of blocks.
+    pub nullifiers: CompactedNullifiers,
+}
+
+impl CompactedNullifierChange {
+    /// Parses start_block and end_block from a 16-byte big-endian key.
+    pub fn parse_key(key: &[u8]) -> Result<(u64, u64), Error> {
+        if key.len() != 16 {
+            return Err(Error::Protocol(Box::new(
+                ProtocolError::CorruptedSerialization(
+                    "invalid compacted block key length, expected 16 bytes".to_string(),
+                ),
+            )));
+        }
+        let start_block = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
+            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                "invalid compacted key slice".to_string(),
+            )))
+        })?);
+        let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                "invalid compacted key slice".to_string(),
+            )))
+        })?);
+        Ok((start_block, end_block))
+    }
+}
+
+/// A single nullifier change entry for a specific block height.
+pub struct NullifierChangePerBlock {
+    /// The block height this entry belongs to.
+    pub block_height: u64,
+    /// The nullifiers added in this block.
+    pub nullifiers: CompactedNullifiers,
+}

@@ -1,6 +1,7 @@
 use crate::drive::shielded::nullifiers::queries::{
     shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
 };
+use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
 use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
@@ -12,8 +13,6 @@ use grovedb::{
     GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
 };
 use platform_version::version::PlatformVersion;
-
-use super::VerifiedCompactedNullifierChanges;
 
 /// Extract KV entries from merk proof bytes using the proper decoder.
 #[allow(clippy::type_complexity)]
@@ -56,7 +55,7 @@ impl Drive {
         start_block_height: u64,
         limit: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, VerifiedCompactedNullifierChanges), Error> {
+    ) -> Result<(RootHash, Vec<CompactedNullifierChange>), Error> {
         // Decode the GroveDBProof to navigate its structure
         let grovedb_proof: GroveDBProof = {
             let config = bincode::config::standard()
@@ -173,22 +172,7 @@ impl Drive {
                 continue;
             };
 
-            if key.len() != 16 {
-                return Err(Error::Proof(ProofError::CorruptedProof(
-                    "invalid compacted block key length, expected 16 bytes".to_string(),
-                )));
-            }
-
-            let range_start = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
-                Error::Proof(ProofError::CorruptedProof(
-                    "invalid key slice length for block height".to_string(),
-                ))
-            })?);
-            let range_end = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
-                Error::Proof(ProofError::CorruptedProof(
-                    "invalid key slice length for block height".to_string(),
-                ))
-            })?);
+            let (start_block, end_block) = CompactedNullifierChange::parse_key(&key)?;
 
             // Get the serialized data from the Item element
             let grovedb::Element::Item(serialized_data, _) = element else {
@@ -197,27 +181,13 @@ impl Drive {
                 )));
             };
 
-            // Deserialize the nullifier list
-            let nullifier_config = bincode::config::standard()
-                .with_big_endian()
-                .with_limit::<{ 128 * 1024 }>();
-            let (nullifiers, bytes_read): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, nullifier_config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode compacted nullifiers: {}",
-                        e
-                    )))
-                })?;
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-            if bytes_read != serialized_data.len() {
-                return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                    "trailing bytes after compacted nullifier decode: read {} of {}",
-                    bytes_read,
-                    serialized_data.len()
-                ))));
-            }
-
-            compacted_changes.push((range_start, range_end, nullifiers));
+            compacted_changes.push(CompactedNullifierChange {
+                start_block,
+                end_block,
+                nullifiers,
+            });
         }
 
         Ok((root_hash, compacted_changes))

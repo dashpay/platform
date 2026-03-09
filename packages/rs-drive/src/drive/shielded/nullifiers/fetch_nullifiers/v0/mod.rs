@@ -1,14 +1,11 @@
 use crate::drive::shielded::nullifiers::queries::shielded_recent_nullifiers_path_vec;
-use crate::drive::shielded::nullifiers::types::CompactedNullifiers;
+use crate::drive::shielded::nullifiers::types::{CompactedNullifiers, NullifierChangePerBlock};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
-
-/// Result type for fetched nullifier changes per block
-pub type NullifierChangesPerBlock = Vec<(u64, Vec<[u8; 32]>)>;
 
 impl Drive {
     /// Version 0 implementation of fetching nullifier changes from a start height.
@@ -21,7 +18,7 @@ impl Drive {
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<NullifierChangesPerBlock, Error> {
+    ) -> Result<Vec<NullifierChangePerBlock>, Error> {
         let path = shielded_recent_nullifiers_path_vec();
 
         // Create a range query starting from the specified height
@@ -59,9 +56,12 @@ impl Drive {
             };
 
             // Deserialize the nullifier list
-            let nullifiers = CompactedNullifiers::decode(&serialized_data)?.into_inner();
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-            nullifier_changes.push((block_height, nullifiers));
+            nullifier_changes.push(NullifierChangePerBlock {
+                block_height,
+                nullifiers,
+            });
         }
 
         Ok(nullifier_changes)

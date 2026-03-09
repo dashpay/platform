@@ -1,15 +1,11 @@
 use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path_vec;
-use crate::drive::shielded::nullifiers::types::CompactedNullifiers;
+use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
-
-/// Result type for fetched compacted nullifier changes
-/// Each entry is (start_block, end_block, nullifiers)
-pub type CompactedNullifierChanges = Vec<(u64, u64, Vec<[u8; 32]>)>;
 
 impl Drive {
     /// Version 0 implementation of fetching compacted nullifier changes.
@@ -25,7 +21,7 @@ impl Drive {
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<CompactedNullifierChanges, Error> {
+    ) -> Result<Vec<CompactedNullifierChange>, Error> {
         let path = shielded_compacted_nullifiers_path_vec();
 
         // Keys are 16 bytes: (start_block, end_block), both big-endian.
@@ -69,24 +65,7 @@ impl Drive {
 
         // Check if we found a range that contains start_block_height
         if let Some((key, element)) = desc_results.to_key_elements().into_iter().next() {
-            if key.len() != 16 {
-                return Err(Error::Protocol(Box::new(
-                    ProtocolError::CorruptedSerialization(
-                        "invalid compacted block key length, expected 16 bytes".to_string(),
-                    ),
-                )));
-            }
-
-            let start_block = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                    "invalid compacted key slice".to_string(),
-                )))
-            })?);
-            let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                    "invalid compacted key slice".to_string(),
-                )))
-            })?);
+            let (start_block, end_block) = CompactedNullifierChange::parse_key(&key)?;
 
             // Only include if end_block >= start_block_height (range contains our block)
             if end_block >= start_block_height {
@@ -98,9 +77,13 @@ impl Drive {
                     )));
                 };
 
-                let nullifiers = CompactedNullifiers::decode(&serialized_data)?.into_inner();
+                let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-                compacted_changes.push((start_block, end_block, nullifiers));
+                compacted_changes.push(CompactedNullifierChange {
+                    start_block,
+                    end_block,
+                    nullifiers,
+                });
             }
         }
 
@@ -135,7 +118,7 @@ impl Drive {
         // Track the (start_block, end_block) from descending query to avoid duplicates
         let desc_range_key = compacted_changes
             .first()
-            .map(|(start, end, _)| (*start, *end));
+            .map(|c| (c.start_block, c.end_block));
 
         for (key, element) in asc_results.to_key_elements() {
             // Check if we've reached the limit
@@ -145,24 +128,7 @@ impl Drive {
                 }
             }
 
-            if key.len() != 16 {
-                return Err(Error::Protocol(Box::new(
-                    ProtocolError::CorruptedSerialization(
-                        "invalid compacted block key length, expected 16 bytes".to_string(),
-                    ),
-                )));
-            }
-
-            let start_block = u64::from_be_bytes(key[0..8].try_into().map_err(|_| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                    "invalid compacted key slice".to_string(),
-                )))
-            })?);
-            let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
-                    "invalid compacted key slice".to_string(),
-                )))
-            })?);
+            let (start_block, end_block) = CompactedNullifierChange::parse_key(&key)?;
 
             // Skip if this is the same range we got from descending query
             if Some((start_block, end_block)) == desc_range_key {
@@ -177,9 +143,13 @@ impl Drive {
                 )));
             };
 
-            let nullifiers = CompactedNullifiers::decode(&serialized_data)?.into_inner();
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-            compacted_changes.push((start_block, end_block, nullifiers));
+            compacted_changes.push(CompactedNullifierChange {
+                start_block,
+                end_block,
+                nullifiers,
+            });
         }
 
         Ok(compacted_changes)

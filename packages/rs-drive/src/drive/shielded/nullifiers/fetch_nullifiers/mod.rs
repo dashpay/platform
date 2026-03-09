@@ -6,26 +6,17 @@ use crate::error::Error;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
-pub use v0::NullifierChangesPerBlock;
+use crate::drive::shielded::nullifiers::types::NullifierChangePerBlock;
 
 impl Drive {
     /// Fetches recent nullifier changes starting from a given block height.
-    ///
-    /// # Arguments
-    /// * `start_height` - The block height to start fetching from
-    /// * `limit` - Optional maximum number of blocks to return
-    /// * `transaction` - Optional database transaction
-    /// * `platform_version` - The platform version
-    ///
-    /// # Returns
-    /// A vector of (block_height, nullifiers) tuples
     pub fn fetch_recent_nullifier_changes(
         &self,
         start_height: u64,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<NullifierChangesPerBlock, Error> {
+    ) -> Result<Vec<NullifierChangePerBlock>, Error> {
         match platform_version
             .drive
             .methods

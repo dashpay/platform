@@ -1,12 +1,11 @@
 use crate::drive::shielded::nullifiers::queries::shielded_recent_nullifiers_path_vec;
+use crate::drive::shielded::nullifiers::types::{CompactedNullifiers, NullifierChangePerBlock};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
-
-use super::VerifiedNullifierChangesPerBlock;
 
 impl Drive {
     /// Verifies recent nullifier changes proof.
@@ -19,12 +18,8 @@ impl Drive {
         limit: Option<u16>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, VerifiedNullifierChangesPerBlock), Error> {
+    ) -> Result<(RootHash, Vec<NullifierChangePerBlock>), Error> {
         let path = shielded_recent_nullifiers_path_vec();
-
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<{ 128 * 1024 }>();
 
         // Create the same range query as the prove function
         let mut query = Query::new();
@@ -61,23 +56,12 @@ impl Drive {
             };
 
             // Deserialize the nullifier list
-            let (nullifiers, bytes_read): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode nullifiers: {}",
-                        e
-                    )))
-                })?;
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-            if bytes_read != serialized_data.len() {
-                return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                    "trailing bytes after nullifier decode: read {} of {}",
-                    bytes_read,
-                    serialized_data.len()
-                ))));
-            }
-
-            nullifier_changes.push((block_height, nullifiers));
+            nullifier_changes.push(NullifierChangePerBlock {
+                block_height,
+                nullifiers,
+            });
         }
 
         Ok((root_hash, nullifier_changes))

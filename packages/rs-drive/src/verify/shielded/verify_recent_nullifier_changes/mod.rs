@@ -1,38 +1,21 @@
 mod v0;
 
+use crate::drive::shielded::nullifiers::types::NullifierChangePerBlock;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
-/// Result type for verified nullifier changes per block
-pub type VerifiedNullifierChangesPerBlock = Vec<(u64, Vec<[u8; 32]>)>;
-
 impl Drive {
     /// Verifies the proof of recent nullifier changes starting from a given block height.
-    ///
-    /// This method validates and extracts nullifier changes from the provided proof.
-    ///
-    /// # Arguments
-    /// - `proof`: A byte slice containing the cryptographic proof for the nullifier changes.
-    /// - `start_block_height`: The block height to start verifying from.
-    /// - `limit`: Optional maximum number of blocks to verify.
-    /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof.
-    /// - `platform_version`: A reference to the platform version.
-    ///
-    /// # Returns
-    /// - `Ok((RootHash, VerifiedNullifierChangesPerBlock))`: On success, returns:
-    ///   - `RootHash`: The root hash of the Merkle tree.
-    ///   - `VerifiedNullifierChangesPerBlock`: Vector of (block_height, nullifiers) tuples.
-    /// - `Err(Error)`: If verification fails.
     pub fn verify_recent_nullifier_changes(
         proof: &[u8],
         start_block_height: u64,
         limit: Option<u16>,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, VerifiedNullifierChangesPerBlock), Error> {
+    ) -> Result<(RootHash, Vec<NullifierChangePerBlock>), Error> {
         match platform_version
             .drive
             .methods
