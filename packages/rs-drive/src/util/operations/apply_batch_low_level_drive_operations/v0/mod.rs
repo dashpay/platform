@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::grove_operations::BatchApplyDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -29,6 +30,37 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 grove_db_operations,
+                drive_operations,
+                drive_version,
+            )?;
+        }
+        drive_operations.append(&mut other_operations);
+        Ok(())
+    }
+
+    /// Like `apply_batch_low_level_drive_operations_v0` but with custom options
+    /// controlling tree deletion behavior.
+    pub(crate) fn apply_batch_low_level_drive_operations_with_options_v0(
+        &self,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        batch_apply_drive_operation: BatchApplyDriveOperation,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        let (grove_db_operations, mut other_operations) =
+            LowLevelDriveOperation::grovedb_operations_batch_consume_with_leftovers(
+                batch_operations,
+            );
+        if !grove_db_operations.is_empty() {
+            self.apply_batch_grovedb_operations_with_options(
+                estimated_costs_only_with_layer_info,
+                transaction,
+                grove_db_operations,
+                batch_apply_drive_operation,
                 drive_operations,
                 drive_version,
             )?;
