@@ -7,14 +7,16 @@ use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_t
 impl ShieldFromAssetLockTransitionActionV0 {
     /// Transforms the shield from asset lock transition into an action
     pub fn try_from_transition(
-        _value: &ShieldFromAssetLockTransitionV0,
+        value: &ShieldFromAssetLockTransitionV0,
         asset_lock_outpoint: [u8; 36],
         asset_lock_value_to_be_consumed: Credits,
         signable_bytes_hasher: [u8; 32],
         shield_amount: Credits,
-        notes: Vec<ShieldedActionNote>,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
+        let notes: Vec<ShieldedActionNote> =
+            value.actions.iter().map(ShieldedActionNote::from).collect();
+
         ConsensusValidationResult::new_with_data(ShieldFromAssetLockTransitionActionV0 {
             asset_lock_outpoint,
             asset_lock_value_to_be_consumed,
