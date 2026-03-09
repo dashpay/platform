@@ -52,7 +52,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -119,7 +119,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -184,7 +184,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -249,7 +249,7 @@ impl Drive {
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
                             if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
