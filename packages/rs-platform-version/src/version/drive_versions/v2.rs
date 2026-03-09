@@ -80,12 +80,15 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
             apply_partial_batch_low_level_drive_operations: 0,
             apply_partial_batch_grovedb_operations: 0,
             apply_batch_low_level_drive_operations: 0,
+            apply_batch_low_level_drive_operations_with_options: 0,
             apply_batch_grovedb_operations: 0,
+            apply_batch_grovedb_operations_with_options: 0,
         },
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1,
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
             apply_drive_operations: 0,
+            apply_drive_operations_with_options: 0,
         },
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
