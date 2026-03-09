@@ -45,6 +45,11 @@ impl Drive {
         let mut compacted_changes = Vec::new();
         let limit_usize = limit.map(|l| l as usize);
 
+        // Short-circuit: if limit is zero, no results should be returned
+        if limit_usize == Some(0) {
+            return Ok(compacted_changes);
+        }
+
         // Query 1: Find if there's a range containing start_block_height
         // Query descending from (start_block_height, u64::MAX) with limit 1
         let mut desc_end_key = Vec::with_capacity(16);
@@ -251,10 +256,11 @@ impl Drive {
                     key
                 }
             } else {
-                let mut key = Vec::with_capacity(16);
-                key.extend_from_slice(&start_block_height.to_be_bytes());
-                key.extend_from_slice(&start_block_height.to_be_bytes());
-                key
+                return Err(Error::Protocol(Box::new(
+                    ProtocolError::CorruptedSerialization(
+                        "invalid compacted block key length, expected 16 bytes".to_string(),
+                    ),
+                )));
             }
         } else {
             let mut key = Vec::with_capacity(16);

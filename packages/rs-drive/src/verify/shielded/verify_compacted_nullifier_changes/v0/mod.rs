@@ -57,19 +57,27 @@ impl Drive {
         limit: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, VerifiedCompactedNullifierChanges), Error> {
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
         // Decode the GroveDBProof to navigate its structure
-        let grovedb_proof: GroveDBProof = bincode::decode_from_slice(proof, bincode_config)
-            .map(|(p, _)| p)
-            .map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode GroveDBProof: {}",
-                    e
-                )))
-            })?;
+        let grovedb_proof: GroveDBProof = {
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_limit::<{ 4 * 1024 * 1024 }>();
+            let (proof_data, bytes_read): (GroveDBProof, usize) =
+                bincode::decode_from_slice(proof, config).map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode GroveDBProof: {}",
+                        e
+                    )))
+                })?;
+            if bytes_read != proof.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "trailing bytes after GroveDBProof decode: read {} of {}",
+                    bytes_read,
+                    proof.len()
+                ))));
+            }
+            proof_data
+        };
 
         // Navigate to the compacted nullifiers layer
         // Path: AddressBalances -> SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
@@ -190,13 +198,24 @@ impl Drive {
             };
 
             // Deserialize the nullifier list
-            let (nullifiers, _): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, bincode_config).map_err(|e| {
+            let nullifier_config = bincode::config::standard()
+                .with_big_endian()
+                .with_limit::<{ 128 * 1024 }>();
+            let (nullifiers, bytes_read): (Vec<[u8; 32]>, usize) =
+                bincode::decode_from_slice(&serialized_data, nullifier_config).map_err(|e| {
                     Error::Proof(ProofError::CorruptedProof(format!(
                         "cannot decode compacted nullifiers: {}",
                         e
                     )))
                 })?;
+
+            if bytes_read != serialized_data.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "trailing bytes after compacted nullifier decode: read {} of {}",
+                    bytes_read,
+                    serialized_data.len()
+                ))));
+            }
 
             compacted_changes.push((range_start, range_end, nullifiers));
         }
