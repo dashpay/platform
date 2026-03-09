@@ -531,22 +531,3 @@ pub enum GroveDBToUse {
     /// Use a specific checkpoint at the given block height
     Checkpoint(u64),
 }
-
-/// Options controlling how a batch of drive operations is applied to GroveDB.
-#[derive(Debug, Clone, Copy)]
-pub struct BatchApplyDriveOperation {
-    /// Allow `DeleteTree` operations to target trees that still have children.
-    pub allow_deleting_non_empty_trees: bool,
-    /// When `true`, GroveDB returns an error when a non-empty tree deletion is
-    /// attempted (even if allowed).
-    pub deleting_non_empty_trees_returns_error: bool,
-}
-
-impl Default for BatchApplyDriveOperation {
-    fn default() -> Self {
-        Self {
-            allow_deleting_non_empty_trees: false,
-            deleting_non_empty_trees_returns_error: true,
-        }
-    }
-}

@@ -6,7 +6,6 @@ use crate::query::GroveError;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
 use crate::util::grove_operations::push_drive_operation_result;
-use crate::util::grove_operations::BatchApplyDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use grovedb::batch::{BatchApplyOptions, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
@@ -19,26 +18,6 @@ impl Drive {
         ops: GroveDbOpBatch,
         validate: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        self.grove_apply_batch_with_add_costs_with_options_v0(
-            ops,
-            validate,
-            transaction,
-            BatchApplyDriveOperation::default(),
-            drive_operations,
-            drive_version,
-        )
-    }
-
-    /// Applies the given groveDB operations batch with custom options.
-    pub(super) fn grove_apply_batch_with_add_costs_with_options_v0(
-        &self,
-        ops: GroveDbOpBatch,
-        validate: bool,
-        transaction: TransactionArg,
-        batch_apply_drive_operation: BatchApplyDriveOperation,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -86,10 +65,8 @@ impl Drive {
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
-                allow_deleting_non_empty_trees: batch_apply_drive_operation
-                    .allow_deleting_non_empty_trees,
-                deleting_non_empty_trees_returns_error: batch_apply_drive_operation
-                    .deleting_non_empty_trees_returns_error,
+                allow_deleting_non_empty_trees: false,
+                deleting_non_empty_trees_returns_error: true,
                 disable_operation_consistency_check: !self.config.batching_consistency_verification,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
