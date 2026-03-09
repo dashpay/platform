@@ -33,6 +33,7 @@ json-schema-compatibility-validator:
 
 dpp:
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
 
 wasm-dpp:
   - packages/wasm-dpp/src/**
