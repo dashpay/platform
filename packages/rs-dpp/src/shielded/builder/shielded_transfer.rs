@@ -70,9 +70,9 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
         None => min_fee,
     };
 
-    let required = transfer_amount
-        .checked_add(effective_fee)
-        .ok_or_else(|| ProtocolError::ShieldedBuildError("fee + transfer_amount overflows u64".to_string()))?;
+    let required = transfer_amount.checked_add(effective_fee).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("fee + transfer_amount overflows u64".to_string())
+    })?;
     if required > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "transfer amount {} + fee {} = {} exceeds total spendable value {}",
@@ -89,7 +89,9 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     for spend in spends {
         builder
             .add_spend(fvk.clone(), spend.note, spend.merkle_path)
-            .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add spend: {:?}", e)))?;
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add spend: {:?}", e))
+            })?;
     }
 
     // Primary output to recipient
@@ -112,7 +114,9 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
                 NoteValue::from_raw(change_amount),
                 [0u8; 36],
             )
-            .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add change output: {:?}", e)))?;
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add change output: {:?}", e))
+            })?;
     }
 
     // ShieldedTransfer has no extra_data in sighash

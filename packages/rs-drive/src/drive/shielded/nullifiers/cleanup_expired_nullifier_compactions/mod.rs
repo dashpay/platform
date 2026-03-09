@@ -22,7 +22,7 @@ impl Drive {
     /// # Returns
     /// * `Ok(usize)` - The number of compacted entries that were cleaned up
     /// * `Err` - An error occurred
-    pub fn cleanup_expired_nullifiers(
+    pub fn cleanup_expired_nullifier_compactions(
         &self,
         current_block_time_ms: u64,
         transaction: TransactionArg,
@@ -32,15 +32,15 @@ impl Drive {
             .drive
             .methods
             .saved_block_transactions
-            .cleanup_expired_nullifiers
+            .cleanup_expired_nullifier_compactions
         {
-            0 => self.cleanup_expired_nullifiers_v0(
+            0 => self.cleanup_expired_nullifier_compactions_v0(
                 current_block_time_ms,
                 transaction,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "cleanup_expired_nullifiers".to_string(),
+                method: "cleanup_expired_nullifier_compactions".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

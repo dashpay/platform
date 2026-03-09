@@ -15,7 +15,7 @@ impl Drive {
     ///
     /// Queries for all expiration entries with time <= current_block_time_ms,
     /// then deletes the corresponding compacted entries and the expiration entries.
-    pub(in crate::drive) fn cleanup_expired_nullifiers_v0(
+    pub(in crate::drive) fn cleanup_expired_nullifier_compactions_v0(
         &self,
         current_block_time_ms: u64,
         transaction: TransactionArg,

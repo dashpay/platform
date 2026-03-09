@@ -1346,7 +1346,8 @@ impl Drive {
                     }
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "shield from asset lock was executed but no proved key values returned".to_string(),
+                        "shield from asset lock was executed but no proved key values returned"
+                            .to_string(),
                     )));
                 };
 

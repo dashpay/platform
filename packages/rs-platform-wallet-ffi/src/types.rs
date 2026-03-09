@@ -21,8 +21,9 @@ impl IdentifierBytes {
 
     #[allow(clippy::result_large_err)]
     pub fn to_identifier(&self) -> Result<dpp::prelude::Identifier, dpp::ProtocolError> {
-        dpp::prelude::Identifier::from_bytes(&self.bytes)
-            .map_err(|_| dpp::ProtocolError::IdentifierError("Invalid identifier bytes".to_string()))
+        dpp::prelude::Identifier::from_bytes(&self.bytes).map_err(|_| {
+            dpp::ProtocolError::IdentifierError("Invalid identifier bytes".to_string())
+        })
     }
 }
 

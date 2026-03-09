@@ -19,7 +19,6 @@ pub const COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY: &[u8; 1] = b"e";
 /// The subtree key for compacted addresses expiration time storage as u8
 pub const COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8: u8 = b'e';
 
-
 impl Drive {
     /// Path to saved block transactions storage.
     pub fn saved_block_transactions_path() -> Vec<Vec<u8>> {
@@ -73,5 +72,4 @@ impl Drive {
             &[COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8],
         ]
     }
-
 }

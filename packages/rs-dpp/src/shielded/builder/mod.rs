@@ -185,7 +185,9 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
     for spend in spends {
         builder
             .add_spend(fvk.clone(), spend.note, spend.merkle_path)
-            .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add spend: {:?}", e)))?;
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add spend: {:?}", e))
+            })?;
     }
 
     builder
@@ -218,18 +220,24 @@ pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
     let (unauthorized, _) = builder
         .build::<i64>(&mut rng)
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to build bundle: {:?}", e)))?
-        .ok_or_else(|| ProtocolError::ShieldedBuildError("bundle was empty after build".to_string()))?;
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError("bundle was empty after build".to_string())
+        })?;
 
     let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
     let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
 
     let proven = unauthorized
         .create_proof(prover.proving_key(), &mut rng)
-        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e)))?;
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!("failed to create proof: {:?}", e))
+        })?;
 
     proven
         .apply_signatures(rng, sighash, signing_keys)
-        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e)))
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!("failed to apply signatures: {:?}", e))
+        })
 }
 
 /// Shared test utilities for builder tests.

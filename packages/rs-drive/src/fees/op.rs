@@ -591,7 +591,9 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             }
         };
 
-        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element))
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, element,
+        ))
     }
 }
 

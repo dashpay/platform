@@ -17,10 +17,10 @@ impl DriveHighLevelOperationConverter for PenalizeShieldedPoolAction {
                 let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                 // 1. Record nullifiers as spent (prevents replaying the same invalid proof)
-                for nullifier in v0.nullifiers.iter() {
+                if !v0.nullifiers.is_empty() {
                     ops.push(DriveOperation::ShieldedPoolOperation(
-                        ShieldedPoolOperationType::InsertNullifier {
-                            nullifier: *nullifier,
+                        ShieldedPoolOperationType::InsertNullifiers {
+                            nullifiers: v0.nullifiers,
                         },
                     ));
                 }

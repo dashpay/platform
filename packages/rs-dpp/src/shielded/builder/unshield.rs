@@ -68,9 +68,9 @@ pub fn build_unshield_transition<P: OrchardProver>(
         None => min_fee,
     };
 
-    let required = unshield_amount
-        .checked_add(effective_fee)
-        .ok_or_else(|| ProtocolError::ShieldedBuildError("fee + unshield_amount overflows u64".to_string()))?;
+    let required = unshield_amount.checked_add(effective_fee).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("fee + unshield_amount overflows u64".to_string())
+    })?;
     if required > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "unshield amount {} + fee {} = {} exceeds total spendable value {}",

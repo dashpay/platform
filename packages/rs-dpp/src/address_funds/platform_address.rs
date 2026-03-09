@@ -307,7 +307,10 @@ impl PlatformAddress {
                     pubkey_hash,
                 )
                 .map_err(|e| {
-                    ProtocolError::AddressWitnessError(format!("P2PKH signature verification failed: {}", e))
+                    ProtocolError::AddressWitnessError(format!(
+                        "P2PKH signature verification failed: {}",
+                        e
+                    ))
                 })?;
 
                 Ok(AddressWitnessVerificationOperations::for_p2pkh(
@@ -368,7 +371,10 @@ impl PlatformAddress {
                         valid_signatures[sig_idx].as_slice(),
                     )
                     .map_err(|e| {
-                        ProtocolError::AddressWitnessError(format!("Invalid signature format: {}", e))
+                        ProtocolError::AddressWitnessError(format!(
+                            "Invalid signature format: {}",
+                            e
+                        ))
                     })?;
 
                     let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
@@ -402,9 +408,11 @@ impl PlatformAddress {
                     "P2PKH address requires P2pkh witness, got P2sh".to_string(),
                 ))
             }
-            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => Err(
-                ProtocolError::AddressWitnessError("P2SH address requires P2sh witness, got P2pkh".to_string()),
-            ),
+            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => {
+                Err(ProtocolError::AddressWitnessError(
+                    "P2SH address requires P2sh witness, got P2pkh".to_string(),
+                ))
+            }
         }
     }
 
