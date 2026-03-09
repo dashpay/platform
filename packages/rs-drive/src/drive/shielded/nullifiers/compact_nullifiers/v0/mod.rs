@@ -3,6 +3,7 @@ use crate::drive::shielded::nullifiers::queries::{
     shielded_compacted_nullifiers_path_vec, shielded_nullifiers_expiration_time_path,
     shielded_nullifiers_expiration_time_path_vec, shielded_recent_nullifiers_path_vec,
 };
+use crate::drive::shielded::nullifiers::types::{CompactedNullifiers, NullifierExpirationRanges};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -52,10 +53,6 @@ impl Drive {
 
         let key_elements = results.to_key_elements();
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
         // Track block range - start with current block
         let mut start_block: u64 = current_block_height;
         let mut end_block: u64 = current_block_height;
@@ -93,16 +90,10 @@ impl Drive {
             };
 
             // Deserialize the nullifier list
-            let (block_nullifiers, _): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                        "cannot decode nullifiers: {}",
-                        e
-                    ))))
-                })?;
+            let block_nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
             // Simply concatenate - no merge semantics needed for nullifiers
-            combined_nullifiers.extend(block_nullifiers);
+            combined_nullifiers.extend(block_nullifiers.iter());
 
             keys_to_delete.push(key);
         }
@@ -111,12 +102,7 @@ impl Drive {
         combined_nullifiers.extend_from_slice(current_nullifiers);
 
         // Serialize the combined nullifiers
-        let serialized = bincode::encode_to_vec(&combined_nullifiers, config).map_err(|e| {
-            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                "cannot encode compacted nullifiers: {}",
-                e
-            ))))
-        })?;
+        let serialized = CompactedNullifiers::new(combined_nullifiers).encode()?;
 
         // Create the compacted key: (start_block, end_block) as 16 bytes
         let mut compacted_key = Vec::with_capacity(16);
@@ -158,29 +144,12 @@ impl Drive {
 
         let expiration_value = if let Some(Element::Item(existing_data, _)) = existing_ranges {
             // Deserialize existing vec of block ranges and append the new one
-            let (mut ranges, _): (Vec<(u64, u64)>, usize) =
-                bincode::decode_from_slice(&existing_data, config).map_err(|e| {
-                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                        "cannot decode expiration block ranges: {}",
-                        e
-                    ))))
-                })?;
+            let mut ranges = NullifierExpirationRanges::decode(&existing_data)?.into_inner();
             ranges.push((start_block, end_block));
-            bincode::encode_to_vec(&ranges, config).map_err(|e| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                    "cannot encode expiration block ranges: {}",
-                    e
-                ))))
-            })?
+            NullifierExpirationRanges::new(ranges).encode()?
         } else {
             // No existing entry, create new vec with single range
-            let ranges: Vec<(u64, u64)> = vec![(start_block, end_block)];
-            bincode::encode_to_vec(&ranges, config).map_err(|e| {
-                Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                    "cannot encode expiration block ranges: {}",
-                    e
-                ))))
-            })?
+            NullifierExpirationRanges::new(vec![(start_block, end_block)]).encode()?
         };
 
         // Store in the expiration tree: key = expiration_time, value = vec of (start_block, end_block)

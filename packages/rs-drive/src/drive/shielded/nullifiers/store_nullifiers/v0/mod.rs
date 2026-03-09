@@ -1,11 +1,11 @@
 use crate::drive::shielded::nullifiers::queries::{
     shielded_recent_nullifiers_path, SHIELDED_RECENT_NULLIFIERS_KEY_U8,
 };
+use crate::drive::shielded::nullifiers::types::CompactedNullifiers;
 use crate::drive::shielded::paths::shielded_credit_pool_path;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
-use dpp::ProtocolError;
 use grovedb::Element;
 use grovedb::TransactionArg;
 
@@ -50,17 +50,8 @@ impl Drive {
             return Ok(());
         }
 
-        // Serialize the nullifiers using bincode
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
-        let serialized = bincode::encode_to_vec(nullifiers, config).map_err(|e| {
-            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                "cannot encode nullifiers: {}",
-                e
-            ))))
-        })?;
+        // Serialize the nullifiers using CompactedNullifiers wrapper
+        let serialized = CompactedNullifiers::new(nullifiers.to_vec()).encode()?;
 
         // The sum value is the number of nullifiers
         let entry_count = i64::try_from(nullifiers.len()).map_err(|_| {

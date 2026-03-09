@@ -1,4 +1,5 @@
 use crate::drive::shielded::nullifiers::queries::shielded_recent_nullifiers_path_vec;
+use crate::drive::shielded::nullifiers::types::CompactedNullifiers;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::ProtocolError;
@@ -37,10 +38,6 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
         let mut nullifier_changes = Vec::new();
 
         for (key, element) in results.to_key_elements() {
@@ -62,13 +59,7 @@ impl Drive {
             };
 
             // Deserialize the nullifier list
-            let (nullifiers, _): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, config).map_err(|e| {
-                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
-                        "cannot decode nullifiers: {}",
-                        e
-                    ))))
-                })?;
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?.into_inner();
 
             nullifier_changes.push((block_height, nullifiers));
         }
@@ -76,27 +67,4 @@ impl Drive {
         Ok(nullifier_changes)
     }
 
-    /// Version 0 implementation for proving nullifier changes from a start height.
-    pub(in crate::drive) fn prove_recent_nullifier_changes_v0(
-        &self,
-        start_height: u64,
-        limit: Option<u16>,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, Error> {
-        let path = shielded_recent_nullifiers_path_vec();
-
-        // Create a range query starting from the specified height
-        let mut query = Query::new();
-        query.insert_range_from(start_height.to_be_bytes().to_vec()..);
-
-        let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
-
-        self.grove_get_proved_path_query(
-            &path_query,
-            transaction,
-            &mut vec![],
-            &platform_version.drive,
-        )
-    }
 }

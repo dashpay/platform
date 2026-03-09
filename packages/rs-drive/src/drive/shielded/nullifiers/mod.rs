@@ -13,4 +13,7 @@ pub mod fetch_nullifiers;
 pub mod queries;
 #[cfg(feature = "server")]
 mod store_nullifiers;
+/// Wrapper types for serialized nullifier data
+#[cfg(feature = "server")]
+pub mod types;
 pub use queries::*;
