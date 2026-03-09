@@ -15,143 +15,11 @@ from pathlib import Path
 from datetime import datetime
 
 
-QUERY_MAPPINGS = {
-    "getIdentity": ["Identity::fetch", "fetch.*identity", "GetIdentityRequest"],
-    "getIdentityKeys": ["identity.*keys", "GetIdentityKeysRequest"],
-    "getIdentitiesContractKeys": [
-        "identities.*contract.*keys",
-        "GetIdentitiesContractKeysRequest",
-    ],
-    "getIdentityNonce": ["identity.*nonce", "GetIdentityNonceRequest"],
-    "getIdentityContractNonce": [
-        "identity.*contract.*nonce",
-        "GetIdentityContractNonceRequest",
-    ],
-    "getIdentityBalance": ["identity.*balance", "GetIdentityBalanceRequest"],
-    "getIdentitiesBalances": ["identities.*balances", "GetIdentitiesBalancesRequest"],
-    "getIdentityBalanceAndRevision": [
-        "identity.*balance.*revision",
-        "GetIdentityBalanceAndRevisionRequest",
-    ],
-    "getIdentityByPublicKeyHash": [
-        "identity.*public.*key.*hash",
-        "GetIdentityByPublicKeyHashRequest",
-    ],
-    "getIdentityByNonUniquePublicKeyHash": [
-        "identity.*non.*unique.*public.*key.*hash",
-        "GetIdentityByNonUniquePublicKeyHashRequest",
-    ],
-    "getDataContract": [
-        "DataContract::fetch",
-        "fetch.*data.*contract",
-        "GetDataContractRequest",
-    ],
-    "getDataContractHistory": [
-        "data.*contract.*history",
-        "GetDataContractHistoryRequest",
-    ],
-    "getDataContracts": ["data.*contracts", "GetDataContractsRequest"],
-    "getDocuments": ["Document::fetch", "fetch.*documents?", "GetDocumentsRequest"],
-    "getEvonodesProposedEpochBlocksByIds": [
-        "evonodes.*proposed.*epoch.*blocks.*ids",
-        "GetEvonodesProposedEpochBlocksByIdsRequest",
-    ],
-    "getEvonodesProposedEpochBlocksByRange": [
-        "evonodes.*proposed.*epoch.*blocks.*range",
-        "GetEvonodesProposedEpochBlocksByRangeRequest",
-    ],
-    "getEpochsInfo": ["epochs.*info", "GetEpochsInfoRequest"],
-    "getFinalizedEpochInfos": ["finalized.*epoch.*infos", "GetFinalizedEpochInfosRequest"],
-    "waitForStateTransitionResult": [
-        "wait.*state.*transition",
-        "WaitForStateTransitionResultRequest",
-    ],
-    "broadcastStateTransition": [
-        "broadcast.*state.*transition",
-        "BroadcastStateTransitionRequest",
-    ],
-    "getConsensusParams": [
-        "consensus.*params",
-        "GetConsensusParamsRequest",
-        "get_consensus_params",
-    ],
-    "getProtocolVersionUpgradeState": [
-        "protocol.*version.*upgrade.*state",
-        "GetProtocolVersionUpgradeStateRequest",
-    ],
-    "getProtocolVersionUpgradeVoteStatus": [
-        "protocol.*version.*upgrade.*vote.*status",
-        "GetProtocolVersionUpgradeVoteStatusRequest",
-    ],
-    "getContestedResources": ["contested.*resources", "GetContestedResourcesRequest"],
-    "getContestedResourceVoteState": [
-        "contested.*resource.*vote.*state",
-        "GetContestedResourceVoteStateRequest",
-    ],
-    "getContestedResourceVotersForIdentity": [
-        "contested.*resource.*voters.*identity",
-        "GetContestedResourceVotersForIdentityRequest",
-    ],
-    "getContestedResourceIdentityVotes": [
-        "contested.*resource.*identity.*votes",
-        "GetContestedResourceIdentityVotesRequest",
-    ],
-    "getVotePollsByEndDate": ["vote.*polls.*end.*date", "GetVotePollsByEndDateRequest"],
-    "getPrefundedSpecializedBalance": [
-        "prefunded.*specialized.*balance",
-        "GetPrefundedSpecializedBalanceRequest",
-    ],
-    "getTotalCreditsInPlatform": [
-        "total.*credits.*platform",
-        "GetTotalCreditsInPlatformRequest",
-    ],
-    "getPathElements": ["path.*elements", "GetPathElementsRequest"],
-    "getStatus": ["get.*status", "GetStatusRequest"],
-    "getCurrentQuorumsInfo": [
-        "current.*quorums.*info",
-        "GetCurrentQuorumsInfoRequest",
-    ],
-    "getIdentityTokenBalances": [
-        "identity.*token.*balances",
-        "GetIdentityTokenBalancesRequest",
-    ],
-    "getIdentitiesTokenBalances": [
-        "identities.*token.*balances",
-        "GetIdentitiesTokenBalancesRequest",
-    ],
-    "getIdentityTokenInfos": ["identity.*token.*infos", "GetIdentityTokenInfosRequest"],
-    "getIdentitiesTokenInfos": [
-        "identities.*token.*infos",
-        "GetIdentitiesTokenInfosRequest",
-    ],
-    "getTokenStatuses": ["token.*statuses", "GetTokenStatusesRequest"],
-    "getTokenDirectPurchasePrices": [
-        "token.*direct.*purchase.*prices",
-        "GetTokenDirectPurchasePricesRequest",
-    ],
-    "getTokenContractInfo": [
-        "token.*contract.*info",
-        "GetTokenContractInfoRequest",
-        "get_token_contract_info",
-    ],
-    "getTokenPreProgrammedDistributions": [
-        "token.*pre.*programmed.*distributions",
-        "GetTokenPreProgrammedDistributionsRequest",
-        "get_token_pre_programmed_distributions",
-    ],
-    "getTokenPerpetualDistributionLastClaim": [
-        "token.*perpetual.*distribution.*last.*claim",
-        "GetTokenPerpetualDistributionLastClaimRequest",
-    ],
-    "getTokenTotalSupply": ["token.*total.*supply", "GetTokenTotalSupplyRequest"],
-    "getGroupInfo": ["group.*info", "GetGroupInfoRequest"],
-    "getGroupInfos": ["group.*infos", "GetGroupInfosRequest"],
-    "getGroupActions": ["group.*actions", "GetGroupActionsRequest"],
-    "getGroupActionSigners": [
-        "group.*action.*signers",
-        "GetGroupActionSignersRequest",
-    ],
-}
+# Optional overrides for auto-derived search patterns.
+# Format: {"rpcMethodName": ["pattern1", "pattern2", ...]}
+# By default, the script derives the pattern by capitalizing the first letter
+# and appending "Request" (e.g., getIdentity -> GetIdentityRequest).
+QUERY_MAPPINGS = {}
 
 
 def extract_grpc_queries(proto_file):
@@ -227,7 +95,10 @@ def extract_sdk_ignore_annotations(proto_file):
 
 def check_query_implementation(query_name, sdk_path):
     """Check if a query is implemented in the SDK."""
-    patterns = QUERY_MAPPINGS.get(query_name, [query_name])
+    if query_name in QUERY_MAPPINGS:
+        patterns = QUERY_MAPPINGS[query_name]
+    else:
+        patterns = [query_name[0].upper() + query_name[1:] + "Request"]
 
     for root, dirnames, filenames in os.walk(sdk_path):
         dirnames[:] = [d for d in dirnames if d not in {"tests", "test"}]
@@ -240,7 +111,7 @@ def check_query_implementation(query_name, sdk_path):
                         content = f.read()
 
                     for pattern in patterns:
-                        if re.search(pattern, content, re.IGNORECASE):
+                        if pattern in content:
                             return True, file_path
                 except Exception as e:
                     print(f"Warning: Could not read {file_path}: {e}")
@@ -373,33 +244,31 @@ def main():
             print("MISSING")
             missing_queries.append((query_name, line_number))
 
-    # Build report
+    # Build Markdown report (used as GitHub PR comment)
     report_lines = []
-    report_lines.append("=" * 80)
-    report_lines.append("gRPC Query Coverage Report")
-    report_lines.append("=" * 80)
-    report_lines.append(f"\nTotal queries in proto: {len(all_queries)}")
-    report_lines.append(f"Implemented: {len(implemented_queries)}")
-    report_lines.append(f"Ignored (@sdk-ignore): {len(ignored_queries)}")
-    report_lines.append(f"Missing: {len(missing_queries)}")
-
-    if implemented_queries:
-        report_lines.append("\n" + "-" * 80)
-        report_lines.append("Implemented:")
-        for q in sorted(implemented_queries):
-            report_lines.append(f"  [implemented] {q}")
-
-    if ignored_queries:
-        report_lines.append("\n" + "-" * 80)
-        report_lines.append("Ignored (@sdk-ignore):")
-        for q in sorted(ignored_queries):
-            report_lines.append(f"  [ignored] {q} -- {ignored_queries[q]}")
+    report_lines.append(f"**Total:** {len(all_queries)} queries — "
+                        f"{len(implemented_queries)} implemented, "
+                        f"{len(ignored_queries)} ignored, "
+                        f"{len(missing_queries)} missing")
 
     if missing_queries:
-        report_lines.append("\n" + "-" * 80)
-        report_lines.append("Missing:")
+        report_lines.append("\n#### ❌ Missing")
         for q, line in sorted(missing_queries):
-            report_lines.append(f"  [missing] {q} (line {line})")
+            report_lines.append(f"- `{q}` (line {line})")
+
+    if ignored_queries:
+        report_lines.append("\n<details>\n<summary>⏭️ Ignored (@sdk-ignore) "
+                            f"({len(ignored_queries)})</summary>\n")
+        for q in sorted(ignored_queries):
+            report_lines.append(f"- `{q}` — {ignored_queries[q]}")
+        report_lines.append("\n</details>")
+
+    if implemented_queries:
+        report_lines.append("\n<details>\n<summary>✅ Implemented "
+                            f"({len(implemented_queries)})</summary>\n")
+        for q in sorted(implemented_queries):
+            report_lines.append(f"- `{q}`")
+        report_lines.append("\n</details>")
 
     # Save cache (only implemented queries)
     save_cache(cache_file, {"known_queries": known_queries})

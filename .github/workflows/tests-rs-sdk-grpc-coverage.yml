@@ -107,7 +107,7 @@ jobs:
                 comment.body.includes('gRPC Query Coverage Report')
               );
 
-              const body = `### ${status} gRPC Query Coverage Report\n\n\`\`\`\n${report}\n\`\`\``;
+              const body = `### ${status} gRPC Query Coverage Report\n\n${report}`;
 
               if (botComment) {
                 await github.rest.issues.updateComment({
