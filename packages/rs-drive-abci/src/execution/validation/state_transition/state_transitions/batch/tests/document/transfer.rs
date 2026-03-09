@@ -386,7 +386,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3721740);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
 
         let query_sender_results = platform
             .drive
@@ -632,7 +632,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3983520);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3631040);
 
         let query_sender_results = platform
             .drive
@@ -884,7 +884,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3721740);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
 
         let query_sender_results = platform
             .drive
@@ -1440,7 +1440,7 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4431700);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3991900);
 
         let query_sender_results = platform
             .drive
