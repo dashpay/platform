@@ -3,7 +3,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::GroveDbOpBatch;
-use crate::util::grove_operations::BatchApplyDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -43,41 +42,6 @@ impl Drive {
                 batch_operations,
                 false,
                 transaction,
-                drive_operations,
-                drive_version,
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Like `apply_batch_grovedb_operations_v0` but with custom options
-    /// controlling tree deletion behavior.
-    pub(super) fn apply_batch_grovedb_operations_with_options_v0(
-        &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        transaction: TransactionArg,
-        batch_operations: GroveDbOpBatch,
-        batch_apply_drive_operation: BatchApplyDriveOperation,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
-            self.grove_batch_operations_costs_with_options(
-                batch_operations,
-                estimated_layer_info,
-                false,
-                batch_apply_drive_operation,
-                drive_operations,
-                drive_version,
-            )?;
-        } else {
-            self.grove_apply_batch_with_add_costs_with_options(
-                batch_operations,
-                false,
-                transaction,
-                batch_apply_drive_operation,
                 drive_operations,
                 drive_version,
             )?;

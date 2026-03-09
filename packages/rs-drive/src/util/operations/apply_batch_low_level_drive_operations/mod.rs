@@ -4,7 +4,6 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::grove_operations::BatchApplyDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
@@ -53,40 +52,6 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_batch_low_level_drive_operations".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
-    /// Like `apply_batch_low_level_drive_operations` but with custom options
-    /// controlling tree deletion behavior.
-    pub fn apply_batch_low_level_drive_operations_with_options(
-        &self,
-        estimated_costs_only_with_layer_info: Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        transaction: TransactionArg,
-        batch_operations: Vec<LowLevelDriveOperation>,
-        batch_apply_drive_operation: BatchApplyDriveOperation,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        match drive_version
-            .methods
-            .operations
-            .apply_batch_low_level_drive_operations_with_options
-        {
-            0 => self.apply_batch_low_level_drive_operations_with_options_v0(
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-                batch_apply_drive_operation,
-                drive_operations,
-                drive_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "apply_batch_low_level_drive_operations_with_options".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
