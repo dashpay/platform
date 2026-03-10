@@ -224,6 +224,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     /// Masternode vote transitions do not support user fee increase; always returns 0.
+    /// This method is kept for API compatibility.
     #[wasm_bindgen(js_name=getUserFeeIncrease)]
     pub fn get_user_fee_increase(&self) -> u16 {
         0
