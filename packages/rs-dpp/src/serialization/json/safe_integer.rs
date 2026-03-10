@@ -395,6 +395,96 @@ mod tests {
     }
 
     #[test]
+    fn u64_deserialize_from_i64_value() {
+        // Tests visit_i64 path: JSON number that fits in i64 parsed as u64
+        let json = serde_json::json!({"value": 42});
+        let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.value, 42);
+    }
+
+    #[test]
+    fn u64_deserialize_negative_i64_fails() {
+        // Tests visit_i64 error path: negative i64 can't become u64
+        let json = serde_json::json!({"value": -1});
+        let result = serde_json::from_value::<TestU64>(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("out of u64 range"));
+    }
+
+    #[test]
+    fn u64_deserialize_invalid_string_fails() {
+        let json = serde_json::json!({"value": "not_a_number"});
+        let result = serde_json::from_value::<TestU64>(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid u64 string"));
+    }
+
+    #[test]
+    fn i64_deserialize_u64_overflow_fails() {
+        // Tests visit_u64 error path: u64::MAX can't fit in i64
+        let json = serde_json::json!({"value": u64::MAX.to_string()});
+        // This goes through visit_str which parses as i64 — will fail
+        let result = serde_json::from_value::<TestI64>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn i64_deserialize_invalid_string_fails() {
+        let json = serde_json::json!({"value": "not_a_number"});
+        let result = serde_json::from_value::<TestI64>(json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid i64 string"));
+    }
+
+    #[test]
+    fn platform_value_i64_stays_native() {
+        let t = TestI64 { value: i64::MAX };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestI64 = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn platform_value_option_u64_round_trip() {
+        let t = TestOptionU64 {
+            value: Some(u64::MAX),
+        };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestOptionU64 = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn platform_value_option_i64_round_trip() {
+        let t = TestOptionI64 {
+            value: Some(i64::MIN),
+        };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestOptionI64 = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_u64_small_value_stays_number() {
+        let t = TestOptionU64 { value: Some(42) };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_small_value_stays_number() {
+        let t = TestOptionI64 { value: Some(-42) };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
     fn tagged_enum_with_u64_round_trip() {
         #[derive(Debug, PartialEq, Serialize, Deserialize)]
         #[serde(tag = "$formatVersion")]

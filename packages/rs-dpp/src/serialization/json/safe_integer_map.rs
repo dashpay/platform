@@ -364,6 +364,7 @@ pub mod json_safe_generic_u64_value_map {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_value::string_encoding::Encoding;
     use platform_value::Identifier;
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
@@ -484,6 +485,82 @@ mod tests {
         assert!(json["data"]["large"].is_string());
 
         let restored: TestGenericMap = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u64_u64_map_small_values_stay_numbers() {
+        let mut data = BTreeMap::new();
+        data.insert(5u64, 10u64);
+        let t = TestU64U64Map { data };
+        let json = serde_json::to_value(&t).unwrap();
+        let map_obj = json["data"].as_object().unwrap();
+        let val = &map_obj["5"];
+        assert!(val.is_number());
+
+        let restored: TestU64U64Map = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u64_u64_map_empty_round_trip() {
+        let t = TestU64U64Map {
+            data: BTreeMap::new(),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        let restored: TestU64U64Map = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn identifier_u64_map_empty_round_trip() {
+        let t = TestIdentifierU64Map {
+            data: BTreeMap::new(),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        let restored: TestIdentifierU64Map = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn platform_value_generic_map_round_trip() {
+        let mut data = BTreeMap::new();
+        data.insert(CustomKey("x".into()), u64::MAX);
+        let t = TestGenericMap { data };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestGenericMap = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u64_u64_map_invalid_value_type_fails() {
+        let json = serde_json::json!({"data": {"1": true}});
+        let result = serde_json::from_value::<TestU64U64Map>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn u64_u64_map_invalid_value_string_fails() {
+        let json = serde_json::json!({"data": {"1": "not_a_number"}});
+        let result = serde_json::from_value::<TestU64U64Map>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn identifier_u64_map_invalid_value_type_fails() {
+        let id = Identifier::random();
+        let json = serde_json::json!({"data": {id.to_string(Encoding::Base58): [1, 2, 3]}});
+        let result = serde_json::from_value::<TestIdentifierU64Map>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn nested_map_empty_inner_round_trip() {
+        let mut data = BTreeMap::new();
+        data.insert(1u64, BTreeMap::new());
+        let t = TestNestedMap { data };
+        let json = serde_json::to_value(&t).unwrap();
+        let restored: TestNestedMap = serde_json::from_value(json).unwrap();
         assert_eq!(t, restored);
     }
 
