@@ -1,7 +1,7 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_to_u64};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u64};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -192,22 +192,7 @@ pub fn inputs_from_js_options(
     options: &JsValue,
     field_name: &str,
 ) -> WasmDppResult<Vec<PlatformAddressInputWasm>> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
-    })?;
-    if value.is_undefined() || value.is_null() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' is required",
-            field_name
-        )));
-    }
-    if !js_sys::Array::is_array(&value) {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be an array",
-            field_name
-        )));
-    }
-    let array = js_sys::Array::from(&value);
+    let array = try_from_options_with(options, field_name, |v| try_to_array(v, field_name))?;
     array
         .iter()
         .enumerate()
@@ -232,22 +217,7 @@ pub fn outputs_from_js_options(
     options: &JsValue,
     field_name: &str,
 ) -> WasmDppResult<Vec<PlatformAddressOutputWasm>> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
-    })?;
-    if value.is_undefined() || value.is_null() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' is required",
-            field_name
-        )));
-    }
-    if !js_sys::Array::is_array(&value) {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' must be an array",
-            field_name
-        )));
-    }
-    let array = js_sys::Array::from(&value);
+    let array = try_from_options_with(options, field_name, |v| try_to_array(v, field_name))?;
     array
         .iter()
         .enumerate()
