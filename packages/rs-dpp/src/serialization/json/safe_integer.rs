@@ -416,7 +416,10 @@ mod tests {
         let json = serde_json::json!({"value": "not_a_number"});
         let result = serde_json::from_value::<TestU64>(json);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid u64 string"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid u64 string"));
     }
 
     #[test]
@@ -433,7 +436,10 @@ mod tests {
         let json = serde_json::json!({"value": "not_a_number"});
         let result = serde_json::from_value::<TestI64>(json);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("invalid i64 string"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid i64 string"));
     }
 
     #[test]
