@@ -1,3 +1,4 @@
 .env
 .claude-host-config/
 .main-git-resolved
+.claude-config-resolved

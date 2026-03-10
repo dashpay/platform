@@ -59,6 +59,7 @@ fi
 # at a known path that always points to the real .git directory.
 # This way the same devcontainer.json works for both worktrees and main repo.
 RESOLVED=".devcontainer/.main-git-resolved"
+rm -rf "$RESOLVED"
 
 if [ -f .git ]; then
     # Worktree: .git file contains "gitdir: /path/to/main/.git/worktrees/name"
@@ -66,13 +67,13 @@ if [ -f .git ]; then
     # Strip /worktrees/name to get the main .git directory
     MAIN_GIT="${GITDIR%/worktrees/*}"
     if [ -d "$MAIN_GIT" ]; then
-        ln -sfn "$MAIN_GIT" "$RESOLVED"
+        ln -s "$MAIN_GIT" "$RESOLVED"
     else
         mkdir -p "$RESOLVED"
     fi
 elif [ -d .git ]; then
     # Main repo: just point to our own .git
-    ln -sfn "$(pwd)/.git" "$RESOLVED"
+    ln -s "$(pwd)/.git" "$RESOLVED"
 else
     # No git at all — empty dir so the mount doesn't fail
     mkdir -p "$RESOLVED"

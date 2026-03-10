@@ -85,6 +85,8 @@
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
     "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
     "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "NODE_OPTIONS": "--max-old-space-size=4096",
     "DEVCONTAINER": "true"
   },
