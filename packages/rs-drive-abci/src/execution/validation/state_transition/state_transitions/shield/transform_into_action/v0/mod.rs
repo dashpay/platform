@@ -6,8 +6,6 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
-use dpp::consensus::state::state_error::StateError;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::shield_transition::ShieldTransition;
@@ -15,7 +13,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
-use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -42,19 +39,6 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Extract notes from serialized actions
-        let notes: Vec<ShieldedActionNote> = match self {
-            ShieldTransition::V0(v0) => v0
-                .actions
-                .iter()
-                .map(|a| ShieldedActionNote {
-                    nullifier: a.nullifier,
-                    cmx: a.cmx,
-                    encrypted_note: a.encrypted_note.clone(),
-                })
-                .collect(),
-        };
-
         let shield_amount: Credits = match self {
             ShieldTransition::V0(v0) => v0.amount,
         };
@@ -79,7 +63,6 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             self,
             inputs_with_remaining_balance,
             shield_amount,
-            notes,
             current_total_balance,
         );
 

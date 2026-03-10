@@ -50,9 +50,9 @@ impl<C> Platform<C> {
 
             let block_changes: Vec<BlockNullifierChanges> = nullifier_changes
                 .into_iter()
-                .map(|(block_height, nullifiers)| BlockNullifierChanges {
-                    block_height,
-                    nullifiers: nullifiers.into_iter().map(|n| n.to_vec()).collect(),
+                .map(|change| BlockNullifierChanges {
+                    block_height: change.block_height,
+                    nullifiers: change.nullifiers.iter().map(|n| n.to_vec()).collect(),
                 })
                 .collect();
 

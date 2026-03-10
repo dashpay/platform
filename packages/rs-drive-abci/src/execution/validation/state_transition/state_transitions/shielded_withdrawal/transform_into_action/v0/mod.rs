@@ -15,7 +15,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
-use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::shielded_withdrawal) trait ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
@@ -41,22 +40,16 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        // Extract notes from serialized actions
-        let notes: Vec<ShieldedActionNote> = match self {
-            ShieldedWithdrawalTransition::V0(v0) => v0
-                .actions
-                .iter()
-                .map(|a| ShieldedActionNote {
-                    nullifier: a.nullifier,
-                    cmx: a.cmx,
-                    encrypted_note: a.encrypted_note.clone(),
-                })
-                .collect(),
-        };
-
         // The anchor from the transition (Merkle root of commitment tree)
         let anchor: [u8; 32] = match self {
             ShieldedWithdrawalTransition::V0(v0) => v0.anchor,
+        };
+
+        // Extract nullifiers from the transition actions
+        let nullifiers: Vec<[u8; 32]> = match self {
+            ShieldedWithdrawalTransition::V0(v0) => {
+                v0.actions.iter().map(|a| a.nullifier).collect()
+            }
         };
 
         // Read current shielded pool total balance from GroveDB
@@ -105,7 +98,6 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         }
 
         // Validate nullifiers: intra-bundle duplicates + already-spent in state
-        let nullifiers: Vec<[u8; 32]> = notes.iter().map(|n| n.nullifier).collect();
         if let Some(err) = validate_nullifiers(
             drive,
             &nullifiers,
@@ -132,8 +124,6 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
 
         let result = ShieldedWithdrawalTransitionAction::try_from_transition(
             self,
-            notes,
-            anchor,
             current_total_balance,
             creation_time_ms,
         );

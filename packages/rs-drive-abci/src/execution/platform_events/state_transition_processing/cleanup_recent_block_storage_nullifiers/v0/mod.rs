@@ -16,7 +16,7 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        self.drive.cleanup_expired_nullifiers(
+        self.drive.cleanup_expired_nullifier_compactions(
             block_info.time_ms,
             Some(transaction),
             platform_version,

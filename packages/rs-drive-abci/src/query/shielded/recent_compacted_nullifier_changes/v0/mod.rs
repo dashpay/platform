@@ -52,13 +52,11 @@ impl<C> Platform<C> {
             let compacted_block_changes: Vec<CompactedBlockNullifierChanges> =
                 compacted_nullifier_changes
                     .into_iter()
-                    .map(
-                        |(start_block, end_block, nullifiers)| CompactedBlockNullifierChanges {
-                            start_block_height: start_block,
-                            end_block_height: end_block,
-                            nullifiers: nullifiers.into_iter().map(|n| n.to_vec()).collect(),
-                        },
-                    )
+                    .map(|change| CompactedBlockNullifierChanges {
+                        start_block_height: change.start_block,
+                        end_block_height: change.end_block,
+                        nullifiers: change.nullifiers.iter().map(|n| n.to_vec()).collect(),
+                    })
                     .collect();
 
             GetRecentCompactedNullifierChangesResponseV0 {

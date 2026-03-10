@@ -19,7 +19,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
-use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
@@ -34,7 +33,6 @@ use dpp::state_transition::{StateTransitionEstimatedFeeValidation, StateTransiti
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
-use drive::state_transition_action::shielded::ShieldedActionNote;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -65,19 +63,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
-
-        // Extract notes from serialized actions
-        let notes: Vec<ShieldedActionNote> = match self {
-            ShieldFromAssetLockTransition::V0(v0) => v0
-                .actions
-                .iter()
-                .map(|a| ShieldedActionNote {
-                    nullifier: a.nullifier,
-                    cmx: a.cmx,
-                    encrypted_note: a.encrypted_note.clone(),
-                })
-                .collect(),
-        };
 
         // Step 1: Get the shield amount (value_balance is u64, the amount entering the pool)
         let shield_amount: Credits = match self {
@@ -325,7 +310,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
             asset_lock_value_credits,
             signable_bytes_hash,
             shield_amount,
-            notes,
             current_total_balance,
         );
 

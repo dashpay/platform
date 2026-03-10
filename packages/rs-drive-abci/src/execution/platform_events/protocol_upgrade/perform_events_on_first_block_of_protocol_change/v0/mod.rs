@@ -631,7 +631,7 @@ impl<C> Platform<C> {
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(11),
+            Element::empty_commitment_tree(11).expect("chunk_power 11 is valid"),
             Some(transaction),
             None,
             &platform_version.drive,
