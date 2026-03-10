@@ -1,9 +1,8 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
-use crate::utils::{
-    IntoWasm, try_from_options_optional, try_from_options_with, try_to_array, try_to_u64,
-};
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u64};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -100,6 +99,7 @@ pub struct PlatformAddressOutputWasm {
 }
 
 impl_wasm_type_info!(PlatformAddressOutputWasm, PlatformAddressOutput);
+impl_try_from_js_value!(PlatformAddressOutputWasm, "PlatformAddressOutput");
 
 #[wasm_bindgen(js_class = PlatformAddressOutput)]
 impl PlatformAddressOutputWasm {
@@ -234,14 +234,4 @@ pub fn outputs_from_js_options(
                 })
         })
         .collect()
-}
-
-/// Extract an optional PlatformAddressOutputWasm from a JS options object property.
-///
-/// Returns None if the property is undefined or null.
-pub fn optional_output_from_js_options(
-    options: &JsValue,
-    field_name: &str,
-) -> WasmDppResult<Option<PlatformAddressOutputWasm>> {
-    try_from_options_optional(options, field_name)
 }

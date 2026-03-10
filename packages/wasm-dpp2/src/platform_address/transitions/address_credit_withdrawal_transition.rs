@@ -5,11 +5,12 @@ use crate::impl_wasm_conversions;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
-    fee_strategy_from_steps_or_default, inputs_from_js_options, optional_output_from_js_options,
+    fee_strategy_from_steps_or_default, inputs_from_js_options,
 };
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional_with, try_from_options_with, try_to_u16, try_to_u32,
+    try_from_options, try_from_options_optional, try_from_options_optional_with,
+    try_from_options_with, try_to_u16, try_to_u32,
 };
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -83,7 +84,8 @@ impl AddressCreditWithdrawalTransitionWasm {
         let output_script: CoreScriptWasm = try_from_options(&options, "outputScript")?;
         let pooling: PoolingWasm = PoolingWasm::try_from_options(&options, "pooling")?;
         let inputs = inputs_from_js_options(js_opts, "inputs")?;
-        let output = optional_output_from_js_options(js_opts, "output")?;
+        let output: Option<PlatformAddressOutputWasm> =
+            try_from_options_optional(js_opts, "output")?;
 
         // Extract simple fields
         let fee_strategy = fee_strategy_from_js_options(js_opts, "feeStrategy")?;
