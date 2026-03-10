@@ -1,7 +1,9 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u64};
+use crate::utils::{
+    IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u64,
+};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -241,19 +243,14 @@ pub fn optional_output_from_js_options(
     options: &JsValue,
     field_name: &str,
 ) -> WasmDppResult<Option<PlatformAddressOutputWasm>> {
-    let value = js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-        WasmDppError::invalid_argument(format!("failed to read '{}' from options", field_name))
-    })?;
-    if value.is_undefined() || value.is_null() {
-        return Ok(None);
-    }
-    value
-        .to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
-        .map(|r| Some((*r).clone()))
-        .map_err(|_| {
-            WasmDppError::invalid_argument(format!(
-                "'{}' is not a PlatformAddressOutput",
-                field_name
-            ))
-        })
+    try_from_options_optional_with(options, field_name, |v| {
+        v.to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
+            .map(|r| (*r).clone())
+            .map_err(|_| {
+                WasmDppError::invalid_argument(format!(
+                    "'{}' is not a PlatformAddressOutput",
+                    field_name
+                ))
+            })
+    })
 }
