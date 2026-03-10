@@ -149,13 +149,12 @@ impl PlatformAddressOutputWasm {
         }
     }
 
-    /// Returns the inner values as a tuple suitable for BTreeMap insertion.
-    /// Panics if amount is None - use `into_inner_optional` for optional amounts.
-    pub fn into_inner(self) -> (PlatformAddress, Credits) {
-        (
-            self.address.into(),
-            self.amount.expect("amount is required for this operation"),
-        )
+    /// Returns the inner values as a tuple, or an error if amount is None.
+    pub fn try_into_inner(self) -> WasmDppResult<(PlatformAddress, Credits)> {
+        let amount = self.amount.ok_or_else(|| {
+            WasmDppError::invalid_argument("PlatformAddressOutput: amount is required")
+        })?;
+        Ok((self.address.into(), amount))
     }
 
     /// Returns the inner values with optional amount.
@@ -165,10 +164,11 @@ impl PlatformAddressOutputWasm {
 }
 
 /// Converts a vector of PlatformAddressOutput into a BTreeMap.
+/// Returns an error if any output has no amount set.
 pub fn outputs_to_btree_map(
     outputs: Vec<PlatformAddressOutputWasm>,
-) -> BTreeMap<PlatformAddress, Credits> {
-    outputs.into_iter().map(|o| o.into_inner()).collect()
+) -> WasmDppResult<BTreeMap<PlatformAddress, Credits>> {
+    outputs.into_iter().map(|o| o.try_into_inner()).collect()
 }
 
 /// Converts a vector of PlatformAddressOutput into a BTreeMap with optional amounts.

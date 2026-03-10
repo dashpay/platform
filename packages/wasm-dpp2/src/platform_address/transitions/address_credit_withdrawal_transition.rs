@@ -184,13 +184,17 @@ impl AddressCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "output")]
-    pub fn set_output(&mut self, output: Option<PlatformAddressOutputWasm>) {
-        let new_output = output.map(|o| o.into_inner());
+    pub fn set_output(
+        &mut self,
+        output: Option<PlatformAddressOutputWasm>,
+    ) -> WasmDppResult<()> {
+        let new_output = output.map(|o| o.try_into_inner()).transpose()?;
         match &mut self.0 {
             AddressCreditWithdrawalTransition::V0(v0) => {
                 v0.output = new_output;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "outputScript")]

@@ -80,7 +80,7 @@ impl AddressFundsTransferTransitionWasm {
             .unwrap_or(0);
 
         let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
-        let outputs_map = outputs_to_btree_map(outputs);
+        let outputs_map = outputs_to_btree_map(outputs)?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
         Ok(AddressFundsTransferTransitionWasm(
@@ -167,13 +167,14 @@ impl AddressFundsTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputs")]
-    pub fn set_outputs(&mut self, outputs: Vec<PlatformAddressOutputWasm>) {
-        let outputs_map = outputs_to_btree_map(outputs);
+    pub fn set_outputs(&mut self, outputs: Vec<PlatformAddressOutputWasm>) -> WasmDppResult<()> {
+        let outputs_map = outputs_to_btree_map(outputs)?;
         match &mut self.0 {
             AddressFundsTransferTransition::V0(v0) => {
                 v0.outputs = outputs_map;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]

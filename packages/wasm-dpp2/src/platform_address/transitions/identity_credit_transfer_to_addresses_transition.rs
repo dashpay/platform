@@ -95,7 +95,7 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
             })?
             .unwrap_or(0);
 
-        let recipient_addresses = outputs_to_btree_map(recipient_outputs);
+        let recipient_addresses = outputs_to_btree_map(recipient_outputs)?;
 
         Ok(IdentityCreditTransferToAddressesTransitionWasm(
             IdentityCreditTransferToAddressesTransition::V0(
@@ -166,9 +166,13 @@ impl IdentityCreditTransferToAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "recipientAddresses")]
-    pub fn set_recipient_addresses(&mut self, outputs: Vec<PlatformAddressOutputWasm>) {
+    pub fn set_recipient_addresses(
+        &mut self,
+        outputs: Vec<PlatformAddressOutputWasm>,
+    ) -> WasmDppResult<()> {
         self.0
-            .set_recipient_addresses(outputs_to_btree_map(outputs));
+            .set_recipient_addresses(outputs_to_btree_map(outputs)?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "senderId")]
