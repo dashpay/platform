@@ -38,4 +38,3 @@ const loadDppModule = async () => {
     dpp_module.initSync({ module: bytes });
   }
 }
-

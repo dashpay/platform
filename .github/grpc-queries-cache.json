@@ -1,9 +1,5 @@
 {
   "known_queries": {
-    "broadcastStateTransition": {
-      "status": "excluded",
-      "reason": "Explicitly excluded as per requirement"
-    },
     "getIdentity": {
       "status": "implemented"
     },
@@ -118,9 +114,6 @@
     "getTokenContractInfo": {
       "status": "implemented"
     },
-    "getTokenPreProgrammedDistributions": {
-      "status": "not_implemented"
-    },
     "getTokenPerpetualDistributionLastClaim": {
       "status": "implemented"
     },
@@ -139,9 +132,24 @@
     "getGroupActionSigners": {
       "status": "implemented"
     },
-    "getConsensusParams": {
-      "status": "not_implemented"
+    "getAddressInfo": {
+      "status": "implemented"
+    },
+    "getAddressesBranchState": {
+      "status": "implemented"
+    },
+    "getAddressesInfos": {
+      "status": "implemented"
+    },
+    "getAddressesTrunkState": {
+      "status": "implemented"
+    },
+    "getRecentAddressBalanceChanges": {
+      "status": "implemented"
+    },
+    "getRecentCompactedAddressBalanceChanges": {
+      "status": "implemented"
     }
   },
-  "last_updated": "2025-07-14T03:27:11.465612"
+  "last_updated": "2026-03-09T11:26:46.986561"
 }

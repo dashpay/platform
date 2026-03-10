@@ -29,15 +29,15 @@ use platform_value::Value;
 ///
 /// ## 1. **Groups** (`groups: BTreeMap<GroupContractPosition, Group>`)
 /// - Groups allow for specific multiparty actions on the contract. Each group is defined with a
-///   set of members (`Identifier`) and their corresponding member power (`u32`).  
+///   set of members (`Identifier`) and their corresponding member power (`u32`).
 /// - Groups facilitate fine-grained access control and decision-making processes by enabling
 ///   required power thresholds for group actions.
 /// - This is particularly useful for contracts where multiple parties are involved in controlling
 ///   or managing contract-specific features.
 ///
-/// ## 2. **Tokens** (`tokens: BTreeMap<TokenName, TokenConfiguration>`)  
+/// ## 2. **Tokens** (`tokens: BTreeMap<TokenName, TokenConfiguration>`)
 /// - Tokens introduce configurable token-related functionality within the contract, such as
-///   base supply, maximum supply, and manual minting/burning rules.  
+///   base supply, maximum supply, and manual minting/burning rules.
 /// - Token configurations include change control rules, ensuring proper governance for
 ///   modifying supply limits and token-related settings.
 /// - This addition enables contracts to define and manage tokens while ensuring compliance
@@ -47,17 +47,17 @@ use platform_value::Value;
 /// To improve traceability and accountability of contract creation and modifications, four
 /// new fields were added:
 ///
-/// - **`created_at`** (`Option<TimestampMillis>`)  
-///   - Stores the timestamp (in milliseconds) when the contract was originally created.  
+/// - **`created_at`** (`Option<TimestampMillis>`)
+///   - Stores the timestamp (in milliseconds) when the contract was originally created.
 ///   - This provides an immutable record of when the contract came into existence.
-/// - **`updated_at`** (`Option<TimestampMillis>`)  
-///   - Stores the timestamp of the most recent update to the contract.  
+/// - **`updated_at`** (`Option<TimestampMillis>`)
+///   - Stores the timestamp of the most recent update to the contract.
 ///   - This helps in tracking contract modifications over time.
-/// - **`created_at_block_height`** (`Option<BlockHeight>`)  
-///   - Captures the block height at which the contract was created.  
+/// - **`created_at_block_height`** (`Option<BlockHeight>`)
+///   - Captures the block height at which the contract was created.
 ///   - This provides an on-chain reference for the state of the contract at creation.
-/// - **`updated_at_block_height`** (`Option<BlockHeight>`)  
-///   - Captures the block height of the last contract update.  
+/// - **`updated_at_block_height`** (`Option<BlockHeight>`)
+///   - Captures the block height of the last contract update.
 ///   - Useful for historical analysis, rollback mechanisms, and ensuring changes are anchored
 ///     to specific blockchain states.
 ///

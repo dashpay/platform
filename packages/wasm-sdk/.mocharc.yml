@@ -3,4 +3,3 @@ node-option:
 require: tests/bootstrap.cjs
 recursive: true
 timeout: 8000
-

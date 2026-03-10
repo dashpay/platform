@@ -260,7 +260,10 @@ mod tests {
             assert_eq!(batch.len(), TO_EPOCH_INDEX as usize);
 
             for (i, operation) in batch.into_iter().enumerate() {
-                assert_eq!(operation.key.get_key(), KEY_POOL_STORAGE_FEES);
+                assert_eq!(
+                    operation.key.expect("expected key").get_key(),
+                    KEY_POOL_STORAGE_FEES
+                );
 
                 assert_eq!(
                     operation.path.to_path(),

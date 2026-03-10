@@ -140,4 +140,3 @@ Feel free to dive in! [Open an issue](https://github.com/dashpay/platform/issues
 ## License
 
 [MIT](LICENSE) &copy; Dash Core Group, Inc.
-

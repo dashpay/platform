@@ -15,7 +15,7 @@
 # Env file
 .env
 
-# NYC test runnner
+# NYC test runner
 .nyc_output
 
 node_modules

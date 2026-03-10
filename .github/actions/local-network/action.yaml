@@ -85,7 +85,6 @@ runs:
         # Replace Drive and RS-DAPI images with new org and tag in dashmate config
         sed -i -E "s/dashpay\/(drive|rs-dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
 
-        cat ${{ env.HOME }}/.dashmate/config.json
 
     - name: Start local network
       shell: bash

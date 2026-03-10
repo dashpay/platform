@@ -894,6 +894,13 @@ pub fn convert_proof_result(
             }
             .into()
         }
+
+        StateTransitionProofResult::VerifiedAssetLockConsumed(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiers(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(_, _)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(_, _) => {
+            todo!("shielded proof results not yet implemented in wasm")
+        }
     };
 
     Ok(js_value.into())

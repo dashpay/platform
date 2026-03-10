@@ -2,7 +2,7 @@
 
 Dashmate CLI and Helper are using to manage a Dash Platform node.
 
-Both CLI and Heler using Docker to manage containers and services
+Both CLI and Helper using Docker to manage containers and services
 defined in docker-compose files.
 
 Dashmate helper serves JSON RPC HTTP API that replicates CLI commands.

@@ -9,7 +9,7 @@ describe('loadPackageDefinition', () => {
     protoPath = path.join(__dirname, '../../lib/test/fixture/example.proto');
   });
 
-  it('should successfuly load package definition', () => {
+  it('should successfully load package definition', () => {
     const definition = loadPackageDefinition(protoPath, 'org.dash.platform.example.v0');
 
     expect(definition.Example).to.be.an.instanceOf(Function);

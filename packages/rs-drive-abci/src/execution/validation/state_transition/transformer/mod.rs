@@ -229,6 +229,13 @@ impl StateTransitionActionTransformer for StateTransition {
                     remaining_address_input_balances.clone(),
                 )
             }
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }

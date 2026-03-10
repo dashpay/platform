@@ -16,12 +16,12 @@ public enum SyncState: String {
     case syncing = "syncing"
     case synced = "synced"
     case error = "error"
-    
+
     var displayName: String {
         switch self {
         case .notStarted: return "Not Started"
         case .syncing: return "Syncing"
-        case .synced: return "Synced"  
+        case .synced: return "Synced"
         case .error: return "Error"
         }
     }
@@ -32,7 +32,7 @@ public enum WatchStatus: String {
     case active = "active"
     case inactive = "inactive"
     case error = "error"
-    
+
     var displayName: String {
         switch self {
         case .active: return "Watching"
@@ -48,7 +48,7 @@ public struct InstantLock {
     public let isConfirmed: Bool
     public let signature: Data?
     public let confirmationTime: Date?
-    
+
     public init(txid: String, isConfirmed: Bool, signature: Data? = nil, confirmationTime: Date? = nil) {
         self.txid = txid
         self.isConfirmed = isConfirmed
@@ -65,7 +65,7 @@ public enum AssetLockError: LocalizedError {
     case assetLockGenerationFailed
     case instantLockTimeout
     case broadcastFailed(String)
-    
+
     public var errorDescription: String? {
         switch self {
         case .insufficientBalance:

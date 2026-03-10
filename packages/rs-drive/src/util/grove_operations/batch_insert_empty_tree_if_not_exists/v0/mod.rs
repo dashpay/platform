@@ -10,6 +10,7 @@ use crate::util::object_size_info::PathKeyInfo::{
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::GroveOp;
 use grovedb::{TransactionArg, TreeType};
 
@@ -35,7 +36,7 @@ impl Drive {
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -49,9 +50,9 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -102,7 +103,7 @@ impl Drive {
                     path.clone(),
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -116,9 +117,9 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -167,7 +168,7 @@ impl Drive {
                     path_items,
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -181,9 +182,9 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);
@@ -232,7 +233,7 @@ impl Drive {
                     path_items,
                     key.to_vec(),
                     storage_flags,
-                );
+                )?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -246,9 +247,9 @@ impl Drive {
                             found = true;
                             break;
                         } else if let GroveOperation(grove_op) = previous_drive_operation {
-                            if grove_op.key == key
+                            if grove_op.key == Some(KeyInfo::KnownKey(key.to_vec()))
                                 && grove_op.path == path
-                                && matches!(grove_op.op, GroveOp::DeleteTree(_))
+                                && matches!(grove_op.op, GroveOp::DeleteTree(_, _))
                             {
                                 found = true;
                                 existing_operations.remove(i);

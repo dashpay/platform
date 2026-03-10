@@ -93,7 +93,7 @@
     "semver": "^7.5.3",
     "systeminformation": "^5.31.1",
     "table": "^6.8.1",
-    "tar": "7.5.9",
+    "tar": "7.5.10",
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {

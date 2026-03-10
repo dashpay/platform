@@ -2,7 +2,7 @@ const { sortBy } = require('lodash');
 const TransactionEstimator = require('../TransactionEstimator');
 
 /**
- * Given a utxos list and a threesholdSatoshis, will add them
+ * Given a utxos list and a thresholdSatoshis, will add them
  * without any further logic up to met with requested params.
  * @param utxos
  * @param thresholdSatoshis
@@ -18,7 +18,7 @@ const simplyAccumulateUtxos = (utxos, thresholdSatoshis) => {
     return false;
   });
   if (pendingSatoshis < thresholdSatoshis) {
-    throw new Error('Unsufficient utxo amount');
+    throw new Error('Insufficient utxo amount');
   }
   return accumulatedUtxos;
 };

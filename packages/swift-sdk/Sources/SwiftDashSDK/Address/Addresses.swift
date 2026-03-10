@@ -261,7 +261,7 @@ public class Addresses: @unchecked Sendable {
     }
 
     // MARK: - Trunk State Query
-    
+
     /// Fetch the trunk state of the address tree for privacy-preserving address synchronization.
     ///
     /// The trunk state contains:
@@ -277,37 +277,37 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         let result = dash_sdk_address_fetch_trunk_state(handle)
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             throw SDKError.invalidState("No trunk state data returned")
         }
-        
+
         // Parse DashSDKTrunkState
         let statePtr = dataPtr.assumingMemoryBound(to: DashSDKTrunkState.self)
         let ffiState = statePtr.pointee
-        
+
         // Convert elements
         var elements: [TrunkStateElement] = []
         if ffiState.elements_count > 0 && ffiState.elements != nil {
             for i in 0..<ffiState.elements_count {
                 let ffiElement = ffiState.elements![Int(i)]
-                
+
                 let keyData: Data
                 if ffiElement.key != nil && ffiElement.key_len > 0 {
                     keyData = Data(bytes: ffiElement.key!, count: Int(ffiElement.key_len))
                 } else {
                     continue
                 }
-                
+
                 elements.append(TrunkStateElement(
                     key: keyData,
                     nonce: ffiElement.nonce,
@@ -315,24 +315,24 @@ public class Addresses: @unchecked Sendable {
                 ))
             }
         }
-        
+
         // Convert leaf boundaries
         var leafBoundaries: [LeafBoundary] = []
         if ffiState.leaf_boundaries_count > 0 && ffiState.leaf_boundaries != nil {
             for i in 0..<ffiState.leaf_boundaries_count {
                 let ffiBoundary = ffiState.leaf_boundaries![Int(i)]
-                
+
                 let keyData: Data
                 if ffiBoundary.key != nil && ffiBoundary.key_len > 0 {
                     keyData = Data(bytes: ffiBoundary.key!, count: Int(ffiBoundary.key_len))
                 } else {
                     continue
                 }
-                
+
                 // Convert fixed-size array to Data
                 var hashArray = ffiBoundary.hash
                 let hashData = Data(bytes: &hashArray, count: 32)
-                
+
                 leafBoundaries.append(LeafBoundary(
                     key: keyData,
                     hash: hashData,
@@ -340,21 +340,21 @@ public class Addresses: @unchecked Sendable {
                 ))
             }
         }
-        
+
         let checkpointHeight = ffiState.checkpoint_height
-        
+
         // Free the FFI struct
         dash_sdk_trunk_state_free(statePtr)
-        
+
         return PlatformTrunkState(
             elements: elements,
             leafBoundaries: leafBoundaries,
             checkpointHeight: checkpointHeight
         )
     }
-    
+
     // MARK: - Branch State Query
-    
+
     /// Fetch the branch state of a subtree in the address tree.
     ///
     /// This is used after a trunk state query to explore subtrees indicated by leaf boundaries.
@@ -376,11 +376,11 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard expectedHash.count == 32 else {
             throw SDKError.invalidParameter("Expected hash must be exactly 32 bytes, got \(expectedHash.count)")
         }
-        
+
         let result = key.withUnsafeBytes { (keyBuffer: UnsafeRawBufferPointer) -> DashSDKResult in
             expectedHash.withUnsafeBytes { (hashBuffer: UnsafeRawBufferPointer) -> DashSDKResult in
                 let keyPtr = keyBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -395,35 +395,35 @@ public class Addresses: @unchecked Sendable {
                 )
             }
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             throw SDKError.invalidState("No branch state data returned")
         }
-        
+
         // Parse DashSDKBranchState
         let statePtr = dataPtr.assumingMemoryBound(to: DashSDKBranchState.self)
         let ffiState = statePtr.pointee
-        
+
         // Convert elements (same structure as trunk state)
         var elements: [TrunkStateElement] = []
         if ffiState.elements_count > 0 && ffiState.elements != nil {
             for i in 0..<ffiState.elements_count {
                 let ffiElement = ffiState.elements![Int(i)]
-                
+
                 let keyData: Data
                 if ffiElement.key != nil && ffiElement.key_len > 0 {
                     keyData = Data(bytes: ffiElement.key!, count: Int(ffiElement.key_len))
                 } else {
                     continue
                 }
-                
+
                 elements.append(TrunkStateElement(
                     key: keyData,
                     nonce: ffiElement.nonce,
@@ -431,24 +431,24 @@ public class Addresses: @unchecked Sendable {
                 ))
             }
         }
-        
+
         // Convert leaf boundaries
         var leafBoundaries: [LeafBoundary] = []
         if ffiState.leaf_boundaries_count > 0 && ffiState.leaf_boundaries != nil {
             for i in 0..<ffiState.leaf_boundaries_count {
                 let ffiBoundary = ffiState.leaf_boundaries![Int(i)]
-                
+
                 let boundaryKeyData: Data
                 if ffiBoundary.key != nil && ffiBoundary.key_len > 0 {
                     boundaryKeyData = Data(bytes: ffiBoundary.key!, count: Int(ffiBoundary.key_len))
                 } else {
                     continue
                 }
-                
+
                 // Convert fixed-size array to Data
                 var hashArray = ffiBoundary.hash
                 let hashData = Data(bytes: &hashArray, count: 32)
-                
+
                 leafBoundaries.append(LeafBoundary(
                     key: boundaryKeyData,
                     hash: hashData,
@@ -456,18 +456,18 @@ public class Addresses: @unchecked Sendable {
                 ))
             }
         }
-        
+
         // Free the FFI struct
         dash_sdk_branch_state_free(statePtr)
-        
+
         return PlatformBranchState(
             elements: elements,
             leafBoundaries: leafBoundaries
         )
     }
-    
+
     // MARK: - Recent Balance Changes Query
-    
+
     /// Fetch recent address balance changes starting from a specific block height.
     ///
     /// This returns all address balance changes that occurred since the specified start height.
@@ -480,44 +480,44 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         let result = dash_sdk_address_fetch_recent_balance_changes(handle, startHeight)
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             // No changes found - return empty result
             return RecentBalanceChanges(blocks: [])
         }
-        
+
         // Parse DashSDKRecentBalanceChanges
         let changesPtr = dataPtr.assumingMemoryBound(to: DashSDKRecentBalanceChanges.self)
         let ffiChanges = changesPtr.pointee
-        
+
         // Convert blocks
         var blocks: [BlockBalanceChanges] = []
         if ffiChanges.blocks_count > 0 && ffiChanges.blocks != nil {
             for i in 0..<ffiChanges.blocks_count {
                 let ffiBlock = ffiChanges.blocks![Int(i)]
-                
+
                 // Convert address changes within this block
                 var addressChanges: [AddressBalanceChange] = []
                 if ffiBlock.changes_count > 0 && ffiBlock.changes != nil {
                     for j in 0..<ffiBlock.changes_count {
                         let ffiChange = ffiBlock.changes![Int(j)]
-                        
+
                         let addressData: Data
                         if ffiChange.address != nil && ffiChange.address_len > 0 {
                             addressData = Data(bytes: ffiChange.address!, count: Int(ffiChange.address_len))
                         } else {
                             continue
                         }
-                        
+
                         // Map operation type: 0 = SetCredits, 1 = AddToCredits
                         let operation: CreditOperationType
                         if ffiChange.operation_type.rawValue == 0 {
@@ -525,29 +525,29 @@ public class Addresses: @unchecked Sendable {
                         } else {
                             operation = .addToCredits(credits: ffiChange.credits)
                         }
-                        
+
                         addressChanges.append(AddressBalanceChange(
                             addressBytes: addressData,
                             operation: operation
                         ))
                     }
                 }
-                
+
                 blocks.append(BlockBalanceChanges(
                     blockHeight: ffiBlock.block_height,
                     changes: addressChanges
                 ))
             }
         }
-        
+
         // Free the FFI struct
         dash_sdk_recent_balance_changes_free(changesPtr)
-        
+
         return RecentBalanceChanges(blocks: blocks)
     }
-    
+
     // MARK: - Compacted Balance Changes Query
-    
+
     /// Fetch recent compacted address balance changes starting from a specific block height.
     ///
     /// This returns compacted (merged) address balance changes since the specified start height.
@@ -561,44 +561,44 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         let result = dash_sdk_address_fetch_compacted_balance_changes(handle, startBlockHeight)
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             // No changes found - return empty result
             return CompactedBalanceChanges(ranges: [])
         }
-        
+
         // Parse DashSDKCompactedBalanceChanges
         let changesPtr = dataPtr.assumingMemoryBound(to: DashSDKCompactedBalanceChanges.self)
         let ffiChanges = changesPtr.pointee
-        
+
         // Convert ranges
         var ranges: [CompactedBlockRange] = []
         if ffiChanges.ranges_count > 0 && ffiChanges.ranges != nil {
             for i in 0..<ffiChanges.ranges_count {
                 let ffiRange = ffiChanges.ranges![Int(i)]
-                
+
                 // Convert address changes within this range
                 var addressChanges: [CompactedAddressChange] = []
                 if ffiRange.changes_count > 0 && ffiRange.changes != nil {
                     for j in 0..<ffiRange.changes_count {
                         let ffiChange = ffiRange.changes![Int(j)]
-                        
+
                         let addressData: Data
                         if ffiChange.address != nil && ffiChange.address_len > 0 {
                             addressData = Data(bytes: ffiChange.address!, count: Int(ffiChange.address_len))
                         } else {
                             continue
                         }
-                        
+
                         // Map operation type: 0 = BlockAwareSetCredits, 1 = BlockAwareAddToCreditsOperations
                         let operation: BlockAwareCreditOperation
                         if ffiChange.operation_type.rawValue == 0 { // BlockAwareSetCredits
@@ -614,14 +614,14 @@ public class Addresses: @unchecked Sendable {
                             }
                             operation = .addToCreditsOperations(entries: entries)
                         }
-                        
+
                         addressChanges.append(CompactedAddressChange(
                             addressBytes: addressData,
                             operation: operation
                         ))
                     }
                 }
-                
+
                 ranges.append(CompactedBlockRange(
                     startBlockHeight: ffiRange.start_block_height,
                     endBlockHeight: ffiRange.end_block_height,
@@ -629,15 +629,15 @@ public class Addresses: @unchecked Sendable {
                 ))
             }
         }
-        
+
         // Free the FFI struct
         dash_sdk_compacted_balance_changes_free(changesPtr)
-        
+
         return CompactedBalanceChanges(ranges: ranges)
     }
-    
+
     // MARK: - State Transitions
-    
+
     /// Input for address transfer operation
     public struct AddressTransferInput {
         /// Address bytes (21 bytes: type byte + 20-byte hash)
@@ -648,7 +648,7 @@ public class Addresses: @unchecked Sendable {
         public let nonce: UInt32
         /// Private key for signing (32 bytes)
         public let privateKey: Data
-        
+
         public init(addressBytes: Data, amount: UInt64, nonce: UInt32 = 0, privateKey: Data) {
             self.addressBytes = addressBytes
             self.amount = amount
@@ -656,20 +656,20 @@ public class Addresses: @unchecked Sendable {
             self.privateKey = privateKey
         }
     }
-    
+
     /// Output for address transfer operation
     public struct AddressTransferOutput {
         /// Address bytes (21 bytes: type byte + 20-byte hash)
         public let addressBytes: Data
         /// Amount to receive at this address in credits
         public let amount: UInt64
-        
+
         public init(addressBytes: Data, amount: UInt64) {
             self.addressBytes = addressBytes
             self.amount = amount
         }
     }
-    
+
     /// Transfer funds between Platform addresses
     ///
     /// This is a state transition that moves credits from input addresses to output addresses.
@@ -689,19 +689,19 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard !inputs.isEmpty else {
             throw SDKError.invalidParameter("Inputs array is empty")
         }
-        
+
         guard !outputs.isEmpty else {
             throw SDKError.invalidParameter("Outputs array is empty")
         }
-        
+
         guard feeFromInputIndex < inputs.count else {
             throw SDKError.invalidParameter("Fee input index \(feeFromInputIndex) is out of bounds (inputs count: \(inputs.count))")
         }
-        
+
         // Validate inputs
         for (index, input) in inputs.enumerated() {
             guard input.addressBytes.count == 21 else {
@@ -711,22 +711,22 @@ public class Addresses: @unchecked Sendable {
                 throw SDKError.invalidParameter("Private key at index \(index) must be 32 bytes, got \(input.privateKey.count)")
             }
         }
-        
+
         // Validate outputs
         for (index, output) in outputs.enumerated() {
             guard output.addressBytes.count == 21 else {
                 throw SDKError.invalidParameter("Output address at index \(index) must be 21 bytes, got \(output.addressBytes.count)")
             }
         }
-        
+
         // Create FFI input structs
         var ffiInputs: [DashSDKAddressTransferInput] = []
         var inputData: [(address: Data, privateKey: Data)] = [] // Keep data alive
-        
+
         for input in inputs {
             inputData.append((address: input.addressBytes, privateKey: input.privateKey))
         }
-        
+
         for (index, data) in inputData.enumerated() {
             let addressPtr = data.address.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -734,7 +734,7 @@ public class Addresses: @unchecked Sendable {
             let privateKeyPtr = data.privateKey.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             ffiInputs.append(DashSDKAddressTransferInput(
                 address: addressPtr,
                 address_len: UInt(data.address.count),
@@ -743,27 +743,27 @@ public class Addresses: @unchecked Sendable {
                 private_key: privateKeyPtr
             ))
         }
-        
+
         // Create FFI output structs
         var ffiOutputs: [DashSDKAddressTransferOutput] = []
         var outputData: [Data] = [] // Keep data alive
-        
+
         for output in outputs {
             outputData.append(output.addressBytes)
         }
-        
+
         for (index, data) in outputData.enumerated() {
             let addressPtr = data.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             ffiOutputs.append(DashSDKAddressTransferOutput(
                 address: addressPtr,
                 address_len: UInt(data.count),
                 amount: outputs[index].amount
             ))
         }
-        
+
         // Call FFI
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             ffiOutputs.withUnsafeMutableBufferPointer { outputsBuffer -> DashSDKResult in
@@ -777,51 +777,51 @@ public class Addresses: @unchecked Sendable {
                 )
             }
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             return PlatformAddressInfosResult(infos: [:])
         }
-        
+
         // Parse DashSDKAddressInfoMap
         let mapPtr = dataPtr.assumingMemoryBound(to: DashSDKAddressInfoMap.self)
         let map = mapPtr.pointee
-        
+
         var infos: [Data: PlatformAddressInfo] = [:]
-        
+
         if map.count > 0 && map.entries != nil {
             for i in 0..<map.count {
                 let entry = map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // Free the FFI map
         dash_sdk_address_info_map_free(mapPtr)
-        
+
         return PlatformAddressInfosResult(infos: infos)
     }
-    
+
     /// Pooling strategy for withdrawals
     public enum PoolingStrategy {
         /// Never pool withdrawals
@@ -830,7 +830,7 @@ public class Addresses: @unchecked Sendable {
         case ifAvailable
         /// Standard pooling
         case standard
-        
+
         var ffiValue: DashSDKPooling {
             switch self {
             // DashSDKPooling is a C enum; Swift doesn't always import named cases.
@@ -840,7 +840,7 @@ public class Addresses: @unchecked Sendable {
             }
         }
     }
-    
+
     /// Withdraw credits from Platform addresses to a Core (L1) Dash address
     ///
     /// This is a state transition that moves credits from Platform addresses to a Dash Core (L1) address.
@@ -866,19 +866,19 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard !inputs.isEmpty else {
             throw SDKError.invalidParameter("Inputs array is empty")
         }
-        
+
         guard !coreAddress.isEmpty else {
             throw SDKError.invalidParameter("Core address is empty")
         }
-        
+
         guard feeFromInputIndex < inputs.count else {
             throw SDKError.invalidParameter("Fee input index \(feeFromInputIndex) is out of bounds (inputs count: \(inputs.count))")
         }
-        
+
         // Validate inputs
         for (index, input) in inputs.enumerated() {
             guard input.addressBytes.count == 21 else {
@@ -888,22 +888,22 @@ public class Addresses: @unchecked Sendable {
                 throw SDKError.invalidParameter("Private key at index \(index) must be 32 bytes, got \(input.privateKey.count)")
             }
         }
-        
+
         // Validate change address if provided
         if let change = changeAddress {
             guard change.count == 21 else {
                 throw SDKError.invalidParameter("Change address must be 21 bytes, got \(change.count)")
             }
         }
-        
+
         // Create FFI input structs (same as transfer)
         var ffiInputs: [DashSDKAddressTransferInput] = []
         var inputData: [(address: Data, privateKey: Data)] = [] // Keep data alive
-        
+
         for input in inputs {
             inputData.append((address: input.addressBytes, privateKey: input.privateKey))
         }
-        
+
         for (index, data) in inputData.enumerated() {
             let addressPtr = data.address.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -911,7 +911,7 @@ public class Addresses: @unchecked Sendable {
             let privateKeyPtr = data.privateKey.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             ffiInputs.append(DashSDKAddressTransferInput(
                 address: addressPtr,
                 address_len: UInt(data.address.count),
@@ -920,10 +920,10 @@ public class Addresses: @unchecked Sendable {
                 private_key: privateKeyPtr
             ))
         }
-        
+
         // Convert core address to C string
         let coreAddressCString = coreAddress.utf8CString
-        
+
         // Prepare change address pointer
         var changeAddressPtr: UnsafePointer<UInt8>? = nil
         var changeAddressLen: UInt = 0
@@ -933,7 +933,7 @@ public class Addresses: @unchecked Sendable {
             }
             changeAddressLen = UInt(change.count)
         }
-        
+
         // Call FFI
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             coreAddressCString.withUnsafeBufferPointer { coreAddressBuffer -> DashSDKResult in
@@ -951,58 +951,58 @@ public class Addresses: @unchecked Sendable {
                 )
             }
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             return PlatformAddressInfosResult(infos: [:])
         }
-        
+
         // Parse DashSDKAddressInfoMap (same as transfer)
         let mapPtr = dataPtr.assumingMemoryBound(to: DashSDKAddressInfoMap.self)
         let map = mapPtr.pointee
-        
+
         var infos: [Data: PlatformAddressInfo] = [:]
-        
+
         if map.count > 0 && map.entries != nil {
             for i in 0..<map.count {
                 let entry = map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // Free the FFI map
         dash_sdk_address_info_map_free(mapPtr)
-        
+
         return PlatformAddressInfosResult(infos: infos)
     }
-    
+
     /// Asset lock proof type
     public enum AssetLockProofType {
         /// Instant lock proof
         case instant
         /// Chain lock proof
         case chain
-        
+
         var ffiValue: DashSDKAssetLockProofType {
             switch self {
             case .instant: return DashSDKAssetLockProofType(rawValue: 0)
@@ -1010,7 +1010,7 @@ public class Addresses: @unchecked Sendable {
             }
         }
     }
-    
+
     /// Top up Platform addresses using an asset lock proof
     ///
     /// This is a state transition that funds Platform addresses from a Dash Core asset lock (instant or chain lock).
@@ -1041,15 +1041,15 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard assetLockPrivateKey.count == 32 else {
             throw SDKError.invalidParameter("Asset lock private key must be 32 bytes, got \(assetLockPrivateKey.count)")
         }
-        
+
         guard !outputs.isEmpty else {
             throw SDKError.invalidParameter("Outputs array is empty")
         }
-        
+
         // Validate proof type specific parameters
         switch proofType {
         case .instant:
@@ -1064,20 +1064,20 @@ public class Addresses: @unchecked Sendable {
                 throw SDKError.invalidParameter("Chain lock requires outPoint with exactly 36 bytes (32 txid + 4 vout)")
             }
         }
-        
+
         // Validate outputs
         for (index, output) in outputs.enumerated() {
             guard output.addressBytes.count == 21 else {
                 throw SDKError.invalidParameter("Output address at index \(index) must be 21 bytes, got \(output.addressBytes.count)")
             }
         }
-        
+
         // Prepare proof parameters
         let instantLockPtr: UnsafePointer<UInt8>?
         let instantLockLen: UInt
         let transactionPtr: UnsafePointer<UInt8>?
         let transactionLen: UInt
-        
+
         if proofType == .instant, let instantLock = instantLockData, let transaction = transactionData {
             instantLockPtr = instantLock.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
@@ -1093,7 +1093,7 @@ public class Addresses: @unchecked Sendable {
             transactionPtr = nil
             transactionLen = 0
         }
-        
+
         // Prepare chain lock parameters - C fixed-size arrays become tuples in Swift
         var outPointTuple: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1112,27 +1112,27 @@ public class Addresses: @unchecked Sendable {
                             bytes[32], bytes[33], bytes[34], bytes[35])
         }
         let outPointPtr = outPointTuple.map { withUnsafePointer(to: $0) { $0 } }
-        
+
         // Create FFI output structs
         var ffiOutputs: [DashSDKAddressTransferOutput] = []
         var outputData: [Data] = [] // Keep data alive
-        
+
         for output in outputs {
             outputData.append(output.addressBytes)
         }
-        
+
         for (index, data) in outputData.enumerated() {
             let addressPtr = data.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             ffiOutputs.append(DashSDKAddressTransferOutput(
                 address: addressPtr,
                 address_len: UInt(data.count),
                 amount: outputs[index].amount
             ))
         }
-        
+
         // Prepare private key - C fixed-size arrays become tuples in Swift
         let privateKeyBytes = Array(assetLockPrivateKey)
         let privateKeyTuple = (privateKeyBytes[0], privateKeyBytes[1], privateKeyBytes[2], privateKeyBytes[3],
@@ -1144,7 +1144,7 @@ public class Addresses: @unchecked Sendable {
                                privateKeyBytes[24], privateKeyBytes[25], privateKeyBytes[26], privateKeyBytes[27],
                                privateKeyBytes[28], privateKeyBytes[29], privateKeyBytes[30], privateKeyBytes[31])
         let privateKeyPtr = withUnsafePointer(to: privateKeyTuple) { $0 }
-        
+
         // Call FFI
         let result = ffiOutputs.withUnsafeMutableBufferPointer { outputsBuffer -> DashSDKResult in
             dash_sdk_address_top_up_from_asset_lock(
@@ -1164,51 +1164,51 @@ public class Addresses: @unchecked Sendable {
                 nil // put_settings
             )
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             return PlatformAddressInfosResult(infos: [:])
         }
-        
+
         // Parse DashSDKAddressInfoMap (same as transfer)
         let mapPtr = dataPtr.assumingMemoryBound(to: DashSDKAddressInfoMap.self)
         let map = mapPtr.pointee
-        
+
         var infos: [Data: PlatformAddressInfo] = [:]
-        
+
         if map.count > 0 && map.entries != nil {
             for i in 0..<map.count {
                 let entry = map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // Free the FFI map
         dash_sdk_address_info_map_free(mapPtr)
-        
+
         return PlatformAddressInfosResult(infos: infos)
     }
-    
+
     // MARK: - Convenience Methods
 
     /// Get the balance for a single address
@@ -1247,9 +1247,9 @@ public class Addresses: @unchecked Sendable {
         let result = try getInfos(addressesBytesList: addressesBytesList)
         return result.totalBalance
     }
-    
+
     // MARK: - Identity State Transitions (Address-Related)
-    
+
     /// Top up an identity using Platform address balances
     ///
     /// - Parameters:
@@ -1266,59 +1266,59 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard !inputs.isEmpty else {
             throw SDKError.invalidParameter("Inputs array is empty")
         }
-        
+
         // Fetch identity JSON and parse to get handle
         let identityJSON = try await sdk.identityGet(identityId: identityId)
         guard let identityJSONString = try? JSONSerialization.data(withJSONObject: identityJSON),
               let jsonString = String(data: identityJSONString, encoding: .utf8) else {
             throw SDKError.serializationError("Failed to serialize identity JSON")
         }
-        
+
         // Parse identity JSON to get handle
         let parseResult = jsonString.withCString { cString in
             dash_sdk_identity_parse_json(cString)
         }
-        
+
         guard parseResult.error == nil else {
             let error = parseResult.error!.pointee
             defer { dash_sdk_error_free(parseResult.error) }
             throw SDKError.fromDashSDKError(error)
         }
-        
+
         guard let identityHandlePtr = parseResult.data else {
             throw SDKError.internalError("Failed to parse identity")
         }
-        
+
         let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
         defer { dash_sdk_identity_destroy(identityHandle) }
-        
+
         // Prepare FFI inputs
         var ffiInputs: [DashSDKAddressTransferInput] = []
         var inputData: [Data] = [] // Keep data alive
-        
+
         for input in inputs {
             inputData.append(input.addressBytes)
             inputData.append(input.privateKey)
         }
-        
+
         for (index, input) in inputs.enumerated() {
             let addressPtr = inputData[index * 2].withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             let privateKeyPtr = inputData[index * 2 + 1].withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 guard buffer.count == 32 else { return nil }
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             guard let pkPtr = privateKeyPtr else {
                 throw SDKError.invalidParameter("Invalid private key at index \(index)")
             }
-            
+
             ffiInputs.append(DashSDKAddressTransferInput(
                 address: addressPtr,
                 address_len: UInt(input.addressBytes.count),
@@ -1327,7 +1327,7 @@ public class Addresses: @unchecked Sendable {
                 private_key: pkPtr
             ))
         }
-        
+
         // Call FFI
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             dash_sdk_identity_top_up_from_addresses(
@@ -1338,51 +1338,51 @@ public class Addresses: @unchecked Sendable {
                 nil // put_settings
             )
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             throw SDKError.internalError("No result data returned")
         }
-        
+
         // Parse result
         let resultPtr = dataPtr.assumingMemoryBound(to: DashSDKIdentityTopUpFromAddressesResult.self)
         let ffiResult = resultPtr.pointee
-        
+
         // Parse address info map
         var infos: [Data: PlatformAddressInfo] = [:]
         if ffiResult.address_info_map.count > 0 && ffiResult.address_info_map.entries != nil {
             for i in 0..<ffiResult.address_info_map.count {
                 let entry = ffiResult.address_info_map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // Free the result
         dash_sdk_identity_top_up_from_addresses_result_free(resultPtr)
-        
+
         return (ffiResult.identity_balance, PlatformAddressInfosResult(infos: infos))
     }
-    
+
     /// Transfer credits from an identity to Platform addresses
     ///
     /// - Parameters:
@@ -1402,40 +1402,40 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard identityPrivateKey.count == 32 else {
             throw SDKError.invalidParameter("Identity private key must be 32 bytes, got \(identityPrivateKey.count)")
         }
-        
+
         guard !outputs.isEmpty else {
             throw SDKError.invalidParameter("Outputs array is empty")
         }
-        
+
         // Fetch identity JSON and parse to get handle
         let identityJSON = try await sdk.identityGet(identityId: identityId)
         guard let identityJSONString = try? JSONSerialization.data(withJSONObject: identityJSON),
               let jsonString = String(data: identityJSONString, encoding: .utf8) else {
             throw SDKError.serializationError("Failed to serialize identity JSON")
         }
-        
+
         // Parse identity JSON to get handle
         let parseResult = jsonString.withCString { cString in
             dash_sdk_identity_parse_json(cString)
         }
-        
+
         guard parseResult.error == nil else {
             let error = parseResult.error!.pointee
             defer { dash_sdk_error_free(parseResult.error) }
             throw SDKError.fromDashSDKError(error)
         }
-        
+
         guard let identityHandlePtr = parseResult.data else {
             throw SDKError.internalError("Failed to parse identity")
         }
-        
+
         let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
         defer { dash_sdk_identity_destroy(identityHandle) }
-        
+
         // Create signer from private key
         let signerResult = identityPrivateKey.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(
@@ -1443,7 +1443,7 @@ public class Addresses: @unchecked Sendable {
                 UInt(identityPrivateKey.count)
             )
         }
-        
+
         guard signerResult.error == nil,
               let signer = signerResult.data else {
             if let error = signerResult.error {
@@ -1453,31 +1453,31 @@ public class Addresses: @unchecked Sendable {
             }
             throw SDKError.internalError("Failed to create signer")
         }
-        
+
         defer {
             dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
-        
+
         // Prepare FFI outputs
         var ffiOutputs: [DashSDKAddressTransferOutput] = []
         var outputData: [Data] = [] // Keep data alive
-        
+
         for output in outputs {
             outputData.append(output.addressBytes)
         }
-        
+
         for (index, data) in outputData.enumerated() {
             let addressPtr = data.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             ffiOutputs.append(DashSDKAddressTransferOutput(
                 address: addressPtr,
                 address_len: UInt(data.count),
                 amount: outputs[index].amount
             ))
         }
-        
+
         // Call FFI
         let result = ffiOutputs.withUnsafeMutableBufferPointer { outputsBuffer -> DashSDKResult in
             dash_sdk_identity_transfer_credits_to_addresses(
@@ -1490,51 +1490,51 @@ public class Addresses: @unchecked Sendable {
                 nil // put_settings
             )
         }
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             throw SDKError.internalError("No result data returned")
         }
-        
+
         // Parse result
         let resultPtr = dataPtr.assumingMemoryBound(to: DashSDKIdentityTransferToAddressesResult.self)
         let ffiResult = resultPtr.pointee
-        
+
         // Parse address info map
         var infos: [Data: PlatformAddressInfo] = [:]
         if ffiResult.address_info_map.count > 0 && ffiResult.address_info_map.entries != nil {
             for i in 0..<ffiResult.address_info_map.count {
                 let entry = ffiResult.address_info_map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // Free the result
         dash_sdk_identity_transfer_to_addresses_result_free(resultPtr)
-        
+
         return (ffiResult.identity_balance, PlatformAddressInfosResult(infos: infos))
     }
-    
+
     /// Create an identity funded by Platform addresses
     ///
     /// - Parameters:
@@ -1555,40 +1555,40 @@ public class Addresses: @unchecked Sendable {
         guard let sdk = sdk, let handle = sdk.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
+
         guard identityPrivateKey.count == 32 else {
             throw SDKError.invalidParameter("Identity private key must be 32 bytes, got \(identityPrivateKey.count)")
         }
-        
+
         guard !inputs.isEmpty else {
             throw SDKError.invalidParameter("Inputs array is empty")
         }
-        
+
         // Fetch identity JSON and parse to get handle
         let identityJSON = try await sdk.identityGet(identityId: identityId)
         guard let identityJSONString = try? JSONSerialization.data(withJSONObject: identityJSON),
               let jsonString = String(data: identityJSONString, encoding: .utf8) else {
             throw SDKError.serializationError("Failed to serialize identity JSON")
         }
-        
+
         // Parse identity JSON to get handle
         let parseResult = jsonString.withCString { cString in
             dash_sdk_identity_parse_json(cString)
         }
-        
+
         guard parseResult.error == nil else {
             let error = parseResult.error!.pointee
             defer { dash_sdk_error_free(parseResult.error) }
             throw SDKError.fromDashSDKError(error)
         }
-        
+
         guard let identityHandlePtr = parseResult.data else {
             throw SDKError.internalError("Failed to parse identity")
         }
-        
+
         let identityHandle = identityHandlePtr.assumingMemoryBound(to: IdentityHandle.self)
         // Note: We don't destroy this handle here because it will be replaced by the created identity
-        
+
         // Create signer from private key
         let signerResult = identityPrivateKey.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(
@@ -1596,7 +1596,7 @@ public class Addresses: @unchecked Sendable {
                 UInt(identityPrivateKey.count)
             )
         }
-        
+
         guard signerResult.error == nil,
               let signer = signerResult.data else {
             dash_sdk_identity_destroy(identityHandle) // Clean up identity handle
@@ -1607,34 +1607,34 @@ public class Addresses: @unchecked Sendable {
             }
             throw SDKError.internalError("Failed to create signer")
         }
-        
+
         defer {
             dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
-        
+
         // Prepare FFI inputs
         var ffiInputs: [DashSDKAddressTransferInput] = []
         var inputData: [(address: Data, privateKey: Data)] = [] // Keep data alive
-        
+
         for input in inputs {
             inputData.append((address: input.addressBytes, privateKey: input.privateKey))
         }
-        
+
         for (index, data) in inputData.enumerated() {
             let addressPtr = data.address.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             let privateKeyPtr = data.privateKey.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 guard buffer.count == 32 else { return nil }
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             guard let pkPtr = privateKeyPtr else {
                 dash_sdk_identity_destroy(identityHandle) // Clean up
                 throw SDKError.invalidParameter("Invalid private key at index \(index)")
             }
-            
+
             ffiInputs.append(DashSDKAddressTransferInput(
                 address: addressPtr,
                 address_len: UInt(data.address.count),
@@ -1643,18 +1643,18 @@ public class Addresses: @unchecked Sendable {
                 private_key: pkPtr
             ))
         }
-        
+
         // Prepare optional output
         var ffiOutput: UnsafePointer<DashSDKAddressTransferOutput>? = nil
         var outputData: Data? = nil
         var outputPtr: UnsafePointer<UInt8>? = nil
-        
+
         if let output = output {
             outputData = output.addressBytes
             outputPtr = outputData!.withUnsafeBytes { buffer -> UnsafePointer<UInt8>? in
                 return buffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             }
-            
+
             var outputStruct = DashSDKAddressTransferOutput(
                 address: outputPtr,
                 address_len: UInt(output.addressBytes.count),
@@ -1662,7 +1662,7 @@ public class Addresses: @unchecked Sendable {
             )
             ffiOutput = withUnsafePointer(to: &outputStruct) { $0 }
         }
-        
+
         // Call FFI
         let result = ffiInputs.withUnsafeMutableBufferPointer { inputsBuffer -> DashSDKResult in
             dash_sdk_identity_create_from_addresses(
@@ -1675,61 +1675,61 @@ public class Addresses: @unchecked Sendable {
                 nil // put_settings
             )
         }
-        
+
         // Clean up the original identity handle (it will be replaced)
         dash_sdk_identity_destroy(identityHandle)
-        
+
         // Check for errors
         if let error = result.error {
             let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
             throw sdkError
         }
-        
+
         guard let dataPtr = result.data else {
             throw SDKError.internalError("No result data returned")
         }
-        
+
         // Parse result
         let resultPtr = dataPtr.assumingMemoryBound(to: DashSDKIdentityCreateFromAddressesResult.self)
         let ffiResult = resultPtr.pointee
-        
+
         // Parse address info map
         var infos: [Data: PlatformAddressInfo] = [:]
         if ffiResult.address_info_map.count > 0 && ffiResult.address_info_map.entries != nil {
             for i in 0..<ffiResult.address_info_map.count {
                 let entry = ffiResult.address_info_map.entries![Int(i)]
-                
+
                 let addressBytes: Data
                 if entry.address != nil && entry.address_len > 0 {
                     addressBytes = Data(bytes: entry.address!, count: Int(entry.address_len))
                 } else {
                     continue
                 }
-                
+
                 let info = PlatformAddressInfo(
                     addressBytes: addressBytes,
                     nonce: entry.nonce,
                     balance: entry.balance
                 )
-                
+
                 infos[addressBytes] = info
             }
         }
-        
+
         // The identity handle is in the result - extract it before freeing
         guard let identityHandlePtr = ffiResult.identity_handle else {
             dash_sdk_identity_create_from_addresses_result_free(resultPtr)
             throw SDKError.internalError("No identity handle returned from create operation")
         }
-        
+
         // Free the result (but keep the identity handle - caller must free it)
         dash_sdk_identity_create_from_addresses_result_free(resultPtr)
-        
+
         // Convert UnsafeMutablePointer<IdentityHandle> to OpaquePointer
         // OpaquePointer initializer returns optional, so we force unwrap since we know it's valid
         let createdIdentityHandle = OpaquePointer(UnsafeRawPointer(identityHandlePtr))!
-        
+
         return (createdIdentityHandle, PlatformAddressInfosResult(infos: infos))
     }
 }

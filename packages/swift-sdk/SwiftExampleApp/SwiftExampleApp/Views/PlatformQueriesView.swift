@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PlatformQueriesView: View {
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     enum QueryCategory: String, CaseIterable {
         case identity = "Identity"
         case dataContract = "Data Contract"
@@ -16,7 +16,7 @@ struct PlatformQueriesView: View {
         case addresses = "Addresses"
         case system = "System & Utility"
         case diagnostics = "Diagnostics"
-        
+
         var systemImage: String {
             switch self {
             case .identity: return "person.circle"
@@ -33,7 +33,7 @@ struct PlatformQueriesView: View {
             case .diagnostics: return "stethoscope"
             }
         }
-        
+
         var description: String {
             switch self {
             case .identity: return "Fetch and manage identity information"
@@ -51,7 +51,7 @@ struct PlatformQueriesView: View {
             }
         }
     }
-    
+
     var body: some View {
         List {
             ForEach(QueryCategory.allCases, id: \.self) { category in
@@ -61,7 +61,7 @@ struct PlatformQueriesView: View {
                             .font(.title2)
                             .foregroundColor(.blue)
                             .frame(width: 40)
-                        
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text(category.rawValue)
                                 .font(.headline)
@@ -83,7 +83,7 @@ struct PlatformQueriesView: View {
 struct QueryCategoryDetailView: View {
     let category: PlatformQueriesView.QueryCategory
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     var body: some View {
         // Special handling for addresses category - use dedicated view
         if category == .addresses {
@@ -134,7 +134,7 @@ struct QueryCategoryDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
         }
     }
-    
+
     private func queries(for category: PlatformQueriesView.QueryCategory) -> [QueryDefinition] {
         switch category {
         case .identity:
@@ -150,20 +150,20 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getIdentityByPublicKeyHash", label: "Get Identity by Public Key Hash", description: "Find an identity by its unique public key hash"),
                 QueryDefinition(name: "getIdentityByNonUniquePublicKeyHash", label: "Get Identity by Non-Unique Public Key Hash", description: "Find identities by non-unique public key hash"),
             ]
-            
+
         case .dataContract:
             return [
                 QueryDefinition(name: "getDataContract", label: "Get Data Contract", description: "Fetch a data contract by its identifier"),
                 QueryDefinition(name: "getDataContractHistory", label: "Get Data Contract History", description: "Get the version history of a data contract"),
                 QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers")
             ]
-            
+
         case .documents:
             return [
                 QueryDefinition(name: "getDocuments", label: "Get Documents", description: "Query documents from a data contract"),
                 QueryDefinition(name: "getDocument", label: "Get Document", description: "Fetch a specific document by ID")
             ]
-            
+
         case .dpns:
             return [
                 QueryDefinition(name: "getDpnsUsername", label: "Get DPNS Usernames", description: "Get DPNS usernames for an identity"),
@@ -177,7 +177,7 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getContestedDpnsNameIdentityVotes", label: "Get Contested DPNS Name Identity Votes", description: "Get all DPNS name votes cast by a specific identity"),
                 QueryDefinition(name: "getDpnsVotePollsByEndDate", label: "Get DPNS Vote Polls by End Date", description: "Get DPNS name vote polls within a time range")
             ]
-            
+
         case .voting:
             return [
                 QueryDefinition(name: "getContestedResources", label: "Get Contested Resources", description: "Get list of contested resources"),
@@ -186,13 +186,13 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getContestedResourceIdentityVotes", label: "Get Contested Resource Identity Votes", description: "Get all votes cast by a specific identity"),
                 QueryDefinition(name: "getVotePollsByEndDate", label: "Get Vote Polls by End Date", description: "Get vote polls within a time range")
             ]
-            
+
         case .protocolVersion:
             return [
                 QueryDefinition(name: "getProtocolVersionUpgradeState", label: "Get Protocol Version Upgrade State", description: "Get the current state of protocol version upgrades"),
                 QueryDefinition(name: "getProtocolVersionUpgradeVoteStatus", label: "Get Protocol Version Upgrade Vote Status", description: "Get voting status for protocol version upgrades")
             ]
-            
+
         case .epoch:
             return [
                 QueryDefinition(name: "getEpochsInfo", label: "Get Epochs Info", description: "Get information about epochs"),
@@ -201,7 +201,7 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getEvonodesProposedEpochBlocksByIds", label: "Get Evonodes Proposed Epoch Blocks by IDs", description: "Get proposed blocks by evonode IDs"),
                 QueryDefinition(name: "getEvonodesProposedEpochBlocksByRange", label: "Get Evonodes Proposed Epoch Blocks by Range", description: "Get proposed blocks by range")
             ]
-            
+
         case .token:
             return [
                 QueryDefinition(name: "getIdentityTokenBalances", label: "Get Identity Token Balances", description: "Get token balances for an identity"),
@@ -214,7 +214,7 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getTokenPerpetualDistributionLastClaim", label: "Get Token Perpetual Distribution Last Claim", description: "Get last claim information for perpetual distribution"),
                 QueryDefinition(name: "getTokenTotalSupply", label: "Get Token Total Supply", description: "Get total supply of a token")
             ]
-            
+
         case .group:
             return [
                 QueryDefinition(name: "getGroupInfo", label: "Get Group Info", description: "Get information about a group"),
@@ -222,7 +222,7 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getGroupActions", label: "Get Group Actions", description: "Get actions for a group"),
                 QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action")
             ]
-            
+
         case .system:
             return [
                 QueryDefinition(name: "getStatus", label: "Get Status", description: "Get system status"),
@@ -230,14 +230,14 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getCurrentQuorumsInfo", label: "Get Current Quorums Info", description: "Get information about current validator quorums"),
                 QueryDefinition(name: "getPrefundedSpecializedBalance", label: "Get Prefunded Specialized Balance", description: "Get balance of a prefunded specialized account")
             ]
-            
+
         case .addresses:
             // Addresses use a dedicated view, but define queries for completeness
             return [
                 QueryDefinition(name: "getAddressInfo", label: "Get Address Info", description: "Fetch balance and nonce for a single Platform address"),
                 QueryDefinition(name: "getAddressesInfos", label: "Get Addresses Infos", description: "Fetch balance and nonce for multiple Platform addresses")
             ]
-            
+
         case .diagnostics:
             return [
                 QueryDefinition(name: "runAllQueries", label: "Run All Queries", description: "Execute all platform queries with test data to verify connectivity and functionality"),

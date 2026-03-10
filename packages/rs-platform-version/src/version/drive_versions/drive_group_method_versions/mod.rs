@@ -63,3 +63,14 @@ pub struct DriveGroupCostEstimationMethodVersions {
 pub struct DriveAddressFundsCostEstimationMethodVersions {
     pub for_address_balance_update: FeatureVersion,
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveShieldedMethodVersions {
+    pub insert_note: FeatureVersion,
+    pub insert_nullifiers: FeatureVersion,
+    pub update_total_balance: FeatureVersion,
+    pub prove_nullifiers_trunk_query: FeatureVersion,
+    pub prove_nullifiers_branch_query: FeatureVersion,
+    pub nullifiers_query_min_depth: u8,
+    pub nullifiers_query_max_depth: u8,
+}

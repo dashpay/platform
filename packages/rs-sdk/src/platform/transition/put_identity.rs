@@ -16,6 +16,7 @@ use dpp::identity::IdentityPublicKey;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use dpp::state_transition::identity_id_from_input_addresses;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
@@ -169,6 +170,12 @@ async fn put_identity_with_address_funding<
         .and_then(|settings| settings.user_fee_increase)
         .unwrap_or_default();
 
+    // Compute the expected identity ID deterministically from the input addresses
+    // and nonces BEFORE they're moved into try_from_inputs_with_signer. This must
+    // NOT use identity.id(), which may be a caller-supplied placeholder that doesn't
+    // match the platform-computed ID. See https://github.com/dashpay/platform/issues/3095
+    let expected_identity_id = identity_id_from_input_addresses(&inputs)?;
+
     let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
         identity,
         inputs,
@@ -179,6 +186,7 @@ async fn put_identity_with_address_funding<
         user_fee_increase,
         sdk.version(),
     )?;
+
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
     match state_transition
@@ -190,11 +198,10 @@ async fn put_identity_with_address_funding<
             address_infos_map,
         ) => {
             let proved_identity_id = proved_identity.id();
-            if proved_identity_id != identity.id() {
+            if proved_identity_id != expected_identity_id {
                 return Err(Error::InvalidProvedResponse(format!(
-                    "proof returned identity {} but {} was created",
-                    proved_identity_id,
-                    identity.id()
+                    "proof returned identity {} but {} was expected (derived from input addresses)",
+                    proved_identity_id, expected_identity_id
                 )));
             }
 

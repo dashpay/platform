@@ -1,4 +1,6 @@
-use crate::version::drive_versions::drive_group_method_versions::DriveAddressFundsMethodVersions;
+use crate::version::drive_versions::drive_group_method_versions::{
+    DriveAddressFundsMethodVersions, DriveShieldedMethodVersions,
+};
 use crate::version::FeatureVersion;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
@@ -31,6 +33,7 @@ pub mod v3;
 pub mod v4;
 pub mod v5;
 pub mod v6;
+pub mod v7;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -65,6 +68,7 @@ pub struct DriveMethodVersions {
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
     pub address_funds: DriveAddressFundsMethodVersions,
+    pub shielded: DriveShieldedMethodVersions,
     pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
 }
 
@@ -84,6 +88,14 @@ pub struct DriveSavedBlockTransactionsMethodVersions {
     pub max_blocks_before_compaction: u16,
     /// Maximum number of address balance entries before compaction is triggered
     pub max_addresses_before_compaction: u32,
+    pub store_nullifiers: FeatureVersion,
+    pub fetch_nullifiers: FeatureVersion,
+    pub compact_nullifiers: FeatureVersion,
+    pub cleanup_expired_nullifier_compactions: FeatureVersion,
+    /// Maximum number of blocks to store before nullifier compaction is triggered
+    pub max_blocks_before_nullifier_compaction: u16,
+    /// Maximum number of nullifier entries before compaction is triggered
+    pub max_nullifiers_before_compaction: u32,
 }
 
 #[derive(Clone, Debug, Default)]

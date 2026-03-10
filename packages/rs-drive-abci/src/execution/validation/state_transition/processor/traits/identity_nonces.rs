@@ -115,6 +115,13 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
+            StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => {
+                todo!("shielded transitions not yet implemented")
+            }
         }
     }
 }
@@ -161,6 +168,13 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
                     | StateTransition::AddressFundsTransfer(_)
                     | StateTransition::AddressFundingFromAssetLock(_)
                     | StateTransition::AddressCreditWithdrawal(_) => false,
+                    StateTransition::Shield(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_) => {
+                        todo!("shielded transitions not yet implemented")
+                    }
                 };
 
                 Ok(has_nonce_validation)

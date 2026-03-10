@@ -19,7 +19,7 @@
 ///         return None;
 ///      }
 ///
-///      Some(SomeObject {   
+///      Some(SomeObject {
 ///         field: u32::from_be_bytes(bytes.try_into().expect("4 bytes")),
 ///      })
 ///   }

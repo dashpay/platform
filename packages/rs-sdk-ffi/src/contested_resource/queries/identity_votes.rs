@@ -134,7 +134,7 @@ fn get_contested_resource_identity_votes(
                         vote_option.as_ref().map(|resource_vote| {
                             let vote_type = match &resource_vote.resource_vote_choice() {
                                     dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity(id) => {
-                                        format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#, 
+                                        format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#,
                                             bs58::encode(id.as_bytes()).into_string())
                                     }
                                     dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain => {
