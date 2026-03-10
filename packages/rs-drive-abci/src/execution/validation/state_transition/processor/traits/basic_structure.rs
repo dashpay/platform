@@ -246,11 +246,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                 {
                     Some(0) => Ok(st.validate_structure(platform_version)),
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "shield transition: validate_basic_structure".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shield transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "shield transition: validate_basic_structure".to_string(),
                         known_versions: vec![0],
@@ -266,13 +268,17 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                 {
                     Some(0) => Ok(st.validate_structure(platform_version)),
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "shielded transfer transition: validate_basic_structure".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shielded transfer transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
-                        method: "shielded transfer transition: validate_basic_structure".to_string(),
+                        method: "shielded transfer transition: validate_basic_structure"
+                            .to_string(),
                         known_versions: vec![0],
                     })),
                 }
@@ -286,11 +292,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                 {
                     Some(0) => Ok(st.validate_structure(platform_version)),
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "unshield transition: validate_basic_structure".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "unshield transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "unshield transition: validate_basic_structure".to_string(),
                         known_versions: vec![0],
@@ -306,12 +314,14 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                 {
                     Some(0) => Ok(st.validate_structure(platform_version)),
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "shield from asset lock transition: validate_basic_structure"
-                            .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shield from asset lock transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "shield from asset lock transition: validate_basic_structure"
                             .to_string(),
@@ -328,12 +338,14 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     .basic_structure
                 {
                     Some(0) => Ok(st.validate_structure(platform_version)),
-                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                        method: "shielded withdrawal transition: validate_basic_structure"
-                            .to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    })),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shielded withdrawal transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "shielded withdrawal transition: validate_basic_structure"
                             .to_string(),

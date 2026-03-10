@@ -29,12 +29,8 @@ use std::sync::OnceLock;
 /// Used for shield and shield-from-asset-lock transitions where funds enter the pool.
 pub const FLAGS_OUTPUTS_ONLY: u8 = 0x02;
 
-/// Orchard bundle flags byte: only spends are real (outputs are dummy).
-/// Used for unshield and shielded-withdrawal transitions where funds leave the pool.
-pub const FLAGS_SPENDS_ONLY: u8 = 0x01;
-
 /// Orchard bundle flags byte: both spends and outputs are real.
-/// Used for shielded transfers within the pool.
+/// Used for shielded transfers, unshield, and shielded-withdrawal transitions.
 pub const FLAGS_SPENDS_AND_OUTPUTS: u8 = 0x03;
 
 /// Cached verifying key for shielded proof verification.
@@ -184,8 +180,8 @@ pub fn reconstruct_and_verify_bundle(
     let mut batch = BatchValidator::new();
     batch.add_bundle(&bundle, sighash);
 
-    let mut rng = rand::rngs::OsRng;
-    if !batch.validate(vk, &mut rng) {
+    let rng = rand::rngs::OsRng;
+    if !batch.validate(vk, rng) {
         return Err(InvalidShieldedProofError::new(
             "bundle verification failed: proof, spend auth signatures, or binding signature invalid"
                 .to_string(),

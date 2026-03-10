@@ -230,7 +230,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: None,
+                basic_structure: Some(0),
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: None,
@@ -238,7 +238,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 transform_into_action: 0,
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
-                basic_structure: None,
+                basic_structure: Some(0),
                 advanced_structure: None,
                 identity_signatures: None,
                 nonce: None,

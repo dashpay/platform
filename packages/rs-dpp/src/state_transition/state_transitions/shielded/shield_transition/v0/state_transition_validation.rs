@@ -77,6 +77,18 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             );
         }
 
+        // amount must fit in i64 (Orchard protocol uses i64 internally for value_balance)
+        if self.amount > i64::MAX as u64 {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "shield amount exceeds maximum allowed value".to_string(),
+                    ),
+                )
+                .into(),
+            );
+        }
+
         // Proof must not be empty
         let result = validate_proof_not_empty(&self.proof);
         if !result.is_valid() {
