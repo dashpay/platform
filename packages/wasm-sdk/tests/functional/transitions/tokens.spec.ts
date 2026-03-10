@@ -205,8 +205,9 @@ describe('Token State Transitions', function describeTokenStateTransitions() {
       // Token operations require CRITICAL security level (key index 1)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 1);
 
-      // Create a MaxSupply config change item (set max supply to 10000)
-      const configurationChangeItem = sdk.TokenConfigurationChangeItem.MaxSupplyItem(10000n);
+      // Create a MaxSupply config change item (set max supply to 1_000_000)
+      // Must be above the current supply (base 100_000 + perpetual distribution)
+      const configurationChangeItem = sdk.TokenConfigurationChangeItem.MaxSupplyItem(1_000_000n);
 
       const result = await client.tokenConfigUpdate({
         dataContractId: testData.tokenContracts[0].contractId,
