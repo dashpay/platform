@@ -74,7 +74,7 @@ export class IdentitiesFacade {
     return w.getIdentityBalanceWithProofInfo(identityId);
   }
 
-  async balances(identityIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, bigint | undefined>> {
+  async balances(identityIds: wasm.IdentifierLikeArray): Promise<Map<string, bigint | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesBalances(identityIds);
   }
@@ -82,7 +82,7 @@ export class IdentitiesFacade {
   async balancesWithProof(
     identityIds: wasm.IdentifierLikeArray,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, bigint | undefined>
+    Map<string, bigint | undefined>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesBalancesWithProofInfo(identityIds);
@@ -147,7 +147,7 @@ export class IdentitiesFacade {
   }
 
   async tokenBalances(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLikeArray):
-    Promise<Map<wasm.Identifier, bigint>> {
+    Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalances(identityId, tokenIds);
   }
@@ -155,7 +155,7 @@ export class IdentitiesFacade {
   async tokenBalancesWithProof(
     identityId: wasm.IdentifierLike,
     tokenIds: wasm.IdentifierLikeArray,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
   }

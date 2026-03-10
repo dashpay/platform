@@ -77,6 +77,24 @@ impl BumpAddressInputNoncesActionV0 {
         }
     }
 
+    // Generic constructor from pre-computed inputs
+
+    /// from inputs with remaining balance (used by shield transitions where
+    /// the remaining balances are computed by the processing pipeline)
+    pub fn from_inputs_with_remaining_balance(
+        inputs_with_remaining_balance: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        fee_strategy: &AddressFundsFeeStrategy,
+        penalty_credits: Credits,
+        user_fee_increase: UserFeeIncrease,
+    ) -> Self {
+        Self::new_with_penalty(
+            inputs_with_remaining_balance,
+            fee_strategy,
+            penalty_credits,
+            user_fee_increase,
+        )
+    }
+
     // IdentityCreateFromAddresses transformers
 
     /// from borrowed IdentityCreateFromAddresses transition

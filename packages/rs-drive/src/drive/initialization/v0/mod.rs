@@ -917,10 +917,9 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
-        let drive = setup_drive_with_initial_state_structure(None);
-
-        let platform_version = PlatformVersion::latest();
+    fn test_initial_state_structure_proper_heights_in_protocol_version_11() {
+        let platform_version = PlatformVersion::get(11).unwrap();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let drive_version = &platform_version.drive;
 
         // Merk Level 0
@@ -1267,5 +1266,358 @@ mod tests {
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 286); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent + great-grandparent sibling + great-great-grandparent
+    }
+
+    #[test]
+    fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let platform_version = PlatformVersion::latest();
+        let drive_version = &platform_version.drive;
+
+        // Merk Level 0
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::DataContractDocuments as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 113); //it + left + right
+
+        // Merk Level 1
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Identities as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 181); //it + left + right + parent + parent other
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Balances as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 182); //it + left + right + parent + parent other
+
+        // Merk Level 2
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Tokens as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Pools as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 288); //it + left + parent + sibling + parent sibling + grandparent (was 253, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::WithdrawalTransactions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Votes as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        // Merk Level 3
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::UniquePublicKeyHashesToIdentities as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 249); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![
+            RootTree::NonUniquePublicKeyKeyHashesToIdentities as u8,
+        ]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 249); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::PreFundedSpecializedBalances as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 321); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 288, +33 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::AddressBalances as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 287); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 252, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::SpentAssetLockTransactions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 249); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::GroupActions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 249); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Misc as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::Versions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 286); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+
+        // Merk Level 4
+
+        let mut query = Query::new();
+        query.insert_key(vec![RootTree::SavedBlockTransactions as u8]);
+        let root_path_query = PathQuery::new(
+            vec![],
+            SizedQuery {
+                query,
+                limit: None,
+                offset: None,
+            },
+        );
+        let mut drive_operations = vec![];
+        let proof = drive
+            .grove_get_proved_path_query(
+                &root_path_query,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )
+            .expect("expected to get root elements");
+        assert_eq!(proof.len(), 320); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent + great-grandparent sibling + great-great-grandparent (was 287, +33 from KVValueHashFeatureTypeWithChildHash)
     }
 }

@@ -1,0 +1,195 @@
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
+};
+use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
+use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY_U8;
+use crate::drive::Drive;
+use crate::drive::RootTree;
+use crate::error::proof::ProofError;
+use crate::error::Error;
+use crate::verify::RootHash;
+use grovedb::operations::proof::{GroveDBProof, ProofBytes};
+use grovedb::{
+    GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
+};
+use platform_version::version::PlatformVersion;
+
+/// Extract KV entries from merk proof bytes using the proper decoder.
+#[allow(clippy::type_complexity)]
+fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Error> {
+    let mut entries = Vec::new();
+
+    let decoder = MerkProofDecoder::new(merk_proof);
+
+    for op in decoder {
+        match op {
+            Ok(MerkProofOp::Push(MerkProofNode::KV(key, value)))
+            | Ok(MerkProofOp::PushInverted(MerkProofNode::KV(key, value))) => {
+                entries.push((key, value));
+            }
+            Err(e) => {
+                tracing::error!(%e, "merk proof decode error");
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "failed to decode merk proof op: {}",
+                    e
+                ))));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(entries)
+}
+
+impl Drive {
+    /// Verifies compacted nullifier changes proof.
+    ///
+    /// This verification works by:
+    /// 1. Decoding the GroveDBProof structure
+    /// 2. Navigating to the compacted nullifiers layer ('o')
+    /// 3. Extracting KV entries from the merk proof
+    /// 4. Filtering entries where the key range contains start_block_height
+    /// 5. Verifying the root hash using a subset query
+    pub(super) fn verify_compacted_nullifier_changes_v0(
+        proof: &[u8],
+        start_block_height: u64,
+        limit: Option<u16>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<CompactedNullifierChange>), Error> {
+        // Decode the GroveDBProof to navigate its structure
+        let grovedb_proof: GroveDBProof = {
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_limit::<{ 4 * 1024 * 1024 }>();
+            let (proof_data, bytes_read): (GroveDBProof, usize) =
+                bincode::decode_from_slice(proof, config).map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode GroveDBProof: {}",
+                        e
+                    )))
+                })?;
+            if bytes_read != proof.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "trailing bytes after GroveDBProof decode: read {} of {}",
+                    bytes_read,
+                    proof.len()
+                ))));
+            }
+            proof_data
+        };
+
+        // Navigate to the compacted nullifiers layer
+        // Path: AddressBalances -> SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
+        let address_balances_key = vec![RootTree::AddressBalances as u8];
+        let pool_key = vec![SHIELDED_CREDIT_POOL_KEY_U8];
+        let compacted_key = vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8];
+
+        // Extract KV entries from the compacted layer's merk proof to find
+        // if there's a containing range for start_block_height.
+        // V0 and V1 proofs have different layer types (MerkOnlyLayerProof vs LayerProof),
+        // so we handle them separately.
+        let kv_entries = match &grovedb_proof {
+            GroveDBProof::V0(v0) => {
+                let compacted_layer = v0
+                    .root_layer
+                    .lower_layers
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+            GroveDBProof::V1(v1) => {
+                let compacted_layer = v1
+                    .root_layer
+                    .lower_layers
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| match &layer.merk_proof {
+                        ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
+                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
+                            "unsupported V1 proof bytes variant for compacted nullifiers: {:?}",
+                            std::mem::discriminant(other)
+                        )))),
+                    })
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+        };
+
+        // Look for a KV entry where the range contains start_block_height
+        // Keys are 16 bytes: (start_block, end_block), both big-endian
+        let containing_key = kv_entries.iter().find_map(|(key, _)| {
+            if key.len() != 16 {
+                return None;
+            }
+            // Safety: length verified to be 16 above
+            let range_start =
+                u64::from_be_bytes(key[0..8].try_into().expect("len checked to be 16"));
+            let range_end =
+                u64::from_be_bytes(key[8..16].try_into().expect("len checked to be 16"));
+
+            // Check if this range contains start_block_height
+            if range_start <= start_block_height && start_block_height <= range_end {
+                Some(key.clone())
+            } else {
+                None
+            }
+        });
+
+        // Determine the start_key for the query
+        // Use the containing range's key if found, otherwise (start_block_height, start_block_height)
+        let start_key = containing_key.unwrap_or_else(|| {
+            let mut key = Vec::with_capacity(16);
+            key.extend_from_slice(&start_block_height.to_be_bytes());
+            key.extend_from_slice(&start_block_height.to_be_bytes());
+            key
+        });
+
+        // Verify the proof and get results using subset query
+        let path = shielded_compacted_nullifiers_path_vec();
+
+        let mut query = Query::new();
+        query.insert_range_from(start_key..);
+
+        let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
+
+        let (root_hash, proved_key_values) = GroveDb::verify_subset_query(
+            proof,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )?;
+
+        // Process the verified results
+        let mut compacted_changes = Vec::new();
+
+        for (_path, key, maybe_element) in proved_key_values {
+            let Some(element) = maybe_element else {
+                continue;
+            };
+
+            let (start_block, end_block) = CompactedNullifierChange::parse_key(&key)?;
+
+            // Get the serialized data from the Item element
+            let grovedb::Element::Item(serialized_data, _) = element else {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "expected item element for compacted nullifiers".to_string(),
+                )));
+            };
+
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
+
+            compacted_changes.push(CompactedNullifierChange {
+                start_block,
+                end_block,
+                nullifiers,
+            });
+        }
+
+        Ok((root_hash, compacted_changes))
+    }
+}

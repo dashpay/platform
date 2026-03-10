@@ -8,4 +8,3 @@ Parameters:
 | **contractId**         | String             | yes            | A valid registered contractId |
 
 Returns : Promise<Buffer>
-

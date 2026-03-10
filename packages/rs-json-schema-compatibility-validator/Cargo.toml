@@ -23,4 +23,3 @@ examples = []
 ignored=[
     "assert_matches", # used in doctests
 ]
-

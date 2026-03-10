@@ -17,17 +17,17 @@ echo "Checking for Swift SDK bindings..."
 # Check if the header file exists
 if [ ! -f "$CDASHSDKFFI_DIR/DashSDKFFI.h" ]; then
     echo "DashSDKFFI.h not found. Generating header..."
-    
+
     # Create the directory if it doesn't exist
     mkdir -p "$CDASHSDKFFI_DIR"
-    
+
     # Navigate to rs-sdk-ffi directory
     cd "$RS_SDK_FFI_DIR"
-    
+
     # Generate only the header using cbindgen
     echo "Generating C header with cbindgen..."
     GENERATE_BINDINGS=1 cargo build --release --package rs-sdk-ffi
-    
+
     # Check if the header was generated
     if [ -f "dash_sdk_ffi.h" ]; then
         # Copy the header to the expected location with the expected name
@@ -45,7 +45,7 @@ if [ ! -f "$CDASHSDKFFI_DIR/DashSDKFFI.h" ]; then
         echo "  cp dash_sdk_ffi.h $CDASHSDKFFI_DIR/DashSDKFFI.h"
         exit 1
     fi
-    
+
     echo "Header generated successfully!"
     echo ""
     echo "NOTE: The iOS libraries still need to be built. To build them:"

@@ -20,8 +20,8 @@ use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCredit
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
-    StateTransitionSingleSigned,
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
+    StateTransitionLike, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
 use wasm_bindgen::JsValue;

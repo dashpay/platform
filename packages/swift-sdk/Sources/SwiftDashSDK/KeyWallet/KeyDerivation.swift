@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Key derivation utilities
 public class KeyDerivation {
-    
+
     /// Create a new master extended private key from seed
     /// - Parameters:
     ///   - seed: The seed bytes
@@ -11,25 +11,25 @@ public class KeyDerivation {
     /// - Returns: Extended private key handle
     public static func createMasterKey(seed: Data, network: KeyWalletNetwork = .mainnet) throws -> ExtendedPrivateKey {
         var error = FFIError()
-        
+
         let xprivPtr = seed.withUnsafeBytes { seedBytes in
             let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress
             return derivation_new_master_key(seedPtr, seed.count, network.ffiValue, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard let handle = xprivPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return ExtendedPrivateKey(handle: handle)
     }
-    
+
     /// Get BIP44 account path
     /// - Parameters:
     ///   - network: The network type
@@ -43,23 +43,23 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_bip44_account_path(
             network.ffiValue, accountIndex, pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Get BIP44 payment path
     /// - Parameters:
     ///   - network: The network type
@@ -77,24 +77,24 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_bip44_payment_path(
             network.ffiValue, accountIndex, isChange, addressIndex,
             pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Get CoinJoin path
     /// - Parameters:
     ///   - network: The network type
@@ -108,23 +108,23 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_coinjoin_path(
             network.ffiValue, accountIndex, pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Get identity registration path
     /// - Parameters:
     ///   - network: The network type
@@ -138,23 +138,23 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_identity_registration_path(
             network.ffiValue, identityIndex, pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Get identity top-up path
     /// - Parameters:
     ///   - network: The network type
@@ -170,24 +170,24 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_identity_topup_path(
             network.ffiValue, identityIndex, topupIndex,
             pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Get identity authentication path
     /// - Parameters:
     ///   - network: The network type
@@ -203,24 +203,24 @@ public class KeyDerivation {
         defer {
             pathBuffer.deallocate()
         }
-        
+
         let success = derivation_identity_authentication_path(
             network.ffiValue, identityIndex, keyIndex,
             pathBuffer, maxPathLen, &error)
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return String(cString: pathBuffer)
     }
-    
+
     /// Parse a derivation path string to indices
     /// - Parameter path: The derivation path string
     /// - Returns: Tuple of (indices, hardened flags)
@@ -229,11 +229,11 @@ public class KeyDerivation {
         var indicesPtr: UnsafeMutablePointer<UInt32>?
         var hardenedPtr: UnsafeMutablePointer<Bool>?
         var count: size_t = 0
-        
+
         let success = path.withCString { pathCStr in
             derivation_path_parse(pathCStr, &indicesPtr, &hardenedPtr, &count, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
@@ -242,20 +242,20 @@ public class KeyDerivation {
                 derivation_path_free(indices, hardened, count)
             }
         }
-        
+
         guard success, let indices = indicesPtr, let hardened = hardenedPtr else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         // Copy the data before freeing
         var indicesArray: [UInt32] = []
         var hardenedArray: [Bool] = []
-        
+
         for i in 0..<count {
             indicesArray.append(indices[i])
             hardenedArray.append(hardened[i])
         }
-        
+
         return (indices: indicesArray, hardened: hardenedArray)
     }
 }
@@ -263,15 +263,15 @@ public class KeyDerivation {
 /// Extended private key handle
 public class ExtendedPrivateKey {
     private let handle: OpaquePointer
-    
+
     internal init(handle: OpaquePointer) {
         self.handle = handle
     }
-    
+
     deinit {
         derivation_xpriv_free(handle)
     }
-    
+
     /// Convert to extended public key
     public func toPublicKey() throws -> ExtendedPublicKey {
         var error = FFIError()
@@ -283,10 +283,10 @@ public class ExtendedPrivateKey {
             }
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return ExtendedPublicKey(handle: xpubHandle)
     }
-    
+
     /// Get string representation
     public func toString() throws -> String {
         var error = FFIError()
@@ -298,7 +298,7 @@ public class ExtendedPrivateKey {
             }
             throw KeyWalletError(ffiError: error)
         }
-        
+
         let str = String(cString: strPtr)
         derivation_string_free(strPtr)
         return str
@@ -308,15 +308,15 @@ public class ExtendedPrivateKey {
 /// Extended public key handle
 public class ExtendedPublicKey {
     private let handle: OpaquePointer
-    
+
     internal init(handle: OpaquePointer) {
         self.handle = handle
     }
-    
+
     deinit {
         derivation_xpub_free(handle)
     }
-    
+
     /// Get string representation
     public func toString() throws -> String {
         var error = FFIError()
@@ -328,32 +328,32 @@ public class ExtendedPublicKey {
             }
             throw KeyWalletError(ffiError: error)
         }
-        
+
         let str = String(cString: strPtr)
         derivation_string_free(strPtr)
         return str
     }
-    
+
     /// Get fingerprint (4 bytes)
     public func getFingerprint() throws -> Data {
         var error = FFIError()
         var fingerprint = Data(count: 4)
-        
+
         let success = fingerprint.withUnsafeMutableBytes { bytes in
             let ptr = bytes.bindMemory(to: UInt8.self).baseAddress
             return derivation_xpub_fingerprint(handle, ptr, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard success else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return fingerprint
     }
 }

@@ -3,6 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::v2::DRIVE_CO
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v2::DRIVE_DOCUMENT_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
@@ -105,6 +106,15 @@ pub const DRIVE_VERSION_V5: DriveVersion = DriveVersion {
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
+        shielded: DriveShieldedMethodVersions {
+            insert_note: 0,
+            insert_nullifiers: 0,
+            update_total_balance: 0,
+            prove_nullifiers_trunk_query: 0,
+            prove_nullifiers_branch_query: 0,
+            nullifiers_query_min_depth: 6,
+            nullifiers_query_max_depth: 10,
+        },
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
@@ -112,6 +122,12 @@ pub const DRIVE_VERSION_V5: DriveVersion = DriveVersion {
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,
             max_addresses_before_compaction: 2048,
+            store_nullifiers: 0,
+            fetch_nullifiers: 0,
+            compact_nullifiers: 0,
+            cleanup_expired_nullifier_compactions: 0,
+            max_blocks_before_nullifier_compaction: 64,
+            max_nullifiers_before_compaction: 2048,
         },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,

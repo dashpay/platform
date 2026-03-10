@@ -12,15 +12,15 @@ public final class DataManager: ObservableObject {
         self.modelContext = modelContext
         self.currentNetwork = currentNetwork
     }
-    
+
     // MARK: - Identity Operations
-    
+
     /// Save or update an identity
     public func saveIdentity(_ identity: IdentityModel) throws {
         // Check if identity already exists
         let predicate = PersistentIdentity.predicate(identityId: identity.id)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
-        
+
         if let existingIdentity = try modelContext.fetch(descriptor).first {
             // Update existing identity
             existingIdentity.balance = Int64(identity.balance)
@@ -35,7 +35,7 @@ public final class DataManager: ObservableObject {
                     existingIdentity.addPublicKey(persistentKey)
                 }
             }
-            
+
             // Handle private keys - match them to their corresponding public keys using cryptographic validation
             for privateKeyData in identity.privateKeys {
                 // Find which public key this private key corresponds to
@@ -53,7 +53,7 @@ public final class DataManager: ObservableObject {
                     }
                 }
             }
-            
+
             // Update special keys
             if let votingKey = identity.votingPrivateKey {
                 existingIdentity.votingPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(votingKey, identityId: identity.id, keyType: .voting)
@@ -70,10 +70,10 @@ public final class DataManager: ObservableObject {
             let persistentIdentity = PersistentIdentity.from(identity, network: currentNetwork)
             modelContext.insert(persistentIdentity)
         }
-        
+
         try modelContext.save()
     }
-    
+
     /// Fetch all identities for current network
     public func fetchIdentities() throws -> [IdentityModel] {
         let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -83,7 +83,7 @@ public final class DataManager: ObservableObject {
         let persistentIdentities = try modelContext.fetch(descriptor)
         return persistentIdentities.map { $0.toIdentityModel() }
     }
-    
+
     /// Fetch local identities only
     public func fetchLocalIdentities() throws -> [IdentityModel] {
         let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -93,25 +93,25 @@ public final class DataManager: ObservableObject {
         let persistentIdentities = try modelContext.fetch(descriptor)
         return persistentIdentities.map { $0.toIdentityModel() }
     }
-    
+
     /// Delete an identity
     public func deleteIdentity(withId identityId: Data) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
-        
+
         if let identity = try modelContext.fetch(descriptor).first {
             modelContext.delete(identity)
             try modelContext.save()
         }
     }
-    
+
     // MARK: - Document Operations
-    
+
     /// Save or update a document
     public func saveDocument(_ document: DocumentModel) throws {
         let predicate = PersistentDocument.predicate(documentId: document.id)
         let descriptor = FetchDescriptor<PersistentDocument>(predicate: predicate)
-        
+
         if let existingDocument = try modelContext.fetch(descriptor).first {
             // Update existing document
             let dataToStore = (try? JSONSerialization.data(withJSONObject: document.data, options: [])) ?? Data()
@@ -121,14 +121,14 @@ public final class DataManager: ObservableObject {
             // Create new document
             let persistentDocument = PersistentDocument.from(document)
             modelContext.insert(persistentDocument)
-            
+
             // Link to local identity if the owner is local
             persistentDocument.linkToLocalIdentityIfNeeded(in: modelContext)
         }
-        
+
         try modelContext.save()
     }
-    
+
     /// Fetch documents for a contract
     public func fetchDocuments(contractId: String) throws -> [DocumentModel] {
         let predicate = PersistentDocument.predicate(contractId: contractId, network: currentNetwork.rawValue)
@@ -139,7 +139,7 @@ public final class DataManager: ObservableObject {
         let persistentDocuments = try modelContext.fetch(descriptor)
         return persistentDocuments.map { $0.toDocumentModel() }
     }
-    
+
     /// Fetch documents owned by an identity
     public func fetchDocuments(ownerId: Data) throws -> [DocumentModel] {
         let predicate = PersistentDocument.predicate(ownerId: ownerId)
@@ -150,25 +150,25 @@ public final class DataManager: ObservableObject {
         let persistentDocuments = try modelContext.fetch(descriptor)
         return persistentDocuments.map { $0.toDocumentModel() }
     }
-    
+
     /// Delete a document
     public func deleteDocument(withId documentId: String) throws {
         let predicate = PersistentDocument.predicate(documentId: documentId)
         let descriptor = FetchDescriptor<PersistentDocument>(predicate: predicate)
-        
+
         if let document = try modelContext.fetch(descriptor).first {
             document.markAsDeleted()
             try modelContext.save()
         }
     }
-    
+
     // MARK: - Contract Operations
-    
+
     /// Save or update a contract
     public func saveContract(_ contract: ContractModel) throws {
         let predicate = PersistentDataContract.predicate(contractId: contract.id)
         let descriptor = FetchDescriptor<PersistentDataContract>(predicate: predicate)
-        
+
         if let existingContract = try modelContext.fetch(descriptor).first {
             // Update existing contract
             existingContract.name = contract.name
@@ -176,8 +176,8 @@ public final class DataManager: ObservableObject {
             existingContract.schema = contract.schema
             existingContract.documentTypesList = contract.documentTypes
             // Update keywords by recreating relations
-            existingContract.keywordRelations = contract.keywords.map { 
-                PersistentKeyword(keyword: $0, contractId: existingContract.idBase58) 
+            existingContract.keywordRelations = contract.keywords.map {
+                PersistentKeyword(keyword: $0, contractId: existingContract.idBase58)
             }
             existingContract.contractDescription = contract.description
         } else {
@@ -185,10 +185,10 @@ public final class DataManager: ObservableObject {
             let persistentContract = PersistentDataContract.from(contract)
             modelContext.insert(persistentContract)
         }
-        
+
         try modelContext.save()
     }
-    
+
     /// Fetch all contracts for current network
     public func fetchContracts() throws -> [ContractModel] {
         let descriptor = FetchDescriptor<PersistentDataContract>(
@@ -198,7 +198,7 @@ public final class DataManager: ObservableObject {
         let persistentContracts = try modelContext.fetch(descriptor)
         return persistentContracts.map { $0.toContractModel() }
     }
-    
+
     /// Fetch contracts with tokens
     public func fetchContractsWithTokens() throws -> [ContractModel] {
         let descriptor = FetchDescriptor<PersistentDataContract>(
@@ -208,14 +208,14 @@ public final class DataManager: ObservableObject {
         let persistentContracts = try modelContext.fetch(descriptor)
         return persistentContracts.map { $0.toContractModel() }
     }
-    
+
     // MARK: - Token Balance Operations
-    
+
     /// Save or update a token balance
     public func saveTokenBalance(tokenId: String, identityId: Data, balance: UInt64, frozen: Bool = false, tokenInfo: (name: String, symbol: String, decimals: Int32)? = nil) throws {
         let predicate = PersistentTokenBalance.predicate(tokenId: tokenId, identityId: identityId)
         let descriptor = FetchDescriptor<PersistentTokenBalance>(predicate: predicate)
-        
+
         if let existingBalance = try modelContext.fetch(descriptor).first {
             // Update existing balance
             existingBalance.updateBalance(Int64(balance))
@@ -242,10 +242,10 @@ public final class DataManager: ObservableObject {
             )
             modelContext.insert(persistentBalance)
         }
-        
+
         try modelContext.save()
     }
-    
+
     /// Fetch token balances for an identity
     public func fetchTokenBalances(identityId: Data) throws -> [(tokenId: String, balance: UInt64, frozen: Bool)] {
         let predicate = PersistentTokenBalance.predicate(identityId: identityId)
@@ -256,20 +256,20 @@ public final class DataManager: ObservableObject {
         let persistentBalances = try modelContext.fetch(descriptor)
         return persistentBalances.map { $0.toTokenBalance() }
     }
-    
+
     // MARK: - Sync Operations
-    
+
     /// Mark an identity as synced
     func markIdentityAsSynced(identityId: Data) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
-        
+
         if let identity = try modelContext.fetch(descriptor).first {
             identity.markAsSynced()
             try modelContext.save()
         }
     }
-    
+
     /// Get identities that need syncing
     public func fetchIdentitiesNeedingSync(olderThan hours: Int = 1) throws -> [IdentityModel] {
         let date = Date().addingTimeInterval(-Double(hours) * 3600)
@@ -281,44 +281,44 @@ public final class DataManager: ObservableObject {
         let persistentIdentities = try modelContext.fetch(descriptor)
         return persistentIdentities.map { $0.toIdentityModel() }
     }
-    
+
     // MARK: - Utility Operations
-    
+
     /// Clear all data (for testing or reset)
     func clearAllData() throws {
         // Delete all identities
         try modelContext.delete(model: PersistentIdentity.self)
-        
+
         // Delete all documents
         try modelContext.delete(model: PersistentDocument.self)
-        
+
         // Delete all contracts
         try modelContext.delete(model: PersistentDataContract.self)
-        
+
         // Delete all public keys
         try modelContext.delete(model: PersistentPublicKey.self)
-        
+
         // Delete all token balances
         try modelContext.delete(model: PersistentTokenBalance.self)
-        
+
         try modelContext.save()
     }
-    
+
     /// Get statistics about stored data
     public func getDataStatistics() throws -> (identities: Int, documents: Int, contracts: Int, tokenBalances: Int) {
         let identityCount = try modelContext.fetchCount(FetchDescriptor<PersistentIdentity>())
         let documentCount = try modelContext.fetchCount(FetchDescriptor<PersistentDocument>())
         let contractCount = try modelContext.fetchCount(FetchDescriptor<PersistentDataContract>())
         let tokenBalanceCount = try modelContext.fetchCount(FetchDescriptor<PersistentTokenBalance>())
-        
+
         return (identities: identityCount, documents: documentCount, contracts: contractCount, tokenBalances: tokenBalanceCount)
     }
-    
+
     /// Remove private key reference from a public key
     public func removePrivateKeyReference(identityId: Data, keyId: Int32) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
-        
+
         if let identity = try modelContext.fetch(descriptor).first,
            let publicKey = identity.publicKeys.first(where: { $0.keyId == keyId }) {
             publicKey.privateKeyKeychainIdentifier = nil

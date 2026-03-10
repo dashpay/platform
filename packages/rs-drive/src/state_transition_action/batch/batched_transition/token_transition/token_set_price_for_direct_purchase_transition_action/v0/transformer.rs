@@ -19,13 +19,13 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
     /// Converts a `TokenSetPriceForDirectPurchaseTransitionV0` into a `TokenSetPriceForDirectPurchaseTransitionActionV0` using the provided contract lookup.
     ///
-    /// This method processes the token set_price_for_direct_purchaseing transition and returns the corresponding transition action
-    /// while looking up necessary data contracts and applying the relevant logic for set_price_for_direct_purchaseing.
+    /// This method processes the token set_price_for_direct_purchasing transition and returns the corresponding transition action
+    /// while looking up necessary data contracts and applying the relevant logic for set_price_for_direct_purchasing.
     ///
     /// # Arguments
     ///
     /// * `drive` - A reference to the `Drive` instance which handles data storage and retrieval.
-    /// * `owner_id` - The identifier of the owner initiating the set_price_for_direct_purchaseing transition. This is typically the identity
+    /// * `owner_id` - The identifier of the owner initiating the set_price_for_direct_purchasing transition. This is typically the identity
     ///   performing the transaction, such as the user's ID.
     /// * `transaction` - A transaction context that includes the necessary state and other details for the transition.
     /// * `value` - The `TokenSetPriceForDirectPurchaseTransitionV0` struct containing the transition data, including token amount and recipient.
@@ -126,14 +126,14 @@ impl TokenSetPriceForDirectPurchaseTransitionActionV0 {
 
     /// Converts a borrowed `TokenSetPriceForDirectPurchaseTransitionV0` into a `TokenSetPriceForDirectPurchaseTransitionActionV0` using the provided contract lookup.
     ///
-    /// This method processes the token set_price_for_direct_purchaseing transition and constructs the corresponding transition action while
-    /// looking up necessary data contracts and applying the relevant set_price_for_direct_purchaseing logic. It does not require `drive_operations`
+    /// This method processes the token set_price_for_direct_purchasing transition and constructs the corresponding transition action while
+    /// looking up necessary data contracts and applying the relevant set_price_for_direct_purchasing logic. It does not require `drive_operations`
     /// to be passed as a parameter, but it manages them internally.
     ///
     /// # Arguments
     ///
     /// * `drive` - A reference to the `Drive` instance that handles data storage and retrieval.
-    /// * `owner_id` - The identifier of the owner initiating the set_price_for_direct_purchaseing transition. This is typically the identity
+    /// * `owner_id` - The identifier of the owner initiating the set_price_for_direct_purchasing transition. This is typically the identity
     ///   performing the transaction, such as the user's ID.
     /// * `value` - A reference to the `TokenSetPriceForDirectPurchaseTransitionV0` struct containing the transition data, including token
     ///   amount and recipient.

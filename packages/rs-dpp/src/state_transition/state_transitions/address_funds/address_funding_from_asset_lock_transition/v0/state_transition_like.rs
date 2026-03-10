@@ -4,6 +4,7 @@ use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
     StateTransition, StateTransitionSingleSigned, StateTransitionWitnessSigned,
 };
@@ -39,7 +40,9 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransitionV0 {
     fn unique_identifiers(&self) -> Vec<String> {
         vec![]
     }
+}
 
+impl StateTransitionHasUserFeeIncrease for AddressFundingFromAssetLockTransitionV0 {
     fn user_fee_increase(&self) -> UserFeeIncrease {
         self.user_fee_increase
     }

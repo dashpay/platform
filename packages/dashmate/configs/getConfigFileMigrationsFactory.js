@@ -89,7 +89,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // Add pprof config
             options.platform.drive.tenderdash.pprof = base.get('platform.drive.tenderdash.pprof');
 
-            // Set different ports for local netwrok if exists
+            // Set different ports for local network if exists
             if (options.group === 'local') {
               options.platform.drive.tenderdash.pprof.port += i * 100;
 

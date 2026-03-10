@@ -32,18 +32,18 @@ import Foundation
 /// print("Confirmed: \(balance.confirmed), Unconfirmed: \(balance.unconfirmed)")
 /// ```
 public class KeyWallet {
-    
+
     /// Initialize the key wallet library
     /// Call this once at application startup
     public static func initialize() {
         _ = Wallet.initialize()
     }
-    
+
     /// Get the library version
     public static var version: String {
         return Wallet.version
     }
-    
+
     private init() {}
 }
 

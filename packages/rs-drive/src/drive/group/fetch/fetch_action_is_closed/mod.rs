@@ -11,7 +11,7 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Returns **`true`** if the action has already been closed, **`false`** if it is still
-    /// active.  
+    /// active.
     ///
     /// *Errors* if the action is missing or if the platform‑version number is unknown.
     #[allow(clippy::too_many_arguments)]
