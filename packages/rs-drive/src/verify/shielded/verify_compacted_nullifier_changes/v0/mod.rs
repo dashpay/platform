@@ -1,18 +1,18 @@
+use crate::drive::shielded::nullifiers::queries::{
+    shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
+};
+use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
+use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-
-/// The subtree key for compacted nullifiers storage as u8
-const COMPACTED_NULLIFIERS_KEY_U8: u8 = b'o';
 use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{
     GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
 };
 use platform_version::version::PlatformVersion;
-
-use super::VerifiedCompactedNullifierChanges;
 
 /// Extract KV entries from merk proof bytes using the proper decoder.
 #[allow(clippy::type_complexity)]
@@ -55,25 +55,34 @@ impl Drive {
         start_block_height: u64,
         limit: Option<u16>,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, VerifiedCompactedNullifierChanges), Error> {
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-
+    ) -> Result<(RootHash, Vec<CompactedNullifierChange>), Error> {
         // Decode the GroveDBProof to navigate its structure
-        let grovedb_proof: GroveDBProof = bincode::decode_from_slice(proof, bincode_config)
-            .map(|(p, _)| p)
-            .map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode GroveDBProof: {}",
-                    e
-                )))
-            })?;
+        let grovedb_proof: GroveDBProof = {
+            let config = bincode::config::standard()
+                .with_big_endian()
+                .with_limit::<{ 4 * 1024 * 1024 }>();
+            let (proof_data, bytes_read): (GroveDBProof, usize) =
+                bincode::decode_from_slice(proof, config).map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode GroveDBProof: {}",
+                        e
+                    )))
+                })?;
+            if bytes_read != proof.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(format!(
+                    "trailing bytes after GroveDBProof decode: read {} of {}",
+                    bytes_read,
+                    proof.len()
+                ))));
+            }
+            proof_data
+        };
 
         // Navigate to the compacted nullifiers layer
-        // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedNullifiers ('o' = 0x6f)
-        let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];
-        let compacted_key = vec![COMPACTED_NULLIFIERS_KEY_U8];
+        // Path: AddressBalances -> SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
+        let address_balances_key = vec![RootTree::AddressBalances as u8];
+        let pool_key = vec![SHIELDED_CREDIT_POOL_KEY_U8];
+        let compacted_key = vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8];
 
         // Extract KV entries from the compacted layer's merk proof to find
         // if there's a containing range for start_block_height.
@@ -84,7 +93,8 @@ impl Drive {
                 let compacted_layer = v0
                     .root_layer
                     .lower_layers
-                    .get(&saved_block_key)
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
                     .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
@@ -95,12 +105,16 @@ impl Drive {
                 let compacted_layer = v1
                     .root_layer
                     .lower_layers
-                    .get(&saved_block_key)
+                    .get(&address_balances_key)
+                    .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
                     .map(|layer| match &layer.merk_proof {
                         ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
-                        _ => Ok(vec![]),
+                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
+                            "unsupported V1 proof bytes variant for compacted nullifiers: {:?}",
+                            std::mem::discriminant(other)
+                        )))),
                     })
                     .transpose()?
                     .unwrap_or_default()
@@ -113,16 +127,11 @@ impl Drive {
             if key.len() != 16 {
                 return None;
             }
-            let range_start = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
-            let range_end = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
+            // Safety: length verified to be 16 above
+            let range_start =
+                u64::from_be_bytes(key[0..8].try_into().expect("len checked to be 16"));
+            let range_end =
+                u64::from_be_bytes(key[8..16].try_into().expect("len checked to be 16"));
 
             // Check if this range contains start_block_height
             if range_start <= start_block_height && start_block_height <= range_end {
@@ -142,10 +151,7 @@ impl Drive {
         });
 
         // Verify the proof and get results using subset query
-        let path = vec![
-            vec![RootTree::SavedBlockTransactions as u8],
-            vec![COMPACTED_NULLIFIERS_KEY_U8],
-        ];
+        let path = shielded_compacted_nullifiers_path_vec();
 
         let mut query = Query::new();
         query.insert_range_from(start_key..);
@@ -166,22 +172,7 @@ impl Drive {
                 continue;
             };
 
-            if key.len() != 16 {
-                return Err(Error::Proof(ProofError::CorruptedProof(
-                    "invalid compacted block key length, expected 16 bytes".to_string(),
-                )));
-            }
-
-            let range_start = u64::from_be_bytes(
-                key[0..8]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
-            let range_end = u64::from_be_bytes(
-                key[8..16]
-                    .try_into()
-                    .expect("slice is exactly 8 bytes from a 16-byte key"),
-            );
+            let (start_block, end_block) = CompactedNullifierChange::parse_key(&key)?;
 
             // Get the serialized data from the Item element
             let grovedb::Element::Item(serialized_data, _) = element else {
@@ -190,16 +181,13 @@ impl Drive {
                 )));
             };
 
-            // Deserialize the nullifier list
-            let (nullifiers, _): (Vec<[u8; 32]>, usize) =
-                bincode::decode_from_slice(&serialized_data, bincode_config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode compacted nullifiers: {}",
-                        e
-                    )))
-                })?;
+            let nullifiers = CompactedNullifiers::decode(&serialized_data)?;
 
-            compacted_changes.push((range_start, range_end, nullifiers));
+            compacted_changes.push(CompactedNullifierChange {
+                start_block,
+                end_block,
+                nullifiers,
+            });
         }
 
         Ok((root_hash, compacted_changes))

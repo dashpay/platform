@@ -9,6 +9,8 @@ pub mod shielded_withdrawal;
 /// Unshield transition action
 pub mod unshield;
 
+use dpp::shielded::SerializedAction;
+
 /// One note from an Orchard action: the three per-action fields that travel together.
 #[derive(Debug, Clone)]
 pub struct ShieldedActionNote {
@@ -18,4 +20,14 @@ pub struct ShieldedActionNote {
     pub cmx: [u8; 32],
     /// Encrypted note ciphertext
     pub encrypted_note: Vec<u8>,
+}
+
+impl From<&SerializedAction> for ShieldedActionNote {
+    fn from(action: &SerializedAction) -> Self {
+        ShieldedActionNote {
+            nullifier: action.nullifier,
+            cmx: action.cmx,
+            encrypted_note: action.encrypted_note.clone(),
+        }
+    }
 }

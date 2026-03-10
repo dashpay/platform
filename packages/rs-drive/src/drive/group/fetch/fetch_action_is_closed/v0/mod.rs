@@ -11,7 +11,7 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// V0 implementation — checks for the presence of the action tree under the *closed* root
-    /// first; if absent, checks the *active* root.  
+    /// first; if absent, checks the *active* root.
     /// Fails if the action is missing from **both** roots.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_action_is_closed_v0(

@@ -103,7 +103,10 @@ impl Drive {
                 compacted_layer
                     .map(|layer| match &layer.merk_proof {
                         ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
-                        _ => Ok(vec![]),
+                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
+                            "unsupported V1 proof bytes variant for compacted address balances: {:?}",
+                            std::mem::discriminant(other)
+                        )))),
                     })
                     .transpose()?
                     .unwrap_or_default()

@@ -8,15 +8,16 @@ use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
 use crate::util::batch::DriveOperation;
 
-/// Insert each nullifier (InsertOnly to prevent double-spend).
+/// Insert nullifiers into the permanent tree (double-spend prevention) and
+/// per-block sync storage (catch-up RPCs).
 pub(super) fn insert_nullifiers<'a>(
     ops: &mut Vec<DriveOperation<'a>>,
     notes: &[ShieldedActionNote],
 ) {
-    for note in notes {
+    if !notes.is_empty() {
         ops.push(DriveOperation::ShieldedPoolOperation(
-            ShieldedPoolOperationType::InsertNullifier {
-                nullifier: note.nullifier,
+            ShieldedPoolOperationType::InsertNullifiers {
+                nullifiers: notes.iter().map(|n| n.nullifier).collect(),
             },
         ));
     }
@@ -43,18 +44,4 @@ pub(super) fn update_balance<'a>(ops: &mut Vec<DriveOperation<'a>>, new_total_ba
     ops.push(DriveOperation::ShieldedPoolOperation(
         ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
     ));
-}
-
-/// Store nullifiers to recent block storage for catch-up sync RPCs.
-pub(super) fn store_nullifiers_for_block<'a>(
-    ops: &mut Vec<DriveOperation<'a>>,
-    notes: &[ShieldedActionNote],
-) {
-    if !notes.is_empty() {
-        ops.push(DriveOperation::ShieldedPoolOperation(
-            ShieldedPoolOperationType::StoreNullifiersForBlock {
-                nullifiers: notes.iter().map(|n| n.nullifier).collect(),
-            },
-        ));
-    }
 }

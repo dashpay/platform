@@ -9,7 +9,7 @@ public enum KeyWalletNetwork: UInt32 {
     case testnet = 1  // TESTNET
     case regtest = 2  // REGTEST
     case devnet = 3   // DEVNET
-    
+
     var ffiValue: FFINetwork {
         switch self {
         case .mainnet: return FFINetwork(rawValue: 0)  // Dash = 0
@@ -18,7 +18,7 @@ public enum KeyWalletNetwork: UInt32 {
         case .devnet: return FFINetwork(rawValue: 3)   // Devnet = 3
         }
     }
-    
+
     init(ffiNetwork: FFINetwork) {
         switch ffiNetwork.rawValue {
         case 0: self = .mainnet  // Dash = 0
@@ -45,11 +45,11 @@ public enum AccountType: UInt32 {
     case providerOwnerKeys = 8
     case providerOperatorKeys = 9
     case providerPlatformKeys = 10
-    
+
     var ffiValue: FFIAccountType {
         FFIAccountType(rawValue: self.rawValue)
     }
-    
+
     init(ffiType: FFIAccountType) {
         self = AccountType(rawValue: ffiType.rawValue) ?? .standardBIP44
     }
@@ -62,11 +62,11 @@ public enum AddressPoolType: UInt32 {
     case external = 0  // Receive addresses
     case `internal` = 1  // Change addresses
     case single = 2    // Single pool for non-standard accounts
-    
+
     var ffiValue: FFIAddressPoolType {
         FFIAddressPoolType(rawValue: self.rawValue)
     }
-    
+
     init(ffiType: FFIAddressPoolType) {
         self = AddressPoolType(rawValue: ffiType.rawValue) ?? .external
     }
@@ -79,11 +79,11 @@ public enum TransactionContext: UInt32 {
     case mempool = 0
     case inBlock = 1
     case inChainLockedBlock = 2
-    
+
     var ffiValue: FFITransactionContext {
         FFITransactionContext(rawValue: self.rawValue)
     }
-    
+
     init(ffiContext: FFITransactionContext) {
         self = TransactionContext(rawValue: ffiContext.rawValue) ?? .mempool
     }
@@ -103,11 +103,11 @@ public enum MnemonicLanguage: UInt32 {
     case korean = 7
     case portuguese = 8
     case spanish = 9
-    
+
     var ffiValue: FFILanguage {
         FFILanguage(rawValue: self.rawValue)
     }
-    
+
     init(ffiLanguage: FFILanguage) {
         self = MnemonicLanguage(rawValue: ffiLanguage.rawValue) ?? .english
     }
@@ -124,14 +124,14 @@ public enum AccountCreationOption {
     /// Create only BIP44 accounts (no CoinJoin or special accounts)
     case bip44AccountsOnly
     /// Create specific accounts with full control
-    case specificAccounts(bip44: [UInt32], bip32: [UInt32], coinJoin: [UInt32], 
+    case specificAccounts(bip44: [UInt32], bip32: [UInt32], coinJoin: [UInt32],
                           topUp: [UInt32], specialTypes: [AccountType])
     /// Create no accounts at all
     case noAccounts
-    
+
     func toFFIOptions() -> FFIWalletAccountCreationOptions {
         var options = FFIWalletAccountCreationOptions()
-        
+
         switch self {
         case .default:
             options.option_type = FFIAccountCreationOptionType(rawValue: 0) // DEFAULT
@@ -141,7 +141,7 @@ public enum AccountCreationOption {
             options.option_type = FFIAccountCreationOptionType(rawValue: 2) // BIP44_ACCOUNTS_ONLY
         case .specificAccounts(let bip44, let bip32, let coinJoin, let topUp, let specialTypes):
             options.option_type = FFIAccountCreationOptionType(rawValue: 3) // SPECIFIC_ACCOUNTS
-            
+
             // Note: These would need to be stored and passed properly
             // This is simplified - actual implementation would need to manage memory
             options.bip44_count = bip44.count
@@ -152,7 +152,7 @@ public enum AccountCreationOption {
         case .noAccounts:
             options.option_type = FFIAccountCreationOptionType(rawValue: 4) // NO_ACCOUNTS
         }
-        
+
         return options
     }
 }
@@ -225,7 +225,7 @@ public struct AddressPoolInfo {
     public let currentGap: UInt32
     public let gapLimit: UInt32
     public let highestUsedIndex: Int32
-    
+
     init(ffiInfo: FFIAddressPoolInfo) {
         self.poolType = AddressPoolType(ffiType: ffiInfo.pool_type)
         self.generatedCount = ffiInfo.generated_count
@@ -242,7 +242,7 @@ public struct TransactionCheckResult {
     public let totalReceived: UInt64
     public let totalSent: UInt64
     public let affectedAccountsCount: UInt32
-    
+
     init(ffiResult: FFITransactionCheckResult) {
         self.isRelevant = ffiResult.is_relevant
         self.totalReceived = ffiResult.total_received
@@ -257,19 +257,19 @@ public struct TransactionContextDetails {
     public let height: UInt32
     public let blockHash: Data?
     public let timestamp: UInt32
-    
+
     func toFFI() -> FFITransactionContextDetails {
         var details = FFITransactionContextDetails()
         details.context_type = context.ffiValue
         details.height = height
         details.timestamp = timestamp
-        
+
         if let hash = blockHash {
             hash.withUnsafeBytes { bytes in
                 details.block_hash = bytes.bindMemory(to: UInt8.self).baseAddress
             }
         }
-        
+
         return details
     }
 }
@@ -358,7 +358,7 @@ public struct AccountCollectionSummary {
     public let hasProviderOwnerKeys: Bool
     public let hasProviderOperatorKeys: Bool
     public let hasProviderPlatformKeys: Bool
-    
+
     init(ffiSummary: FFIAccountCollectionSummary) {
         // Convert BIP44 indices
         if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {
@@ -366,28 +366,28 @@ public struct AccountCollectionSummary {
         } else {
             self.bip44Indices = []
         }
-        
+
         // Convert BIP32 indices
         if ffiSummary.bip32_count > 0, let indices = ffiSummary.bip32_indices {
             self.bip32Indices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.bip32_count))
         } else {
             self.bip32Indices = []
         }
-        
+
         // Convert CoinJoin indices
         if ffiSummary.coinjoin_count > 0, let indices = ffiSummary.coinjoin_indices {
             self.coinJoinIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.coinjoin_count))
         } else {
             self.coinJoinIndices = []
         }
-        
+
         // Convert identity top-up indices
         if ffiSummary.identity_topup_count > 0, let indices = ffiSummary.identity_topup_indices {
             self.identityTopUpIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.identity_topup_count))
         } else {
             self.identityTopUpIndices = []
         }
-        
+
         // Copy boolean flags
         self.hasIdentityRegistration = ffiSummary.has_identity_registration
         self.hasIdentityInvitation = ffiSummary.has_identity_invitation
@@ -412,7 +412,7 @@ public struct ManagedAccountCollectionSummary {
     public let hasProviderOwnerKeys: Bool
     public let hasProviderOperatorKeys: Bool
     public let hasProviderPlatformKeys: Bool
-    
+
     init(ffiSummary: FFIManagedCoreAccountCollectionSummary) {
         // Convert BIP44 indices
         if ffiSummary.bip44_count > 0, let indices = ffiSummary.bip44_indices {
@@ -420,28 +420,28 @@ public struct ManagedAccountCollectionSummary {
         } else {
             self.bip44Indices = []
         }
-        
+
         // Convert BIP32 indices
         if ffiSummary.bip32_count > 0, let indices = ffiSummary.bip32_indices {
             self.bip32Indices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.bip32_count))
         } else {
             self.bip32Indices = []
         }
-        
+
         // Convert CoinJoin indices
         if ffiSummary.coinjoin_count > 0, let indices = ffiSummary.coinjoin_indices {
             self.coinJoinIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.coinjoin_count))
         } else {
             self.coinJoinIndices = []
         }
-        
+
         // Convert identity top-up indices
         if ffiSummary.identity_topup_count > 0, let indices = ffiSummary.identity_topup_indices {
             self.identityTopUpIndices = Array(UnsafeBufferPointer(start: indices, count: ffiSummary.identity_topup_count))
         } else {
             self.identityTopUpIndices = []
         }
-        
+
         // Copy boolean flags
         self.hasIdentityRegistration = ffiSummary.has_identity_registration
         self.hasIdentityInvitation = ffiSummary.has_identity_invitation
@@ -471,10 +471,10 @@ public enum KeyWalletError: Error {
     case invalidState(String)
     case internalError(String)
     case unknown(String)
-    
+
     init(ffiError: FFIError) {
         let message = ffiError.message != nil ? String(cString: ffiError.message!) : "Unknown error"
-        
+
         switch ffiError.code {
         case FFIErrorCode(rawValue: 1): // INVALID_INPUT
             self = .invalidInput(message)

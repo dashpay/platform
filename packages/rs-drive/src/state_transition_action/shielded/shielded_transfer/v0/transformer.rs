@@ -7,15 +7,16 @@ use dpp::state_transition::state_transitions::shielded::shielded_transfer_transi
 impl ShieldedTransferTransitionActionV0 {
     /// Transforms the shielded transfer transition into an action
     pub fn try_from_transition(
-        _value: &ShieldedTransferTransitionV0,
-        notes: Vec<ShieldedActionNote>,
-        anchor: [u8; 32],
+        value: &ShieldedTransferTransitionV0,
         fee_amount: Credits,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
+        let notes: Vec<ShieldedActionNote> =
+            value.actions.iter().map(ShieldedActionNote::from).collect();
+
         ConsensusValidationResult::new_with_data(ShieldedTransferTransitionActionV0 {
             notes,
-            anchor,
+            anchor: value.anchor,
             fee_amount,
             current_total_balance,
         })

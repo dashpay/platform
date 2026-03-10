@@ -16,7 +16,10 @@ use dpp::block::epoch::Epoch;
 use dpp::identity::{Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::{GroveDbOpConsistencyResults, GroveOp, KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::batch::{
+    GroveDbOpConsistencyResults, GroveOp, KeyInfoPath, QualifiedGroveDbOp,
+    SubelementsDeletionBehavior,
+};
 use grovedb::operations::proof::util::hex_to_ascii;
 use grovedb::{Element, TreeType};
 use std::borrow::Cow;
@@ -341,7 +344,9 @@ impl fmt::Display for GroveDbOpBatch {
             writeln!(f, "   Path: {}", path_string)?;
             writeln!(f, "   Key: {}", key_string)?;
             match &op.op {
-                GroveOp::InsertOrReplace { element } | GroveOp::InsertOnly { element } => {
+                GroveOp::InsertOrReplace { element }
+                | GroveOp::InsertWithKnownToNotAlreadyExist { element }
+                | GroveOp::InsertIfNotExists { element, .. } => {
                     let flags = element.get_flags();
                     let flag_info = match flags {
                         None => "No Flags".to_string(),
@@ -588,9 +593,15 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
+    /// Uses `DontCheckWithNoCleanup` because callers (e.g. `batch_delete_up_tree_while_empty`)
+    /// have already verified the tree is empty.
     fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType) {
-        self.operations
-            .push(QualifiedGroveDbOp::delete_tree_op(path, key, tree_type))
+        self.operations.push(QualifiedGroveDbOp::delete_tree_op(
+            path,
+            key,
+            tree_type,
+            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
+        ))
     }
 
     /// Adds an `Insert` operation with an element to a list of GroveDB ops.
@@ -694,7 +705,8 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
             let op = if matches!(
                 op,
                 &GroveOp::InsertOrReplace { .. }
-                    | &GroveOp::InsertOnly { .. }
+                    | &GroveOp::InsertWithKnownToNotAlreadyExist { .. }
+                    | &GroveOp::InsertIfNotExists { .. }
                     | &GroveOp::Replace { .. }
                     | &GroveOp::Patch { .. }
             ) {

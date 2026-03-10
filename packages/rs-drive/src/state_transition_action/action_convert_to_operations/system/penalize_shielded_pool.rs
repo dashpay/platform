@@ -1,3 +1,4 @@
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
@@ -17,16 +18,24 @@ impl DriveHighLevelOperationConverter for PenalizeShieldedPoolAction {
                 let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
                 // 1. Record nullifiers as spent (prevents replaying the same invalid proof)
-                for nullifier in v0.nullifiers.iter() {
+                if !v0.nullifiers.is_empty() {
                     ops.push(DriveOperation::ShieldedPoolOperation(
-                        ShieldedPoolOperationType::InsertNullifier {
-                            nullifier: *nullifier,
+                        ShieldedPoolOperationType::InsertNullifiers {
+                            nullifiers: v0.nullifiers,
                         },
                     ));
                 }
 
                 // 2. Deduct penalty from pool total balance
-                let new_total_balance = v0.current_total_balance.saturating_sub(v0.penalty_amount);
+                let new_total_balance = v0
+                    .current_total_balance
+                    .checked_sub(v0.penalty_amount)
+                    .ok_or_else(|| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "shielded pool total balance underflow when subtracting penalty_amount"
+                                .to_string(),
+                        ))
+                    })?;
                 ops.push(DriveOperation::ShieldedPoolOperation(
                     ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
                 ));

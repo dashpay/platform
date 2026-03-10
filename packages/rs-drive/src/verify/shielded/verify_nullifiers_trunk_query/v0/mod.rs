@@ -13,6 +13,11 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, GroveTrunkQueryResult), Error> {
         let path = nullifiers_path_for_pool(pool_type, pool_identifier)?;
+        let min_depth = platform_version
+            .drive
+            .methods
+            .shielded
+            .nullifiers_query_min_depth;
         let max_depth = platform_version
             .drive
             .methods
@@ -21,8 +26,8 @@ impl Drive {
 
         let query = PathTrunkChunkQuery {
             path,
+            min_depth: Some(min_depth),
             max_depth,
-            min_depth: None,
         };
 
         let (root_hash, result) = GroveDb::verify_trunk_chunk_proof(

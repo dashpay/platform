@@ -6,11 +6,11 @@ struct PlatformView: View {
     @State private var selectedOperation: PlatformOperation = .queries
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
-    
+
     enum PlatformOperation: String, CaseIterable {
         case queries = "Queries"
         case stateTransitions = "State Transitions"
-        
+
         var systemImage: String {
             switch self {
             case .queries: return "magnifyingglass"
@@ -18,7 +18,7 @@ struct PlatformView: View {
             }
         }
     }
-    
+
     var body: some View {
         NavigationStack {
             List {
@@ -35,7 +35,7 @@ struct PlatformView: View {
                         }
                     }
                 }
-                
+
                 Section(header: HStack {
                     Text("SDK Status")
                     Spacer()
@@ -55,7 +55,7 @@ struct PlatformView: View {
                         Image(systemName: appState.platformState.sdk != nil ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundColor(appState.platformState.sdk != nil ? .green : .red)
                     }
-                    
+
                     if let status = sdkStatus {
                         HStack {
                             Text("Version")
@@ -63,21 +63,21 @@ struct PlatformView: View {
                             Text(status.version)
                                 .foregroundColor(.secondary)
                         }
-                        
+
                         HStack {
                             Text("Network")
                             Spacer()
                             Text(status.network.capitalized)
                                 .foregroundColor(.secondary)
                         }
-                        
+
                         HStack {
                             Text("Mode")
                             Spacer()
                             Text(status.mode.uppercased())
                                 .foregroundColor(status.mode == "trusted" ? .blue : .orange)
                         }
-                        
+
                         HStack {
                             Text("Quorums in Memory")
                             Spacer()
@@ -100,12 +100,12 @@ struct PlatformView: View {
             }
         }
     }
-    
+
     private func loadSDKStatus() {
         guard let sdk = appState.platformState.sdk else { return }
-        
+
         isLoadingStatus = true
-        
+
         Task {
             do {
                 let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
@@ -121,7 +121,7 @@ struct PlatformView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func destinationView(for operation: PlatformOperation) -> some View {
         switch operation {

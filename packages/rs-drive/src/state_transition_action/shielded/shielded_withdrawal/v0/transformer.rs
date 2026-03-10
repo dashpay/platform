@@ -12,11 +12,12 @@ impl ShieldedWithdrawalTransitionActionV0 {
     /// Transforms the shielded withdrawal transition into an action
     pub fn try_from_transition(
         value: &ShieldedWithdrawalTransitionV0,
-        notes: Vec<ShieldedActionNote>,
-        anchor: [u8; 32],
         current_total_balance: Credits,
         creation_time_ms: u64,
     ) -> ConsensusValidationResult<Self> {
+        let notes: Vec<ShieldedActionNote> =
+            value.actions.iter().map(ShieldedActionNote::from).collect();
+
         // Generate entropy from first nullifier + output_script for document ID
         let mut entropy = Vec::new();
         if let Some(first_note) = notes.first() {
@@ -65,7 +66,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
         ConsensusValidationResult::new_with_data(ShieldedWithdrawalTransitionActionV0 {
             amount: value.unshielding_amount,
             notes,
-            anchor,
+            anchor: value.anchor,
             core_fee_per_byte: value.core_fee_per_byte,
             pooling: value.pooling,
             output_script: value.output_script.clone(),

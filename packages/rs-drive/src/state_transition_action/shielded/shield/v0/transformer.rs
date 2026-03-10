@@ -12,9 +12,11 @@ impl ShieldTransitionActionV0 {
         value: &ShieldTransitionV0,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         shield_amount: Credits,
-        notes: Vec<ShieldedActionNote>,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
+        let notes: Vec<ShieldedActionNote> =
+            value.actions.iter().map(ShieldedActionNote::from).collect();
+
         ConsensusValidationResult::new_with_data(ShieldTransitionActionV0 {
             inputs_with_remaining_balance,
             shield_amount,

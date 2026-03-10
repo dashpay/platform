@@ -147,7 +147,7 @@ impl Drive {
                         "amount is over max allowed in Sum Item (i64::Max)",
                     )));
                 }
-                let insert_op = QualifiedGroveDbOp::insert_only_op(
+                let insert_op = QualifiedGroveDbOp::insert_only_known_to_not_already_exist_op(
                     path_holding_total_token_supply_vec,
                     token_id.to_vec(),
                     SumItem(amount as i64, None),

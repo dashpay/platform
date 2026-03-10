@@ -38,7 +38,7 @@ public struct ContractModel: Identifiable, Hashable {
         self.keywords = keywords
         self.description = description
     }
-    
+
     /// Create from DPP Data Contract
     public init(from dppContract: DPPDataContract, name: String) {
         self.id = dppContract.idString
@@ -46,7 +46,7 @@ public struct ContractModel: Identifiable, Hashable {
         self.version = Int(dppContract.version)
         self.ownerId = dppContract.ownerId
         self.documentTypes = Array(dppContract.documentTypes.keys)
-        
+
         // Convert document types to simple schema representation
         var simpleSchema: [String: Any] = [:]
         for (docType, documentType) in dppContract.documentTypes {
@@ -58,13 +58,13 @@ public struct ContractModel: Identifiable, Hashable {
             simpleSchema[docType] = docSchema
         }
         self.schema = simpleSchema
-        
+
         self.dppDataContract = dppContract
         self.tokens = Array(dppContract.tokens.values)
         self.keywords = dppContract.keywords
         self.description = dppContract.description
     }
-    
+
     public var formattedSchema: String {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: schema, options: .prettyPrinted),
               let jsonString = String(data: jsonData, encoding: .utf8) else {

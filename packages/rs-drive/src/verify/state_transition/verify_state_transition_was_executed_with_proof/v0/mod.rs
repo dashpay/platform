@@ -960,12 +960,14 @@ impl Drive {
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_id = st.identity_id();
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         st.recipient_addresses().keys(),
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {
@@ -1039,12 +1041,14 @@ impl Drive {
                     .inputs()
                     .keys()
                     .chain(st.output().into_iter().map(|(address, _)| address));
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         addresses_to_check,
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {
@@ -1274,7 +1278,12 @@ impl Drive {
                     )));
                 }
 
-                let documents = BTreeMap::from([(document_id, maybe_doc)]);
+                let doc = maybe_doc.ok_or_else(|| {
+                    Error::Proof(ProofError::CorruptedProof(
+                        "shielded withdrawal was executed but withdrawal document is missing from proof".to_string(),
+                    ))
+                })?;
+                let documents = BTreeMap::from([(document_id, Some(doc))]);
 
                 Ok((
                     root_hash_nf,
@@ -1333,10 +1342,17 @@ impl Drive {
                                 "expected an item element for asset lock outpoint".to_string(),
                             )));
                         }
-                        None => StoredAssetLockInfo::NotPresent,
+                        None => {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                            )));
+                        }
                     }
                 } else {
-                    StoredAssetLockInfo::NotPresent
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "shield from asset lock was executed but no proved key values returned"
+                            .to_string(),
+                    )));
                 };
 
                 Ok((root_hash, VerifiedAssetLockConsumed(info)))

@@ -6,6 +6,7 @@ use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    #[allow(clippy::type_complexity)]
     pub(super) fn verify_shielded_nullifiers_v0(
         proof: &[u8],
         nullifiers: &[Vec<u8>],
@@ -19,7 +20,11 @@ impl Drive {
             path: shielded_credit_pool_nullifiers_path_vec(),
             query: SizedQuery {
                 query,
-                limit: Some(nullifiers.len() as u16),
+                limit: Some(u16::try_from(nullifiers.len()).map_err(|_| {
+                    Error::Drive(crate::error::drive::DriveError::CorruptedDriveState(
+                        "nullifier count exceeds u16::MAX".to_string(),
+                    ))
+                })?),
                 offset: None,
             },
         };

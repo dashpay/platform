@@ -1,8 +1,6 @@
 //! Drive Initialization
 
-use crate::drive::saved_block_transactions::{
-    COMPACTED_NULLIFIERS_KEY_U8, NULLIFIERS_EXPIRATION_TIME_KEY_U8, NULLIFIERS_KEY_U8,
-};
+use crate::drive::shielded::nullifiers::queries::*;
 use crate::drive::shielded::paths::*;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
@@ -85,7 +83,7 @@ impl Drive {
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER),
+            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)?,
         );
 
         // 3. Nullifiers tree (ProvableCountTree)
@@ -109,29 +107,26 @@ impl Drive {
             Element::empty_tree(),
         );
 
-        // 6. Nullifiers CountSumTree under SavedBlockTransactions for storing
-        // per-block nullifier lists. Each item is an ItemWithSumItem
-        // (serialized Vec<[u8;32]> + nullifier count as sum).
+        // 6. Per-block nullifiers CountSumTree under shielded credit pool.
+        // Each item is an ItemWithSumItem (serialized Vec<[u8;32]> + nullifier count as sum).
         batch.add_insert(
-            Self::saved_block_transactions_path(),
-            vec![NULLIFIERS_KEY_U8],
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_RECENT_NULLIFIERS_KEY_U8],
             Element::empty_count_sum_tree(),
         );
 
-        // 7. Compacted nullifiers NormalTree under SavedBlockTransactions for storing
-        // compacted/aggregated nullifier lists spanning multiple blocks.
+        // 7. Compacted nullifiers NormalTree under shielded credit pool.
         // Key: (start_block, end_block) as 16 bytes, Value: serialized Vec<[u8;32]>
         batch.add_insert(
-            Self::saved_block_transactions_path(),
-            vec![COMPACTED_NULLIFIERS_KEY_U8],
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
             Element::empty_tree(),
         );
 
-        // 8. Nullifiers expiration time NormalTree under SavedBlockTransactions for storing
-        // expiration timestamps for compacted nullifier ranges.
+        // 8. Nullifiers expiration time NormalTree under shielded credit pool.
         batch.add_insert(
-            Self::saved_block_transactions_path(),
-            vec![NULLIFIERS_EXPIRATION_TIME_KEY_U8],
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
             Element::empty_tree(),
         );
 

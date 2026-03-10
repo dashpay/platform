@@ -228,7 +228,7 @@ impl LowLevelDriveOperation {
                 }),
                 _ => {
                     let cost = operation.operation_cost()?;
-                    // There is no need for a checked multiply here because added bytes are u64 and 
+                    // There is no need for a checked multiply here because added bytes are u64 and
                     // storage disk usage credit per byte should never be high enough to cause an overflow
                     let storage_fee = cost.storage_cost.added_bytes as u64 * fee_version.storage.storage_disk_usage_credit_per_byte;
                     let processing_fee = cost.ephemeral_cost(fee_version)?;
@@ -555,7 +555,7 @@ pub trait LowLevelDriveOperationTreeTypeConverter {
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         storage_flags: Option<&StorageFlags>,
-    ) -> LowLevelDriveOperation;
+    ) -> Result<LowLevelDriveOperation, Error>;
 }
 
 impl LowLevelDriveOperationTreeTypeConverter for TreeType {
@@ -565,7 +565,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         storage_flags: Option<&StorageFlags>,
-    ) -> LowLevelDriveOperation {
+    ) -> Result<LowLevelDriveOperation, Error> {
         let element_flags = storage_flags.map(|storage_flags| storage_flags.to_element_flags());
         let element = match self {
             TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
@@ -580,18 +580,20 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
             TreeType::CommitmentTree(chunk_power) => {
-                Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)
+                Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?
             }
             TreeType::MmrTree => Element::empty_mmr_tree_with_flags(element_flags),
             TreeType::BulkAppendTree(chunk_power) => {
-                Element::empty_bulk_append_tree_with_flags(*chunk_power, element_flags)
+                Element::empty_bulk_append_tree_with_flags(*chunk_power, element_flags)?
             }
             TreeType::DenseAppendOnlyFixedSizeTree(chunk_power) => {
                 Element::empty_dense_tree_with_flags(*chunk_power, element_flags)
             }
         };
 
-        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, element)
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, element,
+        ))
     }
 }
 

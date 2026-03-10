@@ -11,29 +11,29 @@ public final class HDWallet: HDWalletModels {
     public var createdAt: Date
     public var isWatchOnly: Bool
     public var isImported: Bool
-    
+
     // FFI Wallet ID (32 bytes) - links to the rust-dashcore wallet
     public var walletId: Data?
-    
+
     // Serialized wallet bytes from FFI - used to restore wallet on app restart
     public var serializedWalletBytes: Data?
-    
+
     // Encrypted seed (only for non-watch-only wallets)
     public var encryptedSeed: Data?
-    
+
     // Accounts
     @Relationship(deleteRule: .cascade) public var accounts: [HDAccount] = []
-    
+
     // Current account index
     public var currentAccountIndex: Int
-    
+
     // Sync progress (0.0 to 1.0)
     public var syncProgress: Double
 
     // Migration flag: true if wallet needs to be re-imported due to format change
     // This happens when old multi-network wallet bytes can't be deserialized
     public var needsRecreation: Bool = false
-    
+
     init(label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
         self.label = label
@@ -44,26 +44,26 @@ public final class HDWallet: HDWalletModels {
         self.syncProgress = 0.0
         self.isImported = isImported
     }
-    
+
     public var dashNetwork: AppNetwork {
         return AppNetwork(rawValue: network) ?? .testnet
     }
-    
+
     // Total balance across all accounts
     public var totalBalance: UInt64 {
         return accounts.reduce(0) { $0 + $1.totalBalance }
     }
-    
+
     // Confirmed balance across all accounts
     public var confirmedBalance: UInt64 {
         return accounts.reduce(0) { $0 + $1.confirmedBalance }
     }
-    
+
     // Unconfirmed balance across all accounts
     public var unconfirmedBalance: UInt64 {
         return accounts.reduce(0) { $0 + $1.unconfirmedBalance }
     }
-    
+
     // All transactions across all accounts
     public var transactions: [HDTransaction] {
         return accounts.flatMap { account in
@@ -80,12 +80,12 @@ public final class HDWallet: HDWalletModels {
     public var addresses: [HDAddress] {
         return accounts.flatMap { $0.addresses }
     }
-    
+
     // All UTXOs across all accounts
     public var utxos: [HDUTXO] {
         return addresses.flatMap { $0.utxos }
     }
-    
+
     public func createAccount(at index: UInt32? = nil) -> HDAccount {
         let accountIndex = index ?? UInt32(accounts.count)
         let account = HDAccount(
@@ -105,30 +105,30 @@ public final class HDAccount: HDWalletModels {
     @Attribute(.unique) public var id: UUID
     public var accountNumber: UInt32
     public var label: String
-    
+
     // Extended public key for this account (watch-only capability)
     public var extendedPublicKey: String?
-    
+
     // Derivation paths
     @Relationship(deleteRule: .cascade) public var externalAddresses: [HDAddress] = []
     @Relationship(deleteRule: .cascade) public var internalAddresses: [HDAddress] = []
     @Relationship(deleteRule: .cascade) public var coinJoinAddresses: [HDAddress] = []
     @Relationship(deleteRule: .cascade) public var identityFundingAddresses: [HDAddress] = []
-    
+
     // Indexes
     public var externalAddressIndex: UInt32
     public var internalAddressIndex: UInt32
     public var coinJoinExternalIndex: UInt32
     public var coinJoinInternalIndex: UInt32
     public var identityFundingIndex: UInt32
-    
+
     // Balance tracking
     public var confirmedBalance: UInt64
     public var unconfirmedBalance: UInt64
-    
+
     // Parent wallet
     @Relationship(inverse: \HDWallet.accounts) public var wallet: HDWallet?
-    
+
     public init(accountNumber: UInt32, label: String, wallet: HDWallet) {
         self.id = UUID()
         self.accountNumber = accountNumber
@@ -142,11 +142,11 @@ public final class HDAccount: HDWalletModels {
         self.confirmedBalance = 0
         self.unconfirmedBalance = 0
     }
-    
+
     public var totalBalance: UInt64 {
         return confirmedBalance + unconfirmedBalance
     }
-    
+
     // All addresses combined
     public var addresses: [HDAddress] {
         return externalAddresses + internalAddresses + coinJoinAddresses + identityFundingAddresses
@@ -164,19 +164,19 @@ public final class HDAddress: HDWalletModels {
     public var isUsed: Bool
     public var balance: UInt64
     public var lastSeenTime: Date?
-    
+
     // Address type
     public var addressType: String  // "external", "internal", "coinjoin", "identity"
-    
+
     // Parent account
     @Relationship public var account: HDAccount?
-    
+
     // Associated transactions
     @Relationship(deleteRule: .nullify) public var transactions: [HDTransaction] = []
-    
+
     // UTXOs
     @Relationship(deleteRule: .cascade) public var utxos: [HDUTXO] = []
-    
+
     public init(address: String, index: UInt32, derivationPath: String, addressType: AddressType, account: HDAccount) {
         self.id = UUID()
         self.address = address
@@ -187,7 +187,7 @@ public final class HDAddress: HDWalletModels {
         self.balance = 0
         self.account = account
     }
-    
+
     public var type: AddressType {
         return AddressType(rawValue: addressType) ?? .external
     }
@@ -212,14 +212,14 @@ public final class HDUTXO: HDWalletModels {
     public var blockHeight: Int?
     public var isSpent: Bool
     public var isCoinbase: Bool
-    
+
     // Parent address
     @Relationship(inverse: \HDAddress.utxos) public var address: HDAddress?
-    
+
     // Spending transaction (if spent)
     public var spendingTxHash: String?
     public var spendingInputIndex: UInt32?
-    
+
     public init(txHash: String, outputIndex: UInt32, amount: UInt64, scriptPubKey: Data, address: HDAddress) {
         self.id = UUID()
         self.txHash = txHash
@@ -230,12 +230,12 @@ public final class HDUTXO: HDWalletModels {
         self.isSpent = false
         self.isCoinbase = false
     }
-    
+
     // Computed property to check if UTXO is confirmed
     public var isConfirmed: Bool {
         return blockHeight != nil
     }
-    
+
     // Alias for txHash
     public var txid: String {
         return txHash
@@ -251,13 +251,13 @@ public final class HDWatchedAddress: HDWalletModels {
     public var label: String?
     public var balance: UInt64
     public var lastSeenTime: Date?
-    
+
     // Parent wallet
     @Relationship public var wallet: HDWallet?
-    
+
     // Associated transactions
     @Relationship(deleteRule: .nullify) public var transactions: [HDTransaction] = []
-    
+
     public init(address: String, label: String? = nil, wallet: HDWallet) {
         self.id = UUID()
         self.address = address

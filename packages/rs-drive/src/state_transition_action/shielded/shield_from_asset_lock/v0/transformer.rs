@@ -12,9 +12,11 @@ impl ShieldFromAssetLockTransitionActionV0 {
         asset_lock_value_to_be_consumed: Credits,
         signable_bytes_hasher: [u8; 32],
         shield_amount: Credits,
-        notes: Vec<ShieldedActionNote>,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
+        let notes: Vec<ShieldedActionNote> =
+            value.actions.iter().map(ShieldedActionNote::from).collect();
+
         ConsensusValidationResult::new_with_data(ShieldFromAssetLockTransitionActionV0 {
             asset_lock_outpoint,
             asset_lock_value_to_be_consumed,

@@ -1,4 +1,4 @@
-use super::{insert_notes, insert_nullifiers, store_nullifiers_for_block, update_balance};
+use super::{insert_notes, insert_nullifiers, update_balance};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
@@ -24,7 +24,7 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                 ShieldedTransferTransitionAction::V0(v0) => {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
 
-                    // 1. Insert each nullifier (InsertOnly to prevent double-spend)
+                    // 1. Insert each nullifier (known to not exist after validation)
                     insert_nullifiers(&mut ops, &v0.notes);
 
                     // 2. Insert notes into CommitmentTree
@@ -41,9 +41,6 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
                             ))
                         })?;
                     update_balance(&mut ops, new_total_balance);
-
-                    // 4. Store nullifiers to recent block storage for catch-up sync
-                    store_nullifiers_for_block(&mut ops, &v0.notes);
 
                     Ok(ops)
                 }

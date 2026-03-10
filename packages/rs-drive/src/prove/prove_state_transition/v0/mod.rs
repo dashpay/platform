@@ -1,4 +1,4 @@
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::prove::prove_state_transition::ProofCreationResult;
@@ -401,7 +401,7 @@ impl Drive {
                 query.insert_key(outpoint_bytes.to_vec());
 
                 PathQuery::new(
-                    vec![vec![72u8]], // RootTree::SpentAssetLockTransactions
+                    vec![vec![RootTree::SpentAssetLockTransactions as u8]],
                     grovedb::SizedQuery::new(query, Some(1), None),
                 )
             }

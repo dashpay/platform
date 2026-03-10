@@ -51,4 +51,3 @@ public final class SDKTransactionBuilder {
         throw SDKTxError.notImplemented("Transaction building is not yet implemented in SwiftDashSDK")
     }
 }
-

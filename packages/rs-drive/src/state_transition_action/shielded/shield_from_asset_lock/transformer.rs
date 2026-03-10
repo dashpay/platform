@@ -1,6 +1,5 @@
 use crate::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
 use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
-use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
@@ -13,7 +12,6 @@ impl ShieldFromAssetLockTransitionAction {
         asset_lock_value_to_be_consumed: Credits,
         signable_bytes_hasher: [u8; 32],
         shield_amount: Credits,
-        notes: Vec<ShieldedActionNote>,
         current_total_balance: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
@@ -24,7 +22,6 @@ impl ShieldFromAssetLockTransitionAction {
                     asset_lock_value_to_be_consumed,
                     signable_bytes_hasher,
                     shield_amount,
-                    notes,
                     current_total_balance,
                 );
                 result.map(|action| action.into())

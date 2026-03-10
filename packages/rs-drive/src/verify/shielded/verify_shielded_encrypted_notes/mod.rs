@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Verifies a proof for shielded encrypted notes.
+    #[allow(clippy::type_complexity)]
     pub fn verify_shielded_encrypted_notes(
         proof: &[u8],
         start_index: u64,
