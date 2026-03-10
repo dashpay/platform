@@ -303,7 +303,6 @@ mod tests {
 
             // Use a shield amount much smaller than the asset lock value (1 Dash = 100_000_000 duffs)
             let shield_amount = 5000u64;
-            let value_balance = -(shield_amount as i64);
 
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,

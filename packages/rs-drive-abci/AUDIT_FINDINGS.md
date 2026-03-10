@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-10
 **Branch**: `feat/zk-drive-abci`
-**Base**: `v2.1-dev`
+**Base**: `v3.1-dev`
 **Auditors**: 5 specialized agents (blockchain security, Rust quality, test coverage, integer safety, pipeline ordering)
 
 ## Summary
