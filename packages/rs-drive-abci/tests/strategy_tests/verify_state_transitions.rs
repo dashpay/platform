@@ -1449,8 +1449,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 | StateTransitionAction::ShieldedTransferAction(_)
                 | StateTransitionAction::UnshieldAction(_)
                 | StateTransitionAction::ShieldFromAssetLockAction(_)
-                | StateTransitionAction::ShieldedWithdrawalAction(_)
-                | StateTransitionAction::PenalizeShieldedPoolAction(_) => {
+                | StateTransitionAction::ShieldedWithdrawalAction(_) => {
                     // Shielded transitions don't support proof verification yet
                 }
             }
