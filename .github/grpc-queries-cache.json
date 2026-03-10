@@ -150,6 +150,5 @@
     "getRecentCompactedAddressBalanceChanges": {
       "status": "implemented"
     }
-  },
-  "last_updated": "2026-03-09T11:26:46.986561"
+  }
 }

@@ -12,8 +12,6 @@ import re
 import sys
 import json
 from pathlib import Path
-from datetime import datetime
-
 
 # Optional overrides for auto-derived search patterns.
 # Format: {"rpcMethodName": ["pattern1", "pattern2", ...]}
@@ -129,12 +127,12 @@ def load_cache(cache_file):
     if cache_file.exists():
         with open(cache_file, "r") as f:
             return json.load(f)
-    return {"known_queries": {}, "last_updated": None}
+    return {"known_queries": {}}
 
 
 def save_cache(cache_file, cache_data):
     """Save the query cache to file."""
-    cache_data["last_updated"] = datetime.now().isoformat()
+    cache_data.pop("last_updated", None)
     with open(cache_file, "w") as f:
         json.dump(cache_data, f, indent=2)
         f.write("\n")
