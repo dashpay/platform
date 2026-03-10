@@ -5,6 +5,7 @@ use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 mod transformer;
 
+/// Partially use asset lock action v0
 #[derive(Default, Debug, Clone)]
 pub struct PartiallyUseAssetLockActionV0 {
     /// asset lock outpoint

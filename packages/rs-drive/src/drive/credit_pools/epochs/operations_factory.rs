@@ -20,7 +20,7 @@ use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
-use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::batch::{QualifiedGroveDbOp, SubelementsDeletionBehavior};
 use grovedb::{Element, TransactionArg, TreeType};
 
 /// Operations on Epochs
@@ -297,6 +297,7 @@ impl EpochOperations for Epoch {
             self.get_path_vec(),
             KEY_PROPOSERS.to_vec(),
             TreeType::NormalTree,
+            SubelementsDeletionBehavior::DeleteChildren,
         )
     }
 

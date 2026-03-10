@@ -41,7 +41,7 @@ pub fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     if fee_strategy.is_empty() {
-        return Err(ProtocolError::Generic(
+        return Err(ProtocolError::ShieldedBuildError(
             "fee_strategy must have at least one step".to_string(),
         ));
     }

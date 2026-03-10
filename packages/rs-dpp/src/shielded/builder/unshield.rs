@@ -45,7 +45,7 @@ pub fn build_unshield_transition<P: OrchardProver>(
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     if unshield_amount > i64::MAX as u64 {
-        return Err(ProtocolError::Generic(format!(
+        return Err(ProtocolError::ShieldedBuildError(format!(
             "unshield amount {} exceeds maximum allowed value {}",
             unshield_amount,
             i64::MAX as u64
@@ -59,7 +59,7 @@ pub fn build_unshield_transition<P: OrchardProver>(
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
     let effective_fee = match fee {
         Some(f) if f < min_fee => {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::ShieldedBuildError(format!(
                 "fee {} is below minimum required fee {}",
                 f, min_fee
             )));
@@ -68,11 +68,11 @@ pub fn build_unshield_transition<P: OrchardProver>(
         None => min_fee,
     };
 
-    let required = unshield_amount
-        .checked_add(effective_fee)
-        .ok_or_else(|| ProtocolError::Generic("fee + unshield_amount overflows u64".to_string()))?;
+    let required = unshield_amount.checked_add(effective_fee).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("fee + unshield_amount overflows u64".to_string())
+    })?;
     if required > total_spent {
-        return Err(ProtocolError::Generic(format!(
+        return Err(ProtocolError::ShieldedBuildError(format!(
             "unshield amount {} + fee {} = {} exceeds total spendable value {}",
             unshield_amount, effective_fee, required, total_spent
         )));

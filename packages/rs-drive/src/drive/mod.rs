@@ -71,6 +71,9 @@ pub mod address_funds;
 /// Saved block transactions module
 #[cfg(feature = "server")]
 pub mod saved_block_transactions;
+/// Shielded pools module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod shielded;
 /// Token module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod tokens;

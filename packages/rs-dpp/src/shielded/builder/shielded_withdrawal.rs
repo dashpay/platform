@@ -51,7 +51,7 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     if withdrawal_amount > i64::MAX as u64 {
-        return Err(ProtocolError::Generic(format!(
+        return Err(ProtocolError::ShieldedBuildError(format!(
             "withdrawal amount {} exceeds maximum allowed value {}",
             withdrawal_amount,
             i64::MAX as u64
@@ -65,7 +65,7 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
     let effective_fee = match fee {
         Some(f) if f < min_fee => {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::ShieldedBuildError(format!(
                 "fee {} is below minimum required fee {}",
                 f, min_fee
             )));
@@ -77,10 +77,10 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     let required = withdrawal_amount
         .checked_add(effective_fee)
         .ok_or_else(|| {
-            ProtocolError::Generic("fee + withdrawal_amount overflows u64".to_string())
+            ProtocolError::ShieldedBuildError("fee + withdrawal_amount overflows u64".to_string())
         })?;
     if required > total_spent {
-        return Err(ProtocolError::Generic(format!(
+        return Err(ProtocolError::ShieldedBuildError(format!(
             "withdrawal amount {} + fee {} = {} exceeds total spendable value {}",
             withdrawal_amount, effective_fee, required, total_spent
         )));

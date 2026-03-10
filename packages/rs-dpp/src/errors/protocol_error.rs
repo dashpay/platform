@@ -140,6 +140,12 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    #[error("Address witness verification error: {0}")]
+    AddressWitnessError(String),
+
+    #[error("Shielded transaction build error: {0}")]
+    ShieldedBuildError(String),
+
     #[error("Not supported Error: {0}")]
     NotSupported(String),
 

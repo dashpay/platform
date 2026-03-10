@@ -41,7 +41,7 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
         .checked_neg()
         .and_then(|v| u64::try_from(v).ok())
         .ok_or_else(|| {
-            ProtocolError::Generic(
+            ProtocolError::ShieldedBuildError(
                 "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
             )
         })?;
