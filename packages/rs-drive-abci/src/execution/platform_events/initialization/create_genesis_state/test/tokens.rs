@@ -276,7 +276,14 @@ impl<C> Platform<C> {
             keeps_history: TokenKeepsHistoryRulesV0::default().into(),
             start_as_paused: false,
             allow_transfer_to_frozen_balance: true,
-            max_supply_change_rules: ChangeControlRulesV0::default().into(),
+            max_supply_change_rules: ChangeControlRulesV0 {
+                authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                admin_action_takers: Default::default(),
+                changing_authorized_action_takers_to_no_one_allowed: false,
+                changing_admin_action_takers_to_no_one_allowed: false,
+                self_changing_admin_action_takers_allowed: false,
+            }
+            .into(),
             distribution_rules: TokenDistributionRulesV0 {
                 perpetual_distribution: Some(TokenPerpetualDistribution::V0(
                     TokenPerpetualDistributionV0 {
