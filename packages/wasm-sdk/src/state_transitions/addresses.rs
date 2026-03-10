@@ -439,7 +439,10 @@ impl WasmSdk {
         let inputs_map = outputs_to_btree_map(parsed.inputs)?;
 
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| output.try_into_inner()).transpose()?;
+        let change_output = parsed
+            .change_output
+            .map(|output| output.try_into_inner())
+            .transpose()?;
 
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
@@ -905,7 +908,10 @@ impl WasmSdk {
         // Extend inputs with nonces
         let inputs = fetch_nonces_into_address_map(self.inner_sdk(), inputs_map).await?;
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| output.try_into_inner()).transpose()?;
+        let change_output = parsed
+            .change_output
+            .map(|output| output.try_into_inner())
+            .transpose()?;
 
         // Use the SDK's put_with_address_funding method
         let (created_identity, address_infos) = identity
