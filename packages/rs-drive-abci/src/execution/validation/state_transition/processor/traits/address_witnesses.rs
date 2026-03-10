@@ -68,6 +68,7 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     StateTransition::AddressFundingFromAssetLock(st) => {
                         st.validate_witnesses(&signable_bytes)
                     }
+                    StateTransition::Shield(st) => st.validate_witnesses(&signable_bytes),
                     // These state transitions don't have address witness validation
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
@@ -78,15 +79,12 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
-                    | StateTransition::IdentityCreditTransferToAddresses(_) => {
-                        return Ok(SimpleConsensusValidationResult::new());
-                    }
-                    StateTransition::Shield(_)
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
                     | StateTransition::ShieldedWithdrawal(_) => {
-                        todo!("shielded transitions not yet implemented")
+                        return Ok(SimpleConsensusValidationResult::new());
                     }
                 };
 
@@ -187,7 +185,8 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityCreateFromAddresses(_)
                     | StateTransition::IdentityTopUpFromAddresses(_)
                     | StateTransition::AddressCreditWithdrawal(_)
-                    | StateTransition::AddressFundingFromAssetLock(_) => true,
+                    | StateTransition::AddressFundingFromAssetLock(_)
+                    | StateTransition::Shield(_) => true,
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
                     | StateTransition::Batch(_)
@@ -197,14 +196,11 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
-                    | StateTransition::IdentityCreditTransferToAddresses(_) => false,
-                    StateTransition::Shield(_)
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
-                    | StateTransition::ShieldedWithdrawal(_) => {
-                        todo!("shielded transitions not yet implemented")
-                    }
+                    | StateTransition::ShieldedWithdrawal(_) => false,
                 };
 
                 Ok(has_address_witness_validation)

@@ -3,8 +3,25 @@ use crate::query::QueryStrategy;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::{Network, PrivateKey};
 use dpp::dashcore::{ProTxHash, QuorumHash};
+use dpp::shielded::{compute_platform_sighash, SerializedAction};
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
+use dpp::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
+use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+use dpp::state_transition::shield_transition::methods::ShieldTransitionMethodsV0;
+use dpp::state_transition::shield_transition::ShieldTransition;
+use dpp::state_transition::shielded_transfer_transition::methods::ShieldedTransferTransitionMethodsV0;
+use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+use dpp::state_transition::shielded_withdrawal_transition::methods::ShieldedWithdrawalTransitionMethodsV0;
+use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+use dpp::state_transition::unshield_transition::methods::UnshieldTransitionMethodsV0;
+use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::ProtocolError;
+use grovedb_commitment_tree::{
+    Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+    ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, Flags as OrchardFlags,
+    FullViewingKey, MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho,
+    Scope, SpendAuthorizingKey, SpendingKey,
+};
 
 use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -109,6 +126,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use strategy_tests::transitions::{
     create_identity_credit_transfer_to_addresses_transition,
     create_identity_credit_transfer_to_addresses_transition_with_outputs,
@@ -118,6 +136,144 @@ use strategy_tests::transitions::{
 };
 use strategy_tests::Strategy;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
+
+/// Cached Orchard proving key for strategy tests (~30s to build, reused across tests).
+static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+
+fn get_proving_key() -> &'static ProvingKey {
+    TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+}
+
+/// Deterministic Orchard spending key seed used throughout all shielded strategy tests.
+const TEST_SK_BYTES: [u8; 32] = [0u8; 32];
+
+/// Tracks shielded pool state locally for strategy tests.
+///
+/// After each block, successful Shield/ShieldFromAssetLock transitions append their
+/// output note commitments to this tree. Spend-based transitions (ShieldedTransfer,
+/// Unshield, ShieldedWithdrawal) then pick notes from here to build spend bundles
+/// with valid Merkle witnesses.
+pub struct ShieldedState {
+    /// Local commitment tree mirroring the on-chain tree.
+    pub tree: ClientMemoryCommitmentTree,
+    /// Spendable notes: (Note, Position in commitment tree).
+    /// Notes are removed once spent.
+    pub spendable_notes: Vec<(Note, Position)>,
+    /// Monotonically increasing checkpoint ID.
+    pub checkpoint_counter: u32,
+    /// Cached spending key derived from TEST_SK_BYTES.
+    #[allow(dead_code)]
+    pub sk: SpendingKey,
+    /// Cached full viewing key derived from sk.
+    pub fvk: FullViewingKey,
+    /// Cached spend authorizing key for signing spend bundles.
+    pub ask: SpendAuthorizingKey,
+    /// Counter for generating unique rho values for notes.
+    pub rho_counter: u64,
+}
+
+impl ShieldedState {
+    pub fn new() -> Self {
+        let sk = SpendingKey::from_bytes(TEST_SK_BYTES).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        Self {
+            tree: ClientMemoryCommitmentTree::new(1000),
+            spendable_notes: Vec::new(),
+            checkpoint_counter: 0,
+            sk,
+            fvk,
+            ask,
+            rho_counter: 1, // Start at 1 to avoid zero rho
+        }
+    }
+
+    /// Record a note that was output by a successful shield transition.
+    ///
+    /// `value` is the shielded amount in credits.
+    /// The note is reconstructed deterministically using the test spending key
+    /// and a unique rho derived from `rho_counter`.
+    pub fn record_shielded_note(&mut self, value: u64) {
+        let recipient = self.fvk.address_at(0u32, Scope::External);
+
+        // Create a deterministic rho from the counter
+        let mut rho_bytes = [0u8; 32];
+        rho_bytes[..8].copy_from_slice(&self.rho_counter.to_le_bytes());
+        self.rho_counter += 1;
+
+        let rho = Rho::from_bytes(&rho_bytes).unwrap();
+        let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+        let note = Note::from_parts(recipient, NoteValue::from_raw(value), rho, rseed).unwrap();
+
+        // Append to commitment tree
+        let cmx = ExtractedNoteCommitment::from(note.commitment());
+        let cmx_bytes: [u8; 32] = cmx.to_bytes();
+        self.tree.append(cmx_bytes, Retention::Marked).unwrap();
+
+        let position = self.tree.max_leaf_position().unwrap().unwrap();
+        self.spendable_notes.push((note, position));
+
+        tracing::debug!(
+            value,
+            position = u64::from(position),
+            "Recorded spendable shielded note"
+        );
+    }
+
+    /// Create a checkpoint after processing a block.
+    pub fn checkpoint(&mut self) {
+        self.tree.checkpoint(self.checkpoint_counter).unwrap();
+        self.checkpoint_counter += 1;
+    }
+
+    /// Take a spendable note (removes it from the pool).
+    /// Returns (Note, MerklePath, Anchor) if a note is available.
+    pub fn take_spendable_note(&mut self) -> Option<(Note, MerklePath, Anchor)> {
+        if self.spendable_notes.is_empty() {
+            return None;
+        }
+        let (note, position) = self.spendable_notes.remove(0);
+        let merkle_path = self.tree.witness(position, 0).ok()??;
+        let anchor = self.tree.anchor().ok()?;
+        Some((note, merkle_path, anchor))
+    }
+
+    /// Check if any spendable notes exist.
+    pub fn has_spendable_notes(&self) -> bool {
+        !self.spendable_notes.is_empty()
+    }
+}
+
+/// Decompose an authorized Orchard bundle into platform serialization fields.
+fn serialize_authorized_bundle(
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+    let actions: Vec<SerializedAction> = bundle
+        .actions()
+        .iter()
+        .map(|action| {
+            let enc = action.encrypted_note();
+            let mut encrypted_note = Vec::with_capacity(216);
+            encrypted_note.extend_from_slice(&enc.epk_bytes);
+            encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+            encrypted_note.extend_from_slice(&enc.out_ciphertext);
+            SerializedAction {
+                nullifier: action.nullifier().to_bytes(),
+                rk: <[u8; 32]>::from(action.rk()),
+                cmx: action.cmx().to_bytes(),
+                encrypted_note,
+                cv_net: action.cv_net().to_bytes(),
+                spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+            }
+        })
+        .collect();
+    let flags = bundle.flags().to_byte();
+    let value_balance = *bundle.value_balance();
+    let anchor = bundle.anchor().to_bytes();
+    let proof = bundle.authorization().proof().as_ref().to_vec();
+    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    (actions, flags, value_balance, anchor, proof, binding_sig)
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -614,6 +770,7 @@ impl NetworkStrategy {
         instant_lock_quorums: &Quorums<SigningQuorum>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
+        shielded_state: &mut Option<ShieldedState>,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut maybe_state = None;
         let mut operations = vec![];
@@ -1833,6 +1990,102 @@ impl NetworkStrategy {
 
                         operations.push(batch_transition);
                     }
+                    OperationType::Shield(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_shield_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                signer,
+                                rng,
+                                platform_version,
+                            ) else {
+                                break;
+                            };
+                            // Record the shielded note for potential future spends.
+                            // The value is |-value_balance| since value_balance is negative
+                            // for shield transitions (money flowing into the pool).
+                            if let StateTransition::Shield(ref shield) = state_transition {
+                                let shielded_value = match shield {
+                                    ShieldTransition::V0(v0) => (-v0.value_balance) as u64,
+                                };
+                                let state = shielded_state.get_or_insert_with(ShieldedState::new);
+                                state.record_shielded_note(shielded_value);
+                                state.checkpoint();
+                            }
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::ShieldFromAssetLock(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self
+                                .create_shield_from_asset_lock_transition(
+                                    amount_range,
+                                    rng,
+                                    instant_lock_quorums,
+                                    &platform.config,
+                                    platform_version,
+                                )
+                            else {
+                                break;
+                            };
+                            // Record the shielded note for potential future spends
+                            if let StateTransition::ShieldFromAssetLock(ref shield) =
+                                state_transition
+                            {
+                                let shielded_value = match shield {
+                                    ShieldFromAssetLockTransition::V0(v0) => {
+                                        (-v0.value_balance) as u64
+                                    }
+                                };
+                                let state = shielded_state.get_or_insert_with(ShieldedState::new);
+                                state.record_shielded_note(shielded_value);
+                                state.checkpoint();
+                            }
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::ShieldedTransfer(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_shielded_transfer_transition(
+                                amount_range,
+                                rng,
+                                shielded_state,
+                                platform_version,
+                            ) else {
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::Unshield(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self.create_unshield_transition(
+                                current_addresses_with_balance,
+                                amount_range,
+                                rng,
+                                shielded_state,
+                                platform_version,
+                            ) else {
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
+                    OperationType::ShieldedWithdrawal(amount_range) => {
+                        for _i in 0..count {
+                            let Some(state_transition) = self
+                                .create_shielded_withdrawal_transition(
+                                    amount_range,
+                                    rng,
+                                    shielded_state,
+                                    platform_version,
+                                )
+                            else {
+                                break;
+                            };
+                            operations.push(state_transition);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1853,6 +2106,7 @@ impl NetworkStrategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         instant_lock_quorums: &Quorums<SigningQuorum>,
+        shielded_state: &mut Option<ShieldedState>,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
         let platform_state = platform.state.load();
@@ -1907,6 +2161,7 @@ impl NetworkStrategy {
                     instant_lock_quorums,
                     rng,
                     platform_version,
+                    shielded_state,
                 );
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut operation_based_state_transitions);
@@ -2451,6 +2706,437 @@ impl NetworkStrategy {
             .ok()?;
 
         Some(funding_transition)
+    }
+
+    /// Build a Shield state transition (transparent addresses → shielded pool).
+    ///
+    /// Creates an output-only Orchard bundle (no spends) with a real Halo 2 proof,
+    /// signs the address input witnesses, and returns the transition.
+    fn create_shield_transition(
+        &mut self,
+        current_addresses_with_balance: &mut AddressesWithBalance,
+        amount_range: &AmountRange,
+        signer: &mut SimpleSigner,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        // 1. Pick input addresses with sufficient balances
+        let inputs =
+            current_addresses_with_balance.take_random_amounts_with_range(amount_range, rng)?;
+
+        let total_input: Credits = inputs.values().map(|(_, credits)| credits).sum();
+
+        tracing::debug!(?inputs, total_input, "Preparing shield transition");
+
+        // 2. Create deterministic Orchard recipient (same key each time is fine for testing)
+        let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // 3. Build output-only Orchard bundle (shield = outputs only, no spends)
+        let anchor = Anchor::empty_tree();
+        let mut builder = Builder::<DashMemo>::new(
+            BundleType::Transactional {
+                flags: OrchardFlags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            anchor,
+        );
+
+        // Use total_input as the shielded value (fee will be deducted from inputs)
+        // value_balance will be negative (money flowing into the pool)
+        let shield_value = total_input;
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(shield_value),
+                [0u8; 36],
+            )
+            .expect("expected to add output");
+
+        // 4. Build → prove → sign
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[])
+            .expect("expected to apply signatures");
+
+        // 5. Decompose bundle into platform serialization fields
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        // 6. Build ShieldTransition with signed address witnesses
+        let fee_strategy: AddressFundsFeeStrategy =
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)].into();
+
+        let shield_transition = ShieldTransition::try_from_bundle_with_signer(
+            inputs,
+            actions,
+            flags,
+            value_balance,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            fee_strategy,
+            signer,
+            0,
+            platform_version,
+        )
+        .expect("expected to create shield transition");
+
+        tracing::debug!("Shield transition successfully built and signed");
+
+        Some(shield_transition)
+    }
+
+    /// Build a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
+    ///
+    /// Like Shield, this is output-only (no spends). The funds come from a core
+    /// asset lock proof rather than platform address inputs.
+    fn create_shield_from_asset_lock_transition(
+        &mut self,
+        amount_range: &AmountRange,
+        rng: &mut StdRng,
+        instant_lock_quorums: &Quorums<SigningQuorum>,
+        platform_config: &PlatformConfig,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        // 1. Create asset lock proof
+        let (asset_lock_proof, asset_lock_private_key, funded_amount) = self
+            .create_asset_lock_proof_with_amount(
+                rng,
+                amount_range,
+                instant_lock_quorums,
+                platform_config,
+                platform_version,
+            );
+
+        tracing::debug!(funded_amount, "Preparing shield from asset lock transition");
+
+        // 2. Create deterministic Orchard recipient
+        let sk = SpendingKey::from_bytes(TEST_SK_BYTES).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // 3. Build output-only Orchard bundle (same as Shield)
+        let anchor = Anchor::empty_tree();
+        let mut builder = Builder::<DashMemo>::new(
+            BundleType::Transactional {
+                flags: OrchardFlags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            anchor,
+        );
+
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(funded_amount),
+                [0u8; 36],
+            )
+            .expect("expected to add output");
+
+        // 4. Build -> prove -> sign
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[])
+            .expect("expected to apply signatures");
+
+        // 5. Decompose bundle
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        // 6. Build ShieldFromAssetLockTransition
+        let transition = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
+            asset_lock_proof,
+            asset_lock_private_key.as_slice(),
+            actions,
+            flags,
+            value_balance,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            0,
+            platform_version,
+        )
+        .expect("expected to create shield from asset lock transition");
+
+        tracing::debug!("ShieldFromAssetLock transition successfully built and signed");
+
+        Some(transition)
+    }
+
+    /// Build a ShieldedTransfer state transition (shielded pool -> shielded pool).
+    ///
+    /// Spends an existing note and creates a new note with the same value.
+    /// Requires notes from prior Shield or ShieldFromAssetLock transitions.
+    fn create_shielded_transfer_transition(
+        &mut self,
+        _amount_range: &AmountRange,
+        _rng: &mut StdRng,
+        shielded_state: &mut Option<ShieldedState>,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let state = shielded_state.as_mut()?;
+        if !state.has_spendable_notes() {
+            tracing::debug!("No spendable notes available for shielded transfer");
+            return None;
+        }
+
+        let (note, merkle_path, anchor) = state.take_spendable_note()?;
+        let note_value = note.value().inner();
+
+        tracing::debug!(note_value, "Building shielded transfer bundle");
+
+        let fvk = state.fvk.clone();
+        let ask = state.ask.clone();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // Build bundle: spend note -> output same value (value_balance = 0)
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+        builder
+            .add_spend(fvk, note, merkle_path)
+            .expect("expected to add spend");
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(note_value), [0u8; 36])
+            .expect("expected to add output");
+
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        // Shielded transfer has no extra_data in sighash
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[ask])
+            .expect("expected to apply signatures");
+
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        // value_balance should be 0 (all value stays in pool)
+        // Cast i64 to u64 for the ShieldedTransferTransition API
+        let transition = ShieldedTransferTransition::try_from_bundle(
+            actions,
+            flags,
+            value_balance as u64,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            platform_version,
+        )
+        .expect("expected to create shielded transfer transition");
+
+        tracing::debug!("ShieldedTransfer transition successfully built");
+
+        Some(transition)
+    }
+
+    /// Build an Unshield state transition (shielded pool -> platform address).
+    ///
+    /// Spends an existing note and sends the value to a platform address.
+    /// Requires notes from prior Shield or ShieldFromAssetLock transitions.
+    fn create_unshield_transition(
+        &mut self,
+        _current_addresses_with_balance: &mut AddressesWithBalance,
+        _amount_range: &AmountRange,
+        _rng: &mut StdRng,
+        shielded_state: &mut Option<ShieldedState>,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let state = shielded_state.as_mut()?;
+        if !state.has_spendable_notes() {
+            tracing::debug!("No spendable notes available for unshield");
+            return None;
+        }
+
+        let (note, merkle_path, anchor) = state.take_spendable_note()?;
+        let note_value = note.value().inner();
+
+        tracing::debug!(note_value, "Building unshield bundle");
+
+        let fvk = state.fvk.clone();
+        let ask = state.ask.clone();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // Spend full note, output half back to pool, unshield the other half
+        let unshield_amount = note_value / 2;
+        let change_amount = note_value - unshield_amount;
+
+        // Build bundle: spend note -> output change (value_balance = unshield_amount)
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+        builder
+            .add_spend(fvk, note, merkle_path)
+            .expect("expected to add spend");
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(change_amount),
+                [0u8; 36],
+            )
+            .expect("expected to add output");
+
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        // Unshield extra_data = output_address.to_bytes() || amount.to_le_bytes()
+        let output_address = PlatformAddress::P2pkh([42u8; 20]);
+        let amount = unshield_amount;
+        let mut extra_sighash_data = output_address.to_bytes();
+        extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[ask])
+            .expect("expected to apply signatures");
+
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        let transition = UnshieldTransition::try_from_bundle(
+            output_address,
+            amount,
+            actions,
+            flags,
+            value_balance,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            platform_version,
+        )
+        .expect("expected to create unshield transition");
+
+        tracing::debug!(amount, "Unshield transition successfully built");
+
+        Some(transition)
+    }
+
+    /// Build a ShieldedWithdrawal state transition (shielded pool -> core L1 address).
+    ///
+    /// Spends an existing note and withdraws the value to a core script.
+    /// Requires notes from prior Shield or ShieldFromAssetLock transitions.
+    fn create_shielded_withdrawal_transition(
+        &mut self,
+        _amount_range: &AmountRange,
+        _rng: &mut StdRng,
+        shielded_state: &mut Option<ShieldedState>,
+        platform_version: &PlatformVersion,
+    ) -> Option<StateTransition> {
+        let state = shielded_state.as_mut()?;
+        if !state.has_spendable_notes() {
+            tracing::debug!("No spendable notes available for shielded withdrawal");
+            return None;
+        }
+
+        let (note, merkle_path, anchor) = state.take_spendable_note()?;
+        let note_value = note.value().inner();
+
+        tracing::debug!(note_value, "Building shielded withdrawal bundle");
+
+        let fvk = state.fvk.clone();
+        let ask = state.ask.clone();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // Spend full note, output half back to pool, withdraw the other half
+        let withdrawal_amount = note_value / 2;
+        let change_amount = note_value - withdrawal_amount;
+
+        // Build bundle: spend note -> output change (value_balance = withdrawal_amount)
+        let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+        builder
+            .add_spend(fvk, note, merkle_path)
+            .expect("expected to add spend");
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(change_amount),
+                [0u8; 36],
+            )
+            .expect("expected to add output");
+
+        let pk = get_proving_key();
+        let mut bundle_rng = rand::rngs::OsRng;
+        let (unauthorized, _) = builder
+            .build::<i64>(&mut bundle_rng)
+            .expect("expected to build bundle")
+            .expect("expected bundle to be present");
+
+        // ShieldedWithdrawal extra_data = output_script.as_bytes() || amount.to_le_bytes()
+        let output_script = CoreScript::new_p2pkh([7u8; 20]);
+        let amount = withdrawal_amount;
+        let mut extra_sighash_data = output_script.as_bytes().to_vec();
+        extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+
+        let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+        let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+        let proven = unauthorized
+            .create_proof(pk, &mut bundle_rng)
+            .expect("expected to create proof");
+        let bundle = proven
+            .apply_signatures(bundle_rng, sighash, &[ask])
+            .expect("expected to apply signatures");
+
+        let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            serialize_authorized_bundle(&bundle);
+
+        let transition = ShieldedWithdrawalTransition::try_from_bundle(
+            amount,
+            actions,
+            flags,
+            value_balance,
+            anchor_bytes,
+            proof_bytes,
+            binding_sig,
+            1, // core_fee_per_byte
+            Pooling::Never,
+            output_script,
+            platform_version,
+        )
+        .expect("expected to create shielded withdrawal transition");
+
+        tracing::debug!(amount, "ShieldedWithdrawal transition successfully built");
+
+        Some(transition)
     }
 }
 

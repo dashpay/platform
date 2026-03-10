@@ -21,6 +21,7 @@ use crate::execution::types::state_transition_execution_context::{
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
+use drive::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolActionAccessorsV0;
 use drive::util::batch::DriveOperation;
 
 /// An execution event
@@ -67,6 +68,16 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// fees to add
         fees_to_add_to_pool: Credits,
     },
+    /// A drive event paid from the shielded pool's value_balance.
+    /// The fee is embedded in the ZK-proven value_balance and validated
+    /// at the processor level (validate_minimum_shielded_fee).
+    /// Nullifiers are stored to recent block storage as part of the drive operations.
+    PaidFromShieldedPool {
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+        /// fees derived from value_balance to add to the fee pool
+        fees_to_add_to_pool: Credits,
+    },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLock {
         /// The identity requesting the event
@@ -86,6 +97,15 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         processing_fees: Credits,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
+    },
+    /// A drive event paid from an asset lock with funds going to the shielded pool (with fee validation)
+    PaidFromAssetLockToPool {
+        /// Fee (asset_lock_value - shield_amount) to add to the fee pool
+        fees_to_add_to_pool: Credits,
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+        /// the execution operations that we must also pay for
+        execution_operations: Vec<ValidationOperation>,
     },
     /// A drive event that is free
     #[allow(dead_code)] // TODO investigate why `variant `Free` is never constructed`
@@ -441,6 +461,72 @@ impl ExecutionEvent<'_> {
                         "partial identity should be present for identity credit transfer to addresses action",
                     )))
                 }
+            }
+            StateTransitionAction::ShieldAction(shield_action) => {
+                let user_fee_increase = shield_action.user_fee_increase();
+                let input_current_balances = shield_action.inputs_with_remaining_balance().clone();
+                let added_to_balance_outputs = BTreeMap::new();
+                let fee_strategy = shield_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::ShieldedTransferAction(ref shielded_transfer_action) => {
+                let fee_amount = shielded_transfer_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::UnshieldAction(ref unshield_action) => {
+                let fee_amount = unshield_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
+                // Fee = asset_lock_value - shield_amount (excess from asset lock)
+                let fee_amount = shield_from_asset_lock_action
+                    .asset_lock_value_to_be_consumed()
+                    .saturating_sub(shield_from_asset_lock_action.shield_amount());
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAssetLockToPool {
+                    fees_to_add_to_pool: fee_amount,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                })
+            }
+            StateTransitionAction::ShieldedWithdrawalAction(ref shielded_withdrawal_action) => {
+                let fee_amount = shielded_withdrawal_action.fee_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPool {
+                    operations,
+                    fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::PenalizeShieldedPoolAction(ref penalize_action) => {
+                let penalty_amount = penalize_action.penalty_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFixedCost {
+                    operations,
+                    fees_to_add_to_pool: penalty_amount,
+                })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

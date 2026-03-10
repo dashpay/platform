@@ -237,13 +237,11 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
-            }
+            StateTransition::Shield(st) => Ok(st.validate_structure(platform_version)),
+            StateTransition::ShieldedTransfer(st) => Ok(st.validate_structure(platform_version)),
+            StateTransition::Unshield(st) => Ok(st.validate_structure(platform_version)),
+            StateTransition::ShieldFromAssetLock(st) => Ok(st.validate_structure(platform_version)),
+            StateTransition::ShieldedWithdrawal(st) => Ok(st.validate_structure(platform_version)),
         }
     }
     fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {
@@ -279,15 +277,13 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundingFromAssetLock(_)
-            | StateTransition::AddressCreditWithdrawal(_) => true,
-            StateTransition::MasternodeVote(_) => false,
-            StateTransition::Shield(_)
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
-            }
+            | StateTransition::ShieldedWithdrawal(_) => true,
+            StateTransition::MasternodeVote(_) => false,
         }
     }
 }

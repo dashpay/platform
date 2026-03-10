@@ -7,6 +7,7 @@ mod prefunded_specialized_balances;
 mod proofs;
 mod response_metadata;
 mod service;
+mod shielded;
 mod system;
 mod token_queries;
 mod validator_queries;

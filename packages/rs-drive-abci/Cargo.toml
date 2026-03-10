@@ -82,6 +82,9 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "7ecb8465fad750c7cddd5332adb6f97fcceb498b" }
+sha2 = "0.10"
+nonempty = "0.11"
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
@@ -102,6 +105,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "7ecb8465fad750c7cddd5332adb6f97fcceb498b", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }

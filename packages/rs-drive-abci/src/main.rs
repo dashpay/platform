@@ -149,6 +149,15 @@ impl Cli {
                 )
                 .expect("Failed to open platform");
 
+                // Pre-build the shielded verifying key on a background thread so
+                // the first shielded transaction doesn't pay the ~5-15s build cost.
+                std::thread::spawn(|| {
+                    use drive_abci::execution::validation::state_transition::shielded_common::warmup_shielded_verifying_key;
+                    tracing::info!("pre-building shielded verifying key in background");
+                    warmup_shielded_verifying_key();
+                    tracing::info!("shielded verifying key is ready");
+                });
+
                 server::start(runtime, Arc::new(platform), config, cancel);
 
                 tracing::info!("drive-abci server is stopped");
