@@ -55,10 +55,10 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            111_549_800,    // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],     // non-zero anchor
+            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+            [42u8; 32],  // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],      // dummy binding signature
+            [0u8; 64],   // dummy binding signature
         )
     }
 

@@ -59,12 +59,12 @@ mod tests {
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
         create_shielded_withdrawal_transition(
             vec![create_dummy_serialized_action()],
-            111_549_800,            // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],             // non-zero anchor
-            vec![0u8; 100],         // dummy proof bytes
-            [0u8; 64],              // dummy binding signature
-            1,                      // core_fee_per_byte
-            Pooling::Never,         // pooling strategy
+            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+            [42u8; 32],  // non-zero anchor
+            vec![0u8; 100], // dummy proof bytes
+            [0u8; 64],   // dummy binding signature
+            1,           // core_fee_per_byte
+            Pooling::Never, // pooling strategy
             create_output_script(), // P2PKH output script
         )
     }

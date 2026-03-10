@@ -50,9 +50,7 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
 
         // Extract nullifiers from the transition actions
         let nullifiers: Vec<[u8; 32]> = match self {
-            ShieldedTransferTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.nullifier).collect()
-            }
+            ShieldedTransferTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
         };
 
         // Read current shielded pool state from GroveDB

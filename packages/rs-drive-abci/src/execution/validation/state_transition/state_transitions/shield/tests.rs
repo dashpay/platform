@@ -1005,7 +1005,7 @@ mod tests {
                 inputs: inputs.clone(),
                 actions,
                 amount: mutated_amount, // MUTATED
-                anchor: anchor_bytes, // Must match the proof's anchor (circuit instance)
+                anchor: anchor_bytes,   // Must match the proof's anchor (circuit instance)
                 proof: proof_bytes,
                 binding_signature: binding_sig,
                 fee_strategy: AddressFundsFeeStrategy::from(vec![

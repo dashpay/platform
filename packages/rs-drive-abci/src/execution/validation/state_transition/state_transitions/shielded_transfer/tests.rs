@@ -959,7 +959,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                MINIMUM_FEE_2_ACTIONS, // sufficient fee so we reach proof verification
+                MINIMUM_FEE_2_ACTIONS,  // sufficient fee so we reach proof verification
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

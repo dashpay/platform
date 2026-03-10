@@ -114,10 +114,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             ));
         }
 
-        let result = UnshieldTransitionAction::try_from_transition(
-            self,
-            current_total_balance,
-        );
+        let result = UnshieldTransitionAction::try_from_transition(self, current_total_balance);
 
         Ok(result.map(|action| action.into()))
     }
