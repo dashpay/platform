@@ -1,6 +1,7 @@
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -13,9 +14,8 @@ mod methods;
 pub mod v0;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(
-    Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From, ValueConvertible,
-)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
 #[serde(tag = "$formatVersion")]
 pub enum TokenConfiguration {
     #[serde(rename = "0")]

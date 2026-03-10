@@ -4,7 +4,11 @@ pub mod json;
 pub(crate) mod serde_bytes_64;
 pub(crate) mod serialization_traits;
 
-pub use dpp_json_convertible_derive::{json_safe_fields, JsonConvertible, ValueConvertible};
+pub use dpp_json_convertible_derive::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+pub use dpp_json_convertible_derive::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+pub use dpp_json_convertible_derive::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 pub use json::safe_integer::{
     json_safe_i64, json_safe_option_i64, json_safe_option_u64, json_safe_u64,

@@ -1,5 +1,6 @@
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::{property_names, IdentityV0};
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use platform_value::Value;

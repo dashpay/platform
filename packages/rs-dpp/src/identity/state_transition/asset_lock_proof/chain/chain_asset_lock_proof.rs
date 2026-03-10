@@ -2,6 +2,7 @@
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
@@ -17,7 +18,8 @@ use dashcore::OutPoint;
 /// To prove that the output is locked, a height where transaction was chain locked is provided.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, ValueConvertible)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     /// Core height on which the asset lock transaction was chain locked or higher

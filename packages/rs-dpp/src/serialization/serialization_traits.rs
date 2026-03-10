@@ -138,6 +138,7 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
+#[cfg(feature = "value-conversion")]
 pub trait ValueConvertible: Serialize + DeserializeOwned {
     fn to_object(&self) -> Result<Value, ProtocolError>
     where

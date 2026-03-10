@@ -1,6 +1,6 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
@@ -30,9 +30,10 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(serde::Serialize, serde::Deserialize, ValueConvertible),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenStatus {
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]

@@ -12,7 +12,7 @@ use crate::prelude::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -62,9 +62,10 @@ pub type FrozenIdentifier = Identifier;
 )]
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(serde::Serialize, serde::Deserialize, ValueConvertible),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
 pub enum TokenEvent {
     /// Event representing the minting of tokens to a recipient.

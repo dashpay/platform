@@ -5,7 +5,7 @@ use crate::data_contract::DataContract;
 use crate::document::Document;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;
@@ -41,9 +41,10 @@ pub enum Contender {
 )]
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(serde::Serialize, serde::Deserialize, ValueConvertible),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
 pub enum ContenderWithSerializedDocument {
     /// V0

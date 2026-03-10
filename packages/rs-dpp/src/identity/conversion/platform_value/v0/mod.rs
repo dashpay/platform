@@ -1,3 +1,4 @@
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use platform_value::Value;

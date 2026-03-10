@@ -5,6 +5,7 @@ use crate::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochIn
 use crate::protocol_error::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
@@ -14,8 +15,8 @@ use serde::{Deserialize, Serialize};
 
 /// Extended Epoch information
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
-    ValueConvertible,
     Clone,
     Debug,
     PartialEq,

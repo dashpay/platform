@@ -1,6 +1,6 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::tokens::token_event::TokenEvent;
 use crate::ProtocolError;
@@ -14,9 +14,10 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(Serialize, Deserialize, ValueConvertible),
+    derive(Serialize, Deserialize),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum GroupActionEvent {
     TokenEvent(TokenEvent),

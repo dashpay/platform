@@ -4,6 +4,7 @@ use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -20,19 +21,9 @@ pub type ContractBoundsType = u8;
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Clone,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    Ord,
-    PartialOrd,
-    Hash,
-    ValueConvertible,
+    Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract

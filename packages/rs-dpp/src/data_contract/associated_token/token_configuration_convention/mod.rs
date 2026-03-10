@@ -1,6 +1,7 @@
 use crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -20,19 +21,8 @@ pub mod v0;
 /// This enum enables evolution of the convention schema over time without breaking
 /// compatibility with older tokens. Each variant defines a specific format version.
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    From,
-    ValueConvertible,
-)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, PartialOrd, From)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum TokenConfigurationConvention {
     /// Version 0 of the token convention schema.

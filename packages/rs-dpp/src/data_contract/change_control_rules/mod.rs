@@ -8,6 +8,7 @@ use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -17,9 +18,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(
-    Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From, ValueConvertible,
-)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, From)]
 #[serde(tag = "$formatVersion")]
 pub enum ChangeControlRules {
     #[serde(rename = "0")]

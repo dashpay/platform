@@ -1,6 +1,6 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "serde-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
@@ -21,9 +21,10 @@ pub mod contested_document_resource_vote_poll;
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(Serialize, Deserialize, ValueConvertible),
+    derive(Serialize, Deserialize),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
 #[platform_serialize(limit = 100000)]
 pub enum VotePoll {

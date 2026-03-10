@@ -4,6 +4,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -22,19 +23,8 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 /// Block information
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
-#[derive(
-    Clone,
-    Copy,
-    Default,
-    Debug,
-    PartialEq,
-    Eq,
-    Encode,
-    Decode,
-    Serialize,
-    Deserialize,
-    ValueConvertible,
-)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     /// Block time in milliseconds

@@ -5,6 +5,7 @@ use crate::data_contract::GroupContractPosition;
 use crate::errors::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::validation::SimpleConsensusValidationResult;
 use bincode::{Decode, Encode};
@@ -24,8 +25,8 @@ pub type GroupMemberPower = u32;
 pub type GroupSumPower = u32;
 pub type GroupRequiredPower = u32;
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
-    ValueConvertible,
     Serialize,
     Deserialize,
     Decode,

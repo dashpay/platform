@@ -5,6 +5,7 @@ use crate::block::extended_block_info::v0::{
 use crate::protocol_error::ProtocolError;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::version::FeatureVersion;
 use bincode::{Decode, Encode};
@@ -16,8 +17,8 @@ pub mod v0;
 
 /// Extended Block information
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(
-    ValueConvertible,
     Clone,
     Debug,
     PartialEq,

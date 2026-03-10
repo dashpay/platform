@@ -3,7 +3,7 @@
     any(feature = "fixtures-and-mocks", feature = "serde-conversion")
 ))]
 use crate::serialization::JsonConvertible;
-#[cfg(any(feature = "fixtures-and-mocks", feature = "serde-conversion"))]
+#[cfg(any(feature = "fixtures-and-mocks", feature = "value-conversion"))]
 use crate::serialization::ValueConvertible;
 use crate::tokens::info::v0::IdentityTokenInfoV0;
 use crate::ProtocolError;
@@ -37,8 +37,12 @@ pub mod v0;
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(
     any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
-    derive(serde::Serialize, serde::Deserialize, ValueConvertible),
+    derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion")
+)]
+#[cfg_attr(
+    any(feature = "fixtures-and-mocks", feature = "value-conversion"),
+    derive(ValueConvertible)
 )]
 pub enum IdentityTokenInfo {
     #[cfg_attr(

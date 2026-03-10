@@ -1,24 +1,14 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Clone,
-    Copy,
-    Default,
-    Encode,
-    Decode,
-    Serialize,
-    Deserialize,
-    ValueConvertible,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
