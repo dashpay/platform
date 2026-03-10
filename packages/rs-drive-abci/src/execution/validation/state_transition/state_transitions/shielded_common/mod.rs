@@ -213,50 +213,26 @@ pub fn read_pool_total_balance(
 }
 
 /// Verify that the anchor exists in the recorded anchors tree.
-/// Anchors are stored as block_height_be → anchor_bytes in [AddressBalances, "s", [6]].
+/// Anchors are stored as anchor_bytes → block_height_be in [AddressBalances, "s", [6]].
+/// Uses O(1) key lookup instead of scanning the entire tree.
 /// Returns a consensus error if the anchor is not found.
 pub fn validate_anchor_exists(
     drive: &Drive,
     anchor: &[u8; 32],
     transaction: TransactionArg,
-    _drive_operations: &mut Vec<LowLevelDriveOperation>,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
-    use drive::grovedb::query_result_type::QueryResultType;
-    use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
-
     let anchors_path = shielded_credit_pool_anchors_path();
-    let path_query = PathQuery {
-        path: anchors_path.iter().map(|p| p.to_vec()).collect(),
-        query: SizedQuery {
-            query: Query::new_range_full(),
-            limit: None,
-            offset: None,
-        },
-    };
 
-    let grove_version = &platform_version.drive.grove_version;
-    let results = drive
-        .grove
-        .query_raw(
-            &path_query,
-            true,
-            true,
-            true,
-            QueryResultType::QueryKeyElementPairResultType,
-            transaction,
-            grove_version,
-        )
-        .unwrap()
-        .map_err(drive::error::Error::from)?;
-
-    let found = results.0.to_key_elements().into_iter().any(|(_, element)| {
-        if let Element::Item(value, _) = element {
-            value.as_slice() == anchor
-        } else {
-            false
-        }
-    });
+    let found = drive.grove_has_raw(
+        (&anchors_path).into(),
+        anchor,
+        DirectQueryType::StatefulDirectQuery,
+        transaction,
+        drive_operations,
+        &platform_version.drive,
+    )?;
 
     if !found {
         Ok(Some(ConsensusValidationResult::new_with_error(

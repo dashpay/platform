@@ -15,8 +15,11 @@ pub const SHIELDED_NULLIFIERS_KEY: u8 = 2;
 /// Key for the total balance sum item inside a shielded pool
 pub const SHIELDED_TOTAL_BALANCE_KEY: u8 = 5;
 
-/// Key for the anchors tree inside a shielded pool
+/// Key for the anchors tree inside a shielded pool (anchor_bytes → block_height_be)
 pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 6;
+
+/// Key for the most recent anchor item inside a shielded pool
+pub const SHIELDED_MOST_RECENT_ANCHOR_KEY: u8 = 7;
 
 /// Chunk power for the notes CommitmentTree (2^11 = 2048 items per chunk)
 pub const SHIELDED_NOTES_CHUNK_POWER: u8 = 11;

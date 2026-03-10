@@ -18,11 +18,11 @@ const AVERAGE_NOTE_VALUE_SIZE: u32 = 280;
 /// Size of a nullifier key (32 bytes)
 const NULLIFIER_KEY_SIZE: u8 = 32;
 
-/// Size of an anchor block height key (u64 big-endian = 8 bytes)
-const ANCHOR_KEY_SIZE: u8 = 8;
+/// Size of an anchor key (32 bytes)
+const ANCHOR_KEY_SIZE: u8 = 32;
 
-/// Size of an anchor value (32 bytes)
-const ANCHOR_VALUE_SIZE: u32 = 32;
+/// Size of an anchor value (u64 big-endian block height = 8 bytes)
+const ANCHOR_VALUE_SIZE: u32 = 8;
 
 impl Drive {
     /// Adds estimation costs for shielded pool operations.
@@ -97,7 +97,7 @@ impl Drive {
                         None,
                         6, // 6 subtrees: notes, permanent nullifiers, anchors, recent nullifiers, compacted nullifiers, expiration time
                     )),
-                    items_size: Some((1, 8, None, 1)), // 1 item: total balance
+                    items_size: Some((1, 32, None, 2)), // 2 items: total balance (SumItem), most recent anchor (Item)
                     references_size: None,
                 },
             },
@@ -126,7 +126,7 @@ impl Drive {
         );
 
         // Anchors tree: [AddressBalances, "s", 6]
-        // NormalTree - stores block_height_be -> anchor_bytes
+        // NormalTree - stores anchor_bytes -> block_height_be
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_path()),
             EstimatedLayerInformation {

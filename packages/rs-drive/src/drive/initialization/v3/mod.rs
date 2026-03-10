@@ -100,11 +100,18 @@ impl Drive {
             Element::new_sum_item(0),
         );
 
-        // 5. Anchors tree (NormalTree) inside pool: block_height_be → anchor_bytes
+        // 5. Anchors tree (NormalTree) inside pool: anchor_bytes → block_height_be
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_ANCHORS_IN_POOL_KEY],
             Element::empty_tree(),
+        );
+
+        // 5b. Most recent anchor item (empty initially, set on first block with notes)
+        batch.add_insert(
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_MOST_RECENT_ANCHOR_KEY],
+            Element::new_item(vec![0u8; 32]),
         );
 
         // 6. Per-block nullifiers CountSumTree under shielded credit pool.
