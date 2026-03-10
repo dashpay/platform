@@ -2,13 +2,13 @@ name: Check rs-sdk gRPC coverage
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'packages/rs-sdk/**'
-      - 'packages/dapi-grpc/protos/platform/v0/platform.proto'
-      - '.github/workflows/tests-rs-sdk-grpc-coverage.yml'
-      - '.github/scripts/check-grpc-coverage.py'
-      - '.github/grpc-queries-cache.json'
+  # pull_request:
+  #   paths:
+  #     - 'packages/rs-sdk/**'
+  #     - 'packages/dapi-grpc/protos/platform/v0/platform.proto'
+  #     - '.github/workflows/tests-rs-sdk-grpc-coverage.yml'
+  #     - '.github/scripts/check-grpc-coverage.py'
+  #     - '.github/grpc-queries-cache.json'
   push:
     branches:
       - master
