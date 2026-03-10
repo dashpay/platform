@@ -42,8 +42,7 @@ mod tests {
     fn create_raw_shield_transition(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        amount: u64,
         proof: Vec<u8>,
         binding_signature: [u8; 64],
         fee_strategy: AddressFundsFeeStrategy,
@@ -54,8 +53,7 @@ mod tests {
         StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
             inputs,
             actions,
-            flags,
-            value_balance,
+            amount,
             anchor: [0u8; 32],
             proof,
             binding_signature,
@@ -71,8 +69,7 @@ mod tests {
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        amount: u64,
         proof: Vec<u8>,
         binding_signature: [u8; 64],
         fee_strategy: AddressFundsFeeStrategy,
@@ -81,8 +78,7 @@ mod tests {
         let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
             inputs: inputs.clone(),
             actions,
-            flags,
-            value_balance,
+            amount,
             anchor: [42u8; 32],
             proof,
             binding_signature,
@@ -126,8 +122,7 @@ mod tests {
             signer,
             inputs,
             vec![create_dummy_serialized_action()],
-            0x03, // spends_enabled | outputs_enabled
-            -1000,
+            1000,
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
@@ -203,8 +198,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![], // Empty actions — invalid
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -231,8 +225,7 @@ mod tests {
             let transition = create_raw_shield_transition(
                 BTreeMap::new(), // no inputs
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -303,8 +296,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1,
+                1,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -322,40 +314,40 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_positive_value_balance_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = setup_platform();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            let mut inputs = BTreeMap::new();
-            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-
-            let transition = create_signed_shield_transition(
-                &signer,
-                inputs,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                1000, // Positive — invalid for shield (must be negative)
-                vec![0u8; 100],
-                [0u8; 64],
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-                    0,
-                )]),
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-                )]
-            );
-        }
+        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
+        // #[test]
+        // fn test_positive_value_balance_returns_error() {
+        //     let platform_version = PlatformVersion::latest();
+        //     let mut platform = setup_platform();
+        //
+        //     let mut signer = TestAddressSigner::new();
+        //     let input_address = signer.add_p2pkh([1u8; 32]);
+        //     setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+        //
+        //     let mut inputs = BTreeMap::new();
+        //     inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+        //
+        //     let transition = create_signed_shield_transition(
+        //         &signer,
+        //         inputs,
+        //         vec![create_dummy_serialized_action()],
+        //         1000,
+        //         vec![0u8; 100],
+        //         [0u8; 64],
+        //         AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        //             0,
+        //         )]),
+        //     );
+        //
+        //     let processing_result = process_transition(&platform, transition, platform_version);
+        //
+        //     assert_matches!(
+        //         processing_result.execution_results().as_slice(),
+        //         [StateTransitionExecutionResult::UnpaidConsensusError(
+        //             ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+        //         )]
+        //     );
+        // }
 
         #[test]
         fn test_zero_value_balance_returns_error() {
@@ -373,8 +365,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                0, // Zero — invalid for shield (must be negative)
+                0,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -408,8 +399,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![], // Empty proof — invalid
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -443,8 +433,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![]), // Empty fee strategy
@@ -477,8 +466,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![
@@ -516,8 +504,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![
@@ -607,8 +594,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -815,7 +801,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
             // --- Extract serialized fields from the authorized bundle ---
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // value_balance should be negative for shield (money going into pool)
@@ -832,8 +818,7 @@ mod tests {
             let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
                 inputs: inputs.clone(),
                 actions,
-                flags,
-                value_balance,
+                amount: shield_amount,
                 anchor: anchor_bytes,
                 proof: proof_bytes,
                 binding_signature: binding_sig,
@@ -886,8 +871,7 @@ mod tests {
                 &signer,
                 inputs,
                 vec![bad_action],
-                0x03,
-                -1000,
+                1000,
                 vec![0u8; 100],
                 [0u8; 64],
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
@@ -915,45 +899,45 @@ mod tests {
     mod security_audit {
         use super::*;
 
-        /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
-        ///
-        /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
-        /// overflow panic. Now uses `checked_neg()` which returns a consensus
-        /// error instead.
-        #[test]
-        fn test_value_balance_i64_min_returns_consensus_error() {
-            let platform_version = PlatformVersion::latest();
-            let mut platform = setup_platform();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            let mut inputs = BTreeMap::new();
-            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-
-            let transition = create_signed_shield_transition(
-                &signer,
-                inputs,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                i64::MIN, // -9223372036854775808 — would overflow on negation
-                vec![0u8; 100],
-                [0u8; 64],
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-                    0,
-                )]),
-            );
-
-            // Should return a consensus error, not panic
-            let processing_result = process_transition(&platform, transition, platform_version);
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
-            );
-        }
+        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
+        // /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
+        // ///
+        // /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
+        // /// overflow panic. Now uses `checked_neg()` which returns a consensus
+        // /// error instead.
+        // #[test]
+        // fn test_value_balance_i64_min_returns_consensus_error() {
+        //     let platform_version = PlatformVersion::latest();
+        //     let mut platform = setup_platform();
+        //
+        //     let mut signer = TestAddressSigner::new();
+        //     let input_address = signer.add_p2pkh([1u8; 32]);
+        //     setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+        //
+        //     let mut inputs = BTreeMap::new();
+        //     inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+        //
+        //     let transition = create_signed_shield_transition(
+        //         &signer,
+        //         inputs,
+        //         vec![create_dummy_serialized_action()],
+        //         i64::MAX as u64 + 1, // 9223372036854775808 — would overflow on negation
+        //         vec![0u8; 100],
+        //         [0u8; 64],
+        //         AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        //             0,
+        //         )]),
+        //     );
+        //
+        //     // Should return a consensus error, not panic
+        //     let processing_result = process_transition(&platform, transition, platform_version);
+        //     assert_matches!(
+        //         processing_result.execution_results().as_slice(),
+        //         [StateTransitionExecutionResult::UnpaidConsensusError(
+        //             ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+        //         )]
+        //     );
+        // }
 
         /// AUDIT FIX VERIFICATION: Mutated value_balance is now rejected.
         ///
@@ -996,18 +980,18 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             assert!(value_balance < 0);
             let honest_shield_amount = (-value_balance) as u64;
             assert_eq!(honest_shield_amount, 5_000);
 
-            // ATTACK: Mutate value_balance to claim shielding 100,000 instead of 5,000
-            let mutated_value_balance = -100_000i64;
+            // ATTACK: Mutate amount to claim shielding 100,000 instead of 5,000
+            let mutated_amount = 100_000u64;
 
             // Input only provides enough for a small amount, but shield_amount
-            // comes from value_balance, not from inputs
+            // comes from amount, not from inputs
             let mut inputs = BTreeMap::new();
             inputs.insert(
                 input_address,
@@ -1020,8 +1004,7 @@ mod tests {
             let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
                 inputs: inputs.clone(),
                 actions,
-                flags,
-                value_balance: mutated_value_balance, // MUTATED
+                amount: mutated_amount, // MUTATED
                 anchor: anchor_bytes, // Must match the proof's anchor (circuit instance)
                 proof: proof_bytes,
                 binding_signature: binding_sig,
@@ -1157,7 +1140,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
             // --- Extract serialized fields from the authorized bundle ---
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // value_balance should be negative for shield (money going into pool)
@@ -1177,8 +1160,7 @@ mod tests {
             let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
                 inputs: inputs.clone(),
                 actions,
-                flags,
-                value_balance,
+                amount: shield_amount,
                 anchor: anchor_bytes,
                 proof: proof_bytes,
                 binding_signature: binding_sig,

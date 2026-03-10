@@ -24,7 +24,6 @@ mod tests {
     /// No signing needed since shielded transfers have no witnesses.
     fn create_shielded_transfer_transition(
         actions: Vec<SerializedAction>,
-        flags: u8,
         value_balance: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
@@ -33,7 +32,6 @@ mod tests {
         StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
             ShieldedTransferTransitionV0 {
                 actions,
-                flags,
                 value_balance,
                 anchor,
                 proof,
@@ -48,7 +46,6 @@ mod tests {
     fn create_default_shielded_transfer_transition() -> StateTransition {
         create_shielded_transfer_transition(
             vec![create_dummy_serialized_action()],
-            0x03,           // spends_enabled | outputs_enabled
             111_548_800,    // minimum fee for 1 action
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
@@ -70,7 +67,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![], // Empty actions — invalid
-                0x03,
                 0,
                 [42u8; 32],
                 vec![0u8; 100],
@@ -94,7 +90,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                0x03,
                 i64::MAX as u64 + 1, // Exceeds i64::MAX — invalid
                 [42u8; 32],
                 vec![0u8; 100],
@@ -118,7 +113,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                0x03,
                 0,
                 [42u8; 32],
                 vec![], // Empty proof — invalid
@@ -142,7 +136,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                0x03,
                 0,
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
@@ -246,7 +239,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -266,12 +259,11 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance() as u64;
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         #[test]
@@ -356,7 +348,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
             // --- Extract serialized fields ---
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
@@ -368,7 +360,6 @@ mod tests {
             // --- Create and process transition ---
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,
@@ -399,7 +390,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![bad_action],
-                0x03,
                 111_548_800, // minimum fee for 1 action (fee check runs before proof reconstruction)
                 anchor,
                 vec![0u8; 100],
@@ -457,7 +447,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -477,12 +467,11 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance() as u64;
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         /// Helper to create a dummy action with a unique seed (avoids duplicate nullifiers).
@@ -507,7 +496,6 @@ mod tests {
             // 2 actions with zero fee — well below minimum of 121,344,000
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
-                0x03,
                 0, // zero fee
                 [42u8; 32],
                 vec![0u8; 100],
@@ -532,7 +520,6 @@ mod tests {
             // 2 actions with fee one credit below minimum
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
-                0x03,
                 MINIMUM_FEE_2_ACTIONS - 1, // 121,343,999
                 [42u8; 32],
                 vec![0u8; 100],
@@ -561,7 +548,6 @@ mod tests {
                     create_dummy_action(2),
                     create_dummy_action(3),
                 ],
-                0x03,
                 MINIMUM_FEE_3_ACTIONS - 1, // 134,646,399
                 [42u8; 32],
                 vec![0u8; 100],
@@ -591,7 +577,6 @@ mod tests {
                     create_dummy_action(3),
                     create_dummy_action(4),
                 ],
-                0x03,
                 MINIMUM_FEE_4_ACTIONS - 1, // 146,195,199
                 [42u8; 32],
                 vec![0u8; 100],
@@ -614,7 +599,7 @@ mod tests {
         /// Spends `spend_amount` and outputs `spend_amount - fee`, so value_balance = fee.
         fn build_bundle_with_fee(
             fee: u64,
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -668,7 +653,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS);
 
             // Verify the bundle has exactly 2 actions and the expected fee
@@ -681,7 +666,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,
@@ -702,7 +686,7 @@ mod tests {
             let platform = setup_platform();
 
             // Pay 1 credit more than the minimum
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS + 1);
 
             assert_eq!(actions.len(), 2);
@@ -713,7 +697,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,
@@ -759,7 +742,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -779,19 +762,18 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance() as u64;
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         /// Build a valid Orchard bundle for shielded transfer tests.
         /// Includes sufficient fee (value_balance = MINIMUM_FEE_2_ACTIONS).
-        /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
+        /// Returns (actions, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_transfer_bundle(
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -854,7 +836,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_shielded_transfer_bundle();
             assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
 
@@ -865,7 +847,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 mutated_value_balance, // MUTATED: different from signed value
                 anchor_bytes,
                 proof_bytes,
@@ -895,14 +876,13 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, _binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, _binding_sig) =
                 build_valid_shielded_transfer_bundle();
 
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,
@@ -932,7 +912,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            let (mut actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (mut actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_shielded_transfer_bundle();
 
             // ATTACK: Zero out all spend auth signatures
@@ -944,7 +924,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,
@@ -980,7 +959,6 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                0x03,
                 MINIMUM_FEE_2_ACTIONS, // sufficient fee so we reach proof verification
                 anchor,
                 vec![0u8; 100],
@@ -1029,7 +1007,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -1049,12 +1027,11 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance() as u64;
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         #[test]
@@ -1110,7 +1087,7 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // --- Set up pool state ---
@@ -1120,7 +1097,6 @@ mod tests {
             // --- Build and serialize the transition ---
             let transition = create_shielded_transfer_transition(
                 actions,
-                flags,
                 value_balance,
                 anchor_bytes,
                 proof_bytes,

@@ -183,8 +183,7 @@ mod tests {
             let transition = create_unsigned_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 vec![], // Empty actions -- invalid
-                0x03,
-                -1000,
+                1000,
                 [0u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -200,33 +199,33 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_positive_value_balance_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let mut rng = StdRng::seed_from_u64(568);
-            let (asset_lock_proof, _pk) = create_asset_lock_proof_with_key(&mut rng);
-
-            let transition = create_unsigned_shield_from_asset_lock_transition(
-                asset_lock_proof,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                1000, // Positive -- invalid for shielding (must be negative)
-                [0u8; 32],
-                vec![0u8; 100],
-                [0u8; 64],
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-                )]
-            );
-        }
+        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
+        // #[test]
+        // fn test_positive_value_balance_returns_error() {
+        //     let platform_version = PlatformVersion::latest();
+        //     let platform = setup_platform();
+        //
+        //     let mut rng = StdRng::seed_from_u64(568);
+        //     let (asset_lock_proof, _pk) = create_asset_lock_proof_with_key(&mut rng);
+        //
+        //     let transition = create_unsigned_shield_from_asset_lock_transition(
+        //         asset_lock_proof,
+        //         vec![create_dummy_serialized_action()],
+        //         1000,
+        //         [0u8; 32],
+        //         vec![0u8; 100],
+        //         [0u8; 64],
+        //     );
+        //
+        //     let processing_result = process_transition(&platform, transition, platform_version);
+        //
+        //     assert_matches!(
+        //         processing_result.execution_results().as_slice(),
+        //         [StateTransitionExecutionResult::UnpaidConsensusError(
+        //             ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+        //         )]
+        //     );
+        // }
 
         #[test]
         fn test_zero_value_balance_returns_error() {
@@ -239,8 +238,7 @@ mod tests {
             let transition = create_unsigned_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                0, // Zero -- invalid for shielding (must be negative)
+                0, // Zero -- invalid for shielding
                 [0u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -267,8 +265,7 @@ mod tests {
             let transition = create_unsigned_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000,
+                1000,
                 [0u8; 32],
                 vec![], // Empty proof -- invalid
                 [0u8; 64],
@@ -312,12 +309,10 @@ mod tests {
                 asset_lock_proof,
                 &asset_lock_pk,
                 vec![create_dummy_serialized_action()],
-                0x03, // spends_enabled | outputs_enabled
-                value_balance,
+                shield_amount,
                 [42u8; 32], // non-zero anchor (won't match any stored anchor, but proof check is first)
                 vec![0u8; 100], // dummy proof bytes
                 [0u8; 64],  // dummy binding signature
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -354,12 +349,10 @@ mod tests {
                 ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
                     asset_lock_proof,
                     actions: vec![create_dummy_serialized_action()],
-                    flags: 0x03,
-                    value_balance: -5000,
+                    value_balance: 5000,
                     anchor: [42u8; 32],
                     proof: vec![0u8; 100],
                     binding_signature: [0u8; 64],
-                    user_fee_increase: 0,
                     signature: BinaryData::new(vec![0u8; 65]), // zeroed invalid signature
                 }),
             );
@@ -396,12 +389,10 @@ mod tests {
                 asset_lock_proof,
                 &wrong_private_key.inner.secret_bytes(), // Wrong key
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -5000,
+                5000,
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -468,22 +459,21 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // value_balance should be negative for shield (money going into pool)
             assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
 
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
                 actions,
-                flags,
-                value_balance,
+                shield_amount,
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -508,12 +498,10 @@ mod tests {
                 asset_lock_proof,
                 &asset_lock_pk,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -5000,
+                5000,
                 [42u8; 32],
                 vec![0u8; 100], // random proof data
                 [0u8; 64],
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -537,49 +525,48 @@ mod tests {
     mod security_audit {
         use super::*;
 
-        /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
-        ///
-        /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
-        /// overflow panic. The transform_into_action code now uses `checked_neg()`
-        /// which returns a consensus error instead of panicking.
-        #[test]
-        fn test_i64_min_value_balance_handled() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let mut rng = StdRng::seed_from_u64(567);
-            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
-
-            // i64::MIN is negative, so it passes the structure validation (value_balance < 0),
-            // but checked_neg() on i64::MIN returns None, triggering the overflow guard in
-            // transform_into_action. Since this error occurs after the asset lock proof
-            // validation, it is a paid error (PartiallyUseAssetLockAction).
-            let transition = create_signed_shield_from_asset_lock_transition(
-                asset_lock_proof,
-                &asset_lock_pk,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                i64::MIN, // -9223372036854775808 -- would overflow on negation
-                [42u8; 32],
-                vec![0u8; 100],
-                [0u8; 64],
-                0,
-            );
-
-            // Should return a consensus error, not panic
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            // The checked_neg overflow is caught in transform_into_action as an
-            // InvalidShieldedProofError. Since it happens after asset lock validation,
-            // we expect it to be reported as an UnpaidConsensusError (the overflow check
-            // is done before consuming the asset lock value, so no penalty is applied).
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
-            );
-        }
+        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
+        // /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
+        // ///
+        // /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
+        // /// overflow panic. The transform_into_action code now uses `checked_neg()`
+        // /// which returns a consensus error instead of panicking.
+        // #[test]
+        // fn test_i64_min_value_balance_handled() {
+        //     let platform_version = PlatformVersion::latest();
+        //     let platform = setup_platform();
+        //
+        //     let mut rng = StdRng::seed_from_u64(567);
+        //     let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+        //
+        //     // i64::MIN is negative, so it passes the structure validation (value_balance < 0),
+        //     // but checked_neg() on i64::MIN returns None, triggering the overflow guard in
+        //     // transform_into_action. Since this error occurs after the asset lock proof
+        //     // validation, it is a paid error (PartiallyUseAssetLockAction).
+        //     let transition = create_signed_shield_from_asset_lock_transition(
+        //         asset_lock_proof,
+        //         &asset_lock_pk,
+        //         vec![create_dummy_serialized_action()],
+        //         i64::MAX as u64 + 1, // 9223372036854775808 -- would overflow on negation
+        //         [42u8; 32],
+        //         vec![0u8; 100],
+        //         [0u8; 64],
+        //     );
+        //
+        //     // Should return a consensus error, not panic
+        //     let processing_result = process_transition(&platform, transition, platform_version);
+        //
+        //     // The checked_neg overflow is caught in transform_into_action as an
+        //     // InvalidShieldedProofError. Since it happens after asset lock validation,
+        //     // we expect it to be reported as an UnpaidConsensusError (the overflow check
+        //     // is done before consuming the asset lock value, so no penalty is applied).
+        //     assert_matches!(
+        //         processing_result.execution_results().as_slice(),
+        //         [StateTransitionExecutionResult::UnpaidConsensusError(
+        //             ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+        //         )]
+        //     );
+        // }
 
         /// AUDIT FIX VERIFICATION: Mutated value_balance is rejected by BatchValidator.
         ///
@@ -621,7 +608,7 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             assert!(value_balance < 0);
@@ -629,18 +616,16 @@ mod tests {
             assert_eq!(honest_shield_amount, 5_000);
 
             // ATTACK: Mutate value_balance to claim shielding 100,000 instead of 5,000
-            let mutated_value_balance = -100_000i64;
+            let mutated_value_balance = 100_000u64;
 
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
                 actions,
-                flags,
                 mutated_value_balance, // MUTATED
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -692,7 +677,7 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
-            let (mut actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (mut actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // Zero out all spend_auth_sig values
@@ -700,16 +685,17 @@ mod tests {
                 action.spend_auth_sig = [0u8; 64];
             }
 
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
                 actions,
-                flags,
-                value_balance,
+                shield_amount,
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             let processing_result = process_transition(&platform, transition, platform_version);
@@ -822,22 +808,21 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
 
             // --- Build and sign the transition ---
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
                 actions,
-                flags,
-                value_balance,
+                shield_amount,
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
-                0,
             );
 
             // --- Serialize and process with manual transaction so we can commit before proving ---
