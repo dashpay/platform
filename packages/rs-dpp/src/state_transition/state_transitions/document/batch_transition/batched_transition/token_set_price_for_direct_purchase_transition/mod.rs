@@ -4,7 +4,7 @@ pub mod validate_structure;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
 
@@ -22,10 +22,7 @@ pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
 /// Versioning enables forward compatibility by allowing future enhancements or changes
 /// without breaking existing clients.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum TokenSetPriceForDirectPurchaseTransition {
     /// Version 0 of the token set price for direct purchase transition.
     ///

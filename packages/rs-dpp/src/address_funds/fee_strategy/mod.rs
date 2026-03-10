@@ -3,12 +3,12 @@ pub mod deduct_fee_from_inputs_and_outputs;
 pub use deduct_fee_from_inputs_and_outputs::FeeDeductionResult;
 
 use bincode::{Decode, Encode};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

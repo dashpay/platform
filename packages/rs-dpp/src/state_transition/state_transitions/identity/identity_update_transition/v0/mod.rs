@@ -1,10 +1,10 @@
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -13,7 +13,7 @@ use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
@@ -31,7 +31,7 @@ use crate::{
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -52,12 +52,12 @@ pub struct IdentityUpdateTransitionV0 {
 
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub add_public_keys: Vec<IdentityPublicKeyInCreation>,
 
     /// Identity Public Keys ID's to disable for the Identity
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(default))]
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub disable_public_keys: Vec<KeyID>,
 
     /// The fee multiplier

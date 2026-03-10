@@ -31,7 +31,7 @@ pub struct ContenderV0 {
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

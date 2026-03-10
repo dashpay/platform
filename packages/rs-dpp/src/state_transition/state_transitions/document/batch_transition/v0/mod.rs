@@ -1,10 +1,10 @@
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod types;
 mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -17,12 +17,12 @@ use platform_serialization_derive::PlatformSignable;
 
 use crate::prelude::UserFeeIncrease;
 use platform_value::{BinaryData, Identifier};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

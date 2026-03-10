@@ -1,6 +1,6 @@
-#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "vote-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use crate::ProtocolError;
@@ -8,19 +8,19 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-#[cfg(feature = "vote-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod contested_document_resource_vote_poll;
 
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "vote-serde-conversion"),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq, From)]
 #[cfg_attr(
-    feature = "vote-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]

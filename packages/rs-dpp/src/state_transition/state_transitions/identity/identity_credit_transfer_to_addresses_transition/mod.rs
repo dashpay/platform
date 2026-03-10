@@ -1,18 +1,18 @@
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod state_transition_validation;
 pub mod v0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::fields::property_names::RECIPIENT_ID;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
@@ -27,7 +27,7 @@ use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub type IdentityCreditTransferToAddressesTransitionLatest =
@@ -46,20 +46,17 @@ pub type IdentityCreditTransferToAddressesTransitionLatest =
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(
-    feature = "state-transition-value-conversion",
-    derive(ValueConvertible)
-)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_credit_transfer_to_addresses_state_transition"
 )]
 pub enum IdentityCreditTransferToAddressesTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityCreditTransferToAddressesTransitionV0),
 }
 

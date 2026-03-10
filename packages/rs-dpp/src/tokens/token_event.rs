@@ -12,7 +12,7 @@ use crate::prelude::{
 };
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -61,7 +61,7 @@ pub type FrozenIdentifier = Identifier;
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
@@ -157,10 +157,7 @@ pub enum TokenEvent {
 // which intentionally don't. The `#[json_safe_fields]` macro can't annotate tuple
 // variant fields either. Safety is ensured by manual `impl JsonSafeFields` in
 // safe_fields.rs — the developer takes responsibility for these fields.
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 impl JsonConvertible for TokenEvent {}
 
 impl fmt::Display for TokenEvent {

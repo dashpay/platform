@@ -1,9 +1,6 @@
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
@@ -17,10 +14,7 @@ mod methods;
 pub mod v0;
 
 #[cfg_attr(
-    all(
-        feature = "json-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(
@@ -35,13 +29,13 @@ pub mod v0;
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize, ValueConvertible),
     serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenStatus {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenStatusV0),
 }
 
@@ -62,11 +56,7 @@ impl TokenStatus {
     }
 }
 
-#[cfg(all(
-    test,
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(all(test, feature = "json-conversion"))]
 mod tests {
     use super::*;
     use crate::serialization::JsonConvertible;

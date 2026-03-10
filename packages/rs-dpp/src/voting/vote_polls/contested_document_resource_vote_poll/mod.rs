@@ -1,27 +1,27 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
-#[cfg(all(feature = "json-conversion", feature = "vote-serde-conversion"))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use crate::serialization::PlatformSerializable;
-#[cfg(feature = "vote-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
-#[cfg(feature = "vote-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
-    all(feature = "json-conversion", feature = "vote-serde-conversion"),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
-    feature = "vote-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize, ValueConvertible),
     serde(rename_all = "camelCase")
 )]

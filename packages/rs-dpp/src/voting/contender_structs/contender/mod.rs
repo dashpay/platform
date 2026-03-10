@@ -3,12 +3,9 @@ pub mod v0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::Document;
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::voting::contender_structs::contender::v0::ContenderV0;
@@ -36,24 +33,21 @@ pub enum Contender {
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
 #[cfg_attr(
-    all(
-        feature = "json-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(
     Debug, PartialEq, Eq, Clone, From, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize, ValueConvertible),
     serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)]
 pub enum ContenderWithSerializedDocument {
     /// V0
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(ContenderWithSerializedDocumentV0),
 }
 

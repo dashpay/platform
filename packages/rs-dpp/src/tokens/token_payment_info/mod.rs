@@ -53,15 +53,12 @@ use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
 #[cfg(any(
-    feature = "state-transition-serde-conversion",
-    all(
-        feature = "document-serde-conversion",
-        feature = "data-contract-serde-conversion"
-    ),
+    feature = "serde-conversion",
+    all(feature = "serde-conversion", feature = "serde-conversion"),
 ))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -83,11 +80,8 @@ pub mod v0;
 )]
 #[cfg_attr(
     any(
-        feature = "state-transition-serde-conversion",
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        feature = "serde-conversion",
+        all(feature = "serde-conversion", feature = "serde-conversion"),
     ),
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
@@ -105,11 +99,8 @@ pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
     #[cfg_attr(
         any(
-            feature = "state-transition-serde-conversion",
-            all(
-                feature = "document-serde-conversion",
-                feature = "data-contract-serde-conversion"
-            ),
+            feature = "serde-conversion",
+            all(feature = "serde-conversion", feature = "serde-conversion"),
         ),
         serde(rename = "0")
     )]
@@ -213,7 +204,7 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     }
 }
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 impl TryFrom<TokenPaymentInfo> for Value {
     type Error = Error;
     /// Serialize the versioned token payment info into a platform `Value`.

@@ -1,6 +1,6 @@
 #[cfg(feature = "json-conversion")]
 pub mod json;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 pub(crate) mod serde_bytes_64;
 pub(crate) mod serialization_traits;
 

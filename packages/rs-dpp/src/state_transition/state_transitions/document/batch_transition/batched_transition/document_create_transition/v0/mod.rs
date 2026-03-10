@@ -3,10 +3,10 @@ pub mod v0_methods;
 
 use bincode::{Decode, Encode};
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
@@ -24,16 +24,16 @@ use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition;
 use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use derive_more::Display;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;
 use platform_version::version::PlatformVersion;
 
@@ -49,28 +49,25 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Entropy: {:?}, Data: {:?}", "base", "entropy", "data")]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$entropy")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$entropy"))]
     pub entropy: [u8; 32],
 
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 
     #[cfg_attr(
-        feature = "state-transition-serde-conversion",
+        feature = "serde-conversion",
         serde(rename = "$prefundedVotingBalance")
     )]
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
@@ -81,7 +78,7 @@ pub struct DocumentCreateTransitionV0 {
 }
 
 impl DocumentCreateTransitionV0 {
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub(crate) fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -106,7 +103,7 @@ impl DocumentCreateTransitionV0 {
         })
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub(crate) fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
         transition_base_map.insert(
@@ -493,7 +490,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_binary = BinaryData::new(vec![10_u8; 32]);

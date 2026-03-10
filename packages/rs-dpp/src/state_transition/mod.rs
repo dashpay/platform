@@ -1,5 +1,5 @@
 use derive_more::From;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use std::collections::BTreeMap;
@@ -422,7 +422,7 @@ macro_rules! call_errorable_method_identity_signed {
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(untagged)
 )]

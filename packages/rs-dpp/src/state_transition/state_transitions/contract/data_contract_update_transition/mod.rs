@@ -1,9 +1,6 @@
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
@@ -13,20 +10,20 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 
 use platform_versioning::PlatformVersioned;
 
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 mod serialize;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -43,10 +40,7 @@ pub use v0::*;
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
 
 #[cfg_attr(
-    all(
-        feature = "json-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(
@@ -62,20 +56,17 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(
-    feature = "state-transition-value-conversion",
-    derive(ValueConvertible)
-)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractUpdateTransitionV0),
 }
 
@@ -180,7 +171,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     fn should_return_data_contract() {
         let data = get_test_data();
 

@@ -1,23 +1,20 @@
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 pub mod v1;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -37,7 +34,7 @@ use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 /// Minimal core per byte. Must be a fibonacci number
@@ -50,10 +47,7 @@ pub const MIN_WITHDRAWAL_AMOUNT: u64 =
 pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTransitionV1;
 
 #[cfg_attr(
-    all(
-        feature = "json-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(
@@ -69,22 +63,19 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
-#[cfg_attr(
-    feature = "state-transition-value-conversion",
-    derive(ValueConvertible)
-)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
     "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"
 )]
 pub enum IdentityCreditWithdrawalTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityCreditWithdrawalTransitionV0),
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "1"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(IdentityCreditWithdrawalTransitionV1),
 }
 

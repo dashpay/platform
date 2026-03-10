@@ -6,10 +6,7 @@ use derive_more::From;
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 #[cfg_attr(
-    any(
-        feature = "fixtures-and-mocks",
-        feature = "state-transition-serde-conversion"
-    ),
+    any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize)
 )]
 /// Token information for an identity (version 0).

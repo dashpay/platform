@@ -10,10 +10,7 @@ use crate::data_contract::{
     DataContract, DefinitionName, DocumentName, GroupContractPosition, TokenContractPosition,
     EMPTY_GROUPS, EMPTY_TOKENS,
 };
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "data-contract-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -23,7 +20,7 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 use platform_version::{IntoPlatformVersioned, TryFromPlatformVersioned};
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "data-contract-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -97,22 +94,19 @@ impl fmt::Display for DataContractMismatch {
 }
 
 #[cfg_attr(
-    all(
-        feature = "json-conversion",
-        feature = "data-contract-serde-conversion"
-    ),
+    all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)
 )]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
-    feature = "data-contract-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
 pub enum DataContractInSerializationFormat {
-    #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),
-    #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "1"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DataContractInSerializationFormatV1),
 }
 

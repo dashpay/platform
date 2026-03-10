@@ -1,19 +1,19 @@
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::tokens::token_event::TokenEvent;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize, ValueConvertible),
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
@@ -24,10 +24,7 @@ pub enum GroupActionEvent {
 
 // Manual impl because GroupActionEvent is a flat enum (not versioned V0/V1).
 // Its inner type TokenEvent also has a manual impl — see token_event.rs.
-#[cfg(all(
-    feature = "json-conversion",
-    feature = "state-transition-serde-conversion"
-))]
+#[cfg(feature = "json-conversion")]
 impl JsonConvertible for GroupActionEvent {}
 
 use std::fmt;

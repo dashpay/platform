@@ -1,12 +1,12 @@
-#[cfg(feature = "index-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum OrderBy {
-    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "asc"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "asc"))]
     Asc,
-    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "desc"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "desc"))]
     Desc,
 }
 
@@ -21,10 +21,10 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
-#[cfg(feature = "index-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
-#[cfg(feature = "index-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use std::fmt;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
@@ -33,7 +33,7 @@ pub mod random_index;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -86,7 +86,7 @@ impl LazyRegex {
     }
 }
 
-#[cfg(feature = "index-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 impl Serialize for ContestedIndexFieldMatch {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -110,7 +110,7 @@ impl Serialize for ContestedIndexFieldMatch {
     }
 }
 
-#[cfg(feature = "index-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
     fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
     where
@@ -268,7 +268,7 @@ impl ContestedIndexFieldMatch {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ContestedIndexInformation {
     pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,
@@ -285,7 +285,7 @@ impl Default for ContestedIndexInformation {
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -332,7 +332,7 @@ impl Index {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,

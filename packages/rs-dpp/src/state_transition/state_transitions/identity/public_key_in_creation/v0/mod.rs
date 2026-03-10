@@ -1,7 +1,7 @@
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod types;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -146,7 +146,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
 }
 
 //
-//     #[cfg(feature = "state-transition-value-conversion")]
+//     #[cfg(feature = "value-conversion")]
 //     pub fn from_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
 //         raw_object.try_into().map_err(ProtocolError::ValueError)
 //     }

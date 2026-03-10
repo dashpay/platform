@@ -16,13 +16,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "state-transitions",
   "data-contracts",
-  "data-contract-serde-conversion",
-  "data-contract-json-conversion",
-  "identity-serde-conversion",
-  "document-serde-conversion",
-  "document-json-conversion",
-  "state-transition-serde-conversion",
-  "vote-serde-conversion",
+  "json-conversion",
   "platform-value-json",
 ] }
 
@@ -54,13 +48,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "random-identities",
   "random-documents",
   "all-system_contracts",
-  "data-contract-serde-conversion",
-  "data-contract-json-conversion",
-  "identity-serde-conversion",
-  "document-serde-conversion",
-  "document-json-conversion",
-  "state-transition-serde-conversion",
-  "vote-serde-conversion",
+  "json-conversion",
   "platform-value-json",
 ] }
 js-sys = "0.3.64"

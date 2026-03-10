@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use derive_more::From;
 
 use platform_value::Value;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
@@ -39,7 +39,7 @@ pub mod accessors;
 pub mod batched_transition;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 pub mod resolvers;
@@ -49,7 +49,7 @@ mod v0;
 mod v1;
 #[cfg(feature = "validation")]
 mod validation;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -76,7 +76,7 @@ pub use v1::*;
     From,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
@@ -85,9 +85,9 @@ pub use v1::*;
     "dpp.state_transition_serialization_versions.batch_state_transition"
 )]
 pub enum BatchTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(BatchTransitionV0),
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "1"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(BatchTransitionV1),
 }
 

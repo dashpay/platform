@@ -2,7 +2,7 @@
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -50,7 +50,7 @@ pub type TimestampMillis = u64;
     PartialOrd,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
-#[cfg_attr(feature = "identity-value-conversion", derive(ValueConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[serde(tag = "$formatVersion")]
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]

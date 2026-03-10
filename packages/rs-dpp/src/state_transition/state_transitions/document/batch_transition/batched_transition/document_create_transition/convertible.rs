@@ -1,62 +1,41 @@
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::prelude::DataContract;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::state_transition::batch_transition::document_create_transition::v0::BINARY_FIELDS;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::state_transition::data_contract_update_transition::IDENTIFIER_FIELDS;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::ProtocolError;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
 };
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use platform_value::ReplacementType;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use platform_value::Value;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use serde_json::Value as JsonValue;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 impl DocumentTransitionObjectLike for DocumentCreateTransition {
-    #[cfg(feature = "state-transition-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     fn from_json_object(
         json_value: JsonValue,
         data_contract: DataContract,
@@ -86,7 +65,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         Ok(document)
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     fn from_object(
         raw_transition: Value,
         data_contract: DataContract,
@@ -97,7 +76,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         Self::from_value_map(map, data_contract)
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
@@ -117,12 +96,12 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         }
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     fn to_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
             DocumentCreateTransition::V0(v0) => {
@@ -133,14 +112,14 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
         }
     }
 
-    #[cfg(feature = "state-transition-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         self.to_cleaned_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
 
-    #[cfg(feature = "state-transition-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_value_map()?.into())
     }

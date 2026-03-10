@@ -1,22 +1,19 @@
 mod accessors;
 mod fields;
-#[cfg(feature = "document-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
 
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
-#[cfg(any(
-    feature = "document-json-conversion",
-    feature = "document-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
@@ -24,9 +21,9 @@ use derive_more::From;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use serde_json::Value as JsonValue;
-#[cfg(feature = "document-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned, From)]
@@ -35,7 +32,7 @@ pub enum ExtendedDocument {
 }
 
 impl ExtendedDocument {
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     /// Returns the properties of the document as a JSON value.
     ///
     /// # Errors
@@ -83,7 +80,7 @@ impl ExtendedDocument {
     /// Create an extended document from a JSON string and a data contract.
     ///
     /// This function is a passthrough to the `from_json_string` method.
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn from_json_string(
         string: &str,
         contract: DataContract,
@@ -99,7 +96,7 @@ impl ExtendedDocument {
     /// Create an extended document from a raw JSON document and a data contract.
     ///
     /// This function is a passthrough to the `from_raw_json_document` method.
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn from_raw_json_document(
         raw_document: JsonValue,
         data_contract: DataContract,
@@ -114,7 +111,7 @@ impl ExtendedDocument {
         ))
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -151,7 +148,7 @@ impl ExtendedDocument {
         }
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///
@@ -191,7 +188,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a JSON object.
     ///
     /// This function is a passthrough to the `to_json` method.
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_json(platform_version),
@@ -201,7 +198,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a pretty JSON object.
     ///
     /// This function is a passthrough to the `to_pretty_json` method.
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn to_pretty_json(
         &self,
         platform_version: &PlatformVersion,
@@ -214,7 +211,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a BTreeMap of string keys and Value instances.
     ///
     /// This function is a passthrough to the `to_map_value` method.
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_map_value(),
@@ -224,7 +221,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a BTreeMap of string keys and Value instances consuming the instance.
     ///
     /// This function is a passthrough to the `into_map_value` method.
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.into_map_value(),
@@ -234,7 +231,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a Value instance consuming the instance.
     ///
     /// This function is a passthrough to the `into_value` method.
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn into_value(self) -> Result<Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.into_value(),
@@ -244,7 +241,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a Value instance.
     ///
     /// This function is a passthrough to the `to_value` method.
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_value(),
@@ -254,7 +251,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a JSON object for validation.
     ///
     /// This function is a passthrough to the `to_json_object_for_validation` method.
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_json_object_for_validation(),
@@ -416,7 +413,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();

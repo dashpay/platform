@@ -16,7 +16,7 @@ use crate::serialization::{
     PlatformSerializableWithPlatformVersion,
 };
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
@@ -195,7 +195,7 @@ impl CreatedDataContract {
         }
     }
 
-    #[cfg(feature = "data-contract-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn from_object(
         raw_object: Value,
         full_validation: bool,

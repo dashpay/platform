@@ -29,8 +29,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "random-public-keys",
   "random-document-types",
   "fixtures-and-mocks",
-  "identity-value-conversion",
-  "data-contract-json-conversion",
+  "json-conversion",
   "data-contract-cbor-conversion",
 ] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }

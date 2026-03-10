@@ -74,7 +74,7 @@ dpp = { path = "../rs-dpp", features = [
   "fixtures-and-mocks",
   "all-system_contracts",
   "factories",
-  "data-contract-json-conversion",
+  "json-conversion",
 ], default-features = false }
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -93,7 +93,7 @@ fixtures-and-mocks = [
   "full",
   "dpp/fixtures-and-mocks",
   "verify",
-  "dpp/data-contract-json-conversion",
+  "dpp/json-conversion",
   "dpp/random-public-keys",
 ]
 server = [

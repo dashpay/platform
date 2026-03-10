@@ -1,11 +1,11 @@
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -22,7 +22,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -47,7 +47,7 @@ pub struct IdentityCreditTransferToAddressesTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
     #[cfg_attr(
-        feature = "state-transition-json-conversion",
+        feature = "json-conversion",
         serde(
             with = "crate::serialization::json::safe_integer_map::json_safe_generic_u64_value_map"
         )
