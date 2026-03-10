@@ -593,14 +593,14 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     }
 
     /// Adds a `Delete` tree operation to a list of GroveDB ops.
-    /// Uses `DontCheck` because callers (e.g. `batch_delete_up_tree_while_empty`)
+    /// Uses `DontCheckWithNoCleanup` because callers (e.g. `batch_delete_up_tree_while_empty`)
     /// have already verified the tree is empty.
     fn add_delete_tree(&mut self, path: Vec<Vec<u8>>, key: Vec<u8>, tree_type: TreeType) {
         self.operations.push(QualifiedGroveDbOp::delete_tree_op(
             path,
             key,
             tree_type,
-            SubelementsDeletionBehavior::DontCheck,
+            SubelementsDeletionBehavior::DontCheckWithNoCleanup,
         ))
     }
 
