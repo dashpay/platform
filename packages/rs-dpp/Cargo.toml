@@ -200,10 +200,10 @@ platform-value = []
 identity-hashing = ["identity-serialization"]
 message-signing = []
 message-signature-verification = ["bls-signatures"]
-# Unified conversion features
+# Unified conversion features (chain: serde → value → json)
 serde-conversion = []
 value-conversion = ["serde-conversion", "platform-value"]
-# json-conversion is defined above (includes platform-value/json)
+# json-conversion is defined above (value-conversion + platform-value/json)
 
 # Backwards-compatible aliases (point to unified flags)
 document-serde-conversion = ["serde-conversion"]
