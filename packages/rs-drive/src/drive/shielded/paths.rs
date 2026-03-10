@@ -21,6 +21,10 @@ pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 6;
 /// Key for the most recent anchor item inside a shielded pool
 pub const SHIELDED_MOST_RECENT_ANCHOR_KEY: u8 = 7;
 
+/// Key for the anchors-by-height tree inside a shielded pool (block_height_be → anchor_bytes)
+/// Reverse index of SHIELDED_ANCHORS_IN_POOL_KEY, used for pruning old anchors by height range.
+pub const SHIELDED_ANCHORS_BY_HEIGHT_KEY: u8 = 8;
+
 /// Chunk power for the notes CommitmentTree (2^11 = 2048 items per chunk)
 pub const SHIELDED_NOTES_CHUNK_POWER: u8 = 11;
 
@@ -91,6 +95,15 @@ pub fn shielded_credit_pool_anchors_path_vec() -> Vec<Vec<u8>> {
         vec![RootTree::AddressBalances as u8],
         SHIELDED_CREDIT_POOL_KEY.to_vec(),
         vec![SHIELDED_ANCHORS_IN_POOL_KEY],
+    ]
+}
+
+/// Path to the anchors-by-height tree: [AddressBalances, "s", [8]]
+pub fn shielded_credit_pool_anchors_by_height_path() -> [&'static [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::AddressBalances),
+        SHIELDED_CREDIT_POOL_KEY,
+        &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
     ]
 }
 

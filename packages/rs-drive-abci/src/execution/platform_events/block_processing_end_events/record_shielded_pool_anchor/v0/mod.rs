@@ -3,8 +3,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::{
-    shielded_credit_pool_anchors_path, shielded_credit_pool_path, SHIELDED_MOST_RECENT_ANCHOR_KEY,
-    SHIELDED_NOTES_KEY,
+    shielded_credit_pool_anchors_by_height_path, shielded_credit_pool_anchors_path,
+    shielded_credit_pool_path, SHIELDED_MOST_RECENT_ANCHOR_KEY, SHIELDED_NOTES_KEY,
 };
 use drive::grovedb::{Element, Transaction};
 
@@ -18,7 +18,8 @@ where
     /// from the CommitmentTree at [AddressBalances, "s", [1]]. If it differs from the
     /// most recent anchor (stored at [AddressBalances, "s", [7]]), inserts
     /// `anchor_bytes → block_height.to_be_bytes()` into the anchors tree at
-    /// [AddressBalances, "s", [6]] and updates the most recent anchor.
+    /// [AddressBalances, "s", [6]], `block_height.to_be_bytes() → anchor_bytes` into the
+    /// anchors-by-height tree at [AddressBalances, "s", [8]], and updates the most recent anchor.
     ///
     /// This ensures anchors are only recorded once per block (not per-transaction),
     /// and only when the commitment tree actually changed.
@@ -86,6 +87,21 @@ where
                     &anchors_path,
                     &current_anchor_bytes,
                     Element::new_item(block_height.to_be_bytes().to_vec()),
+                    None,
+                    Some(transaction),
+                    grove_version,
+                )
+                .unwrap()
+                .map_err(|e| Error::Drive(drive::error::Error::from(e)))?;
+
+            // Insert block_height → anchor_bytes into the anchors-by-height tree (for pruning)
+            let anchors_by_height_path = shielded_credit_pool_anchors_by_height_path();
+            self.drive
+                .grove
+                .insert(
+                    &anchors_by_height_path,
+                    &block_height.to_be_bytes(),
+                    Element::new_item(current_anchor_bytes.to_vec()),
                     None,
                     Some(transaction),
                     grove_version,

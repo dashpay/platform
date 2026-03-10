@@ -1,6 +1,7 @@
 use crate::drive::shielded::paths::{
-    shielded_credit_pool_anchors_path, shielded_credit_pool_notes_path,
-    shielded_credit_pool_nullifiers_path, shielded_credit_pool_path, SHIELDED_NOTES_CHUNK_POWER,
+    shielded_credit_pool_anchors_by_height_path, shielded_credit_pool_anchors_path,
+    shielded_credit_pool_notes_path, shielded_credit_pool_nullifiers_path,
+    shielded_credit_pool_path, SHIELDED_NOTES_CHUNK_POWER,
 };
 use crate::drive::{Drive, RootTree};
 use grovedb::batch::KeyInfoPath;
@@ -76,14 +77,15 @@ impl Drive {
 
         // Shielded credit pool: [AddressBalances, "s"]
         // SumTree containing: notes (CommitmentTree), permanent nullifiers (ProvableCountTree),
-        // total balance (SumItem), anchors (NormalTree), recent nullifiers (CountSumTree),
-        // compacted nullifiers (NormalTree), expiration time (NormalTree)
-        // 7 elements total (6 subtrees + 1 item) → balanced Merk depth = ceil(log2(8)) = 3
+        // total balance (SumItem), anchors (NormalTree), anchors-by-height (NormalTree),
+        // recent nullifiers (CountSumTree), compacted nullifiers (NormalTree),
+        // expiration time (NormalTree), most recent anchor (Item)
+        // 9 elements total (7 subtrees + 2 items) → balanced Merk depth = ceil(log2(9)) = 4
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                estimated_layer_count: EstimatedLevel(3, false),
+                estimated_layer_count: EstimatedLevel(4, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((
                         1,
@@ -92,10 +94,10 @@ impl Drive {
                             big_sum_trees_weight: 0,
                             count_trees_weight: 1, // permanent nullifiers (ProvableCountTree)
                             count_sum_trees_weight: 1, // recent nullifiers (CountSumTree)
-                            non_sum_trees_weight: 4, // notes (CommitmentTree), anchors, compacted nullifiers, expiration time
+                            non_sum_trees_weight: 5, // notes (CommitmentTree), anchors, anchors-by-height, compacted nullifiers, expiration time
                         },
                         None,
-                        6, // 6 subtrees: notes, permanent nullifiers, anchors, recent nullifiers, compacted nullifiers, expiration time
+                        7, // 7 subtrees: notes, permanent nullifiers, anchors, anchors-by-height, recent nullifiers, compacted nullifiers, expiration time
                     )),
                     items_size: Some((1, 32, None, 2)), // 2 items: total balance (SumItem), most recent anchor (Item)
                     references_size: None,
@@ -133,6 +135,17 @@ impl Drive {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(7, false),
                 estimated_layer_sizes: AllItems(ANCHOR_KEY_SIZE, ANCHOR_VALUE_SIZE, None),
+            },
+        );
+
+        // Anchors-by-height tree: [AddressBalances, "s", 8]
+        // NormalTree - stores block_height_be -> anchor_bytes (reverse index for pruning)
+        estimated_costs_only_with_layer_info.insert(
+            KeyInfoPath::from_known_path(shielded_credit_pool_anchors_by_height_path()),
+            EstimatedLayerInformation {
+                tree_type: TreeType::NormalTree,
+                estimated_layer_count: EstimatedLevel(7, false),
+                estimated_layer_sizes: AllItems(ANCHOR_VALUE_SIZE as u8, ANCHOR_KEY_SIZE as u32, None),
             },
         );
     }
