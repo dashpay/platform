@@ -190,10 +190,7 @@ impl IdentityTopUpFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "output")]
-    pub fn set_output(
-        &mut self,
-        output: Option<PlatformAddressOutputWasm>,
-    ) -> WasmDppResult<()> {
+    pub fn set_output(&mut self, output: Option<PlatformAddressOutputWasm>) -> WasmDppResult<()> {
         let new_output = output.map(|o| o.try_into_inner()).transpose()?;
         match &mut self.0 {
             IdentityTopUpFromAddressesTransition::V0(v0) => {
