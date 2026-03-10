@@ -55,13 +55,13 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
     let effective_fee = match fee {
         Some(f) if f < min_fee => {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::ShieldedBuildError(format!(
                 "fee {} is below minimum required fee {}",
                 f, min_fee
             )));
         }
         Some(f) if f > min_fee.saturating_mul(1000) => {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::ShieldedBuildError(format!(
                 "fee {} exceeds 1000x the minimum fee {}",
                 f, min_fee
             )));
@@ -70,11 +70,11 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
         None => min_fee,
     };
 
-    let required = transfer_amount
-        .checked_add(effective_fee)
-        .ok_or_else(|| ProtocolError::Generic("fee + transfer_amount overflows u64".to_string()))?;
+    let required = transfer_amount.checked_add(effective_fee).ok_or_else(|| {
+        ProtocolError::ShieldedBuildError("fee + transfer_amount overflows u64".to_string())
+    })?;
     if required > total_spent {
-        return Err(ProtocolError::Generic(format!(
+        return Err(ProtocolError::ShieldedBuildError(format!(
             "transfer amount {} + fee {} = {} exceeds total spendable value {}",
             transfer_amount, effective_fee, required, total_spent
         )));
@@ -89,7 +89,9 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     for spend in spends {
         builder
             .add_spend(fvk.clone(), spend.note, spend.merkle_path)
-            .map_err(|e| ProtocolError::Generic(format!("failed to add spend: {:?}", e)))?;
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add spend: {:?}", e))
+            })?;
     }
 
     // Primary output to recipient
@@ -100,7 +102,7 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
             NoteValue::from_raw(transfer_amount),
             memo,
         )
-        .map_err(|e| ProtocolError::Generic(format!("failed to add output: {:?}", e)))?;
+        .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
     // Change output (if any)
     if change_amount > 0 {
@@ -112,7 +114,9 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
                 NoteValue::from_raw(change_amount),
                 [0u8; 36],
             )
-            .map_err(|e| ProtocolError::Generic(format!("failed to add change output: {:?}", e)))?;
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add change output: {:?}", e))
+            })?;
     }
 
     // ShieldedTransfer has no extra_data in sighash

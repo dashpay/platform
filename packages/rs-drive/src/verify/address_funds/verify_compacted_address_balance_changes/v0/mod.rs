@@ -8,7 +8,7 @@ use dpp::address_funds::PlatformAddress;
 /// The subtree key for compacted address balances storage as u8
 const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
 use dpp::balances::credits::BlockAwareCreditOperation;
-use grovedb::operations::proof::GroveDBProof;
+use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{
     GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
 };
@@ -75,25 +75,43 @@ impl Drive {
 
         // Navigate to the compacted address balances layer
         // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedAddressBalances ('c' = 0x63)
-        let root_layer = match &grovedb_proof {
-            GroveDBProof::V0(v0) => &v0.root_layer,
-            _ => todo!("GroveDBProof::V1 not yet implemented"),
-        };
-
         let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];
         let compacted_key = vec![COMPACTED_ADDRESS_BALANCES_KEY_U8];
 
-        let compacted_layer = root_layer
-            .lower_layers
-            .get(&saved_block_key)
-            .and_then(|layer| layer.lower_layers.get(&compacted_key));
-
         // Extract KV entries from the compacted layer's merk proof to find
-        // if there's a containing range for start_block_height
-        let kv_entries = compacted_layer
-            .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
-            .transpose()?
-            .unwrap_or_default();
+        // if there's a containing range for start_block_height.
+        // V0 and V1 proofs have different layer types (MerkOnlyLayerProof vs LayerProof),
+        // so we handle them separately.
+        let kv_entries = match &grovedb_proof {
+            GroveDBProof::V0(v0) => {
+                let compacted_layer = v0
+                    .root_layer
+                    .lower_layers
+                    .get(&saved_block_key)
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+            GroveDBProof::V1(v1) => {
+                let compacted_layer = v1
+                    .root_layer
+                    .lower_layers
+                    .get(&saved_block_key)
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| match &layer.merk_proof {
+                        ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
+                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
+                            "unsupported V1 proof bytes variant for compacted address balances: {:?}",
+                            std::mem::discriminant(other)
+                        )))),
+                    })
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+        };
 
         // Look for a KV entry where the range contains start_block_height
         // Keys are 16 bytes: (start_block, end_block), both big-endian

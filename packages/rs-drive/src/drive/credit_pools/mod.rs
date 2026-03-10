@@ -261,7 +261,7 @@ mod tests {
 
             for (i, operation) in batch.into_iter().enumerate() {
                 assert_eq!(
-                    operation.key.expect("key should be present").get_key(),
+                    operation.key.expect("expected key").get_key(),
                     KEY_POOL_STORAGE_FEES
                 );
 

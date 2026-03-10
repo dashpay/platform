@@ -1,4 +1,3 @@
-use crate::state_transition_action::system::partially_use_asset_lock_action::v0::PartiallyUseAssetLockActionV0;
 use derive_more::From;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
@@ -9,7 +8,7 @@ use std::collections::BTreeMap;
 mod transformer;
 mod v0;
 
-pub use v0::PartiallyUseAssetLockActionAccessorsV0;
+pub use v0::{PartiallyUseAssetLockActionAccessorsV0, PartiallyUseAssetLockActionV0};
 
 #[derive(Debug, Clone, From)]
 /// An action expressing that an asset lock should be partially used

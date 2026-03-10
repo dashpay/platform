@@ -105,6 +105,9 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
         shielded: DriveShieldedMethodVersions {
+            insert_note: 0,
+            insert_nullifiers: 0,
+            update_total_balance: 0,
             prove_nullifiers_trunk_query: 0,
             prove_nullifiers_branch_query: 0,
             nullifiers_query_min_depth: 6,
@@ -120,7 +123,7 @@ pub const DRIVE_VERSION_V1: DriveVersion = DriveVersion {
             store_nullifiers: 0,
             fetch_nullifiers: 0,
             compact_nullifiers: 0,
-            cleanup_expired_nullifiers: 0,
+            cleanup_expired_nullifier_compactions: 0,
             max_blocks_before_nullifier_compaction: 64,
             max_nullifiers_before_compaction: 2048,
         },
