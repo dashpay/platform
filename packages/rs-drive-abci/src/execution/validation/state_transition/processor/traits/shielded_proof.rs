@@ -31,6 +31,10 @@ pub(crate) trait StateTransitionShieldedProofValidationV0 {
 
 impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
     fn has_shielded_proof_validation(&self) -> bool {
+        // Note: ShieldFromAssetLock is intentionally excluded. Its proof verification
+        // is done inside transform_into_action because a failed proof must penalize
+        // the asset lock (via PartiallyUseAssetLockAction). Moving it here would let
+        // attackers spam bad proofs without burning their asset lock.
         matches!(
             self,
             StateTransition::Shield(_)
