@@ -2,7 +2,7 @@ use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use crate::utils::{
-    IntoWasm, try_from_options_optional_with, try_from_options_with, try_to_array, try_to_u64,
+    IntoWasm, try_from_options_optional, try_from_options_with, try_to_array, try_to_u64,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -243,14 +243,5 @@ pub fn optional_output_from_js_options(
     options: &JsValue,
     field_name: &str,
 ) -> WasmDppResult<Option<PlatformAddressOutputWasm>> {
-    try_from_options_optional_with(options, field_name, |v| {
-        v.to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
-            .map(|r| (*r).clone())
-            .map_err(|_| {
-                WasmDppError::invalid_argument(format!(
-                    "'{}' is not a PlatformAddressOutput",
-                    field_name
-                ))
-            })
-    })
+    try_from_options_optional(options, field_name)
 }
