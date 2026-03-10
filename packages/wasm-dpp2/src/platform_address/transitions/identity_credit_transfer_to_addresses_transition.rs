@@ -16,7 +16,7 @@ use dpp::state_transition::identity_credit_transfer_to_addresses_transition::Ide
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
     StateTransitionSingleSigned,
 };
 use wasm_bindgen::prelude::wasm_bindgen;

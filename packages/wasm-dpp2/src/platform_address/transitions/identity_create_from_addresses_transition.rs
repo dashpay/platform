@@ -90,7 +90,7 @@ impl IdentityCreateFromAddressesTransitionWasm {
             .unwrap_or(0);
 
         let inputs_map = inputs.into_iter().map(|i| i.into_inner()).collect();
-        let output = output.map(|o| o.into_inner());
+        let output = output.map(|o| o.try_into_inner()).transpose()?;
         let fee_strategy = fee_strategy_from_steps_or_default(fee_strategy);
 
         Ok(IdentityCreateFromAddressesTransitionWasm(
@@ -204,13 +204,17 @@ impl IdentityCreateFromAddressesTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "output")]
-    pub fn set_output(&mut self, output: Option<PlatformAddressOutputWasm>) {
-        let new_output = output.map(|o| o.into_inner());
+    pub fn set_output(
+        &mut self,
+        output: Option<PlatformAddressOutputWasm>,
+    ) -> WasmDppResult<()> {
+        let new_output = output.map(|o| o.try_into_inner()).transpose()?;
         match &mut self.0 {
             IdentityCreateFromAddressesTransition::V0(v0) => {
                 v0.output = new_output;
             }
         }
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
