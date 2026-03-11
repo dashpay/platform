@@ -135,6 +135,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub should_checkpoint: OptionalFeatureVersion,
     pub update_checkpoints: OptionalFeatureVersion,
     pub record_shielded_pool_anchor: OptionalFeatureVersion,
+    pub prune_shielded_pool_anchors: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
