@@ -79,7 +79,7 @@ This means the minimum fee check compares the total withdrawal amount against th
 
 #### M2: Missing minimum fee check in `check_tx` path
 
-**Status**: OPEN
+**Status**: FIXED
 **Location**: `packages/rs-drive-abci/src/execution/validation/state_transition/check_tx_verification/v0/mod.rs`
 
 The `check_tx` FirstTimeCheck path validates the ZK proof (`validate_shielded_proof` at lines 138-147) but does NOT call `validate_minimum_shielded_fee`. The import for `StateTransitionShieldedMinimumFeeValidationV0` is absent.
@@ -94,7 +94,7 @@ An attacker could submit shielded transitions with insufficient fees that trigge
 
 #### M3: `ShieldedTransferTransition` allows `value_balance == 0`
 
-**Status**: OPEN
+**Status**: FIXED
 **Location**: `packages/rs-dpp/src/state_transition/state_transitions/shielded/shielded_transfer_transition/v0/state_transition_validation.rs`
 
 The structure validation only checks `value_balance <= i64::MAX` but not `value_balance > 0`. Since `value_balance` IS the fee for shielded transfers, a zero value means zero fee. All other shielded transitions validate their monetary field `> 0`:
@@ -110,14 +110,9 @@ The structure validation only checks `value_balance <= i64::MAX` but not `value_
 
 #### M4: Unbounded anchor query in `validate_anchor_exists`
 
-**Status**: OPEN
-**Location**: `packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/shielded_common/mod.rs:232-255`
+**Status**: FIXED
 
-The function queries ALL anchors from the anchors tree with `Query::new_range_full()` and `limit: None`. As the system ages, the number of stored anchors grows linearly with blocks that modify the commitment tree. This produces an increasingly expensive full-table scan for every shielded spending transition.
-
-A more efficient approach would store anchors by value as the key for O(1) lookup, or limit the search window to recent anchors.
-
-**Fix**: Either restructure anchors storage for key-based lookup, or add a reasonable limit.
+Anchors redesigned: stored as `anchor_bytes → block_height` for O(1) `grove_has_raw` lookup. Added reverse index (`block_height → anchor_bytes`) for pruning. Anchors older than 1000 blocks are pruned every 100 blocks.
 
 ---
 
@@ -158,12 +153,9 @@ Line 124 uses `tx_out.value.saturating_mul(CREDITS_PER_DUFF)` but line 149 uses 
 
 #### L3: Stale anchor comparison from wrong query direction
 
-**Status**: OPEN
-**Location**: `packages/rs-drive-abci/src/execution/platform_events/block_processing_end_events/record_shielded_pool_anchor/v0/mod.rs:51-68`
+**Status**: FIXED
 
-The function queries with `limit: Some(1)` on an ascending range, returning the OLDEST anchor (lowest block height key) instead of the most recent one. Then compares the current anchor against this oldest value. Works in practice because a Sinsemilla collision between the current and oldest anchor is cryptographically improbable.
-
-**Fix**: Use a descending query or query the latest key explicitly.
+Replaced with a dedicated `SHIELDED_MOST_RECENT_ANCHOR_KEY` element for O(1) latest anchor reads. No more query needed.
 
 ---
 
@@ -189,12 +181,9 @@ All 8 shielded query endpoint implementations are complete but commented out wit
 
 ---
 
-#### I3: Strategy tests feature-gated and disabled
+#### ~~I3: Strategy tests feature-gated~~
 
-**Status**: KNOWN (pending OperationType enum variants)
-**Location**: `packages/rs-drive-abci/tests/strategy_tests/test_cases/shielded_tests.rs`
-
-The `#[cfg(feature = "__shielded_strategy_tests")]` gate prevents integration tests from running. The `OperationType` enum in the strategy-tests crate lacks shielded variants. These are the only multi-block chain execution tests for shielded transitions.
+**Status**: BY DESIGN — shielded strategy tests are gated behind `__shielded_strategy_tests` because they are long-running. Not a finding.
 
 ---
 
