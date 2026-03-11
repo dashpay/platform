@@ -15,6 +15,13 @@ pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns true if this state transition has a ZK proof that must be verified
     /// before any state reads.
     fn has_shielded_proof_validation(&self) -> bool;
+
+    /// Returns true if this state transition pays fees from the shielded pool's
+    /// value_balance and requires minimum fee validation.
+    ///
+    /// Shield pays fees from transparent address inputs, and ShieldFromAssetLock
+    /// pays from the asset lock, so neither goes through shielded fee validation.
+    fn has_shielded_minimum_fee_validation(&self) -> bool;
 }
 
 /// A trait for validating the ZK proof of a shielded state transition.
@@ -39,6 +46,17 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             self,
             StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
+                | StateTransition::Unshield(_)
+                | StateTransition::ShieldedWithdrawal(_)
+        )
+    }
+
+    fn has_shielded_minimum_fee_validation(&self) -> bool {
+        // Only spending transitions pay fees from the shielded pool.
+        // Shield pays from address inputs; ShieldFromAssetLock pays from the asset lock.
+        matches!(
+            self,
+            StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
         )

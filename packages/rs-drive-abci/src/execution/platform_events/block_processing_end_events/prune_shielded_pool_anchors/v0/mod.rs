@@ -30,7 +30,7 @@ where
             .shielded_anchor_retention_blocks;
 
         // Only prune every 100 blocks to avoid unnecessary work
-        if block_height % 100 != 0 {
+        if !block_height.is_multiple_of(100) {
             return Ok(());
         }
 

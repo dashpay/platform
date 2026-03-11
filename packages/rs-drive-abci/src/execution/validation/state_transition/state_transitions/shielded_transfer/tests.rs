@@ -83,6 +83,37 @@ mod tests {
             );
         }
 
+        /// Tests validate_structure directly because 101 actions exceed the
+        /// max_state_transition_size (20KB) before reaching the actions count check
+        /// in the full pipeline.
+        #[test]
+        fn test_too_many_actions_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            // 101 actions exceeds max_shielded_transition_actions (100)
+            let actions: Vec<SerializedAction> =
+                (0..101).map(|_| create_dummy_serialized_action()).collect();
+
+            let transition = ShieldedTransferTransitionV0 {
+                actions,
+                value_balance: 111_548_800,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedTooManyActionsError(_)
+                )]
+            );
+        }
+
         #[test]
         fn test_value_balance_exceeding_i64_max_returns_error() {
             let platform_version = PlatformVersion::latest();
@@ -136,7 +167,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                1, // non-zero so we don't hit value_balance == 0 rejection first
+                1,         // non-zero so we don't hit value_balance == 0 rejection first
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
                 [0u8; 64],
@@ -508,9 +539,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::ShieldedInvalidValueBalanceError(_)
-                    )
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }

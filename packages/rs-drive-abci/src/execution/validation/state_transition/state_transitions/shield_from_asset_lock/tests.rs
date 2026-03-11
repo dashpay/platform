@@ -199,33 +199,65 @@ mod tests {
             );
         }
 
-        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
-        // #[test]
-        // fn test_positive_value_balance_returns_error() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let platform = setup_platform();
-        //
-        //     let mut rng = StdRng::seed_from_u64(568);
-        //     let (asset_lock_proof, _pk) = create_asset_lock_proof_with_key(&mut rng);
-        //
-        //     let transition = create_unsigned_shield_from_asset_lock_transition(
-        //         asset_lock_proof,
-        //         vec![create_dummy_serialized_action()],
-        //         1000,
-        //         [0u8; 32],
-        //         vec![0u8; 100],
-        //         [0u8; 64],
-        //     );
-        //
-        //     let processing_result = process_transition(&platform, transition, platform_version);
-        //
-        //     assert_matches!(
-        //         processing_result.execution_results().as_slice(),
-        //         [StateTransitionExecutionResult::UnpaidConsensusError(
-        //             ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-        //         )]
-        //     );
-        // }
+        /// Tests validate_structure directly because 101 actions exceed the
+        /// max_state_transition_size (20KB) before reaching the actions count check
+        /// in the full pipeline.
+        #[test]
+        fn test_too_many_actions_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            // 101 actions exceeds max_shielded_transition_actions (100)
+            let actions: Vec<SerializedAction> =
+                (0..101).map(|_| create_dummy_serialized_action()).collect();
+
+            let transition = ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
+                actions,
+                value_balance: 1000,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                signature: Default::default(),
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedTooManyActionsError(_)
+                )]
+            );
+        }
+
+        #[test]
+        fn test_zero_anchor_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(571);
+            let (asset_lock_proof, _pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let transition = create_unsigned_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                vec![create_dummy_serialized_action()],
+                1000,
+                [0u8; 32], // Zero anchor — invalid
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedZeroAnchorError(_))
+                )]
+            );
+        }
 
         #[test]
         fn test_zero_value_balance_returns_error() {
@@ -524,48 +556,32 @@ mod tests {
     mod security_audit {
         use super::*;
 
-        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
-        // /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
-        // ///
-        // /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
-        // /// overflow panic. The transform_into_action code now uses `checked_neg()`
-        // /// which returns a consensus error instead of panicking.
-        // #[test]
-        // fn test_i64_min_value_balance_handled() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let platform = setup_platform();
-        //
-        //     let mut rng = StdRng::seed_from_u64(567);
-        //     let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
-        //
-        //     // i64::MIN is negative, so it passes the structure validation (value_balance < 0),
-        //     // but checked_neg() on i64::MIN returns None, triggering the overflow guard in
-        //     // transform_into_action. Since this error occurs after the asset lock proof
-        //     // validation, it is a paid error (PartiallyUseAssetLockAction).
-        //     let transition = create_signed_shield_from_asset_lock_transition(
-        //         asset_lock_proof,
-        //         &asset_lock_pk,
-        //         vec![create_dummy_serialized_action()],
-        //         i64::MAX as u64 + 1, // 9223372036854775808 -- would overflow on negation
-        //         [42u8; 32],
-        //         vec![0u8; 100],
-        //         [0u8; 64],
-        //     );
-        //
-        //     // Should return a consensus error, not panic
-        //     let processing_result = process_transition(&platform, transition, platform_version);
-        //
-        //     // The checked_neg overflow is caught in transform_into_action as an
-        //     // InvalidShieldedProofError. Since it happens after asset lock validation,
-        //     // we expect it to be reported as an UnpaidConsensusError (the overflow check
-        //     // is done before consuming the asset lock value, so no penalty is applied).
-        //     assert_matches!(
-        //         processing_result.execution_results().as_slice(),
-        //         [StateTransitionExecutionResult::UnpaidConsensusError(
-        //             ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-        //         )]
-        //     );
-        // }
+        #[test]
+        fn test_value_balance_exceeding_i64_max_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(572);
+            let (asset_lock_proof, _pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let transition = create_unsigned_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                vec![create_dummy_serialized_action()],
+                i64::MAX as u64 + 1, // Exceeds i64::MAX
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
 
         /// AUDIT FIX VERIFICATION: Mutated value_balance is rejected by BatchValidator.
         ///

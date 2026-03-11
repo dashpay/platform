@@ -145,7 +145,11 @@ impl Drive {
             EstimatedLayerInformation {
                 tree_type: TreeType::NormalTree,
                 estimated_layer_count: EstimatedLevel(7, false),
-                estimated_layer_sizes: AllItems(ANCHOR_VALUE_SIZE as u8, ANCHOR_KEY_SIZE as u32, None),
+                estimated_layer_sizes: AllItems(
+                    ANCHOR_VALUE_SIZE as u8,
+                    ANCHOR_KEY_SIZE as u32,
+                    None,
+                ),
             },
         );
     }

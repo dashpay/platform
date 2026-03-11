@@ -314,40 +314,76 @@ mod tests {
             );
         }
 
-        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
-        // #[test]
-        // fn test_positive_value_balance_returns_error() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let mut platform = setup_platform();
-        //
-        //     let mut signer = TestAddressSigner::new();
-        //     let input_address = signer.add_p2pkh([1u8; 32]);
-        //     setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-        //
-        //     let mut inputs = BTreeMap::new();
-        //     inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-        //
-        //     let transition = create_signed_shield_transition(
-        //         &signer,
-        //         inputs,
-        //         vec![create_dummy_serialized_action()],
-        //         1000,
-        //         vec![0u8; 100],
-        //         [0u8; 64],
-        //         AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-        //             0,
-        //         )]),
-        //     );
-        //
-        //     let processing_result = process_transition(&platform, transition, platform_version);
-        //
-        //     assert_matches!(
-        //         processing_result.execution_results().as_slice(),
-        //         [StateTransitionExecutionResult::UnpaidConsensusError(
-        //             ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-        //         )]
-        //     );
-        // }
+        /// Tests validate_structure directly because 101 actions exceed the
+        /// max_state_transition_size (20KB) before reaching the actions count check
+        /// in the full pipeline.
+        #[test]
+        fn test_too_many_actions_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            // 101 actions exceeds max_shielded_transition_actions (100)
+            let actions: Vec<SerializedAction> =
+                (0..101).map(|_| create_dummy_serialized_action()).collect();
+
+            let transition = ShieldTransitionV0 {
+                inputs: BTreeMap::new(),
+                actions,
+                amount: 1000,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedTooManyActionsError(_)
+                )]
+            );
+        }
+
+        #[test]
+        fn test_amount_exceeding_i64_max_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_shield_transition(
+                &signer,
+                inputs,
+                vec![create_dummy_serialized_action()],
+                i64::MAX as u64 + 1, // Exceeds i64::MAX
+                vec![0u8; 100],
+                [0u8; 64],
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
 
         #[test]
         fn test_zero_value_balance_returns_error() {
@@ -899,45 +935,44 @@ mod tests {
     mod security_audit {
         use super::*;
 
-        // TODO: value_balance renamed to amount (u64), these validation conditions no longer apply
-        // /// AUDIT FIX VERIFICATION: `value_balance = i64::MIN` no longer panics.
-        // ///
-        // /// Previously, `(-v0.value_balance) as u64` with i64::MIN caused an
-        // /// overflow panic. Now uses `checked_neg()` which returns a consensus
-        // /// error instead.
-        // #[test]
-        // fn test_value_balance_i64_min_returns_consensus_error() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let mut platform = setup_platform();
-        //
-        //     let mut signer = TestAddressSigner::new();
-        //     let input_address = signer.add_p2pkh([1u8; 32]);
-        //     setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-        //
-        //     let mut inputs = BTreeMap::new();
-        //     inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
-        //
-        //     let transition = create_signed_shield_transition(
-        //         &signer,
-        //         inputs,
-        //         vec![create_dummy_serialized_action()],
-        //         i64::MAX as u64 + 1, // 9223372036854775808 — would overflow on negation
-        //         vec![0u8; 100],
-        //         [0u8; 64],
-        //         AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
-        //             0,
-        //         )]),
-        //     );
-        //
-        //     // Should return a consensus error, not panic
-        //     let processing_result = process_transition(&platform, transition, platform_version);
-        //     assert_matches!(
-        //         processing_result.execution_results().as_slice(),
-        //         [StateTransitionExecutionResult::UnpaidConsensusError(
-        //             ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-        //         )]
-        //     );
-        // }
+        /// Zero anchor is rejected at structure validation.
+        /// Tests validate_structure directly because witness verification runs before
+        /// structure validation in the full pipeline.
+        #[test]
+        fn test_zero_anchor_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(0.5)),
+            );
+
+            let transition = ShieldTransitionV0 {
+                inputs,
+                actions: vec![create_dummy_serialized_action()],
+                amount: 1000,
+                anchor: [0u8; 32], // Zero anchor — invalid
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedZeroAnchorError(_)
+                )]
+            );
+        }
 
         /// AUDIT FIX VERIFICATION: Mutated value_balance is now rejected.
         ///

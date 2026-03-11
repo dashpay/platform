@@ -124,6 +124,8 @@ testing-config = []
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
 replay = ["dep:time", "tenderdash-abci/serde"]
+# Long-running shielded strategy tests (ZK proof generation)
+__shielded_strategy_tests = []
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
@@ -132,4 +134,5 @@ path = "src/main.rs"
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(tokio_unstable)',
   'cfg(create_sdk_test_data)',
+  'cfg(feature, values("__shielded_strategy_tests"))',
 ] }

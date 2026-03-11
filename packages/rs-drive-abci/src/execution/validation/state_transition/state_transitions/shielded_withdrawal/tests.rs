@@ -102,57 +102,92 @@ mod tests {
             );
         }
 
-        // TODO: "amount" field no longer exists on ShieldedWithdrawalTransitionV0.
-        // The concept is now "unshielding_amount: u64". The UnshieldAmountZeroError
-        // consensus error variant may no longer exist. Re-enable if a corresponding
-        // zero-unshielding_amount validation error is added.
-        //
-        // #[test]
-        // fn test_zero_amount_returns_error() {
-        //     let platform_version = PlatformVersion::latest();
-        //     let platform = setup_platform();
-        //
-        //     let transition = create_shielded_withdrawal_transition(
-        //         vec![create_dummy_serialized_action()],
-        //         0, // Zero unshielding_amount — invalid
-        //         [42u8; 32],
-        //         vec![0u8; 100],
-        //         [0u8; 64],
-        //         1,
-        //         Pooling::Never,
-        //         create_output_script(),
-        //     );
-        //
-        //     let processing_result = process_transition(&platform, transition, platform_version);
-        //
-        //     assert_matches!(
-        //         processing_result.execution_results().as_slice(),
-        //         [StateTransitionExecutionResult::UnpaidConsensusError(
-        //             ConsensusError::BasicError(BasicError::UnshieldAmountZeroError(_))
-        //         )]
-        //     );
-        // }
+        #[test]
+        fn test_too_many_actions_returns_error() {
+            // NOTE: We call validate_structure directly because 101 actions (~41KB)
+            // exceeds max_state_transition_size (20KB) before the actions count check
+            // can trigger. This means ShieldedTooManyActionsError is effectively
+            // unreachable through the normal pipeline.
+            use dpp::state_transition::StateTransitionStructureValidation;
 
-        // TODO: "value_balance" field no longer exists on ShieldedWithdrawalTransitionV0.
-        // It has been replaced by "unshielding_amount: u64" which cannot be negative or zero
-        // in the same way. The ShieldedInvalidValueBalanceError consensus error variant may
-        // no longer apply. Re-enable if a corresponding validation is added.
-        //
-        // #[test]
-        // fn test_zero_value_balance_returns_error() { ... }
+            let platform_version = PlatformVersion::latest();
 
-        // TODO: "value_balance" was i64 and could be negative. Now "unshielding_amount"
-        // is u64, so negative values are impossible at the type level.
-        //
-        // #[test]
-        // fn test_negative_value_balance_returns_error() { ... }
+            // 101 actions exceeds max_shielded_transition_actions (100)
+            let actions: Vec<SerializedAction> =
+                (0..101).map(|_| create_dummy_serialized_action()).collect();
 
-        // TODO: "value_balance >= amount" check no longer applies — both fields have been
-        // replaced by a single "unshielding_amount: u64". The
-        // UnshieldValueBalanceBelowAmountError consensus error variant may no longer exist.
-        //
-        // #[test]
-        // fn test_value_balance_less_than_amount_returns_error() { ... }
+            let transition = ShieldedWithdrawalTransitionV0 {
+                actions,
+                unshielding_amount: 111_549_800,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_output_script(),
+            };
+
+            let result = transition.validate_structure(platform_version);
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedTooManyActionsError(_)
+                )]
+            );
+        }
+
+        #[test]
+        fn test_zero_unshielding_amount_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let transition = create_shielded_withdrawal_transition(
+                vec![create_dummy_serialized_action()],
+                0, // Zero unshielding_amount — invalid
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+                1,
+                Pooling::Never,
+                create_output_script(),
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
+
+        #[test]
+        fn test_unshielding_amount_exceeding_i64_max_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let transition = create_shielded_withdrawal_transition(
+                vec![create_dummy_serialized_action()],
+                i64::MAX as u64 + 1, // Exceeds i64::MAX
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+                1,
+                Pooling::Never,
+                create_output_script(),
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
 
         #[test]
         fn test_empty_proof_returns_error() {
@@ -617,13 +652,6 @@ mod tests {
 
             serialize_authorized_bundle(&bundle)
         }
-
-        // TODO: "value_balance" was i64 and could be i64::MIN. Now "unshielding_amount"
-        // is u64, so negative values are impossible at the type level. The
-        // ShieldedInvalidValueBalanceError consensus error variant may no longer apply.
-        //
-        // #[test]
-        // fn test_i64_min_value_balance_handled() { ... }
 
         /// AUDIT REGRESSION: Zeroed binding signature is caught by BatchValidator.
         ///
