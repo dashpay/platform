@@ -187,3 +187,50 @@ pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
 
     v.try_into().map_err(|_| DecodeError::OutsideUsizeRange(v))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bincode::config;
+
+    /// Helper: encode a u64 varint using bincode big-endian standard config,
+    /// then attempt to decode it as a collection length via `decode_slice_len`.
+    fn try_decode_len(value: u64) -> Result<usize, DecodeError> {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let encoded = bincode::encode_to_vec(value, config).unwrap();
+        let reader = bincode::de::read::SliceReader::new(&encoded);
+        let mut decoder = bincode::de::DecoderImpl::new(reader, config, ());
+        decode_slice_len(&mut decoder)
+    }
+
+    #[test]
+    fn decode_slice_len_accepts_small_values() {
+        assert_eq!(try_decode_len(0).unwrap(), 0);
+        assert_eq!(try_decode_len(1).unwrap(), 1);
+        assert_eq!(try_decode_len(1024).unwrap(), 1024);
+    }
+
+    #[test]
+    fn decode_slice_len_accepts_at_limit() {
+        let limit = MAX_COLLECTION_LEN;
+        assert_eq!(try_decode_len(limit).unwrap(), limit as usize);
+    }
+
+    #[test]
+    fn decode_slice_len_rejects_above_limit() {
+        let above = MAX_COLLECTION_LEN + 1;
+        match try_decode_len(above) {
+            Err(DecodeError::LimitExceeded) => {} // expected
+            other => panic!("expected LimitExceeded, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn decode_slice_len_rejects_huge_value() {
+        // Simulates the attack vector: a varint-encoded u64::MAX
+        match try_decode_len(u64::MAX) {
+            Err(DecodeError::LimitExceeded) => {} // expected
+            other => panic!("expected LimitExceeded, got {:?}", other),
+        }
+    }
+}
