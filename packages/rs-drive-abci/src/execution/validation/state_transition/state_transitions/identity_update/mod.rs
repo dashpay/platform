@@ -625,10 +625,10 @@ mod tests {
             .set_genesis_state();
 
         // {
-        //   "$format_version": "1",
+        //   "$formatVersion": "1",
         //   "id": "5pkMhyeaFjJfVMkFhLtJdDp2ofx6iqt7i9k6ckkHBwbs",
         //   "config": {
-        //     "$format_version": "1",
+        //     "$formatVersion": "1",
         //     "canBeDeleted": false,
         //     "readonly": false,
         //     "keepsHistory": false,
@@ -858,10 +858,10 @@ mod tests {
             .set_genesis_state();
 
         // {
-        //   "$format_version": "1",
+        //   "$formatVersion": "1",
         //   "id": "8m7H1EScryPTeJzck2qbSckTbEjCg2vu7PRth2LCwsHo",
         //   "config": {
-        //     "$format_version": "1",
+        //     "$formatVersion": "1",
         //     "canBeDeleted": false,
         //     "readonly": false,
         //     "keepsHistory": false,

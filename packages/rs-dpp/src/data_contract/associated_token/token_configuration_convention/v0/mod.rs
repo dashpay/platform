@@ -3,6 +3,8 @@ use crate::data_contract::associated_token::token_configuration_convention::acce
 };
 use crate::data_contract::associated_token::token_configuration_localization::accessors::v0::TokenConfigurationLocalizationV0Getters;
 use crate::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,7 @@ pub const ENGLISH_ISO_639: &str = "en";
 /// `TokenConfigurationConventionV0` provides human-readable metadata to guide client applications
 /// in rendering token names and formatting token values. This structure is purely informative
 /// and does not affect consensus-critical logic or supply calculations.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd, Default,
 )]

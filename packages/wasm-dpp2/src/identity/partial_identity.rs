@@ -7,10 +7,14 @@ use crate::utils::{
     JsValueExt, try_from_options, try_from_options_optional_with, try_from_options_with,
     try_to_array, try_to_object, try_to_u32, try_to_u64,
 };
+use crate::version::PlatformVersionLikeJs;
 use dpp::fee::Credits;
+use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
+use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value;
 use dpp::prelude::Revision;
+use dpp::version::PlatformVersion;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::JsValue;
@@ -44,8 +48,8 @@ export interface PartialIdentityObject {
 export interface PartialIdentityJSON {
     id: string;
     loadedPublicKeys: Record<string, IdentityPublicKeyJSON>;
-    balance: number | null;
-    revision: number | null;
+    balance: number | string | null;
+    revision: number | string | null;
     notFoundPublicKeys: number[];
 }
 "#;
@@ -207,7 +211,11 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(obj: PartialIdentityObjectJs) -> WasmDppResult<PartialIdentityWasm> {
+    pub fn from_object(
+        obj: PartialIdentityObjectJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<PartialIdentityWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let obj: JsValue = obj.into();
 
         // id - can be Uint8Array or Identifier
@@ -215,7 +223,7 @@ impl PartialIdentityWasm {
 
         // loadedPublicKeys - values are plain objects
         let loaded_public_keys = try_from_options_with(&obj, "loadedPublicKeys", |v| {
-            value_to_loaded_public_keys_from_object(v)
+            value_to_loaded_public_keys_from_object(v, &platform_version)
         })?;
 
         // balance - can be BigInt, number, or undefined
@@ -243,7 +251,11 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(json: PartialIdentityJSONJs) -> WasmDppResult<PartialIdentityWasm> {
+    pub fn from_json(
+        json: PartialIdentityJSONJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<PartialIdentityWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let json: JsValue = json.into();
 
         // id - base58 string
@@ -251,7 +263,7 @@ impl PartialIdentityWasm {
 
         // loadedPublicKeys - values are JSON objects
         let loaded_public_keys = try_from_options_with(&json, "loadedPublicKeys", |v| {
-            value_to_loaded_public_keys_from_json(v)
+            value_to_loaded_public_keys_from_json(v, &platform_version)
         })?;
 
         // balance - can be BigInt, number, or string (JSON doesn't support BigInt natively)
@@ -335,6 +347,7 @@ pub fn option_array_to_not_found(
 /// Parse loaded public keys from an object (where values are plain objects from toObject)
 pub fn value_to_loaded_public_keys_from_object(
     loaded_public_keys: &JsValue,
+    platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
@@ -365,9 +378,10 @@ pub fn value_to_loaded_public_keys_from_object(
             ))
         })?;
 
-        // fromObject receives plain objects, use IdentityPublicKeyWasm::from_object
-        let pub_key = IdentityPublicKeyWasm::from_object(js_key.into())?;
-        map.insert(key_id, IdentityPublicKey::from(pub_key));
+        let platform_value = serialization::platform_value_from_object(&js_key)?;
+        let pub_key = IdentityPublicKey::from_object(platform_value, platform_version)
+            .map_err(WasmDppError::from)?;
+        map.insert(key_id, pub_key);
     }
 
     Ok(map)
@@ -376,6 +390,7 @@ pub fn value_to_loaded_public_keys_from_object(
 /// Parse loaded public keys from JSON (where values are JSON objects from toJSON)
 pub fn value_to_loaded_public_keys_from_json(
     loaded_public_keys: &JsValue,
+    platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
@@ -406,9 +421,13 @@ pub fn value_to_loaded_public_keys_from_json(
             ))
         })?;
 
-        // fromJSON receives JSON objects, use IdentityPublicKeyWasm::from_json
-        let pub_key = IdentityPublicKeyWasm::from_json(js_key.into())?;
-        map.insert(key_id, IdentityPublicKey::from(pub_key));
+        let json_value: serde_json::Value =
+            serde_wasm_bindgen::from_value(js_key).map_err(|e| {
+                WasmDppError::serialization(format!("IdentityPublicKey fromJSON: {}", e))
+            })?;
+        let pub_key = IdentityPublicKey::from_json_object(json_value, platform_version)
+            .map_err(WasmDppError::from)?;
+        map.insert(key_id, pub_key);
     }
 
     Ok(map)

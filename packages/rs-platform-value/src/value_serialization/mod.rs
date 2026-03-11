@@ -139,4 +139,136 @@ mod tests {
 
         assert_eq!(yeet, yeet_back);
     }
+
+    #[test]
+    fn test_externally_tagged_unit_variant() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        enum Choice {
+            Abstain,
+            Lock,
+            TowardsIdentity(String),
+        }
+
+        let v = to_value(&Choice::Abstain).unwrap();
+        assert_eq!(v, Value::Text("abstain".to_string()));
+        let back: Choice = from_value(v).unwrap();
+        assert_eq!(back, Choice::Abstain);
+
+        let v = to_value(&Choice::Lock).unwrap();
+        assert_eq!(v, Value::Text("lock".to_string()));
+        let back: Choice = from_value(v).unwrap();
+        assert_eq!(back, Choice::Lock);
+    }
+
+    #[test]
+    fn test_externally_tagged_newtype_variant() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        enum Choice {
+            Abstain,
+            Lock,
+            TowardsIdentity(String),
+        }
+
+        let v = to_value(&Choice::TowardsIdentity("abc".into())).unwrap();
+        let back: Choice = from_value(v).unwrap();
+        assert_eq!(back, Choice::TowardsIdentity("abc".into()));
+    }
+
+    #[test]
+    fn test_internally_tagged_enum() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[serde(tag = "$formatVersion")]
+        enum Info {
+            #[serde(rename = "0")]
+            V0 { name: String },
+        }
+
+        let v = to_value(&Info::V0 {
+            name: "test".into(),
+        })
+        .unwrap();
+        let back: Info = from_value(v).unwrap();
+        assert_eq!(
+            back,
+            Info::V0 {
+                name: "test".into()
+            }
+        );
+    }
+
+    #[test]
+    fn test_externally_tagged_struct_variant() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        enum Shape {
+            Circle { radius: f64 },
+            Rectangle { width: f64, height: f64 },
+        }
+
+        let v = to_value(&Shape::Circle { radius: 5.0 }).unwrap();
+        let back: Shape = from_value(v).unwrap();
+        assert_eq!(back, Shape::Circle { radius: 5.0 });
+
+        let v = to_value(&Shape::Rectangle {
+            width: 3.0,
+            height: 4.0,
+        })
+        .unwrap();
+        let back: Shape = from_value(v).unwrap();
+        assert_eq!(
+            back,
+            Shape::Rectangle {
+                width: 3.0,
+                height: 4.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_externally_tagged_tuple_variant() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        enum Point {
+            TwoD(f64, f64),
+            ThreeD(f64, f64, f64),
+        }
+
+        let v = to_value(&Point::TwoD(1.0, 2.0)).unwrap();
+        let back: Point = from_value(v).unwrap();
+        assert_eq!(back, Point::TwoD(1.0, 2.0));
+
+        let v = to_value(&Point::ThreeD(1.0, 2.0, 3.0)).unwrap();
+        let back: Point = from_value(v).unwrap();
+        assert_eq!(back, Point::ThreeD(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn test_externally_tagged_newtype_wrapping_struct() {
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        enum Vote {
+            ResourceVote(InnerVote),
+        }
+
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
+        #[serde(rename_all = "camelCase")]
+        struct InnerVote {
+            poll_name: String,
+            choice: u32,
+        }
+
+        let v = to_value(&Vote::ResourceVote(InnerVote {
+            poll_name: "test".into(),
+            choice: 42,
+        }))
+        .unwrap();
+        let back: Vote = from_value(v).unwrap();
+        assert_eq!(
+            back,
+            Vote::ResourceVote(InnerVote {
+                poll_name: "test".into(),
+                choice: 42,
+            })
+        );
+    }
 }

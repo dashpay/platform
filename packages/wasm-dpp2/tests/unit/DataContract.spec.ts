@@ -139,10 +139,7 @@ describe('DataContract', () => {
         new PlatformVersion(1),
       );
 
-      const actualBytes = Buffer.from(
-        dataContractFromBase64.toBytes(new PlatformVersion(1)),
-      );
-      expect(actualBytes).to.deep.equal(Buffer.from(bytes));
+      expect(dataContractFromBase64.toBytes(new PlatformVersion(1))).to.deep.equal(bytes);
     });
   });
 

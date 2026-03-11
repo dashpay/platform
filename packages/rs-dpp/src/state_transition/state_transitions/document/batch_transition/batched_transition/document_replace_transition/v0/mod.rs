@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 
 use platform_value::{Identifier, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::block::block_info::BlockInfo;
@@ -27,20 +27,17 @@ mod property_names {
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
 pub struct DocumentReplaceTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$revision")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$revision"))]
     pub revision: Revision,
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 }
 

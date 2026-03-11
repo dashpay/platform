@@ -2,7 +2,7 @@
 pub mod builder;
 
 use bincode::{Decode, Encode};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -101,7 +101,7 @@ pub struct OrchardBundleParams {
 /// and proof are verified separately and are not part of the commitment.
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -149,7 +149,7 @@ pub struct SerializedAction {
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
     #[cfg_attr(
-        feature = "state-transition-serde-conversion",
+        feature = "serde-conversion",
         serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub spend_auth_sig: [u8; 64],

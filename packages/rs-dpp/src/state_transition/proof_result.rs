@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, strum::Display, derive_more::TryInto)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize)
 )]
 pub enum StateTransitionProofResult {

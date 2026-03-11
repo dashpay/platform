@@ -1,11 +1,11 @@
 // Re-export the macro from wasm-dpp2 for newtype wrappers
-pub use wasm_dpp2::impl_wasm_conversions;
+pub use wasm_dpp2::impl_wasm_conversions_serde;
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
 /// for a wasm_bindgen type using serde_format.
 ///
 /// This macro is for types that directly implement Serialize/Deserialize.
-/// For newtype wrappers (e.g., `struct Foo(Inner)`), use `impl_wasm_conversions!` instead.
+/// For newtype wrappers (e.g., `struct Foo(Inner)`), use `impl_wasm_conversions_serde!` instead.
 ///
 /// # Usage
 ///

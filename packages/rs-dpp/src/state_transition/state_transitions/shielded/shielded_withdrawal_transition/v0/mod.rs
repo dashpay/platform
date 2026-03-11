@@ -10,7 +10,7 @@ use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -40,7 +40,7 @@ pub struct ShieldedWithdrawalTransitionV0 {
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     #[cfg_attr(
-        feature = "state-transition-serde-conversion",
+        feature = "serde-conversion",
         serde(with = "crate::serialization::serde_bytes_64")
     )]
     pub binding_signature: [u8; 64],

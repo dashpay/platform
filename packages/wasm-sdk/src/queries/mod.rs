@@ -24,6 +24,7 @@ use wasm_bindgen::JsValue;
 use wasm_dpp2::serialization::bytes_b64;
 use wasm_dpp2::serialization::conversions as serialization;
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "ResponseMetadata")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

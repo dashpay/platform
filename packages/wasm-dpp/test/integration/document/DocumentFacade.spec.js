@@ -27,7 +27,7 @@ describe('DocumentFacade', () => {
     const dataContractObject = dataContractFixture.toObject();
 
     dataContract = new DataContract({
-      $format_version: '0',
+      $formatVersion: '0',
       id: dataContractObject.id,
       version: 1,
       ownerId: dataContractObject.ownerId,

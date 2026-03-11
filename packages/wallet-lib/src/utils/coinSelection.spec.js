@@ -61,7 +61,7 @@ describe('Utils - coinSelection', function suite() {
     expect(() => coinSelection(utxosListAsUnspentOutput, [{toto: true}])).to.throw('data parameter supplied is not a string.');
   });
   it('should alert if the total satoshis is not enough', () => {
-    expect(() => coinSelection(utxosListAsUnspentOutput, [outputs.HUNDRED_DASH])).to.throw('Insufficient utxos (7099960000) to cover the output : 10000000000. Diff : -2900040000');
+    expect(() => coinSelection(utxosListAsUnspentOutput, [outputs.HUNDRED_DASH])).to.throw('Unsufficient utxos (7099960000) to cover the output : 10000000000. Diff : -2900040000');
   });
   it('should work with normal utxo format', () => {
     const output = new Transaction.UnspentOutput({

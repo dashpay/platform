@@ -1,10 +1,10 @@
 /* eslint-disable quote-props, quotes */
 
 export default {
-  "$format_version": "0",
+  "$formatVersion": "0",
   "id": "4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6",
   "config": {
-    "$format_version": "0",
+    "$formatVersion": "0",
     "canBeDeleted": false,
     "readonly": false,
     "keepsHistory": false,

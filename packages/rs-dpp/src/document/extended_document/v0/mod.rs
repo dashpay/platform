@@ -1,15 +1,12 @@
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
-#[cfg(feature = "document-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod platform_value_conversion;
 mod serialize;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
-#[cfg(any(
-    feature = "document-value-conversion",
-    feature = "document-json-conversion"
-))]
+#[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::document::extended_document::fields::property_names;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::TimestampMillis;
@@ -22,15 +19,12 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
 };
-#[cfg(feature = "document-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::{
     BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
-#[cfg(all(
-    feature = "document-serde-conversion",
-    feature = "data-contract-serde-conversion"
-))]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -39,56 +33,44 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
-#[cfg(feature = "document-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "document-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
 #[cfg_attr(
-    all(
-        feature = "document-serde-conversion",
-        feature = "data-contract-serde-conversion"
-    ),
+    all(feature = "serde-conversion", feature = "serde-conversion"),
     derive(Serialize, Deserialize)
 )]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$type")
     )]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$dataContractId")
     )]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(flatten)
     )]
     pub document: Document,
@@ -97,46 +79,34 @@ pub struct ExtendedDocumentV0 {
     //  also there is no point to keep both contract and its ID
     /// The data contract associated with the document.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$dataContract")
     )]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$metadata", default)
     )]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$entropy")
     )]
     pub entropy: Bytes32,
     /// A field representing the token payment info.
     #[cfg_attr(
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        all(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "$tokenPaymentInfo")
     )]
     pub token_payment_info: Option<TokenPaymentInfo>,
 }
 
 impl ExtendedDocumentV0 {
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub(super) fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties()
@@ -245,7 +215,7 @@ impl ExtendedDocumentV0 {
         }
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     /// Create an extended document from a JSON string.
     ///
     /// # Arguments
@@ -267,7 +237,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(json_value.into(), contract, platform_version)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     /// Create an extended document from a raw JSON document.
     ///
     /// # Arguments
@@ -286,7 +256,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -342,7 +312,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///
@@ -416,7 +386,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     /// Convert the extended document to a pretty JSON object.
     ///
     /// # Errors
@@ -446,7 +416,7 @@ impl ExtendedDocumentV0 {
         Ok(value)
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut object = self.document.to_map_value()?;
         object.insert(
@@ -466,7 +436,7 @@ impl ExtendedDocumentV0 {
         Ok(object)
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let ExtendedDocumentV0 {
             document_type_name,
@@ -495,17 +465,17 @@ impl ExtendedDocumentV0 {
         Ok(object)
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn into_value(self) -> Result<Value, ProtocolError> {
         Ok(self.into_map_value()?.into())
     }
 
-    #[cfg(feature = "document-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "json-conversion")]
     pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
         self.to_value()?
             .try_into_validating_json()

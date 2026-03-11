@@ -1,7 +1,7 @@
 use crate::data_contract::accessors::v0::DataContractV0Setters;
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::data_contract::config::DataContractConfig;
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
@@ -21,7 +21,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 /// Reads a JSON file and converts it to serde_value.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_json_value(
     path: impl AsRef<Path>,
 ) -> Result<serde_json::Value, ProtocolError> {
@@ -64,7 +64,7 @@ pub fn json_document_to_cbor(
 }
 
 /// Reads a JSON file and converts it a contract.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
     full_validation: bool,
@@ -77,7 +77,7 @@ pub fn json_document_to_contract(
 
 #[cfg(all(
     any(feature = "state-transitions", feature = "factories"),
-    feature = "data-contract-json-conversion"
+    feature = "json-conversion"
 ))]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
@@ -101,7 +101,7 @@ pub fn json_document_to_created_contract(
 }
 
 /// Reads a JSON file and converts it a document.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
