@@ -7,7 +7,7 @@ pub use super::super::token_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use crate::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 mod property_names {
@@ -17,7 +17,7 @@ mod property_names {
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -28,34 +28,19 @@ mod property_names {
     "recipient_owner_id"
 )]
 pub struct TokenTransferTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$amount")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$amount"))]
     pub amount: u64,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "recipientId")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "recipientId"))]
     pub recipient_id: Identifier,
     /// The public note
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "publicNote")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "publicNote"))]
     pub public_note: Option<String>,
     /// An optional shared encrypted note
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "sharedEncryptedNote")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "sharedEncryptedNote"))]
     pub shared_encrypted_note: Option<SharedEncryptedNote>,
     /// An optional private encrypted note
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "privateEncryptedNote")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "privateEncryptedNote"))]
     pub private_encrypted_note: Option<PrivateEncryptedNote>,
 }

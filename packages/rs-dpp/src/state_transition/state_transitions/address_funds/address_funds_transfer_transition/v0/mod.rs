@@ -1,10 +1,10 @@
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -16,7 +16,7 @@ use crate::prelude::{AddressNonce, UserFeeIncrease};
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

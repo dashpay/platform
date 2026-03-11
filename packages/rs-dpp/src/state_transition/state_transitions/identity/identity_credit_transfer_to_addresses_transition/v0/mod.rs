@@ -1,11 +1,11 @@
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
@@ -16,11 +16,13 @@ use std::collections::BTreeMap;
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 
 use crate::fee::Credits;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -33,8 +35,9 @@ use serde::{Deserialize, Serialize};
     PlatformSignable,
     PartialEq,
 )]
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -43,6 +46,12 @@ use serde::{Deserialize, Serialize};
 pub struct IdentityCreditTransferToAddressesTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(
+            with = "crate::serialization::json::safe_integer_map::json_safe_generic_u64_value_map"
+        )
+    )]
     pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     pub nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,

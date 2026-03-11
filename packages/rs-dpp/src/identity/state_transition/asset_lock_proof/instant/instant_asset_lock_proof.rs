@@ -1,3 +1,9 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{deserialize, Encodable};
@@ -25,6 +31,9 @@ use crate::ProtocolError;
 /// transitions. It is a proof that specific output of dash is locked in credits
 /// pull and the transitions can mint credits and populate identity's balance.
 /// To prove that the output is locked, an Instant Lock is provided.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock

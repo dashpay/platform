@@ -62,6 +62,7 @@ platform-version = { path = "../rs-platform-version" }
 platform-versioning = { path = "../rs-platform-versioning" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
+dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 derive_more = { version = "1.0", features = ["from", "display", "try_into"] }
 nohash-hasher = "0.2.0"
 rust_decimal = { version = "1.39.0", optional = true }
@@ -100,7 +101,7 @@ core_rpc_client = ["dep:dashcore-rpc"]
 bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
-  "json-object",
+  "json-conversion",
   "all-system_contracts",
   "state-transitions",
   "extended-document",
@@ -113,22 +114,9 @@ all_features = [
   "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
-  "document-serde-conversion",
-  "document-value-conversion",
-  "document-json-conversion",
   "document-cbor-conversion",
-  "data-contract-serde-conversion",
-  "data-contract-value-conversion",
-  "data-contract-json-conversion",
   "data-contract-cbor-conversion",
-  "identity-serde-conversion",
-  "identity-value-conversion",
-  "identity-json-conversion",
   "identity-cbor-conversion",
-  "index-serde-conversion",
-  "state-transition-serde-conversion",
-  "state-transition-value-conversion",
-  "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
   "factories",
@@ -145,17 +133,14 @@ all_features = [
 
 dash-sdk-features = [
   "identity-hashing",
-  "data-contract-json-conversion",
-  "identity-value-conversion",
-  "state-transition-value-conversion",
+  "json-conversion",
   "state-transition-signing",
   "client",
   "platform-value-cbor",
   "core_rpc_client",
 ]
 all_features_without_client = [
-  "json-object",
-  "platform-value",
+  "json-conversion",
   "all-system_contracts",
   "state-transitions",
   "extended-document",
@@ -167,22 +152,9 @@ all_features_without_client = [
   "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
-  "document-serde-conversion",
-  "document-value-conversion",
-  "document-json-conversion",
   "document-cbor-conversion",
-  "data-contract-serde-conversion",
-  "data-contract-value-conversion",
-  "data-contract-json-conversion",
   "data-contract-cbor-conversion",
-  "identity-serde-conversion",
-  "identity-value-conversion",
-  "identity-json-conversion",
   "identity-cbor-conversion",
-  "index-serde-conversion",
-  "state-transition-serde-conversion",
-  "state-transition-value-conversion",
-  "state-transition-json-conversion",
   "state-transition-validation",
   "state-transition-signing",
   "factories",
@@ -193,7 +165,6 @@ all_features_without_client = [
   "random-document-types",
   "fee-distribution",
   "vote-serialization",
-  "vote-serde-conversion",
 ]
 abci = [
   "state-transitions",
@@ -205,20 +176,19 @@ abci = [
   "platform-value-cbor",
   "core-types",
   "core-types-serialization",
-  "core-types-serde-conversion",
+  "serde-conversion",
   "core_rpc_client",
 ]
 cbor = ["ciborium"]
 validation = [
   "json-schema-validation",
-  "platform-value",
-  "document-value-conversion",
-  "state-transition-serde-conversion",
+  "value-conversion",
   "ed25519-dalek",
 ]
 # TODO: Tring to remove regexp
 create-contested-document = []
-platform-value-json = ["platform-value/json"]
+json-conversion = ["value-conversion", "platform-value/json", "json-object"]
+platform-value-json = ["platform-value/json", "json-conversion"]
 platform-value-cbor = ["platform-value/cbor"]
 json-schema-validation = [
   "jsonschema",
@@ -230,51 +200,41 @@ platform-value = []
 identity-hashing = ["identity-serialization"]
 message-signing = []
 message-signature-verification = ["bls-signatures"]
-document-serde-conversion = []
-document-value-conversion = ["document-serde-conversion"]
-document-json-conversion = ["document-value-conversion", "platform-value-json"]
+# Unified conversion features (chain: serde → value → json)
+serde-conversion = []
+value-conversion = ["serde-conversion", "platform-value"]
+# json-conversion is defined above (value-conversion + platform-value/json)
+
+# Backwards-compatible aliases (point to unified flags)
+document-serde-conversion = ["serde-conversion"]
+document-value-conversion = ["value-conversion"]
+document-json-conversion = ["json-conversion"]
 document-cbor-conversion = [
-  "document-value-conversion",
+  "value-conversion",
   "cbor",
   "platform-value-cbor",
 ]
-data-contract-serde-conversion = []
-data-contract-value-conversion = ["data-contract-serde-conversion"]
-data-contract-json-conversion = [
-  "data-contract-value-conversion",
-  "data-contract-serde-conversion",
-  "platform-value-json",
-]
+data-contract-serde-conversion = ["serde-conversion"]
+data-contract-value-conversion = ["value-conversion"]
+data-contract-json-conversion = ["json-conversion"]
 data-contract-cbor-conversion = [
-  "data-contract-value-conversion",
+  "value-conversion",
   "cbor",
   "platform-value-cbor",
 ]
 identity-serialization = []
-identity-serde-conversion = []
-identity-value-conversion = ["identity-serde-conversion"]
-identity-json-conversion = ["identity-value-conversion", "platform-value-json"]
+identity-serde-conversion = ["serde-conversion"]
+identity-value-conversion = ["value-conversion"]
+identity-json-conversion = ["json-conversion"]
 identity-cbor-conversion = [
-  "identity-value-conversion",
+  "value-conversion",
   "cbor",
   "platform-value-cbor",
 ]
-index-serde-conversion = []
-state-transition-serde-conversion = [
-  "data-contract-serde-conversion",
-  "vote-serde-conversion",
-]
-state-transition-value-conversion = [
-  "platform-value",
-  "state-transition-serde-conversion",
-  "data-contract-value-conversion",
-]
-state-transition-json-conversion = [
-  "json-object",
-  "state-transition-value-conversion",
-  "data-contract-json-conversion",
-  "platform-value-json",
-]
+index-serde-conversion = ["serde-conversion"]
+state-transition-serde-conversion = ["serde-conversion"]
+state-transition-value-conversion = ["value-conversion"]
+state-transition-json-conversion = ["json-conversion"]
 state-transition-validation = [
   "state-transitions",
   "message-signature-verification",
@@ -285,7 +245,7 @@ state-transition-signing = [
   "state-transition-validation",
 ]
 vote-serialization = []
-vote-serde-conversion = []
+vote-serde-conversion = ["serde-conversion"]
 core-types = ["bls-signatures"]
 core-types-serialization = ["core-types"]
 core-types-serde-conversion = ["core-types"]
@@ -322,9 +282,7 @@ random-documents = []
 random-document-types = ["platform-value-json"]
 fee-distribution = ["dep:rust_decimal", "dep:rust_decimal_macros"]
 extended-document = [
-  "document-serde-conversion",
-  "data-contract-serde-conversion",
-  "data-contract-json-conversion",
+  "json-conversion",
 ]
 token-reward-explanations = ["dep:chrono-tz"]
 

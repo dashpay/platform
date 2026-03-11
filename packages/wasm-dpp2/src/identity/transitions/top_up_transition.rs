@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::try_from_options;
@@ -75,6 +75,18 @@ extern "C" {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
+
+impl From<IdentityTopUpTransition> for IdentityTopUpTransitionWasm {
+    fn from(val: IdentityTopUpTransition) -> Self {
+        IdentityTopUpTransitionWasm(val)
+    }
+}
+
+impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
+    fn from(val: IdentityTopUpTransitionWasm) -> Self {
+        val.0
+    }
+}
 
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]
 impl IdentityTopUpTransitionWasm {
@@ -227,8 +239,9 @@ impl IdentityTopUpTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityTopUpTransitionWasm,
+    IdentityTopUpTransition,
     IdentityTopUpTransition,
     IdentityTopUpTransitionObjectJs,
     IdentityTopUpTransitionJSONJs

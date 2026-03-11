@@ -6,12 +6,12 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 
 use crate::data_contract::config::DataContractConfig;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -20,7 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
@@ -100,7 +100,7 @@ impl DataContractFactoryV0 {
         )
     }
 
-    #[cfg(feature = "data-contract-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create Data Contract from plain object
     pub fn create_from_object(
         &self,

@@ -6,6 +6,7 @@ use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::try_to_u64;
+use crate::version::PlatformVersionLikeJs;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -13,7 +14,6 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -22,7 +22,7 @@ const IDENTITY_TYPES_TS: &str = r#"
  * Identity serialized as a plain object.
  */
 export interface IdentityObject {
-    $version: string;
+    $formatVersion: string;
     id: Identifier;
     publicKeys: IdentityPublicKeyObject[];
     balance: bigint;
@@ -31,13 +31,15 @@ export interface IdentityObject {
 
 /**
  * Identity serialized as JSON (with string identifiers).
+ * Note: u64 fields are numbers when within JS safe integer range (< 2^53),
+ * or strings when exceeding it.
  */
 export interface IdentityJSON {
-    $version: string;
+    $formatVersion: string;
     id: string;
     publicKeys: IdentityPublicKeyJSON[];
-    balance: number;
-    revision: number;
+    balance: number | string;
+    revision: number | string;
 }
 "#;
 
@@ -83,14 +85,14 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(setter = "balance")]
-    pub fn set_balance(&mut self, balance: JsValue) -> WasmDppResult<()> {
-        self.0.set_balance(try_to_u64(&balance, "balance")?);
+    pub fn set_balance(&mut self, balance: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_balance(try_to_u64(balance, "balance")?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
-        self.0.set_revision(try_to_u64(&revision, "revision")?);
+    pub fn set_revision(&mut self, revision: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(revision, "revision")?);
         Ok(())
     }
 
@@ -192,10 +194,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: IdentityObjectJs) -> WasmDppResult<IdentityWasm> {
+    pub fn from_object(
+        value: IdentityObjectJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<IdentityWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let platform_value = serialization::js_value_to_platform_value(&value.into())?;
-        let identity =
-            Identity::try_from_platform_versioned(platform_value, PlatformVersion::latest())?;
+        let identity = Identity::try_from_platform_versioned(platform_value, &platform_version)?;
         Ok(IdentityWasm(identity))
     }
 

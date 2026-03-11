@@ -1,6 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
-import tokenLocalization from './mocks/TokenConfiguration/index.ts';
+import { tokenLocalization } from './mocks/TokenConfiguration/index.js';
 
 before(async () => {
   await initWasm();
@@ -79,7 +79,7 @@ describe('TokenConfigurationConvention', () => {
       expect(convention.localizations.ru).to.deep.equal(undefined);
       expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalization');
       expect(convention.localizations.en.toJSON()).to.deep.equal({
-        $format_version: '0',
+        $formatVersion: '0',
         shouldCapitalize: false,
         singularForm: 'singularForm',
         pluralForm: 'pluralForm',
@@ -97,7 +97,20 @@ describe('TokenConfigurationConvention', () => {
         1,
       );
 
-      expect(convention.decimals).to.deep.equal(1);
+      expect(convention.decimals).to.equal(1);
+    });
+
+    it('should set decimals', () => {
+      const convention = new wasm.TokenConfigurationConvention(
+        {
+          ru: tokenLocalization,
+        },
+        1,
+      );
+
+      convention.decimals = 8;
+
+      expect(convention.decimals).to.equal(8);
     });
   });
 });

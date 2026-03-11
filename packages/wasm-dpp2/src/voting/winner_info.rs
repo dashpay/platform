@@ -1,5 +1,5 @@
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use wasm_bindgen::JsValue;
@@ -12,18 +12,18 @@ const TS_TYPES: &str = r#"
  * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
  */
 export type ContestedDocumentVotePollWinnerInfoObject =
-    | "NoWinner"
-    | "Locked"
-    | { WonByIdentity: Uint8Array };
+    | { type: "noWinner" }
+    | { type: "locked" }
+    | { type: "wonByIdentity"; data: Uint8Array };
 
 /**
  * ContestedDocumentVotePollWinnerInfo serialized as JSON.
- * Simple variants serialize as strings, tuple variant as { WonByIdentity: value }.
+ * Uses adjacently tagged format with type discriminator.
  */
 export type ContestedDocumentVotePollWinnerInfoJSON =
-    | "NoWinner"
-    | "Locked"
-    | { WonByIdentity: string };
+    | { type: "noWinner" }
+    | { type: "locked" }
+    | { type: "wonByIdentity"; data: string };
 "#;
 
 #[wasm_bindgen]
@@ -119,8 +119,9 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo,
     ContestedDocumentVotePollWinnerInfo,
     ContestedDocumentVotePollWinnerInfoObjectJs,
     ContestedDocumentVotePollWinnerInfoJSONJs

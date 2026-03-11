@@ -12,6 +12,7 @@ run:
   - packages/wallet-lib/**
   # Rust core components that affect local network behavior
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
   - packages/rs-drive/**
   - packages/rs-drive-abci/**
   - packages/rs-dapi-client/**

@@ -1,16 +1,20 @@
 pub mod accessors;
 mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use fields::*;
 
 use crate::data_contract::DataContract;
@@ -24,7 +28,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
@@ -33,6 +37,10 @@ pub use v0::*;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -46,16 +54,17 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]
 pub enum DataContractCreateTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DataContractCreateTransitionV0),
 }
 
@@ -176,24 +185,25 @@ mod test {
     pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None, 0, 1);
 
-        let state_transition = DataContractCreateTransition::from_object(
-            Value::from([
-                (STATE_TRANSITION_PROTOCOL_VERSION, Value::U16(0)),
-                (
-                    IDENTITY_NONCE,
-                    Value::U64(created_data_contract.identity_nonce()),
-                ),
-                (
-                    DATA_CONTRACT,
-                    created_data_contract
-                        .data_contract()
-                        .to_value(LATEST_PLATFORM_VERSION)
-                        .unwrap(),
-                ),
-            ]),
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("state transition should be created without errors");
+        let state_transition =
+            <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
+                Value::from([
+                    (STATE_TRANSITION_PROTOCOL_VERSION, Value::U16(0)),
+                    (
+                        IDENTITY_NONCE,
+                        Value::U64(created_data_contract.identity_nonce()),
+                    ),
+                    (
+                        DATA_CONTRACT,
+                        created_data_contract
+                            .data_contract()
+                            .to_value(LATEST_PLATFORM_VERSION)
+                            .unwrap(),
+                    ),
+                ]),
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("state transition should be created without errors");
 
         TestData {
             created_data_contract,

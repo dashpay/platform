@@ -1,8 +1,8 @@
 #[cfg(feature = "data-contract-cbor-conversion")]
 pub mod cbor;
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub mod json;
-#[cfg(feature = "data-contract-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 pub mod serde;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 pub mod value;

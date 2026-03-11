@@ -88,7 +88,7 @@ impl DataContractFactory {
         }
     }
 
-    #[cfg(feature = "data-contract-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create a DataContract from a plain object
     pub fn create_from_object(
         &self,

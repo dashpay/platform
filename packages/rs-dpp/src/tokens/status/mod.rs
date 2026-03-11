@@ -1,3 +1,7 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::tokens::status::v0::TokenStatusV0;
 use crate::ProtocolError;
 use bincode::Encode;
@@ -9,6 +13,10 @@ use platform_versioning::PlatformVersioned;
 mod methods;
 pub mod v0;
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -21,11 +29,14 @@ pub mod v0;
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize)
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum TokenStatus {
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenStatusV0),
 }
 
@@ -43,5 +54,24 @@ impl TokenStatus {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(all(test, feature = "json-conversion"))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn token_status_json_round_trip() {
+        let status = TokenStatus::V0(TokenStatusV0 { paused: true });
+
+        let json = status.to_json().expect("to_json should succeed");
+
+        assert_eq!(json["$formatVersion"].as_str().unwrap(), "0");
+        assert_eq!(json["paused"].as_bool().unwrap(), true);
+
+        let restored = TokenStatus::from_json(json).expect("from_json should succeed");
+        assert_eq!(status, restored);
     }
 }

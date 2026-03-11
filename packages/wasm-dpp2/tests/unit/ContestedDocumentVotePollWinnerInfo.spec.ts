@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
 
@@ -20,7 +21,7 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
     });
 
     it('should create WonByIdentity info', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
       const identityIdBase58 = identityId.toBase58();
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('WonByIdentity', identityId);
 
@@ -49,87 +50,128 @@ describe('ContestedDocumentVotePollWinnerInfo', () => {
       const locked = new wasm.ContestedDocumentVotePollWinnerInfo('LOCKED');
       expect(locked.isLocked).to.be.true();
 
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
       const identity = new wasm.ContestedDocumentVotePollWinnerInfo('Identity', identityId);
       expect(identity.isWonByIdentity).to.be.true();
     });
   });
 
   describe('toJSON()', () => {
-    it('should round-trip NoWinner via toJSON/fromJSON', () => {
+    it('should serialize NoWinner to JSON matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
       const json = info.toJSON();
-      // Simple enum variants serialize to strings in serde
-      expect(json).to.equal('NoWinner');
-
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(json);
-      expect(restored.kind).to.equal(info.kind);
-      expect(restored.isNoWinner).to.be.true();
+      expect(json).to.deep.equal({ type: 'noWinner' });
     });
 
-    it('should round-trip WonByIdentity via toJSON/fromJSON', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+    it('should serialize WonByIdentity to JSON matching fixture', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
+      const identityIdBase58 = identityId.toBase58();
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('WonByIdentity', identityId);
 
       const json = info.toJSON();
-      expect(json).to.be.an('object');
-      // Serde serializes tuple variants as { VariantName: value }
-      expect(json.WonByIdentity).to.be.a('string');
-
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(json);
-      expect(restored.kind).to.equal(info.kind);
-      expect(restored.identityId.toBase58()).to.equal(info.identityId.toBase58());
+      expect(json).to.deep.equal({ type: 'wonByIdentity', data: identityIdBase58 });
     });
 
-    it('should round-trip Locked via toJSON/fromJSON', () => {
+    it('should serialize Locked to JSON matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('Locked');
 
       const json = info.toJSON();
-      // Simple enum variants serialize to strings in serde
-      expect(json).to.equal('Locked');
+      expect(json).to.deep.equal({ type: 'locked' });
+    });
+  });
 
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(json);
-      expect(restored.kind).to.equal(info.kind);
+  describe('fromJSON()', () => {
+    it('should create NoWinner from JSON fixture and verify getters', () => {
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON({ type: 'noWinner' });
+
+      expect(restored.kind).to.equal('NoWinner');
+      expect(restored.isNoWinner).to.be.true();
+      expect(restored.isWonByIdentity).to.be.false();
+      expect(restored.isLocked).to.be.false();
+      expect(restored.identityId).to.be.undefined();
+    });
+
+    it('should create WonByIdentity from JSON fixture and verify getters', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
+      const identityIdBase58 = identityId.toBase58();
+
+      const fixture = { type: 'wonByIdentity', data: identityIdBase58 };
+
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON(fixture);
+      expect(restored.kind).to.equal('WonByIdentity');
+      expect(restored.isWonByIdentity).to.be.true();
+      expect(restored.isNoWinner).to.be.false();
+      expect(restored.isLocked).to.be.false();
+      expect(restored.identityId).to.not.be.undefined();
+      expect(restored.identityId.toBase58()).to.equal(identityIdBase58);
+    });
+
+    it('should create Locked from JSON fixture and verify getters', () => {
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromJSON({ type: 'locked' });
+
+      expect(restored.kind).to.equal('Locked');
       expect(restored.isLocked).to.be.true();
+      expect(restored.isNoWinner).to.be.false();
+      expect(restored.isWonByIdentity).to.be.false();
+      expect(restored.identityId).to.be.undefined();
     });
   });
 
   describe('toObject()', () => {
-    it('should round-trip NoWinner via toObject/fromObject', () => {
+    it('should serialize NoWinner to Object matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('NoWinner');
 
       const obj = info.toObject();
-      // Simple enum variants serialize to strings in serde
-      expect(obj).to.equal('NoWinner');
-
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(obj);
-      expect(restored.kind).to.equal(info.kind);
+      expect(obj).to.deep.equal({ type: 'noWinner' });
     });
 
-    it('should round-trip WonByIdentity via toObject/fromObject', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+    it('should serialize WonByIdentity to Object with Uint8Array', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('WonByIdentity', identityId);
 
       const obj = info.toObject();
       expect(obj).to.be.an('object');
-      // Serde serializes tuple variants as { VariantName: value }
-      expect(obj.WonByIdentity).to.not.be.undefined();
-
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(obj);
-      expect(restored.kind).to.equal(info.kind);
-      expect(restored.identityId.toBase58()).to.equal(info.identityId.toBase58());
+      expect(obj.type).to.equal('wonByIdentity');
+      expect(obj.data).to.be.instanceOf(Uint8Array);
+      expect(Buffer.from(obj.data).toString('hex')).to.equal(identityIdHex);
     });
 
-    it('should round-trip Locked via toObject/fromObject', () => {
+    it('should serialize Locked to Object matching fixture', () => {
       const info = new wasm.ContestedDocumentVotePollWinnerInfo('Locked');
 
       const obj = info.toObject();
-      // Simple enum variants serialize to strings in serde
-      expect(obj).to.equal('Locked');
+      expect(obj).to.deep.equal({ type: 'locked' });
+    });
+  });
 
-      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(obj);
-      expect(restored.kind).to.equal(info.kind);
+  describe('fromObject()', () => {
+    it('should create NoWinner from Object fixture and verify getters', () => {
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject({ type: 'noWinner' });
+
+      expect(restored.kind).to.equal('NoWinner');
+      expect(restored.isNoWinner).to.be.true();
+      expect(restored.identityId).to.be.undefined();
+    });
+
+    it('should create WonByIdentity from Object fixture and verify getters', () => {
+      const identityIdBytes = new Uint8Array(Buffer.from(identityIdHex, 'hex'));
+
+      const fixture = { type: 'wonByIdentity', data: identityIdBytes };
+
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject(fixture);
+      expect(restored.kind).to.equal('WonByIdentity');
+      expect(restored.isWonByIdentity).to.be.true();
+      expect(restored.identityId).to.not.be.undefined();
+      expect(restored.identityId.toHex()).to.equal(identityIdHex);
+    });
+
+    it('should create Locked from Object fixture and verify getters', () => {
+      const restored = wasm.ContestedDocumentVotePollWinnerInfo.fromObject({ type: 'locked' });
+
+      expect(restored.kind).to.equal('Locked');
+      expect(restored.isLocked).to.be.true();
+      expect(restored.identityId).to.be.undefined();
     });
   });
 });

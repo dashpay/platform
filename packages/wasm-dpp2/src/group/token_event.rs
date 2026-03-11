@@ -1,4 +1,4 @@
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::tokens::token_event::TokenEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -9,16 +9,16 @@ const TS_TYPES: &str = r#"
  * TokenEvent serialized as a plain object.
  */
 export interface TokenEventObject {
-    variant: TokenEventVariant;
-    [key: string]: unknown;
+    type: string;
+    data?: unknown;
 }
 
 /**
  * TokenEvent serialized as JSON.
  */
 export interface TokenEventJSON {
-    variant: number;
-    [key: string]: unknown;
+    type: string;
+    data?: unknown;
 }
 "#;
 
@@ -87,8 +87,9 @@ impl TokenEventWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     TokenEventWasm,
+    TokenEvent,
     TokenEvent,
     TokenEventObjectJs,
     TokenEventJSONJs
