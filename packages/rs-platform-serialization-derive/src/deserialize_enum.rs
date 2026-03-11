@@ -199,7 +199,8 @@ pub(super) fn derive_platform_deserialize_enum(
         let limit_map_err = quote! {
             .map_err(|e| {
                 match e {
-                    bincode::error::DecodeError::Io { .. } => {
+                    bincode::error::DecodeError::Io { .. }
+                    | bincode::error::DecodeError::LimitExceeded => {
                         #crate_name::#error_type::MaxEncodedBytesReachedError {
                             max_size_kbytes: #limit,
                             size_hit: data.len(),

@@ -166,13 +166,22 @@ pub(crate) fn decode_option_variant<D: Decoder<Context = crate::BincodeContext>>
     }
 }
 
-/// Maximum allowed collection length during deserialization (64 MiB element count).
+/// Maximum allowed collection length during deserialization (1 Mi elements).
 ///
 /// This acts as a defense-in-depth guard against crafted payloads that encode
 /// enormous collection lengths in a varint prefix. Even when the bincode config
 /// has no byte-budget limit, this cap prevents a single decoded length field
 /// from triggering an unbounded allocation that could OOM-abort the process.
-const MAX_COLLECTION_LEN: u64 = 64 * 1024 * 1024;
+///
+/// Set to 1 MiB (1,048,576) elements because:
+/// - The largest legitimate structure (StateTransition) is capped at 100 KB,
+///   meaning even a `Vec<u8>` can hold at most ~100 K elements in practice.
+/// - For wider element types (`[u8; 32]`, etc.) the memory impact is
+///   `element_count × element_size`, so a smaller cap keeps the worst case
+///   well within OS limits (1 Mi × 64 bytes = 64 MiB).
+/// - This is a last-resort guard; the primary protection is the per-type
+///   byte-budget configured via `#[platform_serialize(limit = N)]`.
+const MAX_COLLECTION_LEN: u64 = 1024 * 1024;
 
 /// Decodes the length of any slice, container, etc from the decoder
 #[inline]
