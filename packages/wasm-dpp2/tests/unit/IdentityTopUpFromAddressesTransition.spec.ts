@@ -23,7 +23,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
     return new wasm.IdentityTopUpFromAddressesTransition({
       identityId: '11111111111111111111111111111111',
       inputs: [input],
-      output: output,
+      output,
     });
   }
 

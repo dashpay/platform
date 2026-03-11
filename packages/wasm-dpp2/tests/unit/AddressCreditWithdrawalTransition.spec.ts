@@ -25,7 +25,7 @@ describe('AddressCreditWithdrawalTransition', () => {
 
     return new wasm.AddressCreditWithdrawalTransition({
       inputs: [input],
-      output: output,
+      output,
       outputScript: script,
       pooling: 'never',
       coreFeePerByte: 1,
