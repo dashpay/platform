@@ -1,3 +1,6 @@
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_wasm_type_info;
+use crate::utils::{IntoWasm, try_from_options_optional_with, try_to_array};
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep};
 use serde::Deserialize;
 use serde::de::{self, Deserializer, MapAccess, Visitor};
@@ -56,6 +59,8 @@ impl FeeStrategyStepWasm {
     }
 }
 
+impl_wasm_type_info!(FeeStrategyStepWasm, FeeStrategyStep);
+
 impl From<FeeStrategyStepWasm> for AddressFundsFeeStrategyStep {
     fn from(step: FeeStrategyStepWasm) -> Self {
         step.0
@@ -85,6 +90,32 @@ pub fn fee_strategy_from_steps_or_default(
     steps
         .map(fee_strategy_from_steps)
         .unwrap_or_else(default_fee_strategy)
+}
+
+/// Extract an optional Vec<FeeStrategyStepWasm> from a JS options object property.
+///
+/// Returns None if the property is undefined or null.
+pub fn fee_strategy_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Option<Vec<FeeStrategyStepWasm>>> {
+    try_from_options_optional_with(options, field_name, |v| {
+        let array = try_to_array(v, field_name)?;
+        array
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                item.to_wasm::<FeeStrategyStepWasm>("FeeStrategyStep")
+                    .map(|r| (*r).clone())
+                    .map_err(|_| {
+                        WasmDppError::invalid_argument(format!(
+                            "{}[{}] is not a FeeStrategyStep",
+                            field_name, i
+                        ))
+                    })
+            })
+            .collect()
+    })
 }
 
 impl<'de> Deserialize<'de> for FeeStrategyStepWasm {

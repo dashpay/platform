@@ -21,7 +21,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
@@ -209,9 +208,9 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+    pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
         self.0
-            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+            .set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
         Ok(())
     }
 

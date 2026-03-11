@@ -55,6 +55,11 @@ pub use identity::{
     IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
     PublicKeyHashLikeJs, public_key_hash_from_js,
 };
+pub use platform_address::transitions::{
+    AddressCreditWithdrawalTransitionWasm, AddressFundingFromAssetLockTransitionWasm,
+    AddressFundsTransferTransitionWasm, IdentityCreateFromAddressesTransitionWasm,
+    IdentityCreditTransferToAddressesTransitionWasm, IdentityTopUpFromAddressesTransitionWasm,
+};
 pub use platform_address::{
     FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs,
     PlatformAddressLikeJs, PlatformAddressOutputWasm, PlatformAddressSignerWasm,

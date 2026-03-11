@@ -183,9 +183,9 @@ impl BatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+    pub fn set_identity_contract_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
         self.0
-            .set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+            .set_identity_contract_nonce(try_to_u64(nonce, "identityContractNonce")?);
         Ok(())
     }
 
