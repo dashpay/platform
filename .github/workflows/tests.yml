@@ -38,11 +38,11 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
-      js-packages: ${{ steps.filter-js.outputs.changes }}
-      js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
-      rs-packages: ${{ steps.filter-rs.outputs.changes }}
-      rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
-      test-suite: ${{ steps.filter-test-suite.outputs.run }}
+      js-packages: ${{ steps.override.outputs.js-packages || steps.filter-js.outputs.changes }}
+      js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
+      rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
+      rs-packages-direct: ${{ steps.override.outputs.rs-packages-direct || steps.filter-rs-direct.outputs.changes }}
+      test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,35 +51,50 @@ jobs:
 
       - uses: dorny/paths-filter@v3
         id: filter-js
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-js-direct
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-rs
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-rs-direct
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-direct.yml
 
       - name: Check if Test Suite should run
         id: filter-test-suite
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: dorny/paths-filter@v3
         with:
           filters: .github/package-filters/test-suite-triggers.yml
+
+      - name: Override all outputs for workflow_dispatch
+        id: override
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo 'js-packages=["@dashevo/wallet-utils-contract","@dashevo/token-history-contract","@dashevo/dashpay-contract","@dashevo/masternode-reward-shares-contract","@dashevo/withdrawals-contract","@dashevo/dpns-contract","@dashevo/grpc-common","@dashevo/wasm-dpp","@dashevo/wasm-dpp2","@dashevo/dapi-grpc","@dashevo/dash-spv","@dashevo/dapi","@dashevo/dapi-client","@dashevo/wallet-lib","dash","dashmate","@dashevo/platform-test-suite","@dashevo/wasm-sdk","@dashevo/evo-sdk"]' >> "$GITHUB_OUTPUT"
+          echo 'js-packages-direct=["@dashevo/wallet-utils-contract","@dashevo/token-history-contract","@dashevo/dashpay-contract","@dashevo/masternode-reward-shares-contract","@dashevo/withdrawals-contract","@dashevo/dpns-contract","@dashevo/grpc-common","@dashevo/wasm-dpp","@dashevo/wasm-dpp2","@dashevo/dapi-grpc","@dashevo/dash-spv","@dashevo/dapi","@dashevo/dapi-client","@dashevo/wallet-lib","dash","dashmate","@dashevo/platform-test-suite","@dashevo/wasm-sdk","@dashevo/evo-sdk"]' >> "$GITHUB_OUTPUT"
+          echo 'rs-packages=["wallet-utils-contract","token-history-contract","dashpay-contract","masternode-reward-shares-contract","withdrawals-contract","dpns-contract","json-schema-compatibility-validator","dpp","wasm-dpp","wasm-dpp2","drive","drive-abci","dapi-grpc","rs-dapi-client","dash-sdk","rs-sdk-ffi","wasm-sdk"]' >> "$GITHUB_OUTPUT"
+          echo 'rs-packages-direct=["wallet-utils-contract","token-history-contract","dashpay-contract","masternode-reward-shares-contract","withdrawals-contract","dpns-contract","json-schema-compatibility-validator","dpp","wasm-dpp","wasm-dpp2","drive","drive-abci","dapi-grpc","rs-dapi-client","dash-sdk","rs-sdk-ffi","wasm-sdk"]' >> "$GITHUB_OUTPUT"
+          echo 'run=true' >> "$GITHUB_OUTPUT"
 
   build-js:
     name: Build JS packages
     needs:
       - changes
-    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.test-suite == 'true' }}
+    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.test-suite == 'true' || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
@@ -134,7 +149,7 @@ jobs:
     name: Rust packages
     needs:
       - changes
-    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
+    if: ${{ needs.changes.outputs.rs-packages != '[]' || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -151,7 +166,7 @@ jobs:
     needs:
       - changes
       - build-js
-    if: ${{ needs.changes.outputs.js-packages != '[]' }}
+    if: ${{ needs.changes.outputs.js-packages != '[]' || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -209,7 +224,7 @@ jobs:
       name: ${{ matrix.name }}
       test-pattern: ${{ matrix.test-pattern }}
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && contains(needs.changes.outputs.js-packages, 'dashmate') }}
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && (contains(needs.changes.outputs.js-packages, 'dashmate') || github.event_name == 'workflow_dispatch') }}
 
   test-suite-gate:
     name: Test Suite Approval
