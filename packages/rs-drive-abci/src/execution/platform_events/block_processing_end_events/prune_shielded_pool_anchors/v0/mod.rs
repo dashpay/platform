@@ -29,6 +29,11 @@ where
             .event_constants
             .shielded_anchor_retention_blocks;
 
+        // Only prune every 100 blocks to avoid unnecessary work
+        if block_height % 100 != 0 {
+            return Ok(());
+        }
+
         // Nothing to prune if we haven't reached the retention depth yet
         if block_height <= retention_blocks {
             return Ok(());
