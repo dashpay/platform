@@ -194,26 +194,25 @@ class MemoryManagementTests: XCTestCase {
             return
         }
         
-        // Test various operations that allocate memory and ensure proper cleanup
+        // Stress-test allocation paths to catch memory leaks.
+        // 100 iterations per path is enough to surface leaks without
+        // making the test suite slow.
+        let iterations = 100
         
-        // 1. Test string allocation and cleanup
-        for _ in 0..<10 {
+        for _ in 0..<iterations {
+            // 1. String allocation and cleanup
             let version = swift_dash_sdk_get_version()
             if let version = version {
                 swift_dash_string_free(version)
             }
-        }
-        
-        // 2. Test error allocation and cleanup
-        for _ in 0..<10 {
+            
+            // 2. Error allocation and cleanup
             let result = swift_dash_identity_create(sdk, nil, 0)
             if let error = result.error {
                 swift_dash_error_free(error)
             }
-        }
-        
-        // 3. Test token supply allocation and cleanup
-        for _ in 0..<10 {
+            
+            // 3. Token supply allocation and cleanup
             let supply = swift_dash_token_get_total_supply(sdk, "test_contract")
             if let supply = supply {
                 swift_dash_string_free(supply)
