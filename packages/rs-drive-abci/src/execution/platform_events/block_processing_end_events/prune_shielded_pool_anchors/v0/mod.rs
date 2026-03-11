@@ -23,14 +23,15 @@ where
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let retention_blocks = platform_version
+        let event_constants = &platform_version
             .drive_abci
             .validation_and_processing
-            .event_constants
-            .shielded_anchor_retention_blocks;
+            .event_constants;
+        let retention_blocks = event_constants.shielded_anchor_retention_blocks;
+        let pruning_interval = event_constants.shielded_anchor_pruning_interval;
 
-        // Only prune every 100 blocks to avoid unnecessary work
-        if !block_height.is_multiple_of(100) {
+        // Only prune every N blocks to avoid unnecessary work
+        if !block_height.is_multiple_of(pruning_interval) {
             return Ok(());
         }
 

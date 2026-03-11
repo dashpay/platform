@@ -35,6 +35,10 @@ pub struct DriveAbciValidationConstants {
     /// pruned at the end of each block. Clients must use an anchor no older
     /// than this many blocks when building shielded transactions.
     pub shielded_anchor_retention_blocks: u64,
+    /// Anchor pruning is only performed every N blocks to avoid unnecessary
+    /// GroveDB work on every block. Must evenly divide
+    /// `shielded_anchor_retention_blocks`.
+    pub shielded_anchor_pruning_interval: u64,
     /// Per-bundle fee (in credits) for Halo 2 ZK proof verification.
     /// Benchmarked at ~30x per-action signature verification cost.
     pub shielded_proof_verification_fee: u64,
