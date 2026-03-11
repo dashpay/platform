@@ -166,12 +166,24 @@ pub(crate) fn decode_option_variant<D: Decoder<Context = crate::BincodeContext>>
     }
 }
 
+/// Maximum allowed collection length during deserialization (64 MiB element count).
+///
+/// This acts as a defense-in-depth guard against crafted payloads that encode
+/// enormous collection lengths in a varint prefix. Even when the bincode config
+/// has no byte-budget limit, this cap prevents a single decoded length field
+/// from triggering an unbounded allocation that could OOM-abort the process.
+const MAX_COLLECTION_LEN: u64 = 64 * 1024 * 1024;
+
 /// Decodes the length of any slice, container, etc from the decoder
 #[inline]
 pub(crate) fn decode_slice_len<D: Decoder<Context = crate::BincodeContext>>(
     decoder: &mut D,
 ) -> Result<usize, DecodeError> {
     let v = <u64 as DefaultDecode>::decode(decoder)?;
+
+    if v > MAX_COLLECTION_LEN {
+        return Err(DecodeError::LimitExceeded);
+    }
 
     v.try_into().map_err(|_| DecodeError::OutsideUsizeRange(v))
 }
