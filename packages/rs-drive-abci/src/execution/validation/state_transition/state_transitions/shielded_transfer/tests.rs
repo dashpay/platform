@@ -113,7 +113,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                0,
+                1, // non-zero so we don't hit value_balance == 0 rejection first
                 [42u8; 32],
                 vec![], // Empty proof — invalid
                 [0u8; 64],
@@ -136,7 +136,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_serialized_action()],
-                0,
+                1, // non-zero so we don't hit value_balance == 0 rejection first
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
                 [0u8; 64],
@@ -489,11 +489,12 @@ mod tests {
         // --- Insufficient fee tests (dummy bundles — fee check runs before proof verification) ---
 
         #[test]
-        fn test_zero_fee_returns_insufficient_fee_error() {
+        fn test_zero_fee_returns_invalid_value_balance_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            // 2 actions with zero fee — well below minimum of 121,344,000
+            // 2 actions with zero fee — rejected at structure validation since
+            // value_balance == 0 is invalid (it IS the fee for shielded transfers)
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
                 0, // zero fee
@@ -507,7 +508,9 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                    ConsensusError::BasicError(
+                        BasicError::ShieldedInvalidValueBalanceError(_)
+                    )
                 )]
             );
         }

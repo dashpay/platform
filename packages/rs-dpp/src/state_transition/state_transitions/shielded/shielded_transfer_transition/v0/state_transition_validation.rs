@@ -24,6 +24,18 @@ impl StateTransitionStructureValidation for ShieldedTransferTransitionV0 {
             return result;
         }
 
+        // value_balance must be positive (it IS the fee for shielded transfers)
+        if self.value_balance == 0 {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::ShieldedInvalidValueBalanceError(
+                    ShieldedInvalidValueBalanceError::new(
+                        "shielded transfer value_balance must be greater than zero".to_string(),
+                    ),
+                )
+                .into(),
+            );
+        }
+
         // value_balance must fit in i64 (required for Orchard protocol)
         if self.value_balance > i64::MAX as u64 {
             return SimpleConsensusValidationResult::new_with_error(
