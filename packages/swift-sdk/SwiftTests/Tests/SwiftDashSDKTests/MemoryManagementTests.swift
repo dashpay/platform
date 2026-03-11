@@ -224,16 +224,10 @@ class MemoryManagementTests: XCTestCase {
     
     // MARK: - Double Free Protection Tests
     
-    func testDoubleFreeProtection() {
-        // These tests verify that double-freeing doesn't crash the application
-        
-        // Test double string free
-        let version = swift_dash_sdk_get_version()
-        if let version = version {
-            swift_dash_string_free(version)
-            // Second free - should be safe
-            swift_dash_string_free(version)
-        }
-        
+    func testDoubleFreeProtection() throws {
+        // Double-free is undefined behavior in C and cannot be safely tested.
+        // If the SDK needs to support double-free safety, the free function
+        // must accept a pointer-to-pointer and set it to NULL after freeing.
+        throw XCTSkip("Double-free protection requires API changes to test safely")
     }
 }

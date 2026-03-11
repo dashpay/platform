@@ -75,7 +75,7 @@ enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(const struct SwiftDash
 }
 
 const char *swift_dash_sdk_get_version(void) {
-    return "2.0.0-mock";
+    return strdup("2.0.0-mock");
 }
 
 struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_mainnet(void) {

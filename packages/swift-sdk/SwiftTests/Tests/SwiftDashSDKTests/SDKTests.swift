@@ -27,7 +27,10 @@ class SDKTests: XCTestCase {
             let versionString = String(cString: version)
             XCTAssertFalse(versionString.isEmpty)
             XCTAssertTrue(
-                versionString.range(of: #"^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$"#, options: .regularExpression) != nil,
+                versionString.range(
+                    of: #"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"#,
+                    options: .regularExpression
+                ) != nil,
                 "Version should match semantic version format"
             )
             swift_dash_string_free(version)
