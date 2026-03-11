@@ -7489,9 +7489,11 @@ mod tests {
             );
 
             // Assert exact values - UPDATE THESE if fees legitimately change
+            // Fee increased by 51,300 in protocol v12 due to shielded pool trees
+            // increasing Merk propagation costs in AddressBalances subtree.
             assert_eq!(
-                processing_fee, 457440,
-                "Processing fee changed! Was 457440, now {}",
+                processing_fee, 508740,
+                "Processing fee changed! Was 508740, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7500,8 +7502,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6532440,
-                "Total fee changed! Was 6532440, now {}",
+                total_fee, 6583740,
+                "Total fee changed! Was 6583740, now {}",
                 total_fee
             );
         }
@@ -7575,8 +7577,8 @@ mod tests {
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 457440,
-                "Processing fee changed! Was 457440, now {}",
+                processing_fee, 508740,
+                "Processing fee changed! Was 508740, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7585,8 +7587,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6532440,
-                "Total fee changed! Was 6532440, now {}",
+                total_fee, 6583740,
+                "Total fee changed! Was 6583740, now {}",
                 total_fee
             );
         }
@@ -7662,8 +7664,8 @@ mod tests {
 
             // Assert exact values - 2 inputs should cost more processing than 1 input
             assert_eq!(
-                processing_fee, 587800,
-                "Processing fee changed! Was 587800, now {}",
+                processing_fee, 639100,
+                "Processing fee changed! Was 639100, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7672,8 +7674,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6662800,
-                "Total fee changed! Was 6662800, now {}",
+                total_fee, 6714100,
+                "Total fee changed! Was 6714100, now {}",
                 total_fee
             );
         }
@@ -7748,8 +7750,8 @@ mod tests {
 
             // Assert exact values - 2 outputs should cost more storage than 1 output
             assert_eq!(
-                processing_fee, 559820,
-                "Processing fee changed! Was 559820, now {}",
+                processing_fee, 611120,
+                "Processing fee changed! Was 611120, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7758,8 +7760,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 12709820,
-                "Total fee changed! Was 12709820, now {}",
+                total_fee, 12761120,
+                "Total fee changed! Was 12761120, now {}",
                 total_fee
             );
         }
@@ -7842,8 +7844,8 @@ mod tests {
 
             // Assert exact values - P2SH with 2 signatures
             assert_eq!(
-                processing_fee, 477440,
-                "Processing fee changed! Was 477440, now {}",
+                processing_fee, 528740,
+                "Processing fee changed! Was 528740, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7852,8 +7854,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6552440,
-                "Total fee changed! Was 6552440, now {}",
+                total_fee, 6603740,
+                "Total fee changed! Was 6603740, now {}",
                 total_fee
             );
         }
@@ -7936,8 +7938,8 @@ mod tests {
 
             // Assert exact values - 3-of-5 multisig
             assert_eq!(
-                processing_fee, 492440,
-                "Processing fee changed! Was 492440, now {}",
+                processing_fee, 543740,
+                "Processing fee changed! Was 543740, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7946,8 +7948,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6567440,
-                "Total fee changed! Was 6567440, now {}",
+                total_fee, 6618740,
+                "Total fee changed! Was 6618740, now {}",
                 total_fee
             );
         }
@@ -8021,17 +8023,17 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // Base processing fee is 457440, with user_fee_increase=100 it should be higher
+            // Base processing fee is 508740, with user_fee_increase=100 it should be higher
             // The exact formula depends on implementation
             assert!(
-                processing_fee > 457440,
+                processing_fee > 508740,
                 "Processing fee with user_fee_increase should be higher than base"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 914880,
-                "Processing fee changed! Was 914880, now {}",
+                processing_fee, 1017480,
+                "Processing fee changed! Was 1017480, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8040,8 +8042,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6989880,
-                "Total fee changed! Was 6989880, now {}",
+                total_fee, 7092480,
+                "Total fee changed! Was 7092480, now {}",
                 total_fee
             );
         }
@@ -8119,16 +8121,16 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // 16 inputs should have higher processing fee than 1 input (base is ~457K)
+            // 16 inputs should have higher processing fee than 1 input (base is ~508K)
             assert!(
-                processing_fee > 457440,
+                processing_fee > 508740,
                 "16 inputs should have processing fee > single input"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 2958200,
-                "Processing fee changed! Was 2958200, now {}",
+                processing_fee, 3009500,
+                "Processing fee changed! Was 3009500, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8137,8 +8139,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 9033200,
-                "Total fee changed! Was 9033200, now {}",
+                total_fee, 9084500,
+                "Total fee changed! Was 9084500, now {}",
                 total_fee
             );
         }
@@ -8273,16 +8275,261 @@ mod tests {
 
             // Assert exact values for new address
             assert_eq!(
-                total_fee_new, 6532440,
-                "Total fee to new address changed! Was 6532440, now {}",
+                total_fee_new, 6583740,
+                "Total fee to new address changed! Was 6583740, now {}",
                 total_fee_new
             );
 
             // Assert exact values for existing address (much cheaper - only updates balance)
             assert_eq!(
-                total_fee_existing, 445920,
-                "Total fee to existing address changed! Was 445920, now {}",
+                total_fee_existing, 497220,
+                "Total fee to existing address changed! Was 497220, now {}",
                 total_fee_existing
+            );
+        }
+
+        // ==========================================
+        // PROTOCOL V11 FEE REGRESSION TESTS
+        // These ensure fees match pre-shielded-pool values when running
+        // under protocol v11 (which uses create_initial_state_structure v2,
+        // without the shielded pool trees that increase Merk propagation costs).
+        // ==========================================
+
+        #[test]
+        fn test_fee_simple_p2pkh_1_input_1_output_deduct_from_input_in_protocol_v11() {
+            let platform_version = PlatformVersion::get(11).unwrap();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(11)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let output_address = create_platform_address(99);
+
+            let transfer_amount = dash_to_credits!(0.5);
+            let initial_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_balance);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, transfer_amount));
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_address, transfer_amount);
+
+            let transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                &signer,
+                0,
+                platform_version,
+            )
+            .expect("should create transition");
+
+            let transition_bytes = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            let (processing_fee, storage_fee, total_fee) =
+                extract_fees(&processing_result.execution_results()[0]);
+
+            // Protocol v11 does not have shielded pool trees, so fees are lower
+            assert_eq!(
+                processing_fee, 457440,
+                "Protocol v11 processing fee changed! Was 457440, now {}",
+                processing_fee
+            );
+            assert_eq!(
+                storage_fee, 6075000,
+                "Protocol v11 storage fee changed! Was 6075000, now {}",
+                storage_fee
+            );
+            assert_eq!(
+                total_fee, 6532440,
+                "Protocol v11 total fee changed! Was 6532440, now {}",
+                total_fee
+            );
+        }
+
+        #[test]
+        fn test_fee_simple_p2pkh_1_input_1_output_reduce_output_in_protocol_v11() {
+            let platform_version = PlatformVersion::get(11).unwrap();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(11)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let output_address = create_platform_address(99);
+
+            let transfer_amount = dash_to_credits!(0.5);
+            let initial_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_balance);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, transfer_amount));
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_address, transfer_amount);
+
+            let transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                &signer,
+                0,
+                platform_version,
+            )
+            .expect("should create transition");
+
+            let transition_bytes = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            let (processing_fee, storage_fee, total_fee) =
+                extract_fees(&processing_result.execution_results()[0]);
+
+            // Protocol v11 does not have shielded pool trees, so fees are lower
+            assert_eq!(
+                processing_fee, 457440,
+                "Protocol v11 processing fee changed! Was 457440, now {}",
+                processing_fee
+            );
+            assert_eq!(
+                storage_fee, 6075000,
+                "Protocol v11 storage fee changed! Was 6075000, now {}",
+                storage_fee
+            );
+            assert_eq!(
+                total_fee, 6532440,
+                "Protocol v11 total fee changed! Was 6532440, now {}",
+                total_fee
+            );
+        }
+
+        #[test]
+        fn test_fee_with_user_fee_increase_in_protocol_v11() {
+            let platform_version = PlatformVersion::get(11).unwrap();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_initial_protocol_version(11)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let output_address = create_platform_address(99);
+
+            let amount = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, amount * 2);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, amount));
+            let mut outputs = BTreeMap::new();
+            outputs.insert(output_address, amount);
+
+            let user_fee_increase = 100;
+
+            let transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                &signer,
+                user_fee_increase,
+                platform_version,
+            )
+            .expect("should create transition");
+
+            let transition_bytes = transition.serialize_to_bytes().unwrap();
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            let (processing_fee, storage_fee, total_fee) =
+                extract_fees(&processing_result.execution_results()[0]);
+
+            // Protocol v11 does not have shielded pool trees
+            assert_eq!(
+                processing_fee, 914880,
+                "Protocol v11 processing fee changed! Was 914880, now {}",
+                processing_fee
+            );
+            assert_eq!(
+                storage_fee, 6075000,
+                "Protocol v11 storage fee changed! Was 6075000, now {}",
+                storage_fee
+            );
+            assert_eq!(
+                total_fee, 6989880,
+                "Protocol v11 total fee changed! Was 6989880, now {}",
+                total_fee
             );
         }
     }

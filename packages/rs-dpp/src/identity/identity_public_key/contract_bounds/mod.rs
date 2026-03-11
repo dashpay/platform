@@ -2,6 +2,10 @@ use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
 };
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -14,17 +18,19 @@ pub type ContractBoundsType = u8;
 /// For encryption decryption this tells clients to only use these keys for specific
 /// contracts.
 ///
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[repr(u8)]
 #[derive(
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]
     SingleContract { id: Identifier } = 0,
     /// this key can only be used within a specific contract and for a specific document type
-    #[serde(rename = "documentType")]
+    #[serde(rename = "documentType", rename_all = "camelCase")]
     SingleContractDocumentType {
         id: Identifier,
         document_type_name: String,
@@ -155,4 +161,58 @@ impl ContractBounds {
     //         contract_bounds_document_type,
     //     )
     // }
+}
+
+#[cfg(all(test, feature = "json-conversion"))]
+mod tests {
+    use super::*;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn contract_bounds_single_contract_json_round_trip() {
+        let id = Identifier::from([0xABu8; 32]);
+        let bounds = ContractBounds::SingleContract { id };
+
+        let json = bounds.to_json().expect("to_json should succeed");
+        assert!(
+            json["id"].is_string(),
+            "Identifier should be a base58 string, got: {:?}",
+            json["id"]
+        );
+
+        let expected_base58 = id.to_string(platform_value::string_encoding::Encoding::Base58);
+        assert_eq!(json["id"].as_str().unwrap(), expected_base58);
+
+        let restored = ContractBounds::from_json(json).expect("from_json should succeed");
+        assert_eq!(bounds, restored);
+    }
+
+    #[test]
+    fn contract_bounds_document_type_json_round_trip() {
+        let id = Identifier::from([0xCDu8; 32]);
+        let bounds = ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "myDocument".to_string(),
+        };
+
+        let json = bounds.to_json().expect("to_json should succeed");
+        assert!(json["id"].is_string());
+        assert_eq!(json["documentTypeName"].as_str().unwrap(), "myDocument");
+
+        let restored = ContractBounds::from_json(json).expect("from_json should succeed");
+        assert_eq!(bounds, restored);
+    }
+
+    #[test]
+    fn contract_bounds_value_round_trip() {
+        let id = Identifier::from([0x55u8; 32]);
+        let bounds = ContractBounds::SingleContractDocumentType {
+            id,
+            document_type_name: "note".to_string(),
+        };
+
+        let obj = bounds.to_object().expect("to_object should succeed");
+        let restored = ContractBounds::from_object(obj).expect("from_object should succeed");
+        assert_eq!(bounds, restored);
+    }
 }

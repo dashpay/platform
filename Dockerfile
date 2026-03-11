@@ -369,6 +369,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
@@ -472,6 +473,7 @@ COPY --parents \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
@@ -588,6 +590,7 @@ COPY --parents \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
     packages/rs-platform-serialization \
@@ -816,6 +819,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \

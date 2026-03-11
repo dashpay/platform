@@ -66,7 +66,7 @@ export interface DataContractOptions {
  * DataContract serialized as a plain object.
  */
 export interface DataContractObject {
-    $format_version: string;
+    $formatVersion: string;
     id: Identifier;
     ownerId: Identifier;
     version: number;
@@ -81,7 +81,7 @@ export interface DataContractObject {
  * DataContract serialized as JSON (with string identifiers).
  */
 export interface DataContractJSON {
-    $format_version: string;
+    $formatVersion: string;
     id: string;
     ownerId: string;
     version: number;
@@ -222,7 +222,7 @@ impl DataContractWasm {
         let mut contract_value = Value::Map(ValueMap::new());
 
         contract_value
-            .set_value("$format_version", data_contract_structure_version_value)
+            .set_value("$formatVersion", data_contract_structure_version_value)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         contract_value
@@ -460,8 +460,8 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "version")]
-    pub fn set_version(&mut self, version: JsValue) -> WasmDppResult<()> {
-        self.0.set_version(try_to_u32(&version, "version")?);
+    pub fn set_version(&mut self, version: &js_sys::Number) -> WasmDppResult<()> {
+        self.0.set_version(try_to_u32(version, "version")?);
         Ok(())
     }
 
@@ -578,7 +578,7 @@ impl DataContractWasm {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
         let json = self.0.to_json(&platform_version.into())?;
-        let js_value = serialization::to_json(&json)?;
+        let js_value = serialization::json_value_to_js(&json)?;
         Ok(js_value.into())
     }
 

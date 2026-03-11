@@ -960,12 +960,14 @@ impl Drive {
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
                 let identity_id = st.identity_id();
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         st.recipient_addresses().keys(),
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {
@@ -1039,12 +1041,14 @@ impl Drive {
                     .inputs()
                     .keys()
                     .chain(st.output().into_iter().map(|(address, _)| address));
+                // verify_subset_of_proof=true because we verify identity balance/revision
+                // and address balances as separate subsets of the same merged proof
                 let (root_hash_identity, Some((balance, revision)), address_balances) =
                     Drive::verify_identity_balance_revision_and_addresses_from_inputs(
                         proof,
                         identity_id.to_buffer(),
                         addresses_to_check,
-                        false,
+                        true,
                         platform_version,
                     )?
                 else {
@@ -1115,12 +1119,243 @@ impl Drive {
 
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented in verify_state_transition_was_executed_with_proof")
+            StateTransition::Shield(st) => {
+                use dpp::state_transition::StateTransitionWitnessSigned;
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+                Ok((root_hash, VerifiedAddressInfos(balances)))
+            }
+            StateTransition::Unshield(st) => {
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos;
+                use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash_nf, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    true,
+                    platform_version,
+                )?;
+
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the unshield proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                let (root_hash_addr, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    std::iter::once(st.output_address()),
+                    true,
+                    platform_version,
+                )?;
+
+                if root_hash_nf != root_hash_addr {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "unshield proof root hashes do not match between nullifiers and address"
+                            .to_string(),
+                    )));
+                }
+
+                Ok((
+                    root_hash_nf,
+                    VerifiedShieldedNullifiersWithAddressInfos(statuses, balances),
+                ))
+            }
+            StateTransition::ShieldedTransfer(st) => {
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiers;
+                use dpp::state_transition::shielded_transfer_transition::accessors::ShieldedTransferTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    false,
+                    platform_version,
+                )?;
+
+                // All nullifiers must be marked as spent
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
+            }
+            StateTransition::ShieldedWithdrawal(st) => {
+                use dpp::data_contracts::withdrawals_contract;
+                use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+                use dpp::document::Document;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument;
+                use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
+
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                let (root_hash_nf, statuses) = Drive::verify_shielded_nullifiers(
+                    proof,
+                    &nullifier_keys,
+                    true,
+                    platform_version,
+                )?;
+
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the shielded withdrawal proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                // Compute withdrawal document ID deterministically (same as prove side)
+                let first_nullifier = nullifier_keys.first().ok_or_else(|| {
+                    Error::Proof(ProofError::InvalidTransition(
+                        "shielded withdrawal has no nullifiers".to_string(),
+                    ))
+                })?;
+                let mut entropy = Vec::new();
+                entropy.extend_from_slice(first_nullifier);
+                entropy.extend_from_slice(st.output_script().as_bytes());
+                let document_id = Document::generate_document_id_v0(
+                    &withdrawals_contract::ID,
+                    &withdrawals_contract::OWNER_ID,
+                    withdrawal::NAME,
+                    &entropy,
+                );
+
+                let contract =
+                    known_contracts_provider_fn(&withdrawals_contract::ID)?.ok_or_else(|| {
+                        Error::Proof(ProofError::UnknownContract(
+                            "withdrawals contract not available for shielded withdrawal verification"
+                                .to_string(),
+                        ))
+                    })?;
+                let document_type =
+                    contract
+                        .document_type_for_name(withdrawal::NAME)
+                        .map_err(|e| {
+                            Error::Proof(ProofError::UnknownContract(format!(
+                                "cannot fetch withdrawal document type: {}",
+                                e
+                            )))
+                        })?;
+
+                let doc_query = SingleDocumentDriveQuery {
+                    contract_id: withdrawals_contract::ID.to_buffer(),
+                    document_type_name: withdrawal::NAME.to_string(),
+                    document_type_keeps_history: false,
+                    document_id: document_id.to_buffer(),
+                    block_time_ms: None,
+                    contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+                };
+
+                let (root_hash_doc, maybe_doc) =
+                    doc_query.verify_proof(true, proof, document_type, platform_version)?;
+
+                if root_hash_nf != root_hash_doc {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "shielded withdrawal proof root hashes do not match between nullifiers and document"
+                            .to_string(),
+                    )));
+                }
+
+                let doc = maybe_doc.ok_or_else(|| {
+                    Error::Proof(ProofError::CorruptedProof(
+                        "shielded withdrawal was executed but withdrawal document is missing from proof".to_string(),
+                    ))
+                })?;
+                let documents = BTreeMap::from([(document_id, Some(doc))]);
+
+                Ok((
+                    root_hash_nf,
+                    VerifiedShieldedNullifiersWithWithdrawalDocument(statuses, documents),
+                ))
+            }
+            StateTransition::ShieldFromAssetLock(st) => {
+                use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+                use dpp::asset_lock::StoredAssetLockInfo;
+                use dpp::identity::state_transition::AssetLockProved;
+                use dpp::serialization::PlatformDeserializable;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedAssetLockConsumed;
+                use grovedb::Element;
+
+                let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
+                    Error::Proof(ProofError::InvalidTransition(
+                        "shield from asset lock has no outpoint".to_string(),
+                    ))
+                })?;
+                let outpoint_bytes: [u8; 36] = outpoint.into();
+
+                // Build the same PathQuery as the prove side
+                let mut query = grovedb::Query::new();
+                query.insert_key(outpoint_bytes.to_vec());
+                let path_query = grovedb::PathQuery::new(
+                    vec![vec![72u8]], // RootTree::SpentAssetLockTransactions
+                    grovedb::SizedQuery::new(query, Some(1), None),
+                );
+
+                let (root_hash, mut proved_key_values) =
+                    grovedb::GroveDb::verify_query_with_absence_proof(
+                        proof,
+                        &path_query,
+                        &platform_version.drive.grove_version,
+                    )?;
+
+                if proved_key_values.len() > 1 {
+                    return Err(Error::Proof(ProofError::TooManyElements(
+                        "expected at most 1 element for asset lock outpoint",
+                    )));
+                }
+
+                let info = if let Some(proved) = proved_key_values.pop() {
+                    match proved.2 {
+                        Some(Element::Item(bytes, _)) => {
+                            if bytes.is_empty() {
+                                StoredAssetLockInfo::FullyConsumed
+                            } else {
+                                StoredAssetLockInfo::PartiallyConsumed(
+                                    AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                )
+                            }
+                        }
+                        Some(_) => {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "expected an item element for asset lock outpoint".to_string(),
+                            )));
+                        }
+                        None => {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                            )));
+                        }
+                    }
+                } else {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "shield from asset lock was executed but no proved key values returned"
+                            .to_string(),
+                    )));
+                };
+
+                Ok((root_hash, VerifiedAssetLockConsumed(info)))
             }
         }
     }

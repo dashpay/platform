@@ -2,6 +2,10 @@ use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AddressNonce, Revision};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 
 #[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
@@ -25,9 +29,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-   any( feature = "identity-serde-conversion" ,feature = "state-transition-serde-conversion",),
+   any( feature = "serde-conversion" ,feature = "serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version"),
+    serde(tag = "$formatVersion"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
 #[cfg_attr(
@@ -35,24 +39,20 @@ use std::collections::{BTreeMap, BTreeSet};
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
     platform_serialize(limit = 15000, unversioned)
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum Identity {
     #[cfg_attr(
-        any(
-            feature = "identity-serde-conversion",
-            feature = "state-transition-serde-conversion"
-        ),
+        any(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "0")
     )]
     V0(IdentityV0),
 }
 
 /// An identity struct that represent partially set/loaded identity data.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
-    any(
-        feature = "identity-serde-conversion",
-        feature = "state-transition-serde-conversion",
-    ),
+    any(feature = "serde-conversion", feature = "serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

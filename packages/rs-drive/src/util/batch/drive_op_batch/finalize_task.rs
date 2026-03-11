@@ -3,6 +3,7 @@ use crate::error::Error;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;
 
+#[derive(Clone, Debug)]
 pub enum DriveOperationFinalizeTask {
     RemoveDataContractFromCache { contract_id: Identifier },
 }
@@ -17,10 +18,11 @@ pub trait DriveOperationFinalizationTasks {
 }
 
 impl DriveOperationFinalizeTask {
-    pub fn execute(self, drive: &Drive, _platform_version: &PlatformVersion) {
+    pub fn execute(self, drive: &Drive, _platform_version: &PlatformVersion) -> Result<(), Error> {
         match self {
             DriveOperationFinalizeTask::RemoveDataContractFromCache { contract_id } => {
                 drive.cache.data_contracts.remove(contract_id.to_buffer());
+                Ok(())
             }
         }
     }

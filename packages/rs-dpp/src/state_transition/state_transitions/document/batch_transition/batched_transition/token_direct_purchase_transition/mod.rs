@@ -4,7 +4,7 @@ pub mod validate_structure;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::TokenDirectPurchaseTransitionV0;
 
@@ -17,10 +17,7 @@ pub use v0::TokenDirectPurchaseTransitionV0;
 /// This transition type is used when a user intends to directly purchase tokens
 /// by specifying the desired amount and the maximum total price they are willing to pay.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum TokenDirectPurchaseTransition {
     /// Version 0 of the token direct purchase transition.
     ///

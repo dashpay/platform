@@ -11,23 +11,16 @@ crate-type = ["cdylib", "lib"]
 #talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
 bincode = "=2.0.1"
 wasm-bindgen = { version = "=0.2.108", default-features = false, features = [
-    "serde-serialize",
+  "serde-serialize",
 ] }
+dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
-    "state-transition-signing",
-    "state-transition-value-conversion",
-    "state-transition-json-conversion",
-    "document-json-conversion",
-    "identity-serialization",
-    "identity-value-conversion",
-    "identity-json-conversion",
-    "data-contract-json-conversion",
-    "document-value-conversion",
-    "bls-signatures",
-    "platform-value",
-    "state-transitions",
-    "state-transition-serde-conversion",
-    "vote-serde-conversion",
+  "state-transition-signing",
+  "identity-serialization",
+  "bls-signatures",
+  "platform-value",
+  "json-conversion",
+  "state-transitions",
 ] }
 serde-wasm-bindgen = { git = "https://github.com/dashpay/serde-wasm-bindgen", branch = "fix/uint8array-to-bytes" }
 serde = { version = "1.0.197", features = ["derive"] }

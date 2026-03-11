@@ -13,7 +13,7 @@ use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
 use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -36,7 +36,7 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
     PlatformDeserialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -307,7 +307,10 @@ impl PlatformAddress {
                     pubkey_hash,
                 )
                 .map_err(|e| {
-                    ProtocolError::Generic(format!("P2PKH signature verification failed: {}", e))
+                    ProtocolError::AddressWitnessError(format!(
+                        "P2PKH signature verification failed: {}",
+                        e
+                    ))
                 })?;
 
                 Ok(AddressWitnessVerificationOperations::for_p2pkh(
@@ -325,7 +328,7 @@ impl PlatformAddress {
                 let script = ScriptBuf::from_bytes(redeem_script.to_vec());
                 let computed_hash = script.script_hash();
                 if computed_hash.as_byte_array() != script_hash {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Script hash {} does not match address hash {}",
                         hex::encode(computed_hash.as_byte_array()),
                         hex::encode(script_hash)
@@ -343,7 +346,7 @@ impl PlatformAddress {
                     .collect();
 
                 if valid_signatures.len() < threshold {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Not enough signatures: got {}, need {}",
                         valid_signatures.len(),
                         threshold
@@ -368,11 +371,14 @@ impl PlatformAddress {
                         valid_signatures[sig_idx].as_slice(),
                     )
                     .map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid signature format: {}", e))
+                        ProtocolError::AddressWitnessError(format!(
+                            "Invalid signature format: {}",
+                            e
+                        ))
                     })?;
 
                     let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid public key: {}", e))
+                        ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
                     if secp
@@ -391,20 +397,22 @@ impl PlatformAddress {
                         signable_bytes.len(),
                     ))
                 } else {
-                    Err(ProtocolError::Generic(format!(
+                    Err(ProtocolError::AddressWitnessError(format!(
                         "Not enough valid signatures: verified {}, need {}",
                         matched, threshold
                     )))
                 }
             }
             (PlatformAddress::P2pkh(_), AddressWitness::P2sh { .. }) => {
-                Err(ProtocolError::Generic(
+                Err(ProtocolError::AddressWitnessError(
                     "P2PKH address requires P2pkh witness, got P2sh".to_string(),
                 ))
             }
-            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => Err(
-                ProtocolError::Generic("P2SH address requires P2sh witness, got P2pkh".to_string()),
-            ),
+            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => {
+                Err(ProtocolError::AddressWitnessError(
+                    "P2SH address requires P2sh witness, got P2pkh".to_string(),
+                ))
+            }
         }
     }
 
@@ -435,7 +443,7 @@ impl PlatformAddress {
                 if byte >= OP_PUSHNUM_1.to_u8() && byte <= OP_PUSHNUM_16.to_u8() {
                     (byte - OP_PUSHNUM_1.to_u8() + 1) as usize
                 } else {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Unsupported P2SH script type: only standard multisig (OP_M ... OP_N OP_CHECKMULTISIG) is supported. \
                          First opcode was 0x{:02x}, expected OP_1 through OP_16",
                         byte
@@ -443,20 +451,20 @@ impl PlatformAddress {
                 }
             }
             Some(Ok(dashcore::blockdata::script::Instruction::PushBytes(_))) => {
-                return Err(ProtocolError::Generic(
+                return Err(ProtocolError::AddressWitnessError(
                     "Unsupported P2SH script type: only standard multisig is supported. \
                      Script starts with a data push instead of OP_M threshold."
                         .to_string(),
                 ))
             }
             Some(Err(e)) => {
-                return Err(ProtocolError::Generic(format!(
+                return Err(ProtocolError::AddressWitnessError(format!(
                     "Error parsing P2SH script: {:?}",
                     e
                 )))
             }
             None => {
-                return Err(ProtocolError::Generic(
+                return Err(ProtocolError::AddressWitnessError(
                     "Empty P2SH redeem script".to_string(),
                 ))
             }
@@ -483,7 +491,7 @@ impl PlatformAddress {
                         // This is OP_N, the total number of keys
                         let n = (byte - OP_PUSHNUM_1.to_u8() + 1) as usize;
                         if pubkeys.len() != n {
-                            return Err(ProtocolError::Generic(format!(
+                            return Err(ProtocolError::AddressWitnessError(format!(
                                 "Multisig script declares {} keys but contains {}",
                                 n,
                                 pubkeys.len()
@@ -492,24 +500,24 @@ impl PlatformAddress {
                         break;
                     } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
                         // Hit CHECKMULTISIG without seeing OP_N - malformed
-                        return Err(ProtocolError::Generic(
+                        return Err(ProtocolError::AddressWitnessError(
                             "Malformed multisig script: OP_CHECKMULTISIG before OP_N".to_string(),
                         ));
                     } else {
-                        return Err(ProtocolError::Generic(format!(
+                        return Err(ProtocolError::AddressWitnessError(format!(
                             "Unsupported opcode 0x{:02x} in P2SH script. Only standard multisig is supported.",
                             byte
                         )));
                     }
                 }
                 Some(Err(e)) => {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Error parsing multisig script: {:?}",
                         e
                     )))
                 }
                 None => {
-                    return Err(ProtocolError::Generic(
+                    return Err(ProtocolError::AddressWitnessError(
                         "Incomplete multisig script: unexpected end before OP_N".to_string(),
                     ))
                 }
@@ -518,7 +526,7 @@ impl PlatformAddress {
 
         // Validate threshold
         if threshold > pubkeys.len() {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::AddressWitnessError(format!(
                 "Invalid multisig: threshold {} exceeds number of keys {}",
                 threshold,
                 pubkeys.len()
@@ -531,24 +539,24 @@ impl PlatformAddress {
                 if op == OP_CHECKMULTISIG {
                     // Standard multisig - verify script is complete
                     if instructions.next().is_some() {
-                        return Err(ProtocolError::Generic(
+                        return Err(ProtocolError::AddressWitnessError(
                             "Multisig script has extra data after OP_CHECKMULTISIG".to_string(),
                         ));
                     }
                     Ok((threshold, pubkeys))
                 } else if op == OP_CHECKMULTISIGVERIFY {
-                    Err(ProtocolError::Generic(
+                    Err(ProtocolError::AddressWitnessError(
                         "OP_CHECKMULTISIGVERIFY is not supported, only OP_CHECKMULTISIG"
                             .to_string(),
                     ))
                 } else {
-                    Err(ProtocolError::Generic(format!(
+                    Err(ProtocolError::AddressWitnessError(format!(
                         "Expected OP_CHECKMULTISIG, got opcode 0x{:02x}",
                         op.to_u8()
                     )))
                 }
             }
-            _ => Err(ProtocolError::Generic(
+            _ => Err(ProtocolError::AddressWitnessError(
                 "Invalid multisig script: expected OP_CHECKMULTISIG after OP_N".to_string(),
             )),
         }

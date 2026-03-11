@@ -88,7 +88,7 @@ describe('IdentityUpdateTransition', () => {
 
       const restored = wasm.IdentityUpdateTransition.fromBase64(base64);
 
-      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(restored.toBytes()).to.deep.equal(bytes);
     });
   });
 
@@ -214,6 +214,84 @@ describe('IdentityUpdateTransition', () => {
       transition.signaturePublicKeyId = 11;
 
       expect(transition.signaturePublicKeyId).to.deep.equal(11);
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should produce expected JSON structure without keys', () => {
+      const transition = createUpdateTransition({ disablePublicKeys: [11] });
+
+      const json = transition.toJSON();
+
+      expect(json.$formatVersion).to.equal('0');
+      expect(json.identityId).to.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
+      expect(json.revision).to.equal(1);
+      expect(json.nonce).to.equal(1);
+      expect(json.addPublicKeys).to.deep.equal([]);
+      expect(json.disablePublicKeys).to.deep.equal([11]);
+      expect(json.userFeeIncrease).to.equal(0);
+      expect(json.signature).to.equal('');
+      expect(json.signaturePublicKeyId).to.equal(0);
+    });
+
+    it('should produce expected JSON structure with keys', () => {
+      const key = createPublicKeyInCreation();
+      const transition = createUpdateTransition({ addPublicKeys: [key], disablePublicKeys: [11] });
+
+      const json = transition.toJSON();
+
+      expect(json.identityId).to.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
+      expect(json.addPublicKeys.length).to.equal(1);
+      expect(json.addPublicKeys[0]).to.have.property('data');
+      expect(json.disablePublicKeys).to.deep.equal([11]);
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should restore transition from JSON and verify getters', () => {
+      const transition = createUpdateTransition({ disablePublicKeys: [11] });
+
+      const json = transition.toJSON();
+      const restored = wasm.IdentityUpdateTransition.fromJSON(json);
+
+      expect(restored.identityIdentifier.toBase58()).to.equal('GL2Rq8L3VuBEQfCAZykmUaiXXrsd1Bwub2gcaMmtNbn3');
+      expect(restored.revision).to.deep.equal(BigInt(1));
+      expect(restored.nonce).to.deep.equal(BigInt(1));
+      expect(restored.publicKeyIdsToAdd.length).to.equal(0);
+      expect(Array.from(restored.publicKeyIdsToDisable)).to.deep.equal([11]);
+      expect(restored.userFeeIncrease).to.equal(0);
+      expect(restored.signaturePublicKeyId).to.equal(0);
+      expect(restored.signature).to.deep.equal(Uint8Array.from([]));
+    });
+
+    it('should restore transition with keys from JSON', () => {
+      const key = createPublicKeyInCreation();
+      const transition = createUpdateTransition({ addPublicKeys: [key], disablePublicKeys: [11] });
+
+      const json = transition.toJSON();
+      const restored = wasm.IdentityUpdateTransition.fromJSON(json);
+
+      expect(restored.publicKeyIdsToAdd.length).to.equal(1);
+      expect(Array.from(restored.publicKeyIdsToDisable)).to.deep.equal([11]);
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should produce expected object structure', () => {
+      const transition = createUpdateTransition({ disablePublicKeys: [11] });
+
+      const obj = transition.toObject();
+
+      expect(obj.$formatVersion).to.equal('0');
+      expect(obj.identityId).to.be.instanceOf(Uint8Array);
+      expect(obj.identityId.length).to.equal(32);
+      expect(obj.revision).to.deep.equal(BigInt(1));
+      expect(obj.nonce).to.deep.equal(BigInt(1));
+      expect(obj.addPublicKeys).to.deep.equal([]);
+      expect(obj.disablePublicKeys).to.deep.equal([11]);
+      expect(obj.userFeeIncrease).to.equal(0);
+      expect(obj.signature).to.be.instanceOf(Uint8Array);
+      expect(obj.signaturePublicKeyId).to.equal(0);
     });
   });
 });

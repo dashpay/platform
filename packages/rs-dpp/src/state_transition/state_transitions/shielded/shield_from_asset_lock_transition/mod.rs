@@ -19,7 +19,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$version")
 )]
@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
     "dpp.state_transition_serialization_versions.shield_from_asset_lock_state_transition"
 )]
 pub enum ShieldFromAssetLockTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(ShieldFromAssetLockTransitionV0),
 }
 

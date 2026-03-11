@@ -5,10 +5,7 @@ use platform_value::Identifier;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq)]
 #[cfg_attr(
-    any(
-        feature = "fixtures-and-mocks",
-        feature = "state-transition-serde-conversion"
-    ),
+    any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

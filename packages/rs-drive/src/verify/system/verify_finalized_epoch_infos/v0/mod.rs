@@ -57,8 +57,13 @@ impl Drive {
             )));
         };
 
-        let (root_hash, elements) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        // Use verify_subset_query because the proof may contain extra lower layers
+        // for sibling subtrees at the root level (e.g., shielded pool subtrees)
+        let (root_hash, elements) = GroveDb::verify_subset_query(
+            proof,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )?;
 
         let results = elements.into_iter().fold(
             BTreeMap::<_, BTreeMap<_, _>>::new(),

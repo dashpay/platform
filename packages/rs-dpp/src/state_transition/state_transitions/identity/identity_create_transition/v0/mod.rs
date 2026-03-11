@@ -1,20 +1,22 @@
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod proved;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use std::convert::TryFrom;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -29,9 +31,10 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase"),
     serde(try_from = "IdentityCreateTransitionV0Inner")
@@ -49,13 +52,13 @@ pub struct IdentityCreateTransitionV0 {
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
+    #[cfg_attr(feature = "serde-conversion", serde(skip))]
     #[platform_signable(exclude_from_sig_hash)]
     pub identity_id: Identifier,
 }
 
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Deserialize),
     serde(rename_all = "camelCase")
 )]

@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -39,10 +39,11 @@ export interface BlockInfoObject {
 
 /**
  * BlockInfo serialized as JSON.
+ * u64 fields are numbers when within JS safe integer range, strings when exceeding it.
  */
 export interface BlockInfoJSON {
-    timeMs: string;
-    height: string;
+    timeMs: number | string;
+    height: number | string;
     coreHeight: number;
     epochIndex: number;
 }
@@ -122,6 +123,12 @@ impl From<&BlockInfoWasm> for BlockInfo {
     }
 }
 
-impl_wasm_conversions!(BlockInfoWasm, BlockInfo, BlockInfoObjectJs, BlockInfoJSONJs);
+impl_wasm_conversions_inner!(
+    BlockInfoWasm,
+    BlockInfo,
+    BlockInfo,
+    BlockInfoObjectJs,
+    BlockInfoJSONJs
+);
 
 impl_wasm_type_info!(BlockInfoWasm, BlockInfo);

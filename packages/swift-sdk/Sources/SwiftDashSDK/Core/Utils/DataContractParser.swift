@@ -426,7 +426,7 @@ public struct DataContractParser {
                 for (langCode, locData) in localizations {
                     if let locDict = locData as? [String: Any] {
                         // Skip format version keys
-                        if langCode == "$format_version" { continue }
+                        if langCode == "$formatVersion" { continue }
 
                         tokenLocalizations[langCode] = TokenLocalization(
                             singularForm: locDict["singular"] as? String ?? locDict["singularForm"] as? String ?? "",

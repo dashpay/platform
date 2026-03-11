@@ -3,7 +3,7 @@ use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u32, try_to_u64};
@@ -22,7 +22,6 @@ use dpp::state_transition::{
     StateTransitionLike, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -55,8 +54,8 @@ export interface IdentityUpdateTransitionObject {
  */
 export interface IdentityUpdateTransitionJSON {
     identityId: string;
-    revision: string;
-    nonce: string;
+    revision: number | string;
+    nonce: number | string;
     addPublicKeys: IdentityPublicKeyInCreationJSON[];
     disablePublicKeys: number[];
     userFeeIncrease: number;
@@ -91,6 +90,18 @@ struct IdentityUpdateTransitionOptionsInput {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
+
+impl From<IdentityUpdateTransition> for IdentityUpdateTransitionWasm {
+    fn from(val: IdentityUpdateTransition) -> Self {
+        IdentityUpdateTransitionWasm(val)
+    }
+}
+
+impl From<IdentityUpdateTransitionWasm> for IdentityUpdateTransition {
+    fn from(val: IdentityUpdateTransitionWasm) -> Self {
+        val.0
+    }
+}
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
@@ -200,14 +211,14 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: JsValue) -> WasmDppResult<()> {
-        self.0.set_revision(try_to_u64(&revision, "revision")?);
+    pub fn set_revision(&mut self, revision: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(revision, "revision")?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "nonce")]
-    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        self.0.set_nonce(try_to_u64(&nonce, "nonce")?);
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_nonce(try_to_u64(nonce, "nonce")?);
         Ok(())
     }
 
@@ -334,8 +345,9 @@ impl IdentityUpdateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityUpdateTransitionWasm,
+    IdentityUpdateTransition,
     IdentityUpdateTransition,
     IdentityUpdateTransitionObjectJs,
     IdentityUpdateTransitionJSONJs

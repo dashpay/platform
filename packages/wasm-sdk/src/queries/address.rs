@@ -14,6 +14,7 @@ use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::{PlatformAddressLikeArrayJs, PlatformAddressLikeJs, PlatformAddressWasm};
 
 /// Information about a Platform address including its nonce and balance.
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "PlatformAddressInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

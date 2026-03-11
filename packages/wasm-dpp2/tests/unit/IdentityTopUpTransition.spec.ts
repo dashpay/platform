@@ -90,7 +90,7 @@ describe('IdentityTopUpTransition', () => {
 
       const restored = wasm.IdentityTopUpTransition.fromBase64(base64);
 
-      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(restored.toBytes()).to.deep.equal(bytes);
     });
   });
 
@@ -143,6 +143,63 @@ describe('IdentityTopUpTransition', () => {
       transition.signature = Uint8Array.from([1, 1, 1]);
 
       expect(transition.signature).to.deep.equal(Uint8Array.from([1, 1, 1]));
+    });
+  });
+
+  describe('assetLockProof', () => {
+    it('should return AssetLockProof instance', () => {
+      const transition = createTransition();
+
+      expect(transition.assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should produce expected JSON structure', () => {
+      const transition = createTransition();
+
+      const json = transition.toJSON();
+
+      expect(json.$formatVersion).to.equal('0');
+      expect(json.identityId).to.equal(testIdentityId);
+      expect(json.assetLockProof).to.be.an('object');
+      expect(json.assetLockProof).to.have.property('instantLock');
+      expect(json.assetLockProof).to.have.property('transaction');
+      expect(json.assetLockProof.outputIndex).to.equal(0);
+      expect(json.userFeeIncrease).to.equal(11);
+      expect(json.signature).to.equal('');
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should restore transition from JSON and verify getters', () => {
+      const transition = createTransition();
+
+      const json = transition.toJSON();
+      const restored = wasm.IdentityTopUpTransition.fromJSON(json);
+
+      expect(restored.identityIdentifier.toBase58()).to.equal(testIdentityId);
+      expect(restored.userFeeIncrease).to.equal(11);
+      expect(restored.signature).to.deep.equal(Uint8Array.from([]));
+      expect(restored.assetLockProof).to.be.an.instanceof(wasm.AssetLockProof);
+      // Verify bytes round-trip
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should produce expected object structure', () => {
+      const transition = createTransition();
+
+      const obj = transition.toObject();
+
+      expect(obj.$formatVersion).to.equal('0');
+      expect(obj.identityId).to.be.instanceOf(Uint8Array);
+      expect(obj.identityId.length).to.equal(32);
+      expect(obj.assetLockProof).to.be.an('object');
+      expect(obj.userFeeIncrease).to.equal(11);
+      expect(obj.signature).to.be.instanceOf(Uint8Array);
+      expect(obj.signature.length).to.equal(0);
     });
   });
 });

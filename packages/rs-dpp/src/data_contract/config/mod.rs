@@ -7,6 +7,8 @@ use crate::data_contract::config::v1::{
     DataContractConfigGettersV1, DataContractConfigSettersV1, DataContractConfigV1,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -17,8 +19,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
 
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum DataContractConfig {
     #[serde(rename = "0")]
     V0(DataContractConfigV0),

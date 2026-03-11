@@ -1,5 +1,5 @@
 const tokenLocalization = {
-  $format_version: '0',
+  $formatVersion: '0',
   shouldCapitalize: true,
   singularForm: 'TOKEN',
   pluralForm: 'TOKENS',

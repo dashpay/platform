@@ -3,7 +3,7 @@ use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
@@ -25,10 +25,7 @@ use std::fmt::{self, Display, Formatter};
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum TokenPricingSchedule {
     /// A single flat price in credits for all token amounts.
     ///

@@ -2,7 +2,7 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_from_options_with, try_to_array, try_to_u16};
@@ -21,7 +21,6 @@ use dpp::state_transition::{
     StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
@@ -209,9 +208,9 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
+    pub fn set_user_fee_increase(&mut self, amount: &js_sys::Number) -> WasmDppResult<()> {
         self.0
-            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+            .set_user_fee_increase(try_to_u16(amount, "userFeeIncrease")?);
         Ok(())
     }
 
@@ -256,8 +255,9 @@ impl IdentityCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityCreateTransitionWasm,
+    IdentityCreateTransition,
     IdentityCreateTransition,
     IdentityCreateTransitionObjectJs,
     IdentityCreateTransitionJSONJs

@@ -1,5 +1,5 @@
 use derive_more::{Display, From};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
 use bincode::{Encode, Decode};
@@ -46,10 +46,7 @@ pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
 ];
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum TokenTransition {
     #[display("TokenBurnTransition({})", "_0")]
     Burn(TokenBurnTransition),

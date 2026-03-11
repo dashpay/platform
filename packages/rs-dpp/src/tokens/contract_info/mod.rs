@@ -25,10 +25,7 @@ pub mod v0;
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(
-    any(
-        feature = "fixtures-and-mocks",
-        feature = "state-transition-serde-conversion"
-    ),
+    any(feature = "fixtures-and-mocks", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize),
     serde(untagged)
 )]

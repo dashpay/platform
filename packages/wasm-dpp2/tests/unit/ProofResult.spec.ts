@@ -183,8 +183,8 @@ describe('StateTransitionProofResult types', () => {
     it('should round-trip with V0 tokenInfo', () => {
       const data = {
         tokenId: identifier,
-        // IdentityTokenInfo is a versioned enum: { V0: { frozen: bool } }
-        tokenInfo: { V0: { frozen: false } },
+        // IdentityTokenInfo is an internally tagged enum: { $formatVersion: "0", frozen: bool }
+        tokenInfo: { $formatVersion: "0", frozen: false },
       };
       const result = wasm.VerifiedTokenIdentityInfo.fromObject(data);
 
@@ -200,8 +200,8 @@ describe('StateTransitionProofResult types', () => {
   describe('VerifiedTokenStatus', () => {
     it('should round-trip with V0 tokenStatus', () => {
       const data = {
-        // TokenStatus is a versioned enum: { V0: { paused: bool } }
-        tokenStatus: { V0: { paused: false } },
+        // TokenStatus is an internally tagged enum: { $formatVersion: "0", paused: bool }
+        tokenStatus: { $formatVersion: "0", paused: false },
       };
       const result = wasm.VerifiedTokenStatus.fromObject(data);
 
@@ -275,12 +275,12 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedIdentity', () => {
     it('should construct from object with minimal Identity', () => {
-      // Identity uses #[serde(tag = "$version")] with V0 renamed to "0"
+      // Identity uses #[serde(tag = "$formatVersion")] with V0 renamed to "0"
       // IdentityV0 uses #[serde(rename_all = "camelCase")]
       // Inside internally-tagged enum, Identifier expects base58 string (not bytes)
       const data = {
         identity: {
-          $version: '0',
+          $formatVersion: '0',
           id: identifier,
           publicKeys: [],
           balance: 0,
@@ -302,23 +302,25 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedMasternodeVote', () => {
     it('should construct from object with Abstain vote', () => {
-      // Vote: rename_all = "camelCase" -> resourceVote
-      // ResourceVote: tag = "$version", V0 renamed to "0"
-      // VotePoll: rename_all = "camelCase" -> contestedDocumentResourceVotePoll
-      // Inside internally-tagged enum, Identifier expects base58 string
+      // Vote: tag = "type", content = "data", rename_all = "camelCase"
+      // ResourceVote: tag = "$formatVersion", V0 renamed to "0"
+      // VotePoll: tag = "type", content = "data", rename_all = "camelCase"
+      // ResourceVoteChoice: tag = "type", content = "data", rename_all = "camelCase"
       const data = {
         vote: {
-          resourceVote: {
-            $version: '0',
+          type: 'resourceVote',
+          data: {
+            $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -326,8 +328,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });
@@ -335,20 +335,21 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedNextDistribution', () => {
     it('should construct from object with Abstain vote', () => {
-      // Inside internally-tagged enum, Identifier expects base58 string
       const data = {
         vote: {
-          resourceVote: {
-            $version: '0',
+          type: 'resourceVote',
+          data: {
+            $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -356,8 +357,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });
@@ -457,7 +456,7 @@ describe('StateTransitionProofResult types', () => {
     it('should construct from object with Identity + addressInfos', () => {
       // Identity uses internally-tagged enum -> Identifier expects base58 string
       const identityData = {
-        $version: '0',
+        $formatVersion: '0',
         id: identifier,
         publicKeys: [],
         balance: 0,

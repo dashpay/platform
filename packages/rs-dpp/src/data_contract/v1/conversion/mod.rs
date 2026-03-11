@@ -1,8 +1,8 @@
 #[cfg(feature = "data-contract-cbor-conversion")]
 mod cbor;
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value;
 
 // TODO: We need from_* / from_*_value / to_* / to_*_value methods for all types: cbor, json, platform_value (value?)

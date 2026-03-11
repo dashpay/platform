@@ -1,16 +1,13 @@
 mod v0;
 
 use crate::identity::{Identity, IdentityV0};
-use crate::serialization::ValueConvertible;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
 pub use v0::IdentityPlatformValueConversionMethodsV0;
 
-impl ValueConvertible<'_> for Identity {}
-
-impl IdentityPlatformValueConversionMethodsV0<'_> for Identity {}
+impl IdentityPlatformValueConversionMethodsV0 for Identity {}
 
 impl TryFromPlatformVersioned<Value> for Identity {
     type Error = ProtocolError;

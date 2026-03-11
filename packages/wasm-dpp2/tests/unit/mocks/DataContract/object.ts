@@ -2,10 +2,10 @@ import bs58 from 'bs58';
 
 // Object format uses Uint8Array for identifiers and BigInt for integers
 export default {
-  $format_version: '0',
+  $formatVersion: '0',
   id: bs58.decode('4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6'),
   config: {
-    $format_version: '0',
+    $formatVersion: '0',
     canBeDeleted: false,
     readonly: false,
     keepsHistory: false,
