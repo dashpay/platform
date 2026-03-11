@@ -8,7 +8,7 @@ description = "Cryptographic utilities for Dash Platform (DIP-15 DashPay encrypt
 
 [dependencies]
 # Cryptography
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "2bd764fdc071828939d9dc8dd872c39bae906b04" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
 aes = "0.8"
 cbc = "0.1"
 sha2 = "0.10"
