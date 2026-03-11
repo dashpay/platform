@@ -134,7 +134,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
   describe('inputs', () => {
     it('should return inputs array', () => {
       const transition = createTransition();
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.be.an('array');
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(0);
@@ -147,7 +147,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const newInput = new wasm.PlatformAddressInput(newAddr, 3, BigInt(50000));
 
       transition.inputs = [newInput];
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(3);
     });
@@ -156,7 +156,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
   describe('outputs', () => {
     it('should return outputs array', () => {
       const transition = createTransition();
-      const outputs = transition.outputs;
+      const { outputs } = transition;
       expect(outputs).to.be.an('array');
       expect(outputs).to.have.lengthOf(1);
     });
@@ -167,7 +167,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const newOutput = new wasm.PlatformAddressOutput(newAddr, BigInt(50000));
 
       transition.outputs = [newOutput];
-      const outputs = transition.outputs;
+      const { outputs } = transition;
       expect(outputs).to.have.lengthOf(1);
     });
   });

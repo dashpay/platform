@@ -102,7 +102,7 @@ describe('AddressFundsTransferTransition', () => {
   describe('inputs', () => {
     it('should return inputs array', () => {
       const transition = createTransition();
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.be.an('array');
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(0);
@@ -115,7 +115,7 @@ describe('AddressFundsTransferTransition', () => {
       const newInput = new wasm.PlatformAddressInput(newAddr, 5, BigInt(50000));
 
       transition.inputs = [newInput];
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(5);
       expect(inputs[0].amount).to.equal(BigInt(50000));
@@ -125,7 +125,7 @@ describe('AddressFundsTransferTransition', () => {
   describe('outputs', () => {
     it('should return outputs array', () => {
       const transition = createTransition();
-      const outputs = transition.outputs;
+      const { outputs } = transition;
       expect(outputs).to.be.an('array');
       expect(outputs).to.have.lengthOf(1);
       expect(outputs[0].amount).to.equal(BigInt(90000));
@@ -137,7 +137,7 @@ describe('AddressFundsTransferTransition', () => {
       const newOutput = new wasm.PlatformAddressOutput(newAddr, BigInt(80000));
 
       transition.outputs = [newOutput];
-      const outputs = transition.outputs;
+      const { outputs } = transition;
       expect(outputs).to.have.lengthOf(1);
       expect(outputs[0].amount).to.equal(BigInt(80000));
     });

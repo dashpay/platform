@@ -117,7 +117,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
   describe('inputs', () => {
     it('should return inputs array', () => {
       const transition = createTransition();
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.be.an('array');
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(0);
@@ -130,7 +130,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
       const newInput = new wasm.PlatformAddressInput(newAddr, 7, BigInt(200000));
 
       transition.inputs = [newInput];
-      const inputs = transition.inputs;
+      const { inputs } = transition;
       expect(inputs).to.have.lengthOf(1);
       expect(inputs[0].nonce).to.equal(7);
     });
@@ -139,7 +139,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
   describe('output', () => {
     it('should return output', () => {
       const transition = createTransition();
-      const output = transition.output;
+      const { output } = transition;
       expect(output).to.exist();
       expect(output.amount).to.equal(BigInt(90000));
     });
