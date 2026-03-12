@@ -62,3 +62,117 @@ impl DriveHighLevelOperationConverter for ShieldTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::shielded::shield::v0::ShieldTransitionActionV0;
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn make_action() -> ShieldTransitionAction {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (1_u32, 5000_u64));
+
+        ShieldTransitionAction::V0(ShieldTransitionActionV0 {
+            inputs_with_remaining_balance: inputs,
+            shield_amount: 3000,
+            notes: vec![make_note()],
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+            current_total_balance: 10000,
+        })
+    }
+
+    #[test]
+    fn test_produces_set_balance_insert_note_and_update_balance() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // SetBalanceToAddress (1 input) + InsertNote (1 note) + UpdateTotalBalance
+        assert_eq!(ops.len(), 3);
+    }
+
+    #[test]
+    fn test_first_op_is_set_balance_to_address() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match &ops[0] {
+            DriveOperation::AddressFundsOperation(
+                AddressFundsOperationType::SetBalanceToAddress {
+                    address,
+                    nonce,
+                    balance,
+                },
+            ) => {
+                assert_eq!(*address, PlatformAddress::P2pkh([0xAA; 20]));
+                assert_eq!(*nonce, 1);
+                assert_eq!(*balance, 5000);
+            }
+            other => panic!("expected SetBalanceToAddress, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_last_op_is_update_total_balance() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match ops.last().unwrap() {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
+                assert_eq!(*new_total_balance, 13000); // 10000 + 3000
+            }
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_overflow_returns_error() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (1_u32, 5000_u64));
+
+        let action = ShieldTransitionAction::V0(ShieldTransitionActionV0 {
+            inputs_with_remaining_balance: inputs,
+            shield_amount: u64::MAX,
+            notes: vec![],
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+            current_total_balance: 1,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+}

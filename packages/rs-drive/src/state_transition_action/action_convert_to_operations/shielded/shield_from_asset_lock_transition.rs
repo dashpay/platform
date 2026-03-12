@@ -76,3 +76,118 @@ impl DriveHighLevelOperationConverter for ShieldFromAssetLockTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn make_action() -> ShieldFromAssetLockTransitionAction {
+        ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
+            asset_lock_outpoint: [0xDD; 36],
+            asset_lock_value_to_be_consumed: 5000,
+            signable_bytes_hasher: [0xEE; 32],
+            shield_amount: 5000,
+            notes: vec![make_note()],
+            current_total_balance: 10000,
+        })
+    }
+
+    #[test]
+    fn test_produces_system_credits_asset_lock_notes_and_balance_ops() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // AddToSystemCredits + AddUsedAssetLock + InsertNote (1) + UpdateTotalBalance
+        assert_eq!(ops.len(), 4);
+    }
+
+    #[test]
+    fn test_first_op_adds_system_credits() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match &ops[0] {
+            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
+                assert_eq!(*amount, 5000);
+            }
+            other => panic!("expected AddToSystemCredits, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_second_op_adds_used_asset_lock() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        assert!(matches!(
+            &ops[1],
+            DriveOperation::SystemOperation(SystemOperationType::AddUsedAssetLock { .. })
+        ));
+    }
+
+    #[test]
+    fn test_balance_increases_by_shield_amount() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match ops.last().unwrap() {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
+                assert_eq!(*new_total_balance, 15000); // 10000 + 5000
+            }
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_overflow_returns_error() {
+        let action =
+            ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
+                asset_lock_outpoint: [0xDD; 36],
+                asset_lock_value_to_be_consumed: 1000,
+                signable_bytes_hasher: [0x00; 32],
+                shield_amount: u64::MAX,
+                notes: vec![],
+                current_total_balance: 1,
+            });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+}

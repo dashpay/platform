@@ -35,3 +35,77 @@ impl BumpIdentityNonceActionAccessorsV0 for BumpIdentityNonceAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_v0() -> BumpIdentityNonceActionV0 {
+        BumpIdentityNonceActionV0 {
+            identity_id: Identifier::from([0xAA_u8; 32]),
+            identity_nonce: 42,
+            user_fee_increase: 5,
+        }
+    }
+
+    #[test]
+    fn test_from_v0() {
+        let v0 = make_v0();
+        let action: BumpIdentityNonceAction = BumpIdentityNonceAction::from(v0.clone());
+        assert!(matches!(action, BumpIdentityNonceAction::V0(_)));
+    }
+
+    #[test]
+    fn test_into_conversion() {
+        let v0 = make_v0();
+        let action: BumpIdentityNonceAction = v0.into();
+        assert!(matches!(action, BumpIdentityNonceAction::V0(_)));
+    }
+
+    #[test]
+    fn test_enum_accessor_identity_id() {
+        let action: BumpIdentityNonceAction = make_v0().into();
+        assert_eq!(action.identity_id(), Identifier::from([0xAA_u8; 32]));
+    }
+
+    #[test]
+    fn test_enum_accessor_identity_nonce() {
+        let action: BumpIdentityNonceAction = make_v0().into();
+        assert_eq!(action.identity_nonce(), 42);
+    }
+
+    #[test]
+    fn test_enum_accessor_user_fee_increase() {
+        let action: BumpIdentityNonceAction = make_v0().into();
+        assert_eq!(action.user_fee_increase(), 5);
+    }
+
+    #[test]
+    fn test_enum_debug() {
+        let action: BumpIdentityNonceAction = make_v0().into();
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("V0"));
+    }
+
+    #[test]
+    fn test_enum_clone_preserves_values() {
+        let action: BumpIdentityNonceAction = make_v0().into();
+        let cloned = action.clone();
+        assert_eq!(cloned.identity_id(), action.identity_id());
+        assert_eq!(cloned.identity_nonce(), action.identity_nonce());
+        assert_eq!(cloned.user_fee_increase(), action.user_fee_increase());
+    }
+
+    #[test]
+    fn test_enum_accessors_with_zero_values() {
+        let v0 = BumpIdentityNonceActionV0 {
+            identity_id: Identifier::from([0x00_u8; 32]),
+            identity_nonce: 0,
+            user_fee_increase: 0,
+        };
+        let action: BumpIdentityNonceAction = v0.into();
+        assert_eq!(action.identity_id(), Identifier::from([0x00_u8; 32]));
+        assert_eq!(action.identity_nonce(), 0);
+        assert_eq!(action.user_fee_increase(), 0);
+    }
+}

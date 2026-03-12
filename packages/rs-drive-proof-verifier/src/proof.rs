@@ -2458,9 +2458,12 @@ impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShiel
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let (root_hash, maybe_anchor) =
-            Drive::verify_most_recent_shielded_anchor(&proof.grovedb_proof, false, platform_version)
-                .map_drive_error(proof, mtd)?;
+        let (root_hash, maybe_anchor) = Drive::verify_most_recent_shielded_anchor(
+            &proof.grovedb_proof,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -2576,11 +2579,12 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
                 statuses
                     .into_iter()
                     .map(|(nullifier, is_spent)| {
-                        let nullifier: [u8; 32] = nullifier.try_into().map_err(|_| {
-                            Error::ResultEncodingError {
-                                error: "nullifier from Drive proof is not 32 bytes".to_string(),
-                            }
-                        })?;
+                        let nullifier: [u8; 32] =
+                            nullifier
+                                .try_into()
+                                .map_err(|_| Error::ResultEncodingError {
+                                    error: "nullifier from Drive proof is not 32 bytes".to_string(),
+                                })?;
                         Ok(ShieldedNullifierStatus {
                             nullifier,
                             is_spent,
