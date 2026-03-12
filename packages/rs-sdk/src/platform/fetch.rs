@@ -329,3 +329,31 @@ impl Fetch for drive_proof_verifier::types::RecentCompactedAddressBalanceChanges
 impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
     type Request = platform_proto::GetAddressesTrunkStateRequest;
 }
+
+impl Fetch for drive_proof_verifier::types::ShieldedPoolState {
+    type Request = platform_proto::GetShieldedPoolStateRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedAnchors {
+    type Request = platform_proto::GetShieldedAnchorsRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
+    type Request = platform_proto::GetShieldedEncryptedNotesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
+    type Request = platform_proto::GetShieldedNullifiersRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::NullifiersTrunkState {
+    type Request = platform_proto::GetNullifiersTrunkStateRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::RecentNullifierChanges {
+    type Request = platform_proto::GetRecentNullifierChangesRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::RecentCompactedNullifierChanges {
+    type Request = platform_proto::GetRecentCompactedNullifierChangesRequest;
+}

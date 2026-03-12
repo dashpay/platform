@@ -17,6 +17,7 @@ mod fetch_many;
 mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
+pub mod nullifier_sync;
 pub mod query;
 pub mod tokens;
 pub mod transition;
