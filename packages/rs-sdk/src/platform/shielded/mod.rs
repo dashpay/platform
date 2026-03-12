@@ -6,10 +6,10 @@
 //!   the network in parallel and performs trial decryption
 
 mod decrypt;
+mod notes_sync;
 pub mod nullifier_sync;
-mod sync;
 mod types;
 
 pub use decrypt::try_decrypt_note;
-pub use sync::sync_shielded_notes;
+pub use notes_sync::sync_shielded_notes;
 pub use types::{DecryptedNote, ShieldedSyncConfig, ShieldedSyncResult};
