@@ -30,7 +30,7 @@ use drive::grovedb::{
 };
 use futures::stream::{FuturesUnordered, StreamExt};
 use rs_dapi_client::RequestSettings;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use tracing::{debug, warn};
 
 /// Alias for leaf boundary keys used in trunk/branch queries.
@@ -291,8 +291,11 @@ pub fn get_privacy_adjusted_leaves(
     max_query_depth: u8,
 ) -> Vec<(LeafBoundaryKey, LeafInfo, u8)> {
     let active_leaves = tracker.active_leaves();
-    let mut result = Vec::new();
-    let mut seen_ancestors: BTreeSet<LeafBoundaryKey> = BTreeSet::new();
+
+    // Track (LeafInfo, max_depth) per deduplicated key. When multiple leaves
+    // map to the same ancestor, we must use the deepest required depth so
+    // that all target keys can be resolved.
+    let mut best: BTreeMap<LeafBoundaryKey, (LeafInfo, u8)> = BTreeMap::new();
 
     for (leaf_key, info) in active_leaves {
         let count = info.count.unwrap_or(0);
@@ -300,31 +303,33 @@ pub fn get_privacy_adjusted_leaves(
         let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
 
         if count >= min_privacy_count {
-            if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, clamped_depth));
-            }
+            best.entry(leaf_key)
+                .and_modify(|(_, d)| *d = (*d).max(clamped_depth))
+                .or_insert((info, clamped_depth));
         } else if let Some((levels_up, ancestor_count, ancestor_key, ancestor_hash)) =
             trunk_result.get_ancestor(&leaf_key, min_privacy_count)
         {
-            if seen_ancestors.insert(ancestor_key.clone()) {
-                let ancestor_info = LeafInfo {
-                    hash: ancestor_hash,
-                    count: Some(ancestor_count),
-                };
-                let depth = tree_depth
-                    .saturating_sub(levels_up)
-                    .clamp(min_query_depth, max_query_depth);
-                result.push((ancestor_key, ancestor_info, depth));
-            }
+            let depth = tree_depth
+                .saturating_sub(levels_up)
+                .clamp(min_query_depth, max_query_depth);
+            let ancestor_info = LeafInfo {
+                hash: ancestor_hash,
+                count: Some(ancestor_count),
+            };
+            best.entry(ancestor_key)
+                .and_modify(|(_, d)| *d = (*d).max(depth))
+                .or_insert((ancestor_info, depth));
         } else {
             // No suitable ancestor found, use the leaf anyway
-            if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, clamped_depth));
-            }
+            best.entry(leaf_key)
+                .and_modify(|(_, d)| *d = (*d).max(clamped_depth))
+                .or_insert((info, clamped_depth));
         }
     }
 
-    result
+    best.into_iter()
+        .map(|(key, (info, depth))| (key, info, depth))
+        .collect()
 }
 
 // ── Parallel branch execution ────────────────────────────────────────
