@@ -423,6 +423,7 @@ async fn incremental_catch_up(
         for entry in &entries {
             for nf_bytes in &entry.nullifiers {
                 if nullifier_set.contains(nf_bytes) {
+                    result.absent.remove(nf_bytes);
                     result.found.insert(*nf_bytes);
                 }
             }
@@ -475,6 +476,7 @@ async fn incremental_catch_up(
         for entry in &entries {
             for nf_bytes in &entry.nullifiers {
                 if nullifier_set.contains(nf_bytes) {
+                    result.absent.remove(nf_bytes);
                     result.found.insert(*nf_bytes);
                 }
             }

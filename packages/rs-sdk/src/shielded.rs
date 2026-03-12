@@ -247,18 +247,29 @@ pub async fn sync_shielded_notes(
 
     let total_notes_scanned: u64 = chunk_results.values().map(|v| v.len() as u64).sum();
 
+    // Determine next_start_index before consuming chunk_results.
+    // If the last non-empty chunk is partial (fewer notes than chunk_size),
+    // resume from that chunk's start -- the BulkAppendTree buffer chunk is
+    // mutable and may receive more notes before the next sync.
+    let next_start_index = if chunk_size > 0 {
+        let last_partial = chunk_results
+            .iter()
+            .rev()
+            .find(|(_, notes)| !notes.is_empty())
+            .filter(|(_, notes)| (notes.len() as u64) < chunk_size);
+
+        match last_partial {
+            Some((&chunk_start, _)) => chunk_start,
+            None => start_index + total_notes_scanned,
+        }
+    } else {
+        start_index + total_notes_scanned
+    };
+
     // Move notes out of the BTreeMap in order
     for (_, notes) in chunk_results {
         all_notes.extend(notes);
     }
-
-    // Next start index: round up to next chunk boundary
-    let raw_next = start_index + total_notes_scanned;
-    let next_start_index = if chunk_size > 0 {
-        raw_next.div_ceil(chunk_size) * chunk_size
-    } else {
-        raw_next
-    };
 
     debug!(
         total_notes_scanned,
