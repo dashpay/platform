@@ -63,6 +63,7 @@
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
 - [Put Operations](sdk/put-operations.md)
+- [BLAST Sync](sdk/blast-sync.md)
 
 # WASM
 
