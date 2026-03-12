@@ -1082,7 +1082,10 @@ impl Query<GetNullifiersTrunkStateRequest> for NullifiersTrunkQuery {
             version: Some(get_nullifiers_trunk_state_request::Version::V0(
                 get_nullifiers_trunk_state_request::GetNullifiersTrunkStateRequestV0 {
                     pool_type: self.pool_type,
-                    pool_identifier: self.pool_identifier.map(|id| id.to_vec()).unwrap_or_default(),
+                    pool_identifier: self
+                        .pool_identifier
+                        .map(|id| id.to_vec())
+                        .unwrap_or_default(),
                 },
             )),
         })
