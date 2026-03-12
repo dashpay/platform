@@ -18,8 +18,8 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// `sighash = SHA-256("DashPlatformSighash" || bundleCommitment || extraData)`
 ///
 /// - For shield and shielded_transfer transitions, `extraData` should be empty.
-/// - For unshield transitions, `extraData` = `outputAddress || amount (LE u64)`.
-/// - For shielded withdrawal transitions, `extraData` = `outputScript || amount (LE u64)`.
+/// - For unshield transitions, `extraData` = serialized `outputAddress` bytes.
+/// - For shielded withdrawal transitions, `extraData` = `outputScript` bytes.
 #[wasm_bindgen(js_name = computePlatformSighash)]
 pub fn compute_platform_sighash_wasm(
     bundle_commitment: &[u8],
