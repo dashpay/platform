@@ -6,10 +6,9 @@ set -euo pipefail
 test -f "$HOME/.gitconfig" || touch "$HOME/.gitconfig"
 mkdir -p "$HOME/.claude"
 
-# Stage ONLY the minimum Claude config needed for authentication.
-# We deliberately skip: conversation history, project memories, debug logs,
-# shell snapshots, plans, scripts, plugins cache, and other data that could
-# leak information from other projects into the sandboxed container.
+# Stage credentials and optionally agents/skills from the host.
+# Plugins, agents, and skills are NOT copied automatically — list what you
+# want explicitly in .devcontainer/.env (CLAUDE_AGENTS, CLAUDE_SKILLS).
 CLAUDE_STAGING=".devcontainer/.claude-host-config"
 rm -rf "$CLAUDE_STAGING"
 if [ -d "$HOME/.claude" ]; then
@@ -17,11 +16,6 @@ if [ -d "$HOME/.claude" ]; then
     # Credentials (OAuth tokens) — required for authentication
     [ -f "$HOME/.claude/.credentials.json" ] && \
         cp -a "$HOME/.claude/.credentials.json" "$CLAUDE_STAGING/.credentials.json" 2>/dev/null || true
-    # Plugins: always copy (just IDs, no secrets)
-    if [ -f "$HOME/.claude/settings.json" ]; then
-        jq '{enabledPlugins: .enabledPlugins}' "$HOME/.claude/settings.json" \
-            > "$CLAUDE_STAGING/enabled-plugins.json" 2>/dev/null || true
-    fi
 
     # Agents & skills: copy only what the user listed in .env
     CLAUDE_AGENTS=""

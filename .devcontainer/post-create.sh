@@ -33,29 +33,25 @@ sudo chown -R vscode:vscode /home/vscode/.cargo "$WORKSPACE/target" 2>/dev/null 
 corepack enable 2>/dev/null || true
 
 # --- Claude Code: copy config staged by init-host.sh ---
-# init-host.sh stages credentials, plugin list, and optionally agents/skills.
-# We copy into the persistent volume, create a minimal settings.json with
-# plugins merged in, then clean up the staging copy.
+# Credentials are always copied. Agents and skills are copied only if listed
+# in .devcontainer/.env (CLAUDE_AGENTS, CLAUDE_SKILLS). Plugins are not copied
+# automatically — use the project's .claude/settings.json instead.
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-/home/vscode/.claude}"
 HOST_CONFIG="$WORKSPACE/.devcontainer/.claude-host-config"
 
 mkdir -p "$CLAUDE_DIR"
 
-if [ -d "$HOST_CONFIG" ] && [ "$(ls -A "$HOST_CONFIG" 2>/dev/null)" ]; then
-    echo "Copying Claude config from host..."
-    # OAuth credentials
-    if [ -f "$HOST_CONFIG/.credentials.json" ]; then
-        cp -a "$HOST_CONFIG/.credentials.json" "$CLAUDE_DIR/.credentials.json"
-        chmod 600 "$CLAUDE_DIR/.credentials.json"
-    fi
+if [ -f "$HOST_CONFIG/.credentials.json" ]; then
+    echo "Copying Claude credentials from host..."
+    cp -a "$HOST_CONFIG/.credentials.json" "$CLAUDE_DIR/.credentials.json"
+    chmod 600 "$CLAUDE_DIR/.credentials.json"
     echo "Host Claude credentials copied."
 else
     echo "No host Claude credentials found. Use ANTHROPIC_API_KEY or 'claude login'."
 fi
 
-# Write a clean settings.json with bypassPermissions (no host settings leak)
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-cat > "$SETTINGS_FILE" <<'SETTINGS'
+# Write a clean settings.json with bypassPermissions
+cat > "$CLAUDE_DIR/settings.json" <<'SETTINGS'
 {
   "permissions": {
     "defaultMode": "bypassPermissions"
@@ -64,21 +60,14 @@ cat > "$SETTINGS_FILE" <<'SETTINGS'
 }
 SETTINGS
 
-# Merge host's enabledPlugins into settings (plugin IDs only, no secrets)
-if [ -f "$HOST_CONFIG/enabled-plugins.json" ]; then
-    TMP=$(mktemp)
-    jq -s '.[0] * .[1]' "$SETTINGS_FILE" "$HOST_CONFIG/enabled-plugins.json" \
-        > "$TMP" 2>/dev/null && mv "$TMP" "$SETTINGS_FILE" || true
-fi
-
-# Copy host agent definitions
+# Copy host agent definitions (opt-in via CLAUDE_AGENTS in .env)
 if [ -d "$HOST_CONFIG/agents" ] && [ "$(ls -A "$HOST_CONFIG/agents" 2>/dev/null)" ]; then
     mkdir -p "$CLAUDE_DIR/agents"
     cp -a "$HOST_CONFIG/agents/"* "$CLAUDE_DIR/agents/"
     echo "Host Claude agents copied."
 fi
 
-# Copy host skill definitions
+# Copy host skill definitions (opt-in via CLAUDE_SKILLS in .env)
 if [ -d "$HOST_CONFIG/skills" ] && [ "$(ls -A "$HOST_CONFIG/skills" 2>/dev/null)" ]; then
     mkdir -p "$CLAUDE_DIR/skills"
     cp -a "$HOST_CONFIG/skills/"* "$CLAUDE_DIR/skills/"
