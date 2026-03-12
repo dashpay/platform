@@ -58,6 +58,7 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
                 transition.validate_estimated_fee(remaining_address_balances, platform_version)
             }
             // AddressFundingFromAssetLock doesn't need balance check - funds come from asset lock
+            // Shielded transitions don't use address minimum balance validation
             // All other state transitions don't use address minimum balance validation
             StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::DataContractCreate(_)
@@ -69,15 +70,13 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::Batch(_)
-            | StateTransition::MasternodeVote(_) => {
-                return Ok(SimpleConsensusValidationResult::new());
-            }
-            StateTransition::Shield(_)
+            | StateTransition::MasternodeVote(_)
+            | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+                return Ok(SimpleConsensusValidationResult::new());
             }
         }?;
 
@@ -103,14 +102,12 @@ impl StateTransitionAddressesMinimumBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::Batch(_)
             | StateTransition::MasternodeVote(_)
-            | StateTransition::AddressFundingFromAssetLock(_) => false,
-            StateTransition::Shield(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
-            }
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 }

@@ -2091,6 +2091,7 @@ dependencies = [
  "drive-proof-verifier",
  "envy",
  "file-rotate",
+ "grovedb-commitment-tree",
  "hex",
  "indexmap 2.13.0",
  "integer-encoding",
@@ -2100,6 +2101,7 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
+ "nonempty",
  "platform-version",
  "prost 0.14.3",
  "rand 0.8.5",
@@ -2799,6 +2801,7 @@ dependencies = [
  "grovedb-storage",
  "incrementalmerkletree",
  "orchard",
+ "shardtree",
  "thiserror 2.0.18",
 ]
 
@@ -6524,6 +6527,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shardtree"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "359e552886ae54d1642091645980d83f7db465fd9b5b0248e3680713c1773388"
+dependencies = [
+ "bitflags 2.11.0",
+ "either",
+ "incrementalmerkletree",
+ "tracing",
 ]
 
 [[package]]

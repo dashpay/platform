@@ -237,12 +237,121 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     })),
                 }
             }
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+            StateTransition::Shield(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .shield_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shield transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "shield transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::ShieldedTransfer(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .shielded_transfer_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shielded transfer transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "shielded transfer transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::Unshield(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .unshield_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "unshield transition: validate_basic_structure".to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "unshield transition: validate_basic_structure".to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::ShieldFromAssetLock(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .shield_from_asset_lock_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shield from asset lock transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "shield from asset lock transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::ShieldedWithdrawal(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .shielded_withdrawal_state_transition
+                    .basic_structure
+                {
+                    Some(0) => Ok(st.validate_structure(platform_version)),
+                    Some(version) => {
+                        Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                            method: "shielded withdrawal transition: validate_basic_structure"
+                                .to_string(),
+                            known_versions: vec![0],
+                            received: version,
+                        }))
+                    }
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "shielded withdrawal transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
             }
         }
     }
@@ -280,14 +389,42 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => true,
+            StateTransition::Shield(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .shield_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::ShieldedTransfer(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .shielded_transfer_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::Unshield(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .unshield_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::ShieldFromAssetLock(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .shield_from_asset_lock_state_transition
+                .basic_structure
+                .is_some(),
+            StateTransition::ShieldedWithdrawal(_) => platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .shielded_withdrawal_state_transition
+                .basic_structure
+                .is_some(),
             StateTransition::MasternodeVote(_) => false,
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
-            }
         }
     }
 }

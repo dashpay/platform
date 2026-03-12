@@ -878,6 +878,16 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    // TODO: Re-enable when dapi-grpc shielded protobuf types are available
+    // async fn get_shielded_encrypted_notes(...)
+    // async fn get_shielded_anchors(...)
+    // async fn get_shielded_pool_state(...)
+    // async fn get_shielded_nullifiers(...)
+    // async fn get_nullifiers_trunk_state(...)
+    // async fn get_nullifiers_branch_state(...)
+    // async fn get_recent_nullifier_changes(...)
+    // async fn get_recent_compacted_nullifier_changes(...)
 }
 
 #[async_trait]
