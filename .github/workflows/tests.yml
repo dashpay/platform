@@ -235,7 +235,7 @@ jobs:
       - changes
       - check-secrets
     # Require manual approval only on PRs when test-suite code hasn't changed
-    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
+    if: ${{ needs.check-secrets.outputs.has_ecr == 'true' && needs.changes.outputs.test-suite != 'true' && github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     environment: test-suite-approval
     steps:
