@@ -236,6 +236,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
 
     let mut input_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
     let mut signer = AddressSigner::new();
+    let mut ordered_addresses: Vec<PlatformAddress> = Vec::with_capacity(inputs_count as usize);
 
     let inputs_slice = std::slice::from_raw_parts(inputs, inputs_count as usize);
     for (i, input) in inputs_slice.iter().enumerate() {
@@ -268,8 +269,17 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
             }
         };
 
+        // Reject duplicate addresses
+        if input_map.contains_key(&address) {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Duplicate address at input index {}", i),
+            ));
+        }
+
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         signer.add_key(&address, private_key);
+        ordered_addresses.push(address);
         input_map.insert(address, input.amount);
     }
 
@@ -278,9 +288,16 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
         Err(e) => return DashSDKResult::error(e.into()),
     };
 
-    let fee_strategy: AddressFundsFeeStrategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
-        fee_from_input_index,
-    )];
+    // Remap fee_from_input_index: caller's index is in original input order,
+    // but DeductFromInput resolves against BTreeMap's sorted key order.
+    let fee_address = &ordered_addresses[fee_from_input_index as usize];
+    let sorted_index = input_map
+        .keys()
+        .position(|k| k == fee_address)
+        .expect("fee address must exist in input_map") as u16;
+
+    let fee_strategy: AddressFundsFeeStrategy =
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(sorted_index)];
 
     let user_fee_increase = 0u16;
 

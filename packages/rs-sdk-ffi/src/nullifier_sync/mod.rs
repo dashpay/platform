@@ -94,8 +94,8 @@ pub unsafe extern "C" fn dash_sdk_sync_nullifiers(
         })
     };
 
-    // Convert checkpoint: 0 means no previous sync
-    let last_sync = if last_sync_height == 0 && last_sync_timestamp == 0 {
+    // Convert checkpoint: 0 in either field means no previous sync (full scan)
+    let last_sync = if last_sync_height == 0 || last_sync_timestamp == 0 {
         None
     } else {
         Some(NullifierSyncCheckpoint {
@@ -194,7 +194,8 @@ pub unsafe extern "C" fn dash_sdk_sync_nullifiers_with_result(
         })
     };
 
-    let last_sync = if last_sync_height == 0 && last_sync_timestamp == 0 {
+    // Convert checkpoint: 0 in either field means no previous sync (full scan)
+    let last_sync = if last_sync_height == 0 || last_sync_timestamp == 0 {
         None
     } else {
         Some(NullifierSyncCheckpoint {

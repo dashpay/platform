@@ -45,7 +45,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_get_nullifiers(
     let sdk = wrapper.sdk.clone();
 
     // Parse the raw byte pointer into Vec<[u8; 32]>
-    let total_bytes = (nullifiers_count as usize) * 32;
+    let total_bytes = match (nullifiers_count as usize).checked_mul(32) {
+        Some(n) => n,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "Nullifiers count too large".to_string(),
+            ));
+        }
+    };
     let raw_bytes = std::slice::from_raw_parts(nullifiers_ptr, total_bytes);
     let nullifiers: Vec<[u8; 32]> = raw_bytes
         .chunks_exact(32)
