@@ -1583,6 +1583,7 @@ dependencies = [
  "drive-proof-verifier",
  "envy",
  "futures",
+ "grovedb-commitment-tree 4.0.0 (git+https://github.com/dashpay/grovedb?rev=7ecb8465fad750c7cddd5332adb6f97fcceb498b)",
  "hex",
  "http",
  "js-sys",
@@ -1924,7 +1925,7 @@ dependencies = [
  "dpp-json-convertible-derive",
  "env_logger 0.11.9",
  "getrandom 0.2.17",
- "grovedb-commitment-tree",
+ "grovedb-commitment-tree 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "hex",
  "indexmap 2.13.0",
  "integer-encoding",
@@ -1984,7 +1985,7 @@ dependencies = [
  "dpp",
  "enum-map",
  "grovedb",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-epoch-based-storage-flags",
  "grovedb-path",
  "grovedb-storage",
@@ -2032,7 +2033,7 @@ dependencies = [
  "drive-proof-verifier",
  "envy",
  "file-rotate",
- "grovedb-commitment-tree",
+ "grovedb-commitment-tree 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "hex",
  "indexmap 2.13.0",
  "integer-encoding",
@@ -2307,6 +2308,18 @@ dependencies = [
  "event-listener",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "fancy-regex"
@@ -2687,8 +2700,8 @@ dependencies = [
  "bincode_derive",
  "blake3",
  "grovedb-bulk-append-tree",
- "grovedb-commitment-tree",
- "grovedb-costs",
+ "grovedb-commitment-tree 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-dense-fixed-sized-merkle-tree",
  "grovedb-element",
  "grovedb-merk",
@@ -2722,7 +2735,7 @@ source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808
 dependencies = [
  "bincode",
  "blake3",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-dense-fixed-sized-merkle-tree",
  "grovedb-merkle-mountain-range",
  "grovedb-query",
@@ -2734,15 +2747,39 @@ dependencies = [
 [[package]]
 name = "grovedb-commitment-tree"
 version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=7ecb8465fad750c7cddd5332adb6f97fcceb498b#7ecb8465fad750c7cddd5332adb6f97fcceb498b"
+dependencies = [
+ "blake3",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=7ecb8465fad750c7cddd5332adb6f97fcceb498b)",
+ "incrementalmerkletree",
+ "orchard",
+ "rusqlite",
+ "shardtree",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "grovedb-commitment-tree"
+version = "4.0.0"
 source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346#dd99ed1db0350e5f39127573808dd172c6bc2346"
 dependencies = [
  "blake3",
  "grovedb-bulk-append-tree",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-storage",
  "incrementalmerkletree",
  "orchard",
  "shardtree",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "grovedb-costs"
+version = "4.0.0"
+source = "git+https://github.com/dashpay/grovedb?rev=7ecb8465fad750c7cddd5332adb6f97fcceb498b#7ecb8465fad750c7cddd5332adb6f97fcceb498b"
+dependencies = [
+ "integer-encoding",
+ "intmap",
  "thiserror 2.0.18",
 ]
 
@@ -2763,7 +2800,7 @@ source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808
 dependencies = [
  "bincode",
  "blake3",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-query",
  "grovedb-storage",
  "thiserror 2.0.18",
@@ -2789,7 +2826,7 @@ name = "grovedb-epoch-based-storage-flags"
 version = "4.0.0"
 source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346#dd99ed1db0350e5f39127573808dd172c6bc2346"
 dependencies = [
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "hex",
  "integer-encoding",
  "intmap",
@@ -2807,7 +2844,7 @@ dependencies = [
  "byteorder",
  "colored",
  "ed",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-element",
  "grovedb-path",
  "grovedb-query",
@@ -2829,7 +2866,7 @@ source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808
 dependencies = [
  "bincode",
  "blake3",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-storage",
 ]
 
@@ -2849,7 +2886,7 @@ dependencies = [
  "bincode",
  "byteorder",
  "ed",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-storage",
  "hex",
  "indexmap 2.13.0",
@@ -2863,7 +2900,7 @@ version = "4.0.0"
 source = "git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346#dd99ed1db0350e5f39127573808dd172c6bc2346"
 dependencies = [
  "blake3",
- "grovedb-costs",
+ "grovedb-costs 4.0.0 (git+https://github.com/dashpay/grovedb?rev=dd99ed1db0350e5f39127573808dd172c6bc2346)",
  "grovedb-path",
  "grovedb-visualize",
  "hex",
@@ -3024,6 +3061,15 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea0b22561a9c04a7cb1a302c013e0259cd3b4bb619f145b32f72b8b4bcbed230"
+dependencies = [
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -3911,6 +3957,17 @@ dependencies = [
  "libz-sys",
  "lz4-sys",
  "zstd-sys",
+]
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95b4103cffefa72eb8428cb6b47d6627161e51c2739fc5e3b734584157bc642a"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -5852,6 +5909,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsqlite-vfs"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8a1f2315036ef6b1fbacd1972e8ee7688030b0a2121edfc2a6550febd41574d"
+dependencies = [
+ "hashbrown 0.16.1",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "rtoolbox"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5859,6 +5926,21 @@ checksum = "a7cc970b249fbe527d6e02e0a227762c9108b2f49d81094fe357ffc6d14d7f6f"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1c93dd1c9683b438c392c492109cb702b8090b2bfc8fed6f6e4eb4523f17af3"
+dependencies = [
+ "bitflags 2.11.0",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
+ "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -6602,6 +6684,18 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
+]
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f4206ed3a67690b9c29b77d728f6acc3ce78f16bf846d83c94f76400320181b"
+dependencies = [
+ "cc",
+ "js-sys",
+ "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]
