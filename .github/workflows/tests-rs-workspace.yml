@@ -24,15 +24,6 @@ jobs:
         with:
           components: llvm-tools
 
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
@@ -65,7 +56,6 @@ jobs:
             --lcov --output-path lcov.info
         env:
           RUST_MIN_STACK: 4194304
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
