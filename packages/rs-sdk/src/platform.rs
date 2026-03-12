@@ -21,6 +21,7 @@ pub mod nullifier_sync;
 pub mod query;
 pub mod tokens;
 pub mod transition;
+pub mod trunk_branch_sync;
 pub mod types;
 
 pub use dapi_grpc::platform::v0 as proto;

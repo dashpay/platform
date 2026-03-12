@@ -47,7 +47,7 @@ pub use provider::NullifierProvider;
 pub use types::{NullifierKey, NullifierSyncConfig, NullifierSyncMetrics, NullifierSyncResult};
 
 use crate::error::Error;
-use crate::platform::address_sync::tracker::KeyLeafTracker;
+use crate::platform::trunk_branch_sync::{self, KeyLeafTracker, TrunkBranchSyncOps};
 use crate::platform::Fetch;
 use crate::sync::retry;
 use crate::Sdk;
@@ -57,22 +57,18 @@ use dapi_grpc::platform::v0::{
     GetNullifiersBranchStateRequest, GetRecentCompactedNullifierChangesRequest,
     GetRecentNullifierChangesRequest,
 };
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::grovedb::{
-    calculate_max_tree_depth_from_count, GroveBranchQueryResult, GroveTrunkQueryResult, LeafInfo,
-};
+use drive::grovedb::{GroveBranchQueryResult, GroveTrunkQueryResult};
 use drive_proof_verifier::types::{
     NullifiersTrunkQuery, NullifiersTrunkState, RecentCompactedNullifierChanges,
     RecentNullifierChanges,
 };
-use futures::stream::{FuturesUnordered, StreamExt};
 use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
 };
-use std::collections::{BTreeSet, HashSet};
-use tracing::{debug, trace, warn};
-
-use dpp::version::PlatformVersion;
+use std::collections::HashSet;
+use tracing::{debug, trace};
 
 type LeafBoundaryKey = Vec<u8>;
 
@@ -80,6 +76,181 @@ type LeafBoundaryKey = Vec<u8>;
 const COMPACTED_BATCH_LIMIT: usize = 25;
 /// Server limit for recent nullifier changes per request.
 const RECENT_BATCH_LIMIT: usize = 100;
+
+// ── Context type for the shared algorithm ────────────────────────────
+
+/// Mutable context carried through the trunk/branch tree scan for nullifiers.
+struct NullifierSyncContext<'a> {
+    config: &'a NullifierSyncConfig,
+    nullifiers: &'a [NullifierKey],
+    result: &'a mut NullifierSyncResult,
+}
+
+// SAFETY: All fields are Send when their referents are Send.
+// NullifierSyncConfig, NullifierKey ([u8; 32]), and NullifierSyncResult are all Send.
+unsafe impl Send for NullifierSyncContext<'_> {}
+
+// ── TrunkBranchSyncOps implementation ────────────────────────────────
+
+/// Marker type for nullifier sync operations.
+struct NullifierOps;
+
+impl TrunkBranchSyncOps for NullifierOps {
+    type Context<'a> = NullifierSyncContext<'a>;
+
+    /// `(pool_type, pool_identifier)` — needed for branch query construction.
+    type BranchQueryConfig = (u32, Option<[u8; 32]>);
+
+    async fn execute_trunk_query(
+        sdk: &Sdk,
+        settings: RequestSettings,
+        context: &mut Self::Context<'_>,
+    ) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
+        let trunk_query = NullifiersTrunkQuery {
+            pool_type: context.config.pool_type,
+            pool_identifier: context.config.pool_identifier,
+        };
+
+        let (trunk_state, metadata) =
+            NullifiersTrunkState::fetch_with_metadata(sdk, trunk_query, Some(settings)).await?;
+
+        context.result.metrics.trunk_queries += 1;
+
+        let trunk_state = trunk_state.ok_or_else(|| {
+            Error::InvalidProvedResponse("Nullifier trunk query returned no state".to_string())
+        })?;
+
+        context.result.metrics.total_elements_seen += trunk_state.elements.len();
+
+        trace!(
+            "Nullifier trunk query returned {} elements, {} leaf_keys",
+            trunk_state.elements.len(),
+            trunk_state.leaf_keys.len()
+        );
+
+        Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
+    }
+
+    fn process_trunk_result(
+        trunk_result: &GroveTrunkQueryResult,
+        context: &mut Self::Context<'_>,
+        tracker: &mut KeyLeafTracker,
+    ) -> Result<(), Error> {
+        for key in context.nullifiers {
+            let key_vec = key.to_vec();
+
+            if trunk_result.elements.contains_key(&key_vec) {
+                // Nullifier found in tree — the note is spent
+                context.result.found.insert(*key);
+            } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_vec) {
+                // Not in trunk elements, but traces to a leaf subtree
+                tracker.add_key(key_vec, leaf_key, info);
+            } else {
+                // Proven absent — the note is unspent
+                context.result.absent.insert(*key);
+            }
+        }
+        Ok(())
+    }
+
+    fn branch_query_config(context: &Self::Context<'_>) -> Self::BranchQueryConfig {
+        (context.config.pool_type, context.config.pool_identifier)
+    }
+
+    async fn execute_single_branch_query(
+        sdk: &Sdk,
+        config: &Self::BranchQueryConfig,
+        key: LeafBoundaryKey,
+        depth: u32,
+        expected_hash: [u8; 32],
+        checkpoint_height: u64,
+        settings: RequestSettings,
+        platform_version: &PlatformVersion,
+    ) -> Result<GroveBranchQueryResult, Error> {
+        let (pool_type, pool_identifier) = config;
+        execute_nullifier_branch_query(
+            sdk,
+            *pool_type,
+            pool_identifier.as_ref().map(|a| a.as_slice()),
+            key,
+            depth,
+            expected_hash,
+            checkpoint_height,
+            settings,
+            platform_version,
+        )
+        .await
+    }
+
+    fn process_branch_result(
+        branch_result: &GroveBranchQueryResult,
+        queried_leaf_key: &[u8],
+        context: &mut Self::Context<'_>,
+        tracker: &mut KeyLeafTracker,
+    ) -> Result<(), Error> {
+        let target_keys = tracker.keys_for_leaf(queried_leaf_key);
+
+        for target_key in target_keys {
+            if branch_result.elements.contains_key(&target_key) {
+                // Nullifier found — note is spent
+                if let Ok(nf) = <[u8; 32]>::try_from(target_key.as_slice()) {
+                    context.result.found.insert(nf);
+                }
+                tracker.key_found(&target_key);
+            } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)
+            {
+                // Traces to a deeper leaf — need another iteration
+                tracker.update_leaf(&target_key, new_leaf_key, info);
+            } else {
+                // Proven absent — note is unspent
+                if let Ok(nf) = <[u8; 32]>::try_from(target_key.as_slice()) {
+                    context.result.absent.insert(nf);
+                }
+                tracker.key_found(&target_key); // Remove from tracking
+            }
+        }
+        Ok(())
+    }
+
+    fn depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
+        (
+            platform_version
+                .drive
+                .methods
+                .shielded
+                .nullifiers_query_min_depth,
+            platform_version
+                .drive
+                .methods
+                .shielded
+                .nullifiers_query_max_depth,
+        )
+    }
+
+    // No post-iteration hook needed for nullifiers (no gap limit).
+
+    fn on_branch_query(context: &mut Self::Context<'_>) {
+        context.result.metrics.branch_queries += 1;
+    }
+
+    fn on_branch_failure(context: &mut Self::Context<'_>) {
+        context.result.metrics.branch_query_failures += 1;
+    }
+
+    fn on_elements_seen(context: &mut Self::Context<'_>, count: usize) {
+        context.result.metrics.total_elements_seen += count;
+    }
+
+    fn on_iteration(context: &mut Self::Context<'_>, iteration: usize) {
+        context.result.metrics.iterations = iteration;
+    }
+
+    fn set_checkpoint_height(context: &mut Self::Context<'_>, height: u64) {
+        context.result.checkpoint_height = height;
+    }
+}
+
+// ── Public API ───────────────────────────────────────────────────────
 
 /// Synchronize nullifier statuses using trunk/branch chunk queries with
 /// incremental block-based catch-up.
@@ -113,7 +284,6 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
     last_sync_timestamp: Option<u64>,
 ) -> Result<NullifierSyncResult, Error> {
     let config = config.unwrap_or_default();
-    let platform_version = sdk.version();
 
     let nullifiers = provider.nullifiers_to_check();
 
@@ -158,9 +328,21 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
         );
         start_height
     } else {
-        // Full tree scan
-        let (scan_height, block_time_ms) =
-            full_tree_scan(sdk, &config, &nullifiers, &mut result, platform_version).await?;
+        // Full tree scan via the shared algorithm
+        let mut context = NullifierSyncContext {
+            config: &config,
+            nullifiers: &nullifiers,
+            result: &mut result,
+        };
+        let (scan_height, block_time_ms) = trunk_branch_sync::run_full_tree_scan::<NullifierOps>(
+            sdk,
+            config.min_privacy_count,
+            config.max_iterations,
+            config.max_concurrent_requests,
+            config.request_settings,
+            &mut context,
+        )
+        .await?;
         result.new_sync_timestamp = block_time_ms / 1000;
         scan_height
     };
@@ -179,94 +361,7 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
     Ok(result)
 }
 
-/// Perform the full trunk/branch tree scan.
-///
-/// Returns `(checkpoint_height, block_time_ms)` from the trunk query.
-async fn full_tree_scan(
-    sdk: &Sdk,
-    config: &NullifierSyncConfig,
-    nullifiers: &[NullifierKey],
-    result: &mut NullifierSyncResult,
-    platform_version: &PlatformVersion,
-) -> Result<(u64, u64), Error> {
-    // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height, block_time_ms) =
-        execute_trunk_query(sdk, config, config.request_settings, &mut result.metrics).await?;
-    result.checkpoint_height = checkpoint_height;
-
-    trace!(
-        "Nullifier trunk query returned {} elements, {} leaf_keys",
-        trunk_result.elements.len(),
-        trunk_result.leaf_keys.len()
-    );
-
-    // Step 2: Process trunk result
-    let mut tracker = KeyLeafTracker::new();
-    process_trunk_result(&trunk_result, nullifiers, result, &mut tracker);
-
-    // Step 3: Iterative branch queries
-    let min_query_depth = platform_version
-        .drive
-        .methods
-        .shielded
-        .nullifiers_query_min_depth;
-    let max_query_depth = platform_version
-        .drive
-        .methods
-        .shielded
-        .nullifiers_query_max_depth;
-
-    let mut iterations = 0;
-    while !tracker.is_empty() && iterations < config.max_iterations {
-        iterations += 1;
-        result.metrics.iterations = iterations;
-
-        let leaves_to_query = get_privacy_adjusted_leaves(
-            &tracker,
-            &trunk_result,
-            config.min_privacy_count,
-            min_query_depth,
-            max_query_depth,
-        );
-
-        if leaves_to_query.is_empty() {
-            break;
-        }
-
-        debug!(
-            "Iteration {}: querying {} leaves for {} remaining nullifiers",
-            iterations,
-            leaves_to_query.len(),
-            tracker.remaining_count()
-        );
-
-        let branch_results = execute_branch_queries(
-            sdk,
-            config,
-            &leaves_to_query,
-            checkpoint_height,
-            &mut result.metrics,
-            config.max_concurrent_requests,
-            config.request_settings,
-            platform_version,
-        )
-        .await?;
-
-        for (leaf_key, branch_result) in branch_results {
-            process_branch_result(&branch_result, &leaf_key, result, &mut tracker);
-        }
-    }
-
-    if iterations >= config.max_iterations {
-        warn!(
-            "Nullifier sync reached max iterations ({}) with {} keys remaining",
-            config.max_iterations,
-            tracker.remaining_count()
-        );
-    }
-
-    Ok((checkpoint_height, block_time_ms))
-}
+// ── Incremental catch-up (nullifier-specific) ────────────────────────
 
 /// Perform incremental block-based catch-up using compacted + recent nullifier
 /// changes RPCs.
@@ -397,181 +492,11 @@ async fn incremental_catch_up(
     Ok(())
 }
 
-// ── Tree scan helpers ────────────────────────────────────────────────
+// ── Branch query helper (nullifier-specific) ─────────────────────────
 
-/// Execute the trunk query and return the verified result.
-///
-/// Returns `(trunk_result, checkpoint_height, block_time_ms)`.
-async fn execute_trunk_query(
-    sdk: &Sdk,
-    config: &NullifierSyncConfig,
-    settings: RequestSettings,
-    metrics: &mut NullifierSyncMetrics,
-) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
-    let trunk_query = NullifiersTrunkQuery {
-        pool_type: config.pool_type,
-        pool_identifier: config.pool_identifier,
-    };
-
-    let (trunk_state, metadata) =
-        NullifiersTrunkState::fetch_with_metadata(sdk, trunk_query, Some(settings)).await?;
-
-    metrics.trunk_queries += 1;
-
-    let trunk_state = trunk_state.ok_or_else(|| {
-        Error::InvalidProvedResponse("Nullifier trunk query returned no state".to_string())
-    })?;
-
-    metrics.total_elements_seen += trunk_state.elements.len();
-
-    Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
-}
-
-/// Process the trunk query result.
-fn process_trunk_result(
-    trunk_result: &GroveTrunkQueryResult,
-    nullifiers: &[NullifierKey],
-    result: &mut NullifierSyncResult,
-    tracker: &mut KeyLeafTracker,
-) {
-    for key in nullifiers {
-        let key_vec = key.to_vec();
-
-        if trunk_result.elements.contains_key(&key_vec) {
-            // Nullifier found in tree — the note is spent
-            result.found.insert(*key);
-        } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key_vec) {
-            // Not in trunk elements, but traces to a leaf subtree
-            tracker.add_key(key_vec, leaf_key, info);
-        } else {
-            // Proven absent — the note is unspent
-            result.absent.insert(*key);
-        }
-    }
-}
-
-/// Get privacy-adjusted leaves to query.
-///
-/// For leaves with count below min_privacy_count, find an ancestor with sufficient count.
-fn get_privacy_adjusted_leaves(
-    tracker: &KeyLeafTracker,
-    trunk_result: &GroveTrunkQueryResult,
-    min_privacy_count: u64,
-    min_query_depth: u8,
-    max_query_depth: u8,
-) -> Vec<(LeafBoundaryKey, LeafInfo, u8)> {
-    let active_leaves = tracker.active_leaves();
-    let mut result = Vec::new();
-    let mut seen_ancestors: BTreeSet<LeafBoundaryKey> = BTreeSet::new();
-
-    for (leaf_key, info) in active_leaves {
-        let count = info.count.unwrap_or(0);
-        let tree_depth = calculate_max_tree_depth_from_count(count);
-        let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
-
-        if count >= min_privacy_count {
-            if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, clamped_depth));
-            }
-        } else if let Some((levels_up, ancestor_count, ancestor_key, ancestor_hash)) =
-            trunk_result.get_ancestor(&leaf_key, min_privacy_count)
-        {
-            if seen_ancestors.insert(ancestor_key.clone()) {
-                let ancestor_info = LeafInfo {
-                    hash: ancestor_hash,
-                    count: Some(ancestor_count),
-                };
-                let depth = tree_depth
-                    .saturating_sub(levels_up)
-                    .clamp(min_query_depth, max_query_depth);
-                result.push((ancestor_key, ancestor_info, depth));
-            }
-        } else {
-            // No suitable ancestor found, use the leaf anyway
-            if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, clamped_depth));
-            }
-        }
-    }
-
-    result
-}
-
-/// Execute branch queries in parallel.
+/// Execute a single nullifier branch query with retry logic.
 #[allow(clippy::too_many_arguments)]
-async fn execute_branch_queries(
-    sdk: &Sdk,
-    config: &NullifierSyncConfig,
-    leaves: &[(LeafBoundaryKey, LeafInfo, u8)],
-    checkpoint_height: u64,
-    metrics: &mut NullifierSyncMetrics,
-    max_concurrent: usize,
-    settings: RequestSettings,
-    platform_version: &PlatformVersion,
-) -> Result<Vec<(LeafBoundaryKey, GroveBranchQueryResult)>, Error> {
-    let mut futures = FuturesUnordered::new();
-    let mut results = Vec::new();
-
-    for (leaf_key, info, depth) in leaves.iter().cloned() {
-        let sdk = sdk.clone();
-        let expected_hash = info.hash;
-        let depth_u32 = depth as u32;
-        let pool_type = config.pool_type;
-        let pool_identifier = config.pool_identifier;
-
-        futures.push(async move {
-            execute_single_branch_query(
-                &sdk,
-                pool_type,
-                pool_identifier.as_ref().map(|a| a.as_slice()),
-                leaf_key.clone(),
-                depth_u32,
-                expected_hash,
-                checkpoint_height,
-                settings,
-                platform_version,
-            )
-            .await
-            .map(|result| (leaf_key, result))
-        });
-
-        // Limit concurrency
-        if futures.len() >= max_concurrent {
-            if let Some(result) = futures.next().await {
-                match result {
-                    Ok((key, branch_result)) => {
-                        metrics.branch_queries += 1;
-                        results.push((key, branch_result));
-                    }
-                    Err(e) => {
-                        warn!("Nullifier branch query failed: {:?}", e);
-                        metrics.branch_query_failures += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    // Collect remaining futures
-    while let Some(result) = futures.next().await {
-        match result {
-            Ok((key, branch_result)) => {
-                metrics.branch_queries += 1;
-                results.push((key, branch_result));
-            }
-            Err(e) => {
-                warn!("Nullifier branch query failed: {:?}", e);
-                metrics.branch_query_failures += 1;
-            }
-        }
-    }
-
-    Ok(results)
-}
-
-/// Execute a single branch query with retry logic.
-#[allow(clippy::too_many_arguments)]
-async fn execute_single_branch_query(
+async fn execute_nullifier_branch_query(
     sdk: &Sdk,
     pool_type: u32,
     pool_identifier: Option<&[u8]>,
@@ -651,37 +576,6 @@ async fn execute_single_branch_query(
     retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
-/// Process a branch query result for nullifier presence.
-fn process_branch_result(
-    branch_result: &GroveBranchQueryResult,
-    queried_leaf_key: &[u8],
-    result: &mut NullifierSyncResult,
-    tracker: &mut KeyLeafTracker,
-) {
-    let target_keys = tracker.keys_for_leaf(queried_leaf_key);
-
-    for target_key in target_keys {
-        if branch_result.elements.contains_key(&target_key) {
-            // Nullifier found — note is spent
-            if let Ok(nf) = <[u8; 32]>::try_from(target_key.as_slice()) {
-                result.found.insert(nf);
-            }
-            tracker.key_found(&target_key);
-        } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key) {
-            // Traces to a deeper leaf — need another iteration
-            tracker.update_leaf(&target_key, new_leaf_key, info);
-        } else {
-            // Proven absent — note is unspent
-            if let Ok(nf) = <[u8; 32]>::try_from(target_key.as_slice()) {
-                result.absent.insert(nf);
-            }
-            tracker.key_found(&target_key); // Remove from tracking
-        }
-    }
-
-    result.metrics.total_elements_seen += branch_result.elements.len();
-}
-
 // ── SDK integration ──────────────────────────────────────────────────
 
 impl Sdk {
@@ -749,6 +643,7 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn test_vec_provider() {
