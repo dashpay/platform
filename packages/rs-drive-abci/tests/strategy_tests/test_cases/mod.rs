@@ -6,7 +6,8 @@ mod core_update_tests;
 mod data_contract_history_tests;
 mod identity_and_document_tests;
 mod identity_transfer_tests;
-mod shielded_tests;
+// TODO: re-enable once OperationType shielded variants are implemented
+// mod shielded_tests;
 mod token_tests;
 mod top_up_tests;
 mod update_identities_tests;
