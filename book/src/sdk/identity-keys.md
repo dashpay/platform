@@ -92,7 +92,8 @@ security. This matters because many operations check
    - Credit transfers require CRITICAL (enforced via the TRANSFER purpose)
    - Document operations accept HIGH or MEDIUM depending on the contract
 
-3. **Which purposes allow which levels.** Not all combinations are valid:
+3. **Which purposes allow which levels.** Not all combinations are valid for
+   externally added keys (i.e., keys added via identity create/update transitions):
 
    | Purpose | Allowed Security Levels |
    |---------|------------------------|
@@ -100,8 +101,15 @@ security. This matters because many operations check
    | ENCRYPTION | MEDIUM only |
    | DECRYPTION | MEDIUM only |
    | TRANSFER | CRITICAL only |
+   | SYSTEM | Not externally addable (platform-managed) |
+   | VOTING | Not externally addable (platform-managed) |
+   | OWNER | Not externally addable (platform-managed) |
 
-   Attempting to create a TRANSFER key at HIGH security level will fail validation.
+   SYSTEM, VOTING, and OWNER keys are created automatically by the platform
+   (e.g., during masternode registration) and cannot be added through state
+   transitions. Attempting to add a key with one of these purposes will fail
+   validation. Similarly, attempting to create a TRANSFER key at HIGH security
+   level will fail because only CRITICAL is allowed for that purpose.
 
 ### The Master Key Requirement
 
