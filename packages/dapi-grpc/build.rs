@@ -159,7 +159,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 52] = [
+    const VERSIONED_RESPONSES: [&str; 53] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -208,6 +208,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetRecentCompactedAddressBalanceChangesResponse",
         "GetShieldedEncryptedNotesResponse",
         "GetShieldedAnchorsResponse",
+        "GetMostRecentShieldedAnchorResponse",
         "GetShieldedPoolStateResponse",
         "GetShieldedNullifiersResponse",
         "GetRecentNullifierChangesResponse",

@@ -2440,6 +2440,38 @@ impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     }
 }
 
+impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShieldedAnchor {
+    type Request = platform::GetMostRecentShieldedAnchorRequest;
+    type Response = platform::GetMostRecentShieldedAnchorResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, maybe_anchor) =
+            Drive::verify_most_recent_shielded_anchor(&proof.grovedb_proof, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_anchor.map(MostRecentShieldedAnchor),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
 impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotes {
     type Request = platform::GetShieldedEncryptedNotesRequest;
     type Response = platform::GetShieldedEncryptedNotesResponse;

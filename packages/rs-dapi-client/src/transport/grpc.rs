@@ -470,6 +470,15 @@ impl_transport_request_grpc!(
     get_shielded_anchors
 );
 
+// rpc getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetMostRecentShieldedAnchorRequest,
+    platform_proto::GetMostRecentShieldedAnchorResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_most_recent_shielded_anchor
+);
+
 // rpc getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse);
 impl_transport_request_grpc!(
     platform_proto::GetShieldedPoolStateRequest,

@@ -831,6 +831,15 @@ pub struct ShieldedEncryptedNotes(pub Vec<ShieldedEncryptedNote>);
 )]
 pub struct ShieldedAnchors(pub Vec<[u8; 32]>);
 
+/// The most recent shielded anchor (32 bytes)
+#[derive(Debug, Clone, Copy, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct MostRecentShieldedAnchor(pub [u8; 32]);
+
 /// Status of a single nullifier (spent or unspent)
 #[derive(Debug, Clone)]
 #[cfg_attr(

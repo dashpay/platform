@@ -570,6 +570,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_most_recent_shielded_anchor,
+        dapi_grpc::platform::v0::GetMostRecentShieldedAnchorRequest,
+        dapi_grpc::platform::v0::GetMostRecentShieldedAnchorResponse
+    );
+
+    drive_method!(
         get_shielded_pool_state,
         dapi_grpc::platform::v0::GetShieldedPoolStateRequest,
         dapi_grpc::platform::v0::GetShieldedPoolStateResponse

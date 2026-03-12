@@ -122,6 +122,8 @@ service Platform {
       returns (GetShieldedEncryptedNotesResponse);
   rpc getShieldedAnchors(GetShieldedAnchorsRequest)
       returns (GetShieldedAnchorsResponse);
+  rpc getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest)
+      returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
@@ -2193,6 +2195,24 @@ message GetShieldedAnchorsResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedAnchorsResponseV0 v0 = 1; }
+}
+
+message GetMostRecentShieldedAnchorRequest {
+  message GetMostRecentShieldedAnchorRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetMostRecentShieldedAnchorRequestV0 v0 = 1; }
+}
+
+message GetMostRecentShieldedAnchorResponse {
+  message GetMostRecentShieldedAnchorResponseV0 {
+    oneof result {
+      bytes anchor = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetMostRecentShieldedAnchorResponseV0 v0 = 1; }
 }
 
 message GetShieldedPoolStateRequest {

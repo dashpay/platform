@@ -48,7 +48,8 @@ use dapi_grpc::platform::v0::{
     GetRecentCompactedAddressBalanceChangesRequest,
     GetRecentCompactedAddressBalanceChangesResponse, GetRecentCompactedNullifierChangesRequest,
     GetRecentCompactedNullifierChangesResponse, GetRecentNullifierChangesRequest,
-    GetRecentNullifierChangesResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
+    GetRecentNullifierChangesResponse, GetMostRecentShieldedAnchorRequest,
+    GetMostRecentShieldedAnchorResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
     GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
     GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
     GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse,
@@ -906,6 +907,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_shielded_anchors,
             "get_shielded_anchors",
+        )
+        .await
+    }
+
+    async fn get_most_recent_shielded_anchor(
+        &self,
+        request: Request<GetMostRecentShieldedAnchorRequest>,
+    ) -> Result<Response<GetMostRecentShieldedAnchorResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_most_recent_shielded_anchor,
+            "get_most_recent_shielded_anchor",
         )
         .await
     }
