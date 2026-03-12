@@ -6,6 +6,29 @@ use std::collections::BTreeSet;
 /// A 32-byte nullifier key.
 pub type NullifierKey = [u8; 32];
 
+/// Checkpoint from a previous nullifier sync, used to resume incremental catch-up.
+///
+/// After each sync, persist the [`NullifierSyncResult::new_sync_height`] and
+/// [`NullifierSyncResult::new_sync_timestamp`] values, then pass them back
+/// wrapped in this struct on the next call.
+#[derive(Debug, Clone, Copy)]
+pub struct NullifierSyncCheckpoint {
+    /// The block height to resume incremental catch-up from.
+    pub height: u64,
+    /// The block time (Unix seconds) of the last sync — used to decide
+    /// whether a full tree rescan is needed.
+    pub timestamp: u64,
+}
+
+/// Pool identifier for nullifier tree queries.
+#[derive(Debug, Clone)]
+pub struct NullifierPoolConfig {
+    /// The shielded pool type (0 = credit, 1 = main token, 2 = individual token).
+    pub pool_type: u32,
+    /// Optional 32-byte identifier for individual token pools.
+    pub pool_identifier: Option<[u8; 32]>,
+}
+
 /// Configuration for nullifier synchronization.
 #[derive(Debug, Clone)]
 pub struct NullifierSyncConfig {

@@ -26,28 +26,34 @@
 //!
 //! ```rust,ignore
 //! use dash_sdk::Sdk;
+//! use dash_sdk::platform::nullifier_sync::NullifierSyncCheckpoint;
 //!
 //! let nullifiers: Vec<[u8; 32]> = vec![/* ... */];
 //!
 //! // First sync — full tree scan + catch-up
-//! let result = sdk.sync_nullifiers(&nullifiers, None, None, None).await?;
-//! let saved_height = result.new_sync_height;       // store for next call
-//! let saved_timestamp = result.new_sync_timestamp;  // store for next call
+//! let result = sdk.sync_nullifiers(&nullifiers, None, None).await?;
+//! let checkpoint = NullifierSyncCheckpoint {
+//!     height: result.new_sync_height,
+//!     timestamp: result.new_sync_timestamp,
+//! };
 //!
 //! // Subsequent sync — incremental only (unless too old per full_rescan_after_time_s)
-//! let result = sdk.sync_nullifiers(&nullifiers, None, Some(saved_height), Some(saved_timestamp)).await?;
-//! let saved_height = result.new_sync_height;
-//! let saved_timestamp = result.new_sync_timestamp;
+//! let result = sdk.sync_nullifiers(&nullifiers, None, Some(checkpoint)).await?;
 //! ```
 
 mod provider;
 mod types;
 
 pub use provider::NullifierProvider;
-pub use types::{NullifierKey, NullifierSyncConfig, NullifierSyncMetrics, NullifierSyncResult};
+pub use types::{
+    NullifierKey, NullifierPoolConfig, NullifierSyncCheckpoint, NullifierSyncConfig,
+    NullifierSyncMetrics, NullifierSyncResult,
+};
 
 use crate::error::Error;
-use crate::platform::trunk_branch_sync::{self, KeyLeafTracker, TrunkBranchSyncOps};
+use crate::platform::trunk_branch_sync::{
+    self, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
+};
 use crate::platform::Fetch;
 use crate::sync::retry;
 use crate::Sdk;
@@ -69,8 +75,6 @@ use rs_dapi_client::{
 };
 use std::collections::HashSet;
 use tracing::{debug, trace};
-
-type LeafBoundaryKey = Vec<u8>;
 
 /// Server limit for compacted nullifier changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
@@ -98,14 +102,13 @@ struct NullifierOps;
 impl TrunkBranchSyncOps for NullifierOps {
     type Context<'a> = NullifierSyncContext<'a>;
 
-    /// `(pool_type, pool_identifier)` — needed for branch query construction.
-    type BranchQueryConfig = (u32, Option<[u8; 32]>);
+    type BranchQueryConfig = NullifierPoolConfig;
 
     async fn execute_trunk_query(
         sdk: &Sdk,
         settings: RequestSettings,
         context: &mut Self::Context<'_>,
-    ) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
+    ) -> Result<TrunkQueryResponse, Error> {
         let trunk_query = NullifiersTrunkQuery {
             pool_type: context.config.pool_type,
             pool_identifier: context.config.pool_identifier,
@@ -128,7 +131,11 @@ impl TrunkBranchSyncOps for NullifierOps {
             trunk_state.leaf_keys.len()
         );
 
-        Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
+        Ok(TrunkQueryResponse {
+            trunk: trunk_state.into_inner(),
+            height: metadata.height,
+            block_time_ms: metadata.time_ms,
+        })
     }
 
     fn process_trunk_result(
@@ -154,32 +161,20 @@ impl TrunkBranchSyncOps for NullifierOps {
     }
 
     fn branch_query_config(context: &Self::Context<'_>) -> Self::BranchQueryConfig {
-        (context.config.pool_type, context.config.pool_identifier)
+        NullifierPoolConfig {
+            pool_type: context.config.pool_type,
+            pool_identifier: context.config.pool_identifier,
+        }
     }
 
     async fn execute_single_branch_query(
         sdk: &Sdk,
         config: &Self::BranchQueryConfig,
-        key: LeafBoundaryKey,
-        depth: u32,
-        expected_hash: [u8; 32],
-        checkpoint_height: u64,
+        params: BranchQueryParams,
         settings: RequestSettings,
         platform_version: &PlatformVersion,
     ) -> Result<GroveBranchQueryResult, Error> {
-        let (pool_type, pool_identifier) = config;
-        execute_nullifier_branch_query(
-            sdk,
-            *pool_type,
-            pool_identifier.as_ref().map(|a| a.as_slice()),
-            key,
-            depth,
-            expected_hash,
-            checkpoint_height,
-            settings,
-            platform_version,
-        )
-        .await
+        execute_nullifier_branch_query(sdk, config, params, settings, platform_version).await
     }
 
     fn process_branch_result(
@@ -261,15 +256,11 @@ impl TrunkBranchSyncOps for NullifierOps {
 /// - `sdk`: The SDK instance for making network requests.
 /// - `provider`: An implementation of [`NullifierProvider`] that supplies nullifier keys.
 /// - `config`: Optional configuration; uses defaults if `None`.
-/// - `last_sync_height`: Optional block height from the previous sync's
-///   [`NullifierSyncResult::new_sync_height`]. Used as the starting point for
-///   incremental-only catch-up.
-/// - `last_sync_timestamp`: Optional block time (Unix seconds) from the previous
-///   sync's [`NullifierSyncResult::new_sync_timestamp`]. When provided together
-///   with a non-zero [`NullifierSyncConfig::full_rescan_after_time_s`], the
-///   function compares `now - last_sync_timestamp` to decide whether a full tree
-///   rescan is needed or incremental-only catch-up suffices.
-///   Pass `None` to always perform a full tree scan.
+/// - `last_sync`: Optional checkpoint from a previous sync. Pass `None` to
+///   always perform a full tree scan. When provided, the function compares
+///   `now - checkpoint.timestamp` against
+///   [`NullifierSyncConfig::full_rescan_after_time_s`] to decide whether a
+///   full tree rescan is needed or incremental-only catch-up suffices.
 ///
 /// # Returns
 /// - `Ok(NullifierSyncResult)`: Contains found (spent) and absent (unspent)
@@ -280,8 +271,7 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
     sdk: &Sdk,
     provider: &P,
     config: Option<NullifierSyncConfig>,
-    last_sync_height: Option<u64>,
-    last_sync_timestamp: Option<u64>,
+    last_sync: Option<NullifierSyncCheckpoint>,
 ) -> Result<NullifierSyncResult, Error> {
     let config = config.unwrap_or_default();
 
@@ -296,16 +286,16 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
     // Decide whether to do a full tree scan or incremental-only.
     //
     // Incremental-only is chosen when ALL of these are true:
-    //   1. last_sync_timestamp is provided
+    //   1. last_sync checkpoint is provided
     //   2. full_rescan_after_time_s > 0
     //   3. elapsed time since last sync < full_rescan_after_time_s
-    let needs_full_scan = match last_sync_timestamp {
-        Some(last_ts) if config.full_rescan_after_time_s > 0 => {
+    let needs_full_scan = match last_sync {
+        Some(checkpoint) if config.full_rescan_after_time_s > 0 => {
             let now_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let elapsed = now_secs.saturating_sub(last_ts);
+            let elapsed = now_secs.saturating_sub(checkpoint.timestamp);
             if elapsed >= config.full_rescan_after_time_s {
                 debug!(
                     "Nullifier sync: full rescan needed (elapsed {}s >= threshold {}s)",
@@ -321,7 +311,7 @@ pub async fn sync_nullifiers<P: NullifierProvider>(
 
     let catch_up_from = if !needs_full_scan {
         // Incremental-only mode — skip the tree scan
-        let start_height = last_sync_height.unwrap_or(0);
+        let start_height = last_sync.map(|c| c.height).unwrap_or(0);
         debug!(
             "Nullifier sync: incremental-only from height {}",
             start_height
@@ -497,19 +487,21 @@ async fn incremental_catch_up(
 // ── Branch query helper (nullifier-specific) ─────────────────────────
 
 /// Execute a single nullifier branch query with retry logic.
-#[allow(clippy::too_many_arguments)]
 async fn execute_nullifier_branch_query(
     sdk: &Sdk,
-    pool_type: u32,
-    pool_identifier: Option<&[u8]>,
-    key: LeafBoundaryKey,
-    depth: u32,
-    expected_hash: [u8; 32],
-    checkpoint_height: u64,
+    pool_config: &NullifierPoolConfig,
+    params: BranchQueryParams,
     settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
-    let pool_id_owned = pool_identifier.map(|p| p.to_vec());
+    let pool_type = pool_config.pool_type;
+    let pool_id_owned = pool_config.pool_identifier.map(|p| p.to_vec());
+    let BranchQueryParams {
+        key,
+        depth,
+        expected_hash,
+        checkpoint_height,
+    } = params;
 
     let request = GetNullifiersBranchStateRequest {
         version: Some(get_nullifiers_branch_state_request::Version::V0(
@@ -587,19 +579,16 @@ impl Sdk {
     /// both full tree scans and incremental block-based catch-up, depending on
     /// the parameters.
     ///
-    /// On subsequent calls, pass [`NullifierSyncResult::new_sync_height`] as
-    /// `last_sync_height` and [`NullifierSyncResult::new_sync_timestamp`] as
-    /// `last_sync_timestamp` so the function can decide whether a full tree
-    /// rescan is needed or incremental-only catch-up suffices.
+    /// On subsequent calls, construct a [`NullifierSyncCheckpoint`] from the
+    /// previous [`NullifierSyncResult::new_sync_height`] and
+    /// [`NullifierSyncResult::new_sync_timestamp`] so the function can decide
+    /// whether a full tree rescan is needed or incremental-only catch-up
+    /// suffices.
     ///
     /// # Arguments
     /// - `provider`: An implementation of [`NullifierProvider`] that supplies nullifier keys.
     /// - `config`: Optional configuration; uses defaults if `None`.
-    /// - `last_sync_height`: Optional block height from the previous sync's
-    ///   [`NullifierSyncResult::new_sync_height`]. Used as the starting point
-    ///   for incremental-only catch-up.
-    /// - `last_sync_timestamp`: Optional block time (Unix seconds) from the
-    ///   previous sync's [`NullifierSyncResult::new_sync_timestamp`].
+    /// - `last_sync`: Optional checkpoint from the previous sync.
     ///   Pass `None` to always perform a full tree scan.
     ///
     /// # Returns
@@ -612,33 +601,28 @@ impl Sdk {
     ///
     /// ```rust,ignore
     /// use dash_sdk::Sdk;
+    /// use dash_sdk::platform::nullifier_sync::NullifierSyncCheckpoint;
     ///
     /// let sdk = Sdk::new(/* ... */);
     /// let nullifiers: Vec<[u8; 32]> = vec![/* known nullifiers */];
     ///
     /// // First call — full scan
-    /// let result = sdk.sync_nullifiers(&nullifiers, None, None, None).await?;
-    /// let height = result.new_sync_height;       // → last_sync_height param
-    /// let timestamp = result.new_sync_timestamp;  // → last_sync_timestamp param
+    /// let result = sdk.sync_nullifiers(&nullifiers, None, None).await?;
+    /// let checkpoint = NullifierSyncCheckpoint {
+    ///     height: result.new_sync_height,
+    ///     timestamp: result.new_sync_timestamp,
+    /// };
     ///
     /// // Next call — incremental only if within threshold
-    /// let result = sdk.sync_nullifiers(&nullifiers, None, Some(height), Some(timestamp)).await?;
+    /// let result = sdk.sync_nullifiers(&nullifiers, None, Some(checkpoint)).await?;
     /// ```
     pub async fn sync_nullifiers<P: NullifierProvider>(
         &self,
         provider: &P,
         config: Option<NullifierSyncConfig>,
-        last_sync_height: Option<u64>,
-        last_sync_timestamp: Option<u64>,
+        last_sync: Option<NullifierSyncCheckpoint>,
     ) -> Result<NullifierSyncResult, Error> {
-        sync_nullifiers(
-            self,
-            provider,
-            config,
-            last_sync_height,
-            last_sync_timestamp,
-        )
-        .await
+        sync_nullifiers(self, provider, config, last_sync).await
     }
 }
 

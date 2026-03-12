@@ -36,6 +36,29 @@ use tracing::{debug, warn};
 /// Alias for leaf boundary keys used in trunk/branch queries.
 pub type LeafBoundaryKey = Vec<u8>;
 
+/// Result of a trunk query: the Merkle tree result together with blockchain metadata.
+pub struct TrunkQueryResponse {
+    /// The trunk tree result containing elements and leaf keys.
+    pub trunk: GroveTrunkQueryResult,
+    /// The block height at which the tree snapshot was taken.
+    pub height: u64,
+    /// The block time in milliseconds since epoch.
+    pub block_time_ms: u64,
+}
+
+/// Parameters for a single branch query.
+#[derive(Clone)]
+pub struct BranchQueryParams {
+    /// The leaf boundary key identifying which subtree to fetch.
+    pub key: LeafBoundaryKey,
+    /// How many levels deep to fetch from the leaf.
+    pub depth: u32,
+    /// Expected root hash of the subtree (for proof verification).
+    pub expected_hash: [u8; 32],
+    /// Block height checkpoint (must match the trunk query's height).
+    pub checkpoint_height: u64,
+}
+
 // ── Trait ────────────────────────────────────────────────────────────
 
 /// Operations that parameterize the trunk/branch tree-scan algorithm.
@@ -70,12 +93,12 @@ pub trait TrunkBranchSyncOps {
 
     // ── Trunk query ──────────────────────────────────────────────
 
-    /// Execute the trunk query and return `(trunk_result, checkpoint_height, block_time_ms)`.
+    /// Execute the trunk query and return the tree result with blockchain metadata.
     async fn execute_trunk_query(
         sdk: &Sdk,
         settings: RequestSettings,
         context: &mut Self::Context<'_>,
-    ) -> Result<(GroveTrunkQueryResult, u64, u64), Error>;
+    ) -> Result<TrunkQueryResponse, Error>;
 
     // ── Trunk result processing ──────────────────────────────────
 
@@ -103,15 +126,11 @@ pub trait TrunkBranchSyncOps {
     /// Execute a single branch query and return the verified result.
     ///
     /// The `config` parameter carries module-specific data needed to
-    /// construct the request (e.g. pool_type for nullifiers).
-    #[allow(clippy::too_many_arguments)]
+    /// construct the request (e.g. pool config for nullifiers).
     async fn execute_single_branch_query(
         sdk: &Sdk,
         config: &Self::BranchQueryConfig,
-        key: LeafBoundaryKey,
-        depth: u32,
-        expected_hash: [u8; 32],
-        checkpoint_height: u64,
+        params: BranchQueryParams,
         settings: RequestSettings,
         platform_version: &PlatformVersion,
     ) -> Result<GroveBranchQueryResult, Error>;
@@ -183,8 +202,12 @@ pub async fn run_full_tree_scan<Ops: TrunkBranchSyncOps>(
     let platform_version = sdk.version();
 
     // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height, block_time_ms) =
-        Ops::execute_trunk_query(sdk, request_settings, context).await?;
+    let trunk_response = Ops::execute_trunk_query(sdk, request_settings, context).await?;
+    let TrunkQueryResponse {
+        trunk: trunk_result,
+        height: checkpoint_height,
+        block_time_ms,
+    } = trunk_response;
     Ops::set_checkpoint_height(context, checkpoint_height);
 
     // Step 2: Process trunk result
@@ -311,7 +334,6 @@ pub fn get_privacy_adjusted_leaves(
 /// The `branch_config` carries immutable data needed by each branch query
 /// (cloned into each spawned future). The `context` is only used for metrics
 /// updates in the main task after futures complete.
-#[allow(clippy::too_many_arguments)]
 async fn execute_branch_queries_parallel<Ops: TrunkBranchSyncOps>(
     sdk: &Sdk,
     branch_config: &Ops::BranchQueryConfig,
@@ -327,23 +349,18 @@ async fn execute_branch_queries_parallel<Ops: TrunkBranchSyncOps>(
 
     for (leaf_key, info, depth) in leaves.iter().cloned() {
         let sdk = sdk.clone();
-        let expected_hash = info.hash;
-        let depth_u32 = depth as u32;
         let config = branch_config.clone();
+        let params = BranchQueryParams {
+            key: leaf_key.clone(),
+            depth: depth as u32,
+            expected_hash: info.hash,
+            checkpoint_height,
+        };
 
         futures.push(async move {
-            Ops::execute_single_branch_query(
-                &sdk,
-                &config,
-                leaf_key.clone(),
-                depth_u32,
-                expected_hash,
-                checkpoint_height,
-                settings,
-                platform_version,
-            )
-            .await
-            .map(|result| (leaf_key, result))
+            Ops::execute_single_branch_query(&sdk, &config, params, settings, platform_version)
+                .await
+                .map(|result| (leaf_key, result))
         });
 
         // Limit concurrency

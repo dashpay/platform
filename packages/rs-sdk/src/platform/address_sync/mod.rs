@@ -48,7 +48,9 @@ pub use types::{
 };
 
 use crate::error::Error;
-use crate::platform::trunk_branch_sync::{self, KeyLeafTracker, TrunkBranchSyncOps};
+use crate::platform::trunk_branch_sync::{
+    self, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
+};
 use crate::platform::Fetch;
 use crate::sync::retry;
 use crate::Sdk;
@@ -111,7 +113,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
         sdk: &Sdk,
         settings: RequestSettings,
         context: &mut Self::Context<'_>,
-    ) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
+    ) -> Result<TrunkQueryResponse, Error> {
         let (trunk_state, metadata) =
             PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
 
@@ -129,7 +131,11 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             trunk_state.leaf_keys.len()
         );
 
-        Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
+        Ok(TrunkQueryResponse {
+            trunk: trunk_state.into_inner(),
+            height: metadata.height,
+            block_time_ms: metadata.time_ms,
+        })
     }
 
     fn process_trunk_result(
@@ -161,23 +167,11 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
     async fn execute_single_branch_query(
         sdk: &Sdk,
         _config: &Self::BranchQueryConfig,
-        key: trunk_branch_sync::LeafBoundaryKey,
-        depth: u32,
-        expected_hash: [u8; 32],
-        checkpoint_height: u64,
+        params: BranchQueryParams,
         settings: RequestSettings,
         platform_version: &PlatformVersion,
     ) -> Result<GroveBranchQueryResult, Error> {
-        execute_address_branch_query(
-            sdk,
-            key,
-            depth,
-            expected_hash,
-            checkpoint_height,
-            settings,
-            platform_version,
-        )
-        .await
+        execute_address_branch_query(sdk, params, settings, platform_version).await
     }
 
     fn process_branch_result(
@@ -605,13 +599,17 @@ async fn incremental_catch_up<P: AddressProvider>(
 /// according to the retry settings.
 async fn execute_address_branch_query(
     sdk: &Sdk,
-    key: LeafBoundaryKey,
-    depth: u32,
-    expected_hash: [u8; 32],
-    checkpoint_height: u64,
+    params: BranchQueryParams,
     settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
+    let BranchQueryParams {
+        key,
+        depth,
+        expected_hash,
+        checkpoint_height,
+    } = params;
+
     let request = GetAddressesBranchStateRequest {
         version: Some(get_addresses_branch_state_request::Version::V0(
             get_addresses_branch_state_request::GetAddressesBranchStateRequestV0 {
