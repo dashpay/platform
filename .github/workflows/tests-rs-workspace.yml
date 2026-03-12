@@ -48,6 +48,7 @@ jobs:
             --exclude wasm-dpp2 \
             --exclude wasm-sdk \
             --exclude wasm-drive-verify \
+            --exclude dash-sdk \
             --exclude rs-sdk-ffi \
             --exclude platform-wallet-ffi \
             --exclude strategy-tests \
