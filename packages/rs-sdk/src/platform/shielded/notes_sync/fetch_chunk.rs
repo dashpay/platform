@@ -1,8 +1,10 @@
-use drive_proof_verifier::types::{ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
+use crate::platform::Fetch;
+use crate::{Error, Sdk};
+use drive_proof_verifier::types::{
+    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+};
 use rs_dapi_client::RequestSettings;
 use tracing::debug;
-use crate::{Error, Sdk};
-use crate::platform::Fetch;
 
 /// Fetch a single chunk of encrypted notes from the network.
 ///
