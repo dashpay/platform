@@ -81,8 +81,7 @@ use crate::consensus::basic::state_transition::{
     ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
     StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
     TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
-    UnshieldAmountZeroError, UnshieldValueBalanceBelowAmountError, WithdrawalBalanceMismatchError,
-    WithdrawalBelowMinAmountError,
+    WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -674,12 +673,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
-
-    #[error(transparent)]
-    UnshieldAmountZeroError(UnshieldAmountZeroError),
-
-    #[error(transparent)]
-    UnshieldValueBalanceBelowAmountError(UnshieldValueBalanceBelowAmountError),
 }
 
 impl From<BasicError> for ConsensusError {
