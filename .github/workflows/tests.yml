@@ -38,11 +38,11 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
-      js-packages: ${{ steps.filter-js.outputs.changes }}
-      js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
-      rs-packages: ${{ steps.filter-rs.outputs.changes }}
-      rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
-      test-suite: ${{ steps.filter-test-suite.outputs.run }}
+      js-packages: ${{ steps.override.outputs.js-packages || steps.filter-js.outputs.changes }}
+      js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
+      rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
+      rs-packages-direct: ${{ steps.override.outputs.rs-packages-direct || steps.filter-rs-direct.outputs.changes }}
+      test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,29 +51,47 @@ jobs:
 
       - uses: dorny/paths-filter@v3
         id: filter-js
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-js-direct
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-rs
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v3
         id: filter-rs-direct
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-direct.yml
 
       - name: Check if Test Suite should run
         id: filter-test-suite
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: dorny/paths-filter@v3
         with:
           filters: .github/package-filters/test-suite-triggers.yml
+
+      - name: Override all outputs for workflow_dispatch
+        id: override
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -eo pipefail
+          # Extract top-level keys from filter YAML files to build JSON arrays
+          to_json() { yq -o=json '[keys | .[] ]' "$1" | tr -d '\n'; }
+          echo "js-packages=$(to_json .github/package-filters/js-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
+          echo "js-packages-direct=$(to_json .github/package-filters/js-packages-direct.yml)" >> "$GITHUB_OUTPUT"
+          echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
+          echo "rs-packages-direct=$(to_json .github/package-filters/rs-packages-direct.yml)" >> "$GITHUB_OUTPUT"
+          echo 'run=true' >> "$GITHUB_OUTPUT"
 
   build-js:
     name: Build JS packages
