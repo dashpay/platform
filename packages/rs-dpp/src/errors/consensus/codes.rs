@@ -237,6 +237,8 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedEmptyProofError(_) => 10820,
             Self::ShieldedZeroAnchorError(_) => 10821,
             Self::ShieldedInvalidValueBalanceError(_) => 10822,
+            Self::UnshieldAmountZeroError(_) => 10823,
+            Self::UnshieldValueBalanceBelowAmountError(_) => 10824,
             Self::ShieldedTooManyActionsError(_) => 10825,
         }
     }

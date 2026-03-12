@@ -118,6 +118,22 @@ service Platform {
           returns (GetRecentAddressBalanceChangesResponse);
   rpc getRecentCompactedAddressBalanceChanges(GetRecentCompactedAddressBalanceChangesRequest)
           returns (GetRecentCompactedAddressBalanceChangesResponse);
+  rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest)
+      returns (GetShieldedEncryptedNotesResponse);
+  rpc getShieldedAnchors(GetShieldedAnchorsRequest)
+      returns (GetShieldedAnchorsResponse);
+  rpc getShieldedPoolState(GetShieldedPoolStateRequest)
+      returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
+      returns (GetShieldedNullifiersResponse);
+  rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
+      returns (GetNullifiersTrunkStateResponse);
+  rpc getNullifiersBranchState(GetNullifiersBranchStateRequest)
+      returns (GetNullifiersBranchStateResponse);
+  rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest)
+      returns (GetRecentNullifierChangesResponse);
+  rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest)
+      returns (GetRecentCompactedNullifierChangesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -2126,4 +2142,194 @@ message GetRecentCompactedAddressBalanceChangesResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetRecentCompactedAddressBalanceChangesResponseV0 v0 = 1; }
+}
+
+// --- Shielded Pool Queries ---
+
+message GetShieldedEncryptedNotesRequest {
+  message GetShieldedEncryptedNotesRequestV0 {
+    uint64 start_index = 1;
+    uint32 count = 2;
+    bool prove = 3;
+  }
+  oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
+}
+
+message GetShieldedEncryptedNotesResponse {
+  message GetShieldedEncryptedNotesResponseV0 {
+    message EncryptedNote {
+      bytes nullifier = 1;      // 32-byte nullifier (needed for Rho derivation in trial decryption)
+      bytes cmx = 2;            // 32-byte extracted note commitment
+      bytes encrypted_note = 3; // encrypted note payload (epk + enc_ciphertext + out_ciphertext)
+    }
+    message EncryptedNotes {
+      repeated EncryptedNote entries = 1;
+    }
+    oneof result {
+      EncryptedNotes encrypted_notes = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedEncryptedNotesResponseV0 v0 = 1; }
+}
+
+message GetShieldedAnchorsRequest {
+  message GetShieldedAnchorsRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
+}
+
+message GetShieldedAnchorsResponse {
+  message GetShieldedAnchorsResponseV0 {
+    message Anchors {
+      repeated bytes anchors = 1;
+    }
+    oneof result {
+      Anchors anchors = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedAnchorsResponseV0 v0 = 1; }
+}
+
+message GetShieldedPoolStateRequest {
+  message GetShieldedPoolStateRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
+}
+
+message GetShieldedPoolStateResponse {
+  message GetShieldedPoolStateResponseV0 {
+    oneof result {
+      uint64 total_balance = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
+}
+
+message GetShieldedNullifiersRequest {
+  message GetShieldedNullifiersRequestV0 {
+    repeated bytes nullifiers = 1;
+    bool prove = 2;
+  }
+  oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
+}
+
+message GetShieldedNullifiersResponse {
+  message GetShieldedNullifiersResponseV0 {
+    message NullifierStatus {
+      bytes nullifier = 1;
+      bool is_spent = 2;
+    }
+    message NullifierStatuses {
+      repeated NullifierStatus entries = 1;
+    }
+    oneof result {
+      NullifierStatuses nullifier_statuses = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
+}
+
+message GetNullifiersTrunkStateRequest {
+  message GetNullifiersTrunkStateRequestV0 {
+    uint32 pool_type = 1;           // ShieldedPoolType enum value (0=credit, 1=main token, 2=individual token)
+    bytes pool_identifier = 2;      // 32-byte Identifier, required for pool_type=2
+  }
+  oneof version { GetNullifiersTrunkStateRequestV0 v0 = 1; }
+}
+
+message GetNullifiersTrunkStateResponse {
+  message GetNullifiersTrunkStateResponseV0 {
+    Proof proof = 2;
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetNullifiersTrunkStateResponseV0 v0 = 1; }
+}
+
+message GetNullifiersBranchStateRequest {
+  message GetNullifiersBranchStateRequestV0 {
+    uint32 pool_type = 1;
+    bytes pool_identifier = 2;
+    bytes key = 3;
+    uint32 depth = 4;
+    uint64 checkpoint_height = 5;
+  }
+  oneof version { GetNullifiersBranchStateRequestV0 v0 = 1; }
+}
+
+message GetNullifiersBranchStateResponse {
+  message GetNullifiersBranchStateResponseV0 {
+    bytes merk_proof = 2;
+  }
+  oneof version { GetNullifiersBranchStateResponseV0 v0 = 1; }
+}
+
+// --- Recent Nullifier Changes ---
+
+message BlockNullifierChanges {
+  uint64 block_height = 1 [ jstype = JS_STRING ];
+  repeated bytes nullifiers = 2;  // Each is 32 bytes
+}
+
+message NullifierUpdateEntries {
+  repeated BlockNullifierChanges block_changes = 1;
+}
+
+message GetRecentNullifierChangesRequest {
+  message GetRecentNullifierChangesRequestV0 {
+    uint64 start_height = 1 [ jstype = JS_STRING ];
+    bool prove = 2;
+  }
+  oneof version { GetRecentNullifierChangesRequestV0 v0 = 1; }
+}
+
+message GetRecentNullifierChangesResponse {
+  message GetRecentNullifierChangesResponseV0 {
+    oneof result {
+      NullifierUpdateEntries nullifier_update_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetRecentNullifierChangesResponseV0 v0 = 1; }
+}
+
+// --- Compacted Nullifier Changes ---
+
+message CompactedBlockNullifierChanges {
+  uint64 start_block_height = 1 [ jstype = JS_STRING ];
+  uint64 end_block_height = 2 [ jstype = JS_STRING ];
+  repeated bytes nullifiers = 3;  // Each is 32 bytes
+}
+
+message CompactedNullifierUpdateEntries {
+  repeated CompactedBlockNullifierChanges compacted_block_changes = 1;
+}
+
+message GetRecentCompactedNullifierChangesRequest {
+  message GetRecentCompactedNullifierChangesRequestV0 {
+    uint64 start_block_height = 1 [ jstype = JS_STRING ];
+    bool prove = 2;
+  }
+  oneof version { GetRecentCompactedNullifierChangesRequestV0 v0 = 1; }
+}
+
+message GetRecentCompactedNullifierChangesResponse {
+  message GetRecentCompactedNullifierChangesResponseV0 {
+    oneof result {
+      CompactedNullifierUpdateEntries compacted_nullifier_update_entries = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetRecentCompactedNullifierChangesResponseV0 v0 = 1; }
 }

@@ -2343,6 +2343,270 @@ $root.org = (function() {
                          * @variation 2
                          */
 
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedEncryptedNotes}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedEncryptedNotesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} [response] GetShieldedEncryptedNotesResponse
+                         */
+
+                        /**
+                         * Calls getShieldedEncryptedNotes.
+                         * @function getShieldedEncryptedNotes
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest} request GetShieldedEncryptedNotesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedEncryptedNotesCallback} callback Node-style callback called with the error, if any, and GetShieldedEncryptedNotesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedEncryptedNotes = function getShieldedEncryptedNotes(request, callback) {
+                            return this.rpcCall(getShieldedEncryptedNotes, $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest, $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse, request, callback);
+                        }, "name", { value: "getShieldedEncryptedNotes" });
+
+                        /**
+                         * Calls getShieldedEncryptedNotes.
+                         * @function getShieldedEncryptedNotes
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest} request GetShieldedEncryptedNotesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedAnchors}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedAnchorsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} [response] GetShieldedAnchorsResponse
+                         */
+
+                        /**
+                         * Calls getShieldedAnchors.
+                         * @function getShieldedAnchors
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest} request GetShieldedAnchorsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedAnchorsCallback} callback Node-style callback called with the error, if any, and GetShieldedAnchorsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedAnchors = function getShieldedAnchors(request, callback) {
+                            return this.rpcCall(getShieldedAnchors, $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest, $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse, request, callback);
+                        }, "name", { value: "getShieldedAnchors" });
+
+                        /**
+                         * Calls getShieldedAnchors.
+                         * @function getShieldedAnchors
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest} request GetShieldedAnchorsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedAnchorsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedPoolState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedPoolStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} [response] GetShieldedPoolStateResponse
+                         */
+
+                        /**
+                         * Calls getShieldedPoolState.
+                         * @function getShieldedPoolState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest} request GetShieldedPoolStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedPoolStateCallback} callback Node-style callback called with the error, if any, and GetShieldedPoolStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedPoolState = function getShieldedPoolState(request, callback) {
+                            return this.rpcCall(getShieldedPoolState, $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest, $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse, request, callback);
+                        }, "name", { value: "getShieldedPoolState" });
+
+                        /**
+                         * Calls getShieldedPoolState.
+                         * @function getShieldedPoolState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest} request GetShieldedPoolStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedPoolStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedNullifiers}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedNullifiersCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} [response] GetShieldedNullifiersResponse
+                         */
+
+                        /**
+                         * Calls getShieldedNullifiers.
+                         * @function getShieldedNullifiers
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest} request GetShieldedNullifiersRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedNullifiersCallback} callback Node-style callback called with the error, if any, and GetShieldedNullifiersResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedNullifiers = function getShieldedNullifiers(request, callback) {
+                            return this.rpcCall(getShieldedNullifiers, $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest, $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse, request, callback);
+                        }, "name", { value: "getShieldedNullifiers" });
+
+                        /**
+                         * Calls getShieldedNullifiers.
+                         * @function getShieldedNullifiers
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest} request GetShieldedNullifiersRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedNullifiersResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getNullifiersTrunkState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getNullifiersTrunkStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} [response] GetNullifiersTrunkStateResponse
+                         */
+
+                        /**
+                         * Calls getNullifiersTrunkState.
+                         * @function getNullifiersTrunkState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest} request GetNullifiersTrunkStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getNullifiersTrunkStateCallback} callback Node-style callback called with the error, if any, and GetNullifiersTrunkStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getNullifiersTrunkState = function getNullifiersTrunkState(request, callback) {
+                            return this.rpcCall(getNullifiersTrunkState, $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest, $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse, request, callback);
+                        }, "name", { value: "getNullifiersTrunkState" });
+
+                        /**
+                         * Calls getNullifiersTrunkState.
+                         * @function getNullifiersTrunkState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest} request GetNullifiersTrunkStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getNullifiersBranchState}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getNullifiersBranchStateCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} [response] GetNullifiersBranchStateResponse
+                         */
+
+                        /**
+                         * Calls getNullifiersBranchState.
+                         * @function getNullifiersBranchState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest} request GetNullifiersBranchStateRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getNullifiersBranchStateCallback} callback Node-style callback called with the error, if any, and GetNullifiersBranchStateResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getNullifiersBranchState = function getNullifiersBranchState(request, callback) {
+                            return this.rpcCall(getNullifiersBranchState, $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest, $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse, request, callback);
+                        }, "name", { value: "getNullifiersBranchState" });
+
+                        /**
+                         * Calls getNullifiersBranchState.
+                         * @function getNullifiersBranchState
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest} request GetNullifiersBranchStateRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getRecentNullifierChanges}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getRecentNullifierChangesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} [response] GetRecentNullifierChangesResponse
+                         */
+
+                        /**
+                         * Calls getRecentNullifierChanges.
+                         * @function getRecentNullifierChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest} request GetRecentNullifierChangesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getRecentNullifierChangesCallback} callback Node-style callback called with the error, if any, and GetRecentNullifierChangesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getRecentNullifierChanges = function getRecentNullifierChanges(request, callback) {
+                            return this.rpcCall(getRecentNullifierChanges, $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest, $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse, request, callback);
+                        }, "name", { value: "getRecentNullifierChanges" });
+
+                        /**
+                         * Calls getRecentNullifierChanges.
+                         * @function getRecentNullifierChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest} request GetRecentNullifierChangesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getRecentCompactedNullifierChanges}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getRecentCompactedNullifierChangesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} [response] GetRecentCompactedNullifierChangesResponse
+                         */
+
+                        /**
+                         * Calls getRecentCompactedNullifierChanges.
+                         * @function getRecentCompactedNullifierChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest} request GetRecentCompactedNullifierChangesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getRecentCompactedNullifierChangesCallback} callback Node-style callback called with the error, if any, and GetRecentCompactedNullifierChangesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getRecentCompactedNullifierChanges = function getRecentCompactedNullifierChanges(request, callback) {
+                            return this.rpcCall(getRecentCompactedNullifierChanges, $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest, $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse, request, callback);
+                        }, "name", { value: "getRecentCompactedNullifierChanges" });
+
+                        /**
+                         * Calls getRecentCompactedNullifierChanges.
+                         * @function getRecentCompactedNullifierChanges
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest} request GetRecentCompactedNullifierChangesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse>} Promise
+                         * @variation 2
+                         */
+
                         return Platform;
                     })();
 
@@ -82640,6 +82904,9303 @@ $root.org = (function() {
                         })();
 
                         return GetRecentCompactedAddressBalanceChangesResponse;
+                    })();
+
+                    v0.GetShieldedEncryptedNotesRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedEncryptedNotesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedEncryptedNotesRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0|null} [v0] GetShieldedEncryptedNotesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedEncryptedNotesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedEncryptedNotesRequest.
+                         * @implements IGetShieldedEncryptedNotesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedEncryptedNotesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedEncryptedNotesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @instance
+                         */
+                        GetShieldedEncryptedNotesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedEncryptedNotesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedEncryptedNotesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedEncryptedNotesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest} GetShieldedEncryptedNotesRequest instance
+                         */
+                        GetShieldedEncryptedNotesRequest.create = function create(properties) {
+                            return new GetShieldedEncryptedNotesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedEncryptedNotesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest} message GetShieldedEncryptedNotesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedEncryptedNotesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedEncryptedNotesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesRequest} message GetShieldedEncryptedNotesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedEncryptedNotesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedEncryptedNotesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest} GetShieldedEncryptedNotesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedEncryptedNotesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedEncryptedNotesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest} GetShieldedEncryptedNotesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedEncryptedNotesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedEncryptedNotesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedEncryptedNotesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedEncryptedNotesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest} GetShieldedEncryptedNotesRequest
+                         */
+                        GetShieldedEncryptedNotesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedEncryptedNotesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest} message GetShieldedEncryptedNotesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedEncryptedNotesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedEncryptedNotesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedEncryptedNotesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedEncryptedNotesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                             * @interface IGetShieldedEncryptedNotesRequestV0
+                             * @property {number|Long|null} [startIndex] GetShieldedEncryptedNotesRequestV0 startIndex
+                             * @property {number|null} [count] GetShieldedEncryptedNotesRequestV0 count
+                             * @property {boolean|null} [prove] GetShieldedEncryptedNotesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedEncryptedNotesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest
+                             * @classdesc Represents a GetShieldedEncryptedNotesRequestV0.
+                             * @implements IGetShieldedEncryptedNotesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedEncryptedNotesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedEncryptedNotesRequestV0 startIndex.
+                             * @member {number|Long} startIndex
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesRequestV0.prototype.startIndex = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetShieldedEncryptedNotesRequestV0 count.
+                             * @member {number} count
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesRequestV0.prototype.count = 0;
+
+                            /**
+                             * GetShieldedEncryptedNotesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedEncryptedNotesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0} GetShieldedEncryptedNotesRequestV0 instance
+                             */
+                            GetShieldedEncryptedNotesRequestV0.create = function create(properties) {
+                                return new GetShieldedEncryptedNotesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedEncryptedNotesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0} message GetShieldedEncryptedNotesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedEncryptedNotesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startIndex != null && Object.hasOwnProperty.call(message, "startIndex"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startIndex);
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.count);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedEncryptedNotesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.IGetShieldedEncryptedNotesRequestV0} message GetShieldedEncryptedNotesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedEncryptedNotesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedEncryptedNotesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0} GetShieldedEncryptedNotesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedEncryptedNotesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startIndex = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.count = reader.uint32();
+                                        break;
+                                    case 3:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedEncryptedNotesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0} GetShieldedEncryptedNotesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedEncryptedNotesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedEncryptedNotesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedEncryptedNotesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startIndex != null && message.hasOwnProperty("startIndex"))
+                                    if (!$util.isInteger(message.startIndex) && !(message.startIndex && $util.isInteger(message.startIndex.low) && $util.isInteger(message.startIndex.high)))
+                                        return "startIndex: integer|Long expected";
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    if (!$util.isInteger(message.count))
+                                        return "count: integer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedEncryptedNotesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0} GetShieldedEncryptedNotesRequestV0
+                             */
+                            GetShieldedEncryptedNotesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0();
+                                if (object.startIndex != null)
+                                    if ($util.Long)
+                                        (message.startIndex = $util.Long.fromValue(object.startIndex)).unsigned = true;
+                                    else if (typeof object.startIndex === "string")
+                                        message.startIndex = parseInt(object.startIndex, 10);
+                                    else if (typeof object.startIndex === "number")
+                                        message.startIndex = object.startIndex;
+                                    else if (typeof object.startIndex === "object")
+                                        message.startIndex = new $util.LongBits(object.startIndex.low >>> 0, object.startIndex.high >>> 0).toNumber(true);
+                                if (object.count != null)
+                                    message.count = object.count >>> 0;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedEncryptedNotesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0} message GetShieldedEncryptedNotesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedEncryptedNotesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startIndex = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startIndex = options.longs === String ? "0" : 0;
+                                    object.count = 0;
+                                    object.prove = false;
+                                }
+                                if (message.startIndex != null && message.hasOwnProperty("startIndex"))
+                                    if (typeof message.startIndex === "number")
+                                        object.startIndex = options.longs === String ? String(message.startIndex) : message.startIndex;
+                                    else
+                                        object.startIndex = options.longs === String ? $util.Long.prototype.toString.call(message.startIndex) : options.longs === Number ? new $util.LongBits(message.startIndex.low >>> 0, message.startIndex.high >>> 0).toNumber(true) : message.startIndex;
+                                if (message.count != null && message.hasOwnProperty("count"))
+                                    object.count = message.count;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedEncryptedNotesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedEncryptedNotesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedEncryptedNotesRequestV0;
+                        })();
+
+                        return GetShieldedEncryptedNotesRequest;
+                    })();
+
+                    v0.GetShieldedEncryptedNotesResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedEncryptedNotesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedEncryptedNotesResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0|null} [v0] GetShieldedEncryptedNotesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedEncryptedNotesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedEncryptedNotesResponse.
+                         * @implements IGetShieldedEncryptedNotesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedEncryptedNotesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedEncryptedNotesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @instance
+                         */
+                        GetShieldedEncryptedNotesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedEncryptedNotesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedEncryptedNotesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedEncryptedNotesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} GetShieldedEncryptedNotesResponse instance
+                         */
+                        GetShieldedEncryptedNotesResponse.create = function create(properties) {
+                            return new GetShieldedEncryptedNotesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedEncryptedNotesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesResponse} message GetShieldedEncryptedNotesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedEncryptedNotesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedEncryptedNotesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedEncryptedNotesResponse} message GetShieldedEncryptedNotesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedEncryptedNotesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedEncryptedNotesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} GetShieldedEncryptedNotesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedEncryptedNotesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedEncryptedNotesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} GetShieldedEncryptedNotesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedEncryptedNotesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedEncryptedNotesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedEncryptedNotesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedEncryptedNotesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} GetShieldedEncryptedNotesResponse
+                         */
+                        GetShieldedEncryptedNotesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedEncryptedNotesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse} message GetShieldedEncryptedNotesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedEncryptedNotesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedEncryptedNotesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedEncryptedNotesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedEncryptedNotesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                             * @interface IGetShieldedEncryptedNotesResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes|null} [encryptedNotes] GetShieldedEncryptedNotesResponseV0 encryptedNotes
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedEncryptedNotesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedEncryptedNotesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedEncryptedNotesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse
+                             * @classdesc Represents a GetShieldedEncryptedNotesResponseV0.
+                             * @implements IGetShieldedEncryptedNotesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedEncryptedNotesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedEncryptedNotesResponseV0 encryptedNotes.
+                             * @member {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes|null|undefined} encryptedNotes
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesResponseV0.prototype.encryptedNotes = null;
+
+                            /**
+                             * GetShieldedEncryptedNotesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedEncryptedNotesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @instance
+                             */
+                            GetShieldedEncryptedNotesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedEncryptedNotesResponseV0 result.
+                             * @member {"encryptedNotes"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedEncryptedNotesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["encryptedNotes", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedEncryptedNotesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0} GetShieldedEncryptedNotesResponseV0 instance
+                             */
+                            GetShieldedEncryptedNotesResponseV0.create = function create(properties) {
+                                return new GetShieldedEncryptedNotesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedEncryptedNotesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0} message GetShieldedEncryptedNotesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedEncryptedNotesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.encryptedNotes != null && Object.hasOwnProperty.call(message, "encryptedNotes"))
+                                    $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.encode(message.encryptedNotes, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedEncryptedNotesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.IGetShieldedEncryptedNotesResponseV0} message GetShieldedEncryptedNotesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedEncryptedNotesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedEncryptedNotesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0} GetShieldedEncryptedNotesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedEncryptedNotesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.encryptedNotes = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedEncryptedNotesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0} GetShieldedEncryptedNotesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedEncryptedNotesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedEncryptedNotesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedEncryptedNotesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.encryptedNotes != null && message.hasOwnProperty("encryptedNotes")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.verify(message.encryptedNotes);
+                                        if (error)
+                                            return "encryptedNotes." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedEncryptedNotesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0} GetShieldedEncryptedNotesResponseV0
+                             */
+                            GetShieldedEncryptedNotesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0();
+                                if (object.encryptedNotes != null) {
+                                    if (typeof object.encryptedNotes !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.encryptedNotes: object expected");
+                                    message.encryptedNotes = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.fromObject(object.encryptedNotes);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedEncryptedNotesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0} message GetShieldedEncryptedNotesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedEncryptedNotesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.encryptedNotes != null && message.hasOwnProperty("encryptedNotes")) {
+                                    object.encryptedNotes = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.toObject(message.encryptedNotes, options);
+                                    if (options.oneofs)
+                                        object.result = "encryptedNotes";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedEncryptedNotesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedEncryptedNotesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetShieldedEncryptedNotesResponseV0.EncryptedNote = (function() {
+
+                                /**
+                                 * Properties of an EncryptedNote.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                                 * @interface IEncryptedNote
+                                 * @property {Uint8Array|null} [nullifier] EncryptedNote nullifier
+                                 * @property {Uint8Array|null} [cmx] EncryptedNote cmx
+                                 * @property {Uint8Array|null} [encryptedNote] EncryptedNote encryptedNote
+                                 */
+
+                                /**
+                                 * Constructs a new EncryptedNote.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                                 * @classdesc Represents an EncryptedNote.
+                                 * @implements IEncryptedNote
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote=} [properties] Properties to set
+                                 */
+                                function EncryptedNote(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EncryptedNote nullifier.
+                                 * @member {Uint8Array} nullifier
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 */
+                                EncryptedNote.prototype.nullifier = $util.newBuffer([]);
+
+                                /**
+                                 * EncryptedNote cmx.
+                                 * @member {Uint8Array} cmx
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 */
+                                EncryptedNote.prototype.cmx = $util.newBuffer([]);
+
+                                /**
+                                 * EncryptedNote encryptedNote.
+                                 * @member {Uint8Array} encryptedNote
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 */
+                                EncryptedNote.prototype.encryptedNote = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new EncryptedNote instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} EncryptedNote instance
+                                 */
+                                EncryptedNote.create = function create(properties) {
+                                    return new EncryptedNote(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EncryptedNote message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote} message EncryptedNote message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EncryptedNote.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.nullifier != null && Object.hasOwnProperty.call(message, "nullifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nullifier);
+                                    if (message.cmx != null && Object.hasOwnProperty.call(message, "cmx"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.cmx);
+                                    if (message.encryptedNote != null && Object.hasOwnProperty.call(message, "encryptedNote"))
+                                        writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.encryptedNote);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EncryptedNote message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote} message EncryptedNote message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EncryptedNote.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EncryptedNote message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} EncryptedNote
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EncryptedNote.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.nullifier = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.cmx = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.encryptedNote = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EncryptedNote message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} EncryptedNote
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EncryptedNote.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EncryptedNote message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EncryptedNote.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        if (!(message.nullifier && typeof message.nullifier.length === "number" || $util.isString(message.nullifier)))
+                                            return "nullifier: buffer expected";
+                                    if (message.cmx != null && message.hasOwnProperty("cmx"))
+                                        if (!(message.cmx && typeof message.cmx.length === "number" || $util.isString(message.cmx)))
+                                            return "cmx: buffer expected";
+                                    if (message.encryptedNote != null && message.hasOwnProperty("encryptedNote"))
+                                        if (!(message.encryptedNote && typeof message.encryptedNote.length === "number" || $util.isString(message.encryptedNote)))
+                                            return "encryptedNote: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EncryptedNote message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} EncryptedNote
+                                 */
+                                EncryptedNote.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote();
+                                    if (object.nullifier != null)
+                                        if (typeof object.nullifier === "string")
+                                            $util.base64.decode(object.nullifier, message.nullifier = $util.newBuffer($util.base64.length(object.nullifier)), 0);
+                                        else if (object.nullifier.length >= 0)
+                                            message.nullifier = object.nullifier;
+                                    if (object.cmx != null)
+                                        if (typeof object.cmx === "string")
+                                            $util.base64.decode(object.cmx, message.cmx = $util.newBuffer($util.base64.length(object.cmx)), 0);
+                                        else if (object.cmx.length >= 0)
+                                            message.cmx = object.cmx;
+                                    if (object.encryptedNote != null)
+                                        if (typeof object.encryptedNote === "string")
+                                            $util.base64.decode(object.encryptedNote, message.encryptedNote = $util.newBuffer($util.base64.length(object.encryptedNote)), 0);
+                                        else if (object.encryptedNote.length >= 0)
+                                            message.encryptedNote = object.encryptedNote;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EncryptedNote message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} message EncryptedNote
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EncryptedNote.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.nullifier = "";
+                                        else {
+                                            object.nullifier = [];
+                                            if (options.bytes !== Array)
+                                                object.nullifier = $util.newBuffer(object.nullifier);
+                                        }
+                                        if (options.bytes === String)
+                                            object.cmx = "";
+                                        else {
+                                            object.cmx = [];
+                                            if (options.bytes !== Array)
+                                                object.cmx = $util.newBuffer(object.cmx);
+                                        }
+                                        if (options.bytes === String)
+                                            object.encryptedNote = "";
+                                        else {
+                                            object.encryptedNote = [];
+                                            if (options.bytes !== Array)
+                                                object.encryptedNote = $util.newBuffer(object.encryptedNote);
+                                        }
+                                    }
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        object.nullifier = options.bytes === String ? $util.base64.encode(message.nullifier, 0, message.nullifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifier) : message.nullifier;
+                                    if (message.cmx != null && message.hasOwnProperty("cmx"))
+                                        object.cmx = options.bytes === String ? $util.base64.encode(message.cmx, 0, message.cmx.length) : options.bytes === Array ? Array.prototype.slice.call(message.cmx) : message.cmx;
+                                    if (message.encryptedNote != null && message.hasOwnProperty("encryptedNote"))
+                                        object.encryptedNote = options.bytes === String ? $util.base64.encode(message.encryptedNote, 0, message.encryptedNote.length) : options.bytes === Array ? Array.prototype.slice.call(message.encryptedNote) : message.encryptedNote;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EncryptedNote to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EncryptedNote.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EncryptedNote;
+                            })();
+
+                            GetShieldedEncryptedNotesResponseV0.EncryptedNotes = (function() {
+
+                                /**
+                                 * Properties of an EncryptedNotes.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                                 * @interface IEncryptedNotes
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote>|null} [entries] EncryptedNotes entries
+                                 */
+
+                                /**
+                                 * Constructs a new EncryptedNotes.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0
+                                 * @classdesc Represents an EncryptedNotes.
+                                 * @implements IEncryptedNotes
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes=} [properties] Properties to set
+                                 */
+                                function EncryptedNotes(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * EncryptedNotes entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNote>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @instance
+                                 */
+                                EncryptedNotes.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new EncryptedNotes instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes} EncryptedNotes instance
+                                 */
+                                EncryptedNotes.create = function create(properties) {
+                                    return new EncryptedNotes(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified EncryptedNotes message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes} message EncryptedNotes message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EncryptedNotes.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified EncryptedNotes message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.IEncryptedNotes} message EncryptedNotes message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                EncryptedNotes.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an EncryptedNotes message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes} EncryptedNotes
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EncryptedNotes.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an EncryptedNotes message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes} EncryptedNotes
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                EncryptedNotes.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an EncryptedNotes message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                EncryptedNotes.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an EncryptedNotes message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes} EncryptedNotes
+                                 */
+                                EncryptedNotes.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an EncryptedNotes message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes} message EncryptedNotes
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                EncryptedNotes.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this EncryptedNotes to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                EncryptedNotes.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return EncryptedNotes;
+                            })();
+
+                            return GetShieldedEncryptedNotesResponseV0;
+                        })();
+
+                        return GetShieldedEncryptedNotesResponse;
+                    })();
+
+                    v0.GetShieldedAnchorsRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedAnchorsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedAnchorsRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0|null} [v0] GetShieldedAnchorsRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedAnchorsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedAnchorsRequest.
+                         * @implements IGetShieldedAnchorsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedAnchorsRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedAnchorsRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @instance
+                         */
+                        GetShieldedAnchorsRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedAnchorsRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedAnchorsRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedAnchorsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest} GetShieldedAnchorsRequest instance
+                         */
+                        GetShieldedAnchorsRequest.create = function create(properties) {
+                            return new GetShieldedAnchorsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedAnchorsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest} message GetShieldedAnchorsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedAnchorsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedAnchorsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest} message GetShieldedAnchorsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedAnchorsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedAnchorsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest} GetShieldedAnchorsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedAnchorsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedAnchorsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest} GetShieldedAnchorsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedAnchorsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedAnchorsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedAnchorsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedAnchorsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest} GetShieldedAnchorsRequest
+                         */
+                        GetShieldedAnchorsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedAnchorsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest} message GetShieldedAnchorsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedAnchorsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedAnchorsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedAnchorsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedAnchorsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                             * @interface IGetShieldedAnchorsRequestV0
+                             * @property {boolean|null} [prove] GetShieldedAnchorsRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedAnchorsRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest
+                             * @classdesc Represents a GetShieldedAnchorsRequestV0.
+                             * @implements IGetShieldedAnchorsRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedAnchorsRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedAnchorsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @instance
+                             */
+                            GetShieldedAnchorsRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedAnchorsRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0} GetShieldedAnchorsRequestV0 instance
+                             */
+                            GetShieldedAnchorsRequestV0.create = function create(properties) {
+                                return new GetShieldedAnchorsRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedAnchorsRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0} message GetShieldedAnchorsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedAnchorsRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedAnchorsRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.IGetShieldedAnchorsRequestV0} message GetShieldedAnchorsRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedAnchorsRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedAnchorsRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0} GetShieldedAnchorsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedAnchorsRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedAnchorsRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0} GetShieldedAnchorsRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedAnchorsRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedAnchorsRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedAnchorsRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedAnchorsRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0} GetShieldedAnchorsRequestV0
+                             */
+                            GetShieldedAnchorsRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedAnchorsRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0} message GetShieldedAnchorsRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedAnchorsRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedAnchorsRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedAnchorsRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedAnchorsRequestV0;
+                        })();
+
+                        return GetShieldedAnchorsRequest;
+                    })();
+
+                    v0.GetShieldedAnchorsResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedAnchorsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedAnchorsResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0|null} [v0] GetShieldedAnchorsResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedAnchorsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedAnchorsResponse.
+                         * @implements IGetShieldedAnchorsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedAnchorsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedAnchorsResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @instance
+                         */
+                        GetShieldedAnchorsResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedAnchorsResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedAnchorsResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedAnchorsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} GetShieldedAnchorsResponse instance
+                         */
+                        GetShieldedAnchorsResponse.create = function create(properties) {
+                            return new GetShieldedAnchorsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedAnchorsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsResponse} message GetShieldedAnchorsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedAnchorsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedAnchorsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsResponse} message GetShieldedAnchorsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedAnchorsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedAnchorsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} GetShieldedAnchorsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedAnchorsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedAnchorsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} GetShieldedAnchorsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedAnchorsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedAnchorsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedAnchorsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedAnchorsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} GetShieldedAnchorsResponse
+                         */
+                        GetShieldedAnchorsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedAnchorsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse} message GetShieldedAnchorsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedAnchorsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedAnchorsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedAnchorsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedAnchorsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                             * @interface IGetShieldedAnchorsResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors|null} [anchors] GetShieldedAnchorsResponseV0 anchors
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedAnchorsResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedAnchorsResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedAnchorsResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse
+                             * @classdesc Represents a GetShieldedAnchorsResponseV0.
+                             * @implements IGetShieldedAnchorsResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedAnchorsResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedAnchorsResponseV0 anchors.
+                             * @member {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors|null|undefined} anchors
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @instance
+                             */
+                            GetShieldedAnchorsResponseV0.prototype.anchors = null;
+
+                            /**
+                             * GetShieldedAnchorsResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @instance
+                             */
+                            GetShieldedAnchorsResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedAnchorsResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @instance
+                             */
+                            GetShieldedAnchorsResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedAnchorsResponseV0 result.
+                             * @member {"anchors"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedAnchorsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["anchors", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedAnchorsResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0} GetShieldedAnchorsResponseV0 instance
+                             */
+                            GetShieldedAnchorsResponseV0.create = function create(properties) {
+                                return new GetShieldedAnchorsResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedAnchorsResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0} message GetShieldedAnchorsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedAnchorsResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.anchors != null && Object.hasOwnProperty.call(message, "anchors"))
+                                    $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.encode(message.anchors, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedAnchorsResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.IGetShieldedAnchorsResponseV0} message GetShieldedAnchorsResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedAnchorsResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedAnchorsResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0} GetShieldedAnchorsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedAnchorsResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.anchors = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedAnchorsResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0} GetShieldedAnchorsResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedAnchorsResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedAnchorsResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedAnchorsResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.anchors != null && message.hasOwnProperty("anchors")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.verify(message.anchors);
+                                        if (error)
+                                            return "anchors." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedAnchorsResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0} GetShieldedAnchorsResponseV0
+                             */
+                            GetShieldedAnchorsResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0();
+                                if (object.anchors != null) {
+                                    if (typeof object.anchors !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.anchors: object expected");
+                                    message.anchors = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.fromObject(object.anchors);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedAnchorsResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0} message GetShieldedAnchorsResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedAnchorsResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.anchors != null && message.hasOwnProperty("anchors")) {
+                                    object.anchors = $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.toObject(message.anchors, options);
+                                    if (options.oneofs)
+                                        object.result = "anchors";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedAnchorsResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedAnchorsResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetShieldedAnchorsResponseV0.Anchors = (function() {
+
+                                /**
+                                 * Properties of an Anchors.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                                 * @interface IAnchors
+                                 * @property {Array.<Uint8Array>|null} [anchors] Anchors anchors
+                                 */
+
+                                /**
+                                 * Constructs a new Anchors.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0
+                                 * @classdesc Represents an Anchors.
+                                 * @implements IAnchors
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors=} [properties] Properties to set
+                                 */
+                                function Anchors(properties) {
+                                    this.anchors = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Anchors anchors.
+                                 * @member {Array.<Uint8Array>} anchors
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @instance
+                                 */
+                                Anchors.prototype.anchors = $util.emptyArray;
+
+                                /**
+                                 * Creates a new Anchors instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors} Anchors instance
+                                 */
+                                Anchors.create = function create(properties) {
+                                    return new Anchors(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Anchors message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors} message Anchors message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Anchors.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.anchors != null && message.anchors.length)
+                                        for (var i = 0; i < message.anchors.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.anchors[i]);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Anchors message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.IAnchors} message Anchors message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Anchors.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an Anchors message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors} Anchors
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Anchors.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.anchors && message.anchors.length))
+                                                message.anchors = [];
+                                            message.anchors.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an Anchors message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors} Anchors
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Anchors.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an Anchors message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Anchors.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.anchors != null && message.hasOwnProperty("anchors")) {
+                                        if (!Array.isArray(message.anchors))
+                                            return "anchors: array expected";
+                                        for (var i = 0; i < message.anchors.length; ++i)
+                                            if (!(message.anchors[i] && typeof message.anchors[i].length === "number" || $util.isString(message.anchors[i])))
+                                                return "anchors: buffer[] expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an Anchors message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors} Anchors
+                                 */
+                                Anchors.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors();
+                                    if (object.anchors) {
+                                        if (!Array.isArray(object.anchors))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors.anchors: array expected");
+                                        message.anchors = [];
+                                        for (var i = 0; i < object.anchors.length; ++i)
+                                            if (typeof object.anchors[i] === "string")
+                                                $util.base64.decode(object.anchors[i], message.anchors[i] = $util.newBuffer($util.base64.length(object.anchors[i])), 0);
+                                            else if (object.anchors[i].length >= 0)
+                                                message.anchors[i] = object.anchors[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an Anchors message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors} message Anchors
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Anchors.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.anchors = [];
+                                    if (message.anchors && message.anchors.length) {
+                                        object.anchors = [];
+                                        for (var j = 0; j < message.anchors.length; ++j)
+                                            object.anchors[j] = options.bytes === String ? $util.base64.encode(message.anchors[j], 0, message.anchors[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.anchors[j]) : message.anchors[j];
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Anchors to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.Anchors
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Anchors.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Anchors;
+                            })();
+
+                            return GetShieldedAnchorsResponseV0;
+                        })();
+
+                        return GetShieldedAnchorsResponse;
+                    })();
+
+                    v0.GetShieldedPoolStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedPoolStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedPoolStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0|null} [v0] GetShieldedPoolStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedPoolStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedPoolStateRequest.
+                         * @implements IGetShieldedPoolStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedPoolStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedPoolStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @instance
+                         */
+                        GetShieldedPoolStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedPoolStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedPoolStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedPoolStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest} GetShieldedPoolStateRequest instance
+                         */
+                        GetShieldedPoolStateRequest.create = function create(properties) {
+                            return new GetShieldedPoolStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedPoolStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest} message GetShieldedPoolStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedPoolStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedPoolStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest} message GetShieldedPoolStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedPoolStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedPoolStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest} GetShieldedPoolStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedPoolStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedPoolStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest} GetShieldedPoolStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedPoolStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedPoolStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedPoolStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedPoolStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest} GetShieldedPoolStateRequest
+                         */
+                        GetShieldedPoolStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedPoolStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest} message GetShieldedPoolStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedPoolStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedPoolStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedPoolStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedPoolStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                             * @interface IGetShieldedPoolStateRequestV0
+                             * @property {boolean|null} [prove] GetShieldedPoolStateRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedPoolStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest
+                             * @classdesc Represents a GetShieldedPoolStateRequestV0.
+                             * @implements IGetShieldedPoolStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedPoolStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedPoolStateRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @instance
+                             */
+                            GetShieldedPoolStateRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedPoolStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0} GetShieldedPoolStateRequestV0 instance
+                             */
+                            GetShieldedPoolStateRequestV0.create = function create(properties) {
+                                return new GetShieldedPoolStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedPoolStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0} message GetShieldedPoolStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedPoolStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedPoolStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.IGetShieldedPoolStateRequestV0} message GetShieldedPoolStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedPoolStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedPoolStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0} GetShieldedPoolStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedPoolStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedPoolStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0} GetShieldedPoolStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedPoolStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedPoolStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedPoolStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedPoolStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0} GetShieldedPoolStateRequestV0
+                             */
+                            GetShieldedPoolStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedPoolStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0} message GetShieldedPoolStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedPoolStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedPoolStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedPoolStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedPoolStateRequestV0;
+                        })();
+
+                        return GetShieldedPoolStateRequest;
+                    })();
+
+                    v0.GetShieldedPoolStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedPoolStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedPoolStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0|null} [v0] GetShieldedPoolStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedPoolStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedPoolStateResponse.
+                         * @implements IGetShieldedPoolStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedPoolStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedPoolStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @instance
+                         */
+                        GetShieldedPoolStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedPoolStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedPoolStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedPoolStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} GetShieldedPoolStateResponse instance
+                         */
+                        GetShieldedPoolStateResponse.create = function create(properties) {
+                            return new GetShieldedPoolStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedPoolStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateResponse} message GetShieldedPoolStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedPoolStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedPoolStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateResponse} message GetShieldedPoolStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedPoolStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedPoolStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} GetShieldedPoolStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedPoolStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedPoolStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} GetShieldedPoolStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedPoolStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedPoolStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedPoolStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedPoolStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} GetShieldedPoolStateResponse
+                         */
+                        GetShieldedPoolStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedPoolStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse} message GetShieldedPoolStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedPoolStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedPoolStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedPoolStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedPoolStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                             * @interface IGetShieldedPoolStateResponseV0
+                             * @property {number|Long|null} [totalBalance] GetShieldedPoolStateResponseV0 totalBalance
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedPoolStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedPoolStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedPoolStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse
+                             * @classdesc Represents a GetShieldedPoolStateResponseV0.
+                             * @implements IGetShieldedPoolStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedPoolStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedPoolStateResponseV0 totalBalance.
+                             * @member {number|Long} totalBalance
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @instance
+                             */
+                            GetShieldedPoolStateResponseV0.prototype.totalBalance = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetShieldedPoolStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @instance
+                             */
+                            GetShieldedPoolStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedPoolStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @instance
+                             */
+                            GetShieldedPoolStateResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedPoolStateResponseV0 result.
+                             * @member {"totalBalance"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedPoolStateResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["totalBalance", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedPoolStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0} GetShieldedPoolStateResponseV0 instance
+                             */
+                            GetShieldedPoolStateResponseV0.create = function create(properties) {
+                                return new GetShieldedPoolStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedPoolStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0} message GetShieldedPoolStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedPoolStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.totalBalance != null && Object.hasOwnProperty.call(message, "totalBalance"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.totalBalance);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedPoolStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.IGetShieldedPoolStateResponseV0} message GetShieldedPoolStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedPoolStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedPoolStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0} GetShieldedPoolStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedPoolStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.totalBalance = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedPoolStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0} GetShieldedPoolStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedPoolStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedPoolStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedPoolStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.totalBalance != null && message.hasOwnProperty("totalBalance")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.totalBalance) && !(message.totalBalance && $util.isInteger(message.totalBalance.low) && $util.isInteger(message.totalBalance.high)))
+                                        return "totalBalance: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedPoolStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0} GetShieldedPoolStateResponseV0
+                             */
+                            GetShieldedPoolStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0();
+                                if (object.totalBalance != null)
+                                    if ($util.Long)
+                                        (message.totalBalance = $util.Long.fromValue(object.totalBalance)).unsigned = true;
+                                    else if (typeof object.totalBalance === "string")
+                                        message.totalBalance = parseInt(object.totalBalance, 10);
+                                    else if (typeof object.totalBalance === "number")
+                                        message.totalBalance = object.totalBalance;
+                                    else if (typeof object.totalBalance === "object")
+                                        message.totalBalance = new $util.LongBits(object.totalBalance.low >>> 0, object.totalBalance.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedPoolStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0} message GetShieldedPoolStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedPoolStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.totalBalance != null && message.hasOwnProperty("totalBalance")) {
+                                    if (typeof message.totalBalance === "number")
+                                        object.totalBalance = options.longs === String ? String(message.totalBalance) : message.totalBalance;
+                                    else
+                                        object.totalBalance = options.longs === String ? $util.Long.prototype.toString.call(message.totalBalance) : options.longs === Number ? new $util.LongBits(message.totalBalance.low >>> 0, message.totalBalance.high >>> 0).toNumber(true) : message.totalBalance;
+                                    if (options.oneofs)
+                                        object.result = "totalBalance";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedPoolStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedPoolStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedPoolStateResponseV0;
+                        })();
+
+                        return GetShieldedPoolStateResponse;
+                    })();
+
+                    v0.GetShieldedNullifiersRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNullifiersRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNullifiersRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0|null} [v0] GetShieldedNullifiersRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNullifiersRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNullifiersRequest.
+                         * @implements IGetShieldedNullifiersRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedNullifiersRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNullifiersRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @instance
+                         */
+                        GetShieldedNullifiersRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNullifiersRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNullifiersRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNullifiersRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest} GetShieldedNullifiersRequest instance
+                         */
+                        GetShieldedNullifiersRequest.create = function create(properties) {
+                            return new GetShieldedNullifiersRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNullifiersRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest} message GetShieldedNullifiersRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNullifiersRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNullifiersRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersRequest} message GetShieldedNullifiersRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNullifiersRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNullifiersRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest} GetShieldedNullifiersRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNullifiersRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNullifiersRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest} GetShieldedNullifiersRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNullifiersRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNullifiersRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNullifiersRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNullifiersRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest} GetShieldedNullifiersRequest
+                         */
+                        GetShieldedNullifiersRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNullifiersRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest} message GetShieldedNullifiersRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNullifiersRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNullifiersRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNullifiersRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNullifiersRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                             * @interface IGetShieldedNullifiersRequestV0
+                             * @property {Array.<Uint8Array>|null} [nullifiers] GetShieldedNullifiersRequestV0 nullifiers
+                             * @property {boolean|null} [prove] GetShieldedNullifiersRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNullifiersRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest
+                             * @classdesc Represents a GetShieldedNullifiersRequestV0.
+                             * @implements IGetShieldedNullifiersRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNullifiersRequestV0(properties) {
+                                this.nullifiers = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNullifiersRequestV0 nullifiers.
+                             * @member {Array.<Uint8Array>} nullifiers
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersRequestV0.prototype.nullifiers = $util.emptyArray;
+
+                            /**
+                             * GetShieldedNullifiersRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedNullifiersRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0} GetShieldedNullifiersRequestV0 instance
+                             */
+                            GetShieldedNullifiersRequestV0.create = function create(properties) {
+                                return new GetShieldedNullifiersRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNullifiersRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0} message GetShieldedNullifiersRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNullifiersRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.nullifiers != null && message.nullifiers.length)
+                                    for (var i = 0; i < message.nullifiers.length; ++i)
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nullifiers[i]);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNullifiersRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.IGetShieldedNullifiersRequestV0} message GetShieldedNullifiersRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNullifiersRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNullifiersRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0} GetShieldedNullifiersRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNullifiersRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.nullifiers && message.nullifiers.length))
+                                            message.nullifiers = [];
+                                        message.nullifiers.push(reader.bytes());
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNullifiersRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0} GetShieldedNullifiersRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNullifiersRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNullifiersRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNullifiersRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.nullifiers != null && message.hasOwnProperty("nullifiers")) {
+                                    if (!Array.isArray(message.nullifiers))
+                                        return "nullifiers: array expected";
+                                    for (var i = 0; i < message.nullifiers.length; ++i)
+                                        if (!(message.nullifiers[i] && typeof message.nullifiers[i].length === "number" || $util.isString(message.nullifiers[i])))
+                                            return "nullifiers: buffer[] expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNullifiersRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0} GetShieldedNullifiersRequestV0
+                             */
+                            GetShieldedNullifiersRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0();
+                                if (object.nullifiers) {
+                                    if (!Array.isArray(object.nullifiers))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0.nullifiers: array expected");
+                                    message.nullifiers = [];
+                                    for (var i = 0; i < object.nullifiers.length; ++i)
+                                        if (typeof object.nullifiers[i] === "string")
+                                            $util.base64.decode(object.nullifiers[i], message.nullifiers[i] = $util.newBuffer($util.base64.length(object.nullifiers[i])), 0);
+                                        else if (object.nullifiers[i].length >= 0)
+                                            message.nullifiers[i] = object.nullifiers[i];
+                                }
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNullifiersRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0} message GetShieldedNullifiersRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNullifiersRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.nullifiers = [];
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.nullifiers && message.nullifiers.length) {
+                                    object.nullifiers = [];
+                                    for (var j = 0; j < message.nullifiers.length; ++j)
+                                        object.nullifiers[j] = options.bytes === String ? $util.base64.encode(message.nullifiers[j], 0, message.nullifiers[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifiers[j]) : message.nullifiers[j];
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNullifiersRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNullifiersRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedNullifiersRequestV0;
+                        })();
+
+                        return GetShieldedNullifiersRequest;
+                    })();
+
+                    v0.GetShieldedNullifiersResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNullifiersResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNullifiersResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0|null} [v0] GetShieldedNullifiersResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNullifiersResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNullifiersResponse.
+                         * @implements IGetShieldedNullifiersResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedNullifiersResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNullifiersResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @instance
+                         */
+                        GetShieldedNullifiersResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNullifiersResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNullifiersResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNullifiersResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} GetShieldedNullifiersResponse instance
+                         */
+                        GetShieldedNullifiersResponse.create = function create(properties) {
+                            return new GetShieldedNullifiersResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNullifiersResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersResponse} message GetShieldedNullifiersResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNullifiersResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNullifiersResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNullifiersResponse} message GetShieldedNullifiersResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNullifiersResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNullifiersResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} GetShieldedNullifiersResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNullifiersResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNullifiersResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} GetShieldedNullifiersResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNullifiersResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNullifiersResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNullifiersResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNullifiersResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} GetShieldedNullifiersResponse
+                         */
+                        GetShieldedNullifiersResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNullifiersResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse} message GetShieldedNullifiersResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNullifiersResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNullifiersResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNullifiersResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNullifiersResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                             * @interface IGetShieldedNullifiersResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses|null} [nullifierStatuses] GetShieldedNullifiersResponseV0 nullifierStatuses
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedNullifiersResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedNullifiersResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNullifiersResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse
+                             * @classdesc Represents a GetShieldedNullifiersResponseV0.
+                             * @implements IGetShieldedNullifiersResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNullifiersResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNullifiersResponseV0 nullifierStatuses.
+                             * @member {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses|null|undefined} nullifierStatuses
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersResponseV0.prototype.nullifierStatuses = null;
+
+                            /**
+                             * GetShieldedNullifiersResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedNullifiersResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @instance
+                             */
+                            GetShieldedNullifiersResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedNullifiersResponseV0 result.
+                             * @member {"nullifierStatuses"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedNullifiersResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["nullifierStatuses", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedNullifiersResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0} GetShieldedNullifiersResponseV0 instance
+                             */
+                            GetShieldedNullifiersResponseV0.create = function create(properties) {
+                                return new GetShieldedNullifiersResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNullifiersResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0} message GetShieldedNullifiersResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNullifiersResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.nullifierStatuses != null && Object.hasOwnProperty.call(message, "nullifierStatuses"))
+                                    $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.encode(message.nullifierStatuses, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNullifiersResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.IGetShieldedNullifiersResponseV0} message GetShieldedNullifiersResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNullifiersResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNullifiersResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0} GetShieldedNullifiersResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNullifiersResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.nullifierStatuses = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNullifiersResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0} GetShieldedNullifiersResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNullifiersResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNullifiersResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNullifiersResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.nullifierStatuses != null && message.hasOwnProperty("nullifierStatuses")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.verify(message.nullifierStatuses);
+                                        if (error)
+                                            return "nullifierStatuses." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNullifiersResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0} GetShieldedNullifiersResponseV0
+                             */
+                            GetShieldedNullifiersResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0();
+                                if (object.nullifierStatuses != null) {
+                                    if (typeof object.nullifierStatuses !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.nullifierStatuses: object expected");
+                                    message.nullifierStatuses = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.fromObject(object.nullifierStatuses);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNullifiersResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0} message GetShieldedNullifiersResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNullifiersResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.nullifierStatuses != null && message.hasOwnProperty("nullifierStatuses")) {
+                                    object.nullifierStatuses = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.toObject(message.nullifierStatuses, options);
+                                    if (options.oneofs)
+                                        object.result = "nullifierStatuses";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNullifiersResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNullifiersResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetShieldedNullifiersResponseV0.NullifierStatus = (function() {
+
+                                /**
+                                 * Properties of a NullifierStatus.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                                 * @interface INullifierStatus
+                                 * @property {Uint8Array|null} [nullifier] NullifierStatus nullifier
+                                 * @property {boolean|null} [isSpent] NullifierStatus isSpent
+                                 */
+
+                                /**
+                                 * Constructs a new NullifierStatus.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                                 * @classdesc Represents a NullifierStatus.
+                                 * @implements INullifierStatus
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus=} [properties] Properties to set
+                                 */
+                                function NullifierStatus(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * NullifierStatus nullifier.
+                                 * @member {Uint8Array} nullifier
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @instance
+                                 */
+                                NullifierStatus.prototype.nullifier = $util.newBuffer([]);
+
+                                /**
+                                 * NullifierStatus isSpent.
+                                 * @member {boolean} isSpent
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @instance
+                                 */
+                                NullifierStatus.prototype.isSpent = false;
+
+                                /**
+                                 * Creates a new NullifierStatus instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus} NullifierStatus instance
+                                 */
+                                NullifierStatus.create = function create(properties) {
+                                    return new NullifierStatus(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified NullifierStatus message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus} message NullifierStatus message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                NullifierStatus.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.nullifier != null && Object.hasOwnProperty.call(message, "nullifier"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nullifier);
+                                    if (message.isSpent != null && Object.hasOwnProperty.call(message, "isSpent"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).bool(message.isSpent);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified NullifierStatus message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus} message NullifierStatus message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                NullifierStatus.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a NullifierStatus message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus} NullifierStatus
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                NullifierStatus.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.nullifier = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.isSpent = reader.bool();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a NullifierStatus message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus} NullifierStatus
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                NullifierStatus.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a NullifierStatus message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                NullifierStatus.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        if (!(message.nullifier && typeof message.nullifier.length === "number" || $util.isString(message.nullifier)))
+                                            return "nullifier: buffer expected";
+                                    if (message.isSpent != null && message.hasOwnProperty("isSpent"))
+                                        if (typeof message.isSpent !== "boolean")
+                                            return "isSpent: boolean expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a NullifierStatus message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus} NullifierStatus
+                                 */
+                                NullifierStatus.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus();
+                                    if (object.nullifier != null)
+                                        if (typeof object.nullifier === "string")
+                                            $util.base64.decode(object.nullifier, message.nullifier = $util.newBuffer($util.base64.length(object.nullifier)), 0);
+                                        else if (object.nullifier.length >= 0)
+                                            message.nullifier = object.nullifier;
+                                    if (object.isSpent != null)
+                                        message.isSpent = Boolean(object.isSpent);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a NullifierStatus message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus} message NullifierStatus
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                NullifierStatus.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.nullifier = "";
+                                        else {
+                                            object.nullifier = [];
+                                            if (options.bytes !== Array)
+                                                object.nullifier = $util.newBuffer(object.nullifier);
+                                        }
+                                        object.isSpent = false;
+                                    }
+                                    if (message.nullifier != null && message.hasOwnProperty("nullifier"))
+                                        object.nullifier = options.bytes === String ? $util.base64.encode(message.nullifier, 0, message.nullifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifier) : message.nullifier;
+                                    if (message.isSpent != null && message.hasOwnProperty("isSpent"))
+                                        object.isSpent = message.isSpent;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this NullifierStatus to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                NullifierStatus.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return NullifierStatus;
+                            })();
+
+                            GetShieldedNullifiersResponseV0.NullifierStatuses = (function() {
+
+                                /**
+                                 * Properties of a NullifierStatuses.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                                 * @interface INullifierStatuses
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus>|null} [entries] NullifierStatuses entries
+                                 */
+
+                                /**
+                                 * Constructs a new NullifierStatuses.
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0
+                                 * @classdesc Represents a NullifierStatuses.
+                                 * @implements INullifierStatuses
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses=} [properties] Properties to set
+                                 */
+                                function NullifierStatuses(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * NullifierStatuses entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatus>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @instance
+                                 */
+                                NullifierStatuses.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new NullifierStatuses instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses} NullifierStatuses instance
+                                 */
+                                NullifierStatuses.create = function create(properties) {
+                                    return new NullifierStatuses(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified NullifierStatuses message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses} message NullifierStatuses message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                NullifierStatuses.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified NullifierStatuses message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.INullifierStatuses} message NullifierStatuses message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                NullifierStatuses.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a NullifierStatuses message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses} NullifierStatuses
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                NullifierStatuses.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a NullifierStatuses message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses} NullifierStatuses
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                NullifierStatuses.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a NullifierStatuses message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                NullifierStatuses.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a NullifierStatuses message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses} NullifierStatuses
+                                 */
+                                NullifierStatuses.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a NullifierStatuses message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses} message NullifierStatuses
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                NullifierStatuses.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatus.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this NullifierStatuses to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                NullifierStatuses.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return NullifierStatuses;
+                            })();
+
+                            return GetShieldedNullifiersResponseV0;
+                        })();
+
+                        return GetShieldedNullifiersResponse;
+                    })();
+
+                    v0.GetNullifiersTrunkStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetNullifiersTrunkStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetNullifiersTrunkStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0|null} [v0] GetNullifiersTrunkStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetNullifiersTrunkStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetNullifiersTrunkStateRequest.
+                         * @implements IGetNullifiersTrunkStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest=} [properties] Properties to set
+                         */
+                        function GetNullifiersTrunkStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetNullifiersTrunkStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @instance
+                         */
+                        GetNullifiersTrunkStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetNullifiersTrunkStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetNullifiersTrunkStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetNullifiersTrunkStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} GetNullifiersTrunkStateRequest instance
+                         */
+                        GetNullifiersTrunkStateRequest.create = function create(properties) {
+                            return new GetNullifiersTrunkStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersTrunkStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest} message GetNullifiersTrunkStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersTrunkStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersTrunkStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateRequest} message GetNullifiersTrunkStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersTrunkStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersTrunkStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} GetNullifiersTrunkStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersTrunkStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersTrunkStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} GetNullifiersTrunkStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersTrunkStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetNullifiersTrunkStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetNullifiersTrunkStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetNullifiersTrunkStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} GetNullifiersTrunkStateRequest
+                         */
+                        GetNullifiersTrunkStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetNullifiersTrunkStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} message GetNullifiersTrunkStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetNullifiersTrunkStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetNullifiersTrunkStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetNullifiersTrunkStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetNullifiersTrunkStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                             * @interface IGetNullifiersTrunkStateRequestV0
+                             * @property {number|null} [poolType] GetNullifiersTrunkStateRequestV0 poolType
+                             * @property {Uint8Array|null} [poolIdentifier] GetNullifiersTrunkStateRequestV0 poolIdentifier
+                             */
+
+                            /**
+                             * Constructs a new GetNullifiersTrunkStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest
+                             * @classdesc Represents a GetNullifiersTrunkStateRequestV0.
+                             * @implements IGetNullifiersTrunkStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetNullifiersTrunkStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetNullifiersTrunkStateRequestV0 poolType.
+                             * @member {number} poolType
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersTrunkStateRequestV0.prototype.poolType = 0;
+
+                            /**
+                             * GetNullifiersTrunkStateRequestV0 poolIdentifier.
+                             * @member {Uint8Array} poolIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersTrunkStateRequestV0.prototype.poolIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new GetNullifiersTrunkStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} GetNullifiersTrunkStateRequestV0 instance
+                             */
+                            GetNullifiersTrunkStateRequestV0.create = function create(properties) {
+                                return new GetNullifiersTrunkStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersTrunkStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0} message GetNullifiersTrunkStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersTrunkStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.poolType != null && Object.hasOwnProperty.call(message, "poolType"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.poolType);
+                                if (message.poolIdentifier != null && Object.hasOwnProperty.call(message, "poolIdentifier"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.poolIdentifier);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersTrunkStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.IGetNullifiersTrunkStateRequestV0} message GetNullifiersTrunkStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersTrunkStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersTrunkStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} GetNullifiersTrunkStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersTrunkStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.poolType = reader.uint32();
+                                        break;
+                                    case 2:
+                                        message.poolIdentifier = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersTrunkStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} GetNullifiersTrunkStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersTrunkStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetNullifiersTrunkStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetNullifiersTrunkStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.poolType != null && message.hasOwnProperty("poolType"))
+                                    if (!$util.isInteger(message.poolType))
+                                        return "poolType: integer expected";
+                                if (message.poolIdentifier != null && message.hasOwnProperty("poolIdentifier"))
+                                    if (!(message.poolIdentifier && typeof message.poolIdentifier.length === "number" || $util.isString(message.poolIdentifier)))
+                                        return "poolIdentifier: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetNullifiersTrunkStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} GetNullifiersTrunkStateRequestV0
+                             */
+                            GetNullifiersTrunkStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0();
+                                if (object.poolType != null)
+                                    message.poolType = object.poolType >>> 0;
+                                if (object.poolIdentifier != null)
+                                    if (typeof object.poolIdentifier === "string")
+                                        $util.base64.decode(object.poolIdentifier, message.poolIdentifier = $util.newBuffer($util.base64.length(object.poolIdentifier)), 0);
+                                    else if (object.poolIdentifier.length >= 0)
+                                        message.poolIdentifier = object.poolIdentifier;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetNullifiersTrunkStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} message GetNullifiersTrunkStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetNullifiersTrunkStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.poolType = 0;
+                                    if (options.bytes === String)
+                                        object.poolIdentifier = "";
+                                    else {
+                                        object.poolIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.poolIdentifier = $util.newBuffer(object.poolIdentifier);
+                                    }
+                                }
+                                if (message.poolType != null && message.hasOwnProperty("poolType"))
+                                    object.poolType = message.poolType;
+                                if (message.poolIdentifier != null && message.hasOwnProperty("poolIdentifier"))
+                                    object.poolIdentifier = options.bytes === String ? $util.base64.encode(message.poolIdentifier, 0, message.poolIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.poolIdentifier) : message.poolIdentifier;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetNullifiersTrunkStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetNullifiersTrunkStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetNullifiersTrunkStateRequestV0;
+                        })();
+
+                        return GetNullifiersTrunkStateRequest;
+                    })();
+
+                    v0.GetNullifiersTrunkStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetNullifiersTrunkStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetNullifiersTrunkStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0|null} [v0] GetNullifiersTrunkStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetNullifiersTrunkStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetNullifiersTrunkStateResponse.
+                         * @implements IGetNullifiersTrunkStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateResponse=} [properties] Properties to set
+                         */
+                        function GetNullifiersTrunkStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetNullifiersTrunkStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @instance
+                         */
+                        GetNullifiersTrunkStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetNullifiersTrunkStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetNullifiersTrunkStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetNullifiersTrunkStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} GetNullifiersTrunkStateResponse instance
+                         */
+                        GetNullifiersTrunkStateResponse.create = function create(properties) {
+                            return new GetNullifiersTrunkStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersTrunkStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateResponse} message GetNullifiersTrunkStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersTrunkStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersTrunkStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersTrunkStateResponse} message GetNullifiersTrunkStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersTrunkStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersTrunkStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} GetNullifiersTrunkStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersTrunkStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersTrunkStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} GetNullifiersTrunkStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersTrunkStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetNullifiersTrunkStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetNullifiersTrunkStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetNullifiersTrunkStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} GetNullifiersTrunkStateResponse
+                         */
+                        GetNullifiersTrunkStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetNullifiersTrunkStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} message GetNullifiersTrunkStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetNullifiersTrunkStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetNullifiersTrunkStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetNullifiersTrunkStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetNullifiersTrunkStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                             * @interface IGetNullifiersTrunkStateResponseV0
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetNullifiersTrunkStateResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetNullifiersTrunkStateResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetNullifiersTrunkStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse
+                             * @classdesc Represents a GetNullifiersTrunkStateResponseV0.
+                             * @implements IGetNullifiersTrunkStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetNullifiersTrunkStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetNullifiersTrunkStateResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @instance
+                             */
+                            GetNullifiersTrunkStateResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetNullifiersTrunkStateResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @instance
+                             */
+                            GetNullifiersTrunkStateResponseV0.prototype.metadata = null;
+
+                            /**
+                             * Creates a new GetNullifiersTrunkStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} GetNullifiersTrunkStateResponseV0 instance
+                             */
+                            GetNullifiersTrunkStateResponseV0.create = function create(properties) {
+                                return new GetNullifiersTrunkStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersTrunkStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0} message GetNullifiersTrunkStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersTrunkStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersTrunkStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.IGetNullifiersTrunkStateResponseV0} message GetNullifiersTrunkStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersTrunkStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersTrunkStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} GetNullifiersTrunkStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersTrunkStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersTrunkStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} GetNullifiersTrunkStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersTrunkStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetNullifiersTrunkStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetNullifiersTrunkStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetNullifiersTrunkStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} GetNullifiersTrunkStateResponseV0
+                             */
+                            GetNullifiersTrunkStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0();
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetNullifiersTrunkStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} message GetNullifiersTrunkStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetNullifiersTrunkStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.proof = null;
+                                    object.metadata = null;
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetNullifiersTrunkStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetNullifiersTrunkStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetNullifiersTrunkStateResponseV0;
+                        })();
+
+                        return GetNullifiersTrunkStateResponse;
+                    })();
+
+                    v0.GetNullifiersBranchStateRequest = (function() {
+
+                        /**
+                         * Properties of a GetNullifiersBranchStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetNullifiersBranchStateRequest
+                         * @property {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0|null} [v0] GetNullifiersBranchStateRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetNullifiersBranchStateRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetNullifiersBranchStateRequest.
+                         * @implements IGetNullifiersBranchStateRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest=} [properties] Properties to set
+                         */
+                        function GetNullifiersBranchStateRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetNullifiersBranchStateRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @instance
+                         */
+                        GetNullifiersBranchStateRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetNullifiersBranchStateRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetNullifiersBranchStateRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetNullifiersBranchStateRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} GetNullifiersBranchStateRequest instance
+                         */
+                        GetNullifiersBranchStateRequest.create = function create(properties) {
+                            return new GetNullifiersBranchStateRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersBranchStateRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest} message GetNullifiersBranchStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersBranchStateRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersBranchStateRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateRequest} message GetNullifiersBranchStateRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersBranchStateRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersBranchStateRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} GetNullifiersBranchStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersBranchStateRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersBranchStateRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} GetNullifiersBranchStateRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersBranchStateRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetNullifiersBranchStateRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetNullifiersBranchStateRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetNullifiersBranchStateRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} GetNullifiersBranchStateRequest
+                         */
+                        GetNullifiersBranchStateRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetNullifiersBranchStateRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} message GetNullifiersBranchStateRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetNullifiersBranchStateRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetNullifiersBranchStateRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetNullifiersBranchStateRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetNullifiersBranchStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                             * @interface IGetNullifiersBranchStateRequestV0
+                             * @property {number|null} [poolType] GetNullifiersBranchStateRequestV0 poolType
+                             * @property {Uint8Array|null} [poolIdentifier] GetNullifiersBranchStateRequestV0 poolIdentifier
+                             * @property {Uint8Array|null} [key] GetNullifiersBranchStateRequestV0 key
+                             * @property {number|null} [depth] GetNullifiersBranchStateRequestV0 depth
+                             * @property {number|Long|null} [checkpointHeight] GetNullifiersBranchStateRequestV0 checkpointHeight
+                             */
+
+                            /**
+                             * Constructs a new GetNullifiersBranchStateRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest
+                             * @classdesc Represents a GetNullifiersBranchStateRequestV0.
+                             * @implements IGetNullifiersBranchStateRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0=} [properties] Properties to set
+                             */
+                            function GetNullifiersBranchStateRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetNullifiersBranchStateRequestV0 poolType.
+                             * @member {number} poolType
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.poolType = 0;
+
+                            /**
+                             * GetNullifiersBranchStateRequestV0 poolIdentifier.
+                             * @member {Uint8Array} poolIdentifier
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.poolIdentifier = $util.newBuffer([]);
+
+                            /**
+                             * GetNullifiersBranchStateRequestV0 key.
+                             * @member {Uint8Array} key
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.key = $util.newBuffer([]);
+
+                            /**
+                             * GetNullifiersBranchStateRequestV0 depth.
+                             * @member {number} depth
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.depth = 0;
+
+                            /**
+                             * GetNullifiersBranchStateRequestV0 checkpointHeight.
+                             * @member {number|Long} checkpointHeight
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.checkpointHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * Creates a new GetNullifiersBranchStateRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} GetNullifiersBranchStateRequestV0 instance
+                             */
+                            GetNullifiersBranchStateRequestV0.create = function create(properties) {
+                                return new GetNullifiersBranchStateRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersBranchStateRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0} message GetNullifiersBranchStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersBranchStateRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.poolType != null && Object.hasOwnProperty.call(message, "poolType"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.poolType);
+                                if (message.poolIdentifier != null && Object.hasOwnProperty.call(message, "poolIdentifier"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.poolIdentifier);
+                                if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.key);
+                                if (message.depth != null && Object.hasOwnProperty.call(message, "depth"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.depth);
+                                if (message.checkpointHeight != null && Object.hasOwnProperty.call(message, "checkpointHeight"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint64(message.checkpointHeight);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersBranchStateRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.IGetNullifiersBranchStateRequestV0} message GetNullifiersBranchStateRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersBranchStateRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersBranchStateRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} GetNullifiersBranchStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersBranchStateRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.poolType = reader.uint32();
+                                        break;
+                                    case 2:
+                                        message.poolIdentifier = reader.bytes();
+                                        break;
+                                    case 3:
+                                        message.key = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.depth = reader.uint32();
+                                        break;
+                                    case 5:
+                                        message.checkpointHeight = reader.uint64();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersBranchStateRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} GetNullifiersBranchStateRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersBranchStateRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetNullifiersBranchStateRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetNullifiersBranchStateRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.poolType != null && message.hasOwnProperty("poolType"))
+                                    if (!$util.isInteger(message.poolType))
+                                        return "poolType: integer expected";
+                                if (message.poolIdentifier != null && message.hasOwnProperty("poolIdentifier"))
+                                    if (!(message.poolIdentifier && typeof message.poolIdentifier.length === "number" || $util.isString(message.poolIdentifier)))
+                                        return "poolIdentifier: buffer expected";
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                        return "key: buffer expected";
+                                if (message.depth != null && message.hasOwnProperty("depth"))
+                                    if (!$util.isInteger(message.depth))
+                                        return "depth: integer expected";
+                                if (message.checkpointHeight != null && message.hasOwnProperty("checkpointHeight"))
+                                    if (!$util.isInteger(message.checkpointHeight) && !(message.checkpointHeight && $util.isInteger(message.checkpointHeight.low) && $util.isInteger(message.checkpointHeight.high)))
+                                        return "checkpointHeight: integer|Long expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetNullifiersBranchStateRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} GetNullifiersBranchStateRequestV0
+                             */
+                            GetNullifiersBranchStateRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0();
+                                if (object.poolType != null)
+                                    message.poolType = object.poolType >>> 0;
+                                if (object.poolIdentifier != null)
+                                    if (typeof object.poolIdentifier === "string")
+                                        $util.base64.decode(object.poolIdentifier, message.poolIdentifier = $util.newBuffer($util.base64.length(object.poolIdentifier)), 0);
+                                    else if (object.poolIdentifier.length >= 0)
+                                        message.poolIdentifier = object.poolIdentifier;
+                                if (object.key != null)
+                                    if (typeof object.key === "string")
+                                        $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                    else if (object.key.length >= 0)
+                                        message.key = object.key;
+                                if (object.depth != null)
+                                    message.depth = object.depth >>> 0;
+                                if (object.checkpointHeight != null)
+                                    if ($util.Long)
+                                        (message.checkpointHeight = $util.Long.fromValue(object.checkpointHeight)).unsigned = true;
+                                    else if (typeof object.checkpointHeight === "string")
+                                        message.checkpointHeight = parseInt(object.checkpointHeight, 10);
+                                    else if (typeof object.checkpointHeight === "number")
+                                        message.checkpointHeight = object.checkpointHeight;
+                                    else if (typeof object.checkpointHeight === "object")
+                                        message.checkpointHeight = new $util.LongBits(object.checkpointHeight.low >>> 0, object.checkpointHeight.high >>> 0).toNumber(true);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetNullifiersBranchStateRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} message GetNullifiersBranchStateRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetNullifiersBranchStateRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.poolType = 0;
+                                    if (options.bytes === String)
+                                        object.poolIdentifier = "";
+                                    else {
+                                        object.poolIdentifier = [];
+                                        if (options.bytes !== Array)
+                                            object.poolIdentifier = $util.newBuffer(object.poolIdentifier);
+                                    }
+                                    if (options.bytes === String)
+                                        object.key = "";
+                                    else {
+                                        object.key = [];
+                                        if (options.bytes !== Array)
+                                            object.key = $util.newBuffer(object.key);
+                                    }
+                                    object.depth = 0;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.checkpointHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.checkpointHeight = options.longs === String ? "0" : 0;
+                                }
+                                if (message.poolType != null && message.hasOwnProperty("poolType"))
+                                    object.poolType = message.poolType;
+                                if (message.poolIdentifier != null && message.hasOwnProperty("poolIdentifier"))
+                                    object.poolIdentifier = options.bytes === String ? $util.base64.encode(message.poolIdentifier, 0, message.poolIdentifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.poolIdentifier) : message.poolIdentifier;
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                if (message.depth != null && message.hasOwnProperty("depth"))
+                                    object.depth = message.depth;
+                                if (message.checkpointHeight != null && message.hasOwnProperty("checkpointHeight"))
+                                    if (typeof message.checkpointHeight === "number")
+                                        object.checkpointHeight = options.longs === String ? String(message.checkpointHeight) : message.checkpointHeight;
+                                    else
+                                        object.checkpointHeight = options.longs === String ? $util.Long.prototype.toString.call(message.checkpointHeight) : options.longs === Number ? new $util.LongBits(message.checkpointHeight.low >>> 0, message.checkpointHeight.high >>> 0).toNumber(true) : message.checkpointHeight;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetNullifiersBranchStateRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetNullifiersBranchStateRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetNullifiersBranchStateRequestV0;
+                        })();
+
+                        return GetNullifiersBranchStateRequest;
+                    })();
+
+                    v0.GetNullifiersBranchStateResponse = (function() {
+
+                        /**
+                         * Properties of a GetNullifiersBranchStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetNullifiersBranchStateResponse
+                         * @property {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0|null} [v0] GetNullifiersBranchStateResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetNullifiersBranchStateResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetNullifiersBranchStateResponse.
+                         * @implements IGetNullifiersBranchStateResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateResponse=} [properties] Properties to set
+                         */
+                        function GetNullifiersBranchStateResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetNullifiersBranchStateResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @instance
+                         */
+                        GetNullifiersBranchStateResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetNullifiersBranchStateResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetNullifiersBranchStateResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetNullifiersBranchStateResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} GetNullifiersBranchStateResponse instance
+                         */
+                        GetNullifiersBranchStateResponse.create = function create(properties) {
+                            return new GetNullifiersBranchStateResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersBranchStateResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateResponse} message GetNullifiersBranchStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersBranchStateResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetNullifiersBranchStateResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetNullifiersBranchStateResponse} message GetNullifiersBranchStateResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetNullifiersBranchStateResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersBranchStateResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} GetNullifiersBranchStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersBranchStateResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetNullifiersBranchStateResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} GetNullifiersBranchStateResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetNullifiersBranchStateResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetNullifiersBranchStateResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetNullifiersBranchStateResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetNullifiersBranchStateResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} GetNullifiersBranchStateResponse
+                         */
+                        GetNullifiersBranchStateResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetNullifiersBranchStateResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} message GetNullifiersBranchStateResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetNullifiersBranchStateResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetNullifiersBranchStateResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetNullifiersBranchStateResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetNullifiersBranchStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                             * @interface IGetNullifiersBranchStateResponseV0
+                             * @property {Uint8Array|null} [merkProof] GetNullifiersBranchStateResponseV0 merkProof
+                             */
+
+                            /**
+                             * Constructs a new GetNullifiersBranchStateResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse
+                             * @classdesc Represents a GetNullifiersBranchStateResponseV0.
+                             * @implements IGetNullifiersBranchStateResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0=} [properties] Properties to set
+                             */
+                            function GetNullifiersBranchStateResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetNullifiersBranchStateResponseV0 merkProof.
+                             * @member {Uint8Array} merkProof
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @instance
+                             */
+                            GetNullifiersBranchStateResponseV0.prototype.merkProof = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new GetNullifiersBranchStateResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} GetNullifiersBranchStateResponseV0 instance
+                             */
+                            GetNullifiersBranchStateResponseV0.create = function create(properties) {
+                                return new GetNullifiersBranchStateResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersBranchStateResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0} message GetNullifiersBranchStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersBranchStateResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.merkProof != null && Object.hasOwnProperty.call(message, "merkProof"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.merkProof);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetNullifiersBranchStateResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.IGetNullifiersBranchStateResponseV0} message GetNullifiersBranchStateResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetNullifiersBranchStateResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersBranchStateResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} GetNullifiersBranchStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersBranchStateResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 2:
+                                        message.merkProof = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetNullifiersBranchStateResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} GetNullifiersBranchStateResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetNullifiersBranchStateResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetNullifiersBranchStateResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetNullifiersBranchStateResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.merkProof != null && message.hasOwnProperty("merkProof"))
+                                    if (!(message.merkProof && typeof message.merkProof.length === "number" || $util.isString(message.merkProof)))
+                                        return "merkProof: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetNullifiersBranchStateResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} GetNullifiersBranchStateResponseV0
+                             */
+                            GetNullifiersBranchStateResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0();
+                                if (object.merkProof != null)
+                                    if (typeof object.merkProof === "string")
+                                        $util.base64.decode(object.merkProof, message.merkProof = $util.newBuffer($util.base64.length(object.merkProof)), 0);
+                                    else if (object.merkProof.length >= 0)
+                                        message.merkProof = object.merkProof;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetNullifiersBranchStateResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} message GetNullifiersBranchStateResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetNullifiersBranchStateResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.merkProof = "";
+                                    else {
+                                        object.merkProof = [];
+                                        if (options.bytes !== Array)
+                                            object.merkProof = $util.newBuffer(object.merkProof);
+                                    }
+                                if (message.merkProof != null && message.hasOwnProperty("merkProof"))
+                                    object.merkProof = options.bytes === String ? $util.base64.encode(message.merkProof, 0, message.merkProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.merkProof) : message.merkProof;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetNullifiersBranchStateResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetNullifiersBranchStateResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetNullifiersBranchStateResponseV0;
+                        })();
+
+                        return GetNullifiersBranchStateResponse;
+                    })();
+
+                    v0.BlockNullifierChanges = (function() {
+
+                        /**
+                         * Properties of a BlockNullifierChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IBlockNullifierChanges
+                         * @property {number|Long|null} [blockHeight] BlockNullifierChanges blockHeight
+                         * @property {Array.<Uint8Array>|null} [nullifiers] BlockNullifierChanges nullifiers
+                         */
+
+                        /**
+                         * Constructs a new BlockNullifierChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a BlockNullifierChanges.
+                         * @implements IBlockNullifierChanges
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IBlockNullifierChanges=} [properties] Properties to set
+                         */
+                        function BlockNullifierChanges(properties) {
+                            this.nullifiers = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * BlockNullifierChanges blockHeight.
+                         * @member {number|Long} blockHeight
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @instance
+                         */
+                        BlockNullifierChanges.prototype.blockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * BlockNullifierChanges nullifiers.
+                         * @member {Array.<Uint8Array>} nullifiers
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @instance
+                         */
+                        BlockNullifierChanges.prototype.nullifiers = $util.emptyArray;
+
+                        /**
+                         * Creates a new BlockNullifierChanges instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockNullifierChanges=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.BlockNullifierChanges} BlockNullifierChanges instance
+                         */
+                        BlockNullifierChanges.create = function create(properties) {
+                            return new BlockNullifierChanges(properties);
+                        };
+
+                        /**
+                         * Encodes the specified BlockNullifierChanges message. Does not implicitly {@link org.dash.platform.dapi.v0.BlockNullifierChanges.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockNullifierChanges} message BlockNullifierChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockNullifierChanges.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockHeight != null && Object.hasOwnProperty.call(message, "blockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.blockHeight);
+                            if (message.nullifiers != null && message.nullifiers.length)
+                                for (var i = 0; i < message.nullifiers.length; ++i)
+                                    writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.nullifiers[i]);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified BlockNullifierChanges message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.BlockNullifierChanges.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IBlockNullifierChanges} message BlockNullifierChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        BlockNullifierChanges.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a BlockNullifierChanges message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.BlockNullifierChanges} BlockNullifierChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockNullifierChanges.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.BlockNullifierChanges();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.blockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    if (!(message.nullifiers && message.nullifiers.length))
+                                        message.nullifiers = [];
+                                    message.nullifiers.push(reader.bytes());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a BlockNullifierChanges message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.BlockNullifierChanges} BlockNullifierChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        BlockNullifierChanges.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a BlockNullifierChanges message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        BlockNullifierChanges.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (!$util.isInteger(message.blockHeight) && !(message.blockHeight && $util.isInteger(message.blockHeight.low) && $util.isInteger(message.blockHeight.high)))
+                                    return "blockHeight: integer|Long expected";
+                            if (message.nullifiers != null && message.hasOwnProperty("nullifiers")) {
+                                if (!Array.isArray(message.nullifiers))
+                                    return "nullifiers: array expected";
+                                for (var i = 0; i < message.nullifiers.length; ++i)
+                                    if (!(message.nullifiers[i] && typeof message.nullifiers[i].length === "number" || $util.isString(message.nullifiers[i])))
+                                        return "nullifiers: buffer[] expected";
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a BlockNullifierChanges message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.BlockNullifierChanges} BlockNullifierChanges
+                         */
+                        BlockNullifierChanges.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.BlockNullifierChanges)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.BlockNullifierChanges();
+                            if (object.blockHeight != null)
+                                if ($util.Long)
+                                    (message.blockHeight = $util.Long.fromValue(object.blockHeight)).unsigned = true;
+                                else if (typeof object.blockHeight === "string")
+                                    message.blockHeight = parseInt(object.blockHeight, 10);
+                                else if (typeof object.blockHeight === "number")
+                                    message.blockHeight = object.blockHeight;
+                                else if (typeof object.blockHeight === "object")
+                                    message.blockHeight = new $util.LongBits(object.blockHeight.low >>> 0, object.blockHeight.high >>> 0).toNumber(true);
+                            if (object.nullifiers) {
+                                if (!Array.isArray(object.nullifiers))
+                                    throw TypeError(".org.dash.platform.dapi.v0.BlockNullifierChanges.nullifiers: array expected");
+                                message.nullifiers = [];
+                                for (var i = 0; i < object.nullifiers.length; ++i)
+                                    if (typeof object.nullifiers[i] === "string")
+                                        $util.base64.decode(object.nullifiers[i], message.nullifiers[i] = $util.newBuffer($util.base64.length(object.nullifiers[i])), 0);
+                                    else if (object.nullifiers[i].length >= 0)
+                                        message.nullifiers[i] = object.nullifiers[i];
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a BlockNullifierChanges message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.BlockNullifierChanges} message BlockNullifierChanges
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        BlockNullifierChanges.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.nullifiers = [];
+                            if (options.defaults)
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.blockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.blockHeight = options.longs === String ? "0" : 0;
+                            if (message.blockHeight != null && message.hasOwnProperty("blockHeight"))
+                                if (typeof message.blockHeight === "number")
+                                    object.blockHeight = options.longs === String ? String(message.blockHeight) : message.blockHeight;
+                                else
+                                    object.blockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.blockHeight) : options.longs === Number ? new $util.LongBits(message.blockHeight.low >>> 0, message.blockHeight.high >>> 0).toNumber(true) : message.blockHeight;
+                            if (message.nullifiers && message.nullifiers.length) {
+                                object.nullifiers = [];
+                                for (var j = 0; j < message.nullifiers.length; ++j)
+                                    object.nullifiers[j] = options.bytes === String ? $util.base64.encode(message.nullifiers[j], 0, message.nullifiers[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifiers[j]) : message.nullifiers[j];
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this BlockNullifierChanges to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.BlockNullifierChanges
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        BlockNullifierChanges.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return BlockNullifierChanges;
+                    })();
+
+                    v0.NullifierUpdateEntries = (function() {
+
+                        /**
+                         * Properties of a NullifierUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface INullifierUpdateEntries
+                         * @property {Array.<org.dash.platform.dapi.v0.IBlockNullifierChanges>|null} [blockChanges] NullifierUpdateEntries blockChanges
+                         */
+
+                        /**
+                         * Constructs a new NullifierUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a NullifierUpdateEntries.
+                         * @implements INullifierUpdateEntries
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.INullifierUpdateEntries=} [properties] Properties to set
+                         */
+                        function NullifierUpdateEntries(properties) {
+                            this.blockChanges = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * NullifierUpdateEntries blockChanges.
+                         * @member {Array.<org.dash.platform.dapi.v0.IBlockNullifierChanges>} blockChanges
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @instance
+                         */
+                        NullifierUpdateEntries.prototype.blockChanges = $util.emptyArray;
+
+                        /**
+                         * Creates a new NullifierUpdateEntries instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.INullifierUpdateEntries=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.NullifierUpdateEntries} NullifierUpdateEntries instance
+                         */
+                        NullifierUpdateEntries.create = function create(properties) {
+                            return new NullifierUpdateEntries(properties);
+                        };
+
+                        /**
+                         * Encodes the specified NullifierUpdateEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.NullifierUpdateEntries.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.INullifierUpdateEntries} message NullifierUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        NullifierUpdateEntries.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.blockChanges != null && message.blockChanges.length)
+                                for (var i = 0; i < message.blockChanges.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.BlockNullifierChanges.encode(message.blockChanges[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified NullifierUpdateEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.NullifierUpdateEntries.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.INullifierUpdateEntries} message NullifierUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        NullifierUpdateEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a NullifierUpdateEntries message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.NullifierUpdateEntries} NullifierUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        NullifierUpdateEntries.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.NullifierUpdateEntries();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.blockChanges && message.blockChanges.length))
+                                        message.blockChanges = [];
+                                    message.blockChanges.push($root.org.dash.platform.dapi.v0.BlockNullifierChanges.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a NullifierUpdateEntries message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.NullifierUpdateEntries} NullifierUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        NullifierUpdateEntries.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a NullifierUpdateEntries message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        NullifierUpdateEntries.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.blockChanges != null && message.hasOwnProperty("blockChanges")) {
+                                if (!Array.isArray(message.blockChanges))
+                                    return "blockChanges: array expected";
+                                for (var i = 0; i < message.blockChanges.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.BlockNullifierChanges.verify(message.blockChanges[i]);
+                                    if (error)
+                                        return "blockChanges." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a NullifierUpdateEntries message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.NullifierUpdateEntries} NullifierUpdateEntries
+                         */
+                        NullifierUpdateEntries.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.NullifierUpdateEntries)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.NullifierUpdateEntries();
+                            if (object.blockChanges) {
+                                if (!Array.isArray(object.blockChanges))
+                                    throw TypeError(".org.dash.platform.dapi.v0.NullifierUpdateEntries.blockChanges: array expected");
+                                message.blockChanges = [];
+                                for (var i = 0; i < object.blockChanges.length; ++i) {
+                                    if (typeof object.blockChanges[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.NullifierUpdateEntries.blockChanges: object expected");
+                                    message.blockChanges[i] = $root.org.dash.platform.dapi.v0.BlockNullifierChanges.fromObject(object.blockChanges[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a NullifierUpdateEntries message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.NullifierUpdateEntries} message NullifierUpdateEntries
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        NullifierUpdateEntries.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.blockChanges = [];
+                            if (message.blockChanges && message.blockChanges.length) {
+                                object.blockChanges = [];
+                                for (var j = 0; j < message.blockChanges.length; ++j)
+                                    object.blockChanges[j] = $root.org.dash.platform.dapi.v0.BlockNullifierChanges.toObject(message.blockChanges[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this NullifierUpdateEntries to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.NullifierUpdateEntries
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        NullifierUpdateEntries.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return NullifierUpdateEntries;
+                    })();
+
+                    v0.GetRecentNullifierChangesRequest = (function() {
+
+                        /**
+                         * Properties of a GetRecentNullifierChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentNullifierChangesRequest
+                         * @property {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0|null} [v0] GetRecentNullifierChangesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentNullifierChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentNullifierChangesRequest.
+                         * @implements IGetRecentNullifierChangesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest=} [properties] Properties to set
+                         */
+                        function GetRecentNullifierChangesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentNullifierChangesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @instance
+                         */
+                        GetRecentNullifierChangesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentNullifierChangesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentNullifierChangesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentNullifierChangesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} GetRecentNullifierChangesRequest instance
+                         */
+                        GetRecentNullifierChangesRequest.create = function create(properties) {
+                            return new GetRecentNullifierChangesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentNullifierChangesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest} message GetRecentNullifierChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentNullifierChangesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentNullifierChangesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesRequest} message GetRecentNullifierChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentNullifierChangesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentNullifierChangesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} GetRecentNullifierChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentNullifierChangesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentNullifierChangesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} GetRecentNullifierChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentNullifierChangesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentNullifierChangesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentNullifierChangesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentNullifierChangesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} GetRecentNullifierChangesRequest
+                         */
+                        GetRecentNullifierChangesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentNullifierChangesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} message GetRecentNullifierChangesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentNullifierChangesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentNullifierChangesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentNullifierChangesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentNullifierChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                             * @interface IGetRecentNullifierChangesRequestV0
+                             * @property {number|Long|null} [startHeight] GetRecentNullifierChangesRequestV0 startHeight
+                             * @property {boolean|null} [prove] GetRecentNullifierChangesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetRecentNullifierChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest
+                             * @classdesc Represents a GetRecentNullifierChangesRequestV0.
+                             * @implements IGetRecentNullifierChangesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0=} [properties] Properties to set
+                             */
+                            function GetRecentNullifierChangesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentNullifierChangesRequestV0 startHeight.
+                             * @member {number|Long} startHeight
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentNullifierChangesRequestV0.prototype.startHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetRecentNullifierChangesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentNullifierChangesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetRecentNullifierChangesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} GetRecentNullifierChangesRequestV0 instance
+                             */
+                            GetRecentNullifierChangesRequestV0.create = function create(properties) {
+                                return new GetRecentNullifierChangesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentNullifierChangesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0} message GetRecentNullifierChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentNullifierChangesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startHeight != null && Object.hasOwnProperty.call(message, "startHeight"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startHeight);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentNullifierChangesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.IGetRecentNullifierChangesRequestV0} message GetRecentNullifierChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentNullifierChangesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentNullifierChangesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} GetRecentNullifierChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentNullifierChangesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startHeight = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentNullifierChangesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} GetRecentNullifierChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentNullifierChangesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentNullifierChangesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentNullifierChangesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (!$util.isInteger(message.startHeight) && !(message.startHeight && $util.isInteger(message.startHeight.low) && $util.isInteger(message.startHeight.high)))
+                                        return "startHeight: integer|Long expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentNullifierChangesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} GetRecentNullifierChangesRequestV0
+                             */
+                            GetRecentNullifierChangesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0();
+                                if (object.startHeight != null)
+                                    if ($util.Long)
+                                        (message.startHeight = $util.Long.fromValue(object.startHeight)).unsigned = true;
+                                    else if (typeof object.startHeight === "string")
+                                        message.startHeight = parseInt(object.startHeight, 10);
+                                    else if (typeof object.startHeight === "number")
+                                        message.startHeight = object.startHeight;
+                                    else if (typeof object.startHeight === "object")
+                                        message.startHeight = new $util.LongBits(object.startHeight.low >>> 0, object.startHeight.high >>> 0).toNumber(true);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentNullifierChangesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} message GetRecentNullifierChangesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentNullifierChangesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startHeight = options.longs === String ? "0" : 0;
+                                    object.prove = false;
+                                }
+                                if (message.startHeight != null && message.hasOwnProperty("startHeight"))
+                                    if (typeof message.startHeight === "number")
+                                        object.startHeight = options.longs === String ? String(message.startHeight) : message.startHeight;
+                                    else
+                                        object.startHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startHeight) : options.longs === Number ? new $util.LongBits(message.startHeight.low >>> 0, message.startHeight.high >>> 0).toNumber(true) : message.startHeight;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentNullifierChangesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentNullifierChangesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentNullifierChangesRequestV0;
+                        })();
+
+                        return GetRecentNullifierChangesRequest;
+                    })();
+
+                    v0.GetRecentNullifierChangesResponse = (function() {
+
+                        /**
+                         * Properties of a GetRecentNullifierChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentNullifierChangesResponse
+                         * @property {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0|null} [v0] GetRecentNullifierChangesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentNullifierChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentNullifierChangesResponse.
+                         * @implements IGetRecentNullifierChangesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesResponse=} [properties] Properties to set
+                         */
+                        function GetRecentNullifierChangesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentNullifierChangesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @instance
+                         */
+                        GetRecentNullifierChangesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentNullifierChangesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentNullifierChangesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentNullifierChangesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} GetRecentNullifierChangesResponse instance
+                         */
+                        GetRecentNullifierChangesResponse.create = function create(properties) {
+                            return new GetRecentNullifierChangesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentNullifierChangesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesResponse} message GetRecentNullifierChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentNullifierChangesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentNullifierChangesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentNullifierChangesResponse} message GetRecentNullifierChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentNullifierChangesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentNullifierChangesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} GetRecentNullifierChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentNullifierChangesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentNullifierChangesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} GetRecentNullifierChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentNullifierChangesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentNullifierChangesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentNullifierChangesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentNullifierChangesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} GetRecentNullifierChangesResponse
+                         */
+                        GetRecentNullifierChangesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentNullifierChangesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} message GetRecentNullifierChangesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentNullifierChangesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentNullifierChangesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentNullifierChangesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentNullifierChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                             * @interface IGetRecentNullifierChangesResponseV0
+                             * @property {org.dash.platform.dapi.v0.INullifierUpdateEntries|null} [nullifierUpdateEntries] GetRecentNullifierChangesResponseV0 nullifierUpdateEntries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetRecentNullifierChangesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetRecentNullifierChangesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetRecentNullifierChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse
+                             * @classdesc Represents a GetRecentNullifierChangesResponseV0.
+                             * @implements IGetRecentNullifierChangesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0=} [properties] Properties to set
+                             */
+                            function GetRecentNullifierChangesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentNullifierChangesResponseV0 nullifierUpdateEntries.
+                             * @member {org.dash.platform.dapi.v0.INullifierUpdateEntries|null|undefined} nullifierUpdateEntries
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentNullifierChangesResponseV0.prototype.nullifierUpdateEntries = null;
+
+                            /**
+                             * GetRecentNullifierChangesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentNullifierChangesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetRecentNullifierChangesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentNullifierChangesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetRecentNullifierChangesResponseV0 result.
+                             * @member {"nullifierUpdateEntries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetRecentNullifierChangesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["nullifierUpdateEntries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetRecentNullifierChangesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} GetRecentNullifierChangesResponseV0 instance
+                             */
+                            GetRecentNullifierChangesResponseV0.create = function create(properties) {
+                                return new GetRecentNullifierChangesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentNullifierChangesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0} message GetRecentNullifierChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentNullifierChangesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.nullifierUpdateEntries != null && Object.hasOwnProperty.call(message, "nullifierUpdateEntries"))
+                                    $root.org.dash.platform.dapi.v0.NullifierUpdateEntries.encode(message.nullifierUpdateEntries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentNullifierChangesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.IGetRecentNullifierChangesResponseV0} message GetRecentNullifierChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentNullifierChangesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentNullifierChangesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} GetRecentNullifierChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentNullifierChangesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.nullifierUpdateEntries = $root.org.dash.platform.dapi.v0.NullifierUpdateEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentNullifierChangesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} GetRecentNullifierChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentNullifierChangesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentNullifierChangesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentNullifierChangesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.nullifierUpdateEntries != null && message.hasOwnProperty("nullifierUpdateEntries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.NullifierUpdateEntries.verify(message.nullifierUpdateEntries);
+                                        if (error)
+                                            return "nullifierUpdateEntries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentNullifierChangesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} GetRecentNullifierChangesResponseV0
+                             */
+                            GetRecentNullifierChangesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0();
+                                if (object.nullifierUpdateEntries != null) {
+                                    if (typeof object.nullifierUpdateEntries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.nullifierUpdateEntries: object expected");
+                                    message.nullifierUpdateEntries = $root.org.dash.platform.dapi.v0.NullifierUpdateEntries.fromObject(object.nullifierUpdateEntries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentNullifierChangesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} message GetRecentNullifierChangesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentNullifierChangesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.nullifierUpdateEntries != null && message.hasOwnProperty("nullifierUpdateEntries")) {
+                                    object.nullifierUpdateEntries = $root.org.dash.platform.dapi.v0.NullifierUpdateEntries.toObject(message.nullifierUpdateEntries, options);
+                                    if (options.oneofs)
+                                        object.result = "nullifierUpdateEntries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentNullifierChangesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentNullifierChangesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentNullifierChangesResponseV0;
+                        })();
+
+                        return GetRecentNullifierChangesResponse;
+                    })();
+
+                    v0.CompactedBlockNullifierChanges = (function() {
+
+                        /**
+                         * Properties of a CompactedBlockNullifierChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedBlockNullifierChanges
+                         * @property {number|Long|null} [startBlockHeight] CompactedBlockNullifierChanges startBlockHeight
+                         * @property {number|Long|null} [endBlockHeight] CompactedBlockNullifierChanges endBlockHeight
+                         * @property {Array.<Uint8Array>|null} [nullifiers] CompactedBlockNullifierChanges nullifiers
+                         */
+
+                        /**
+                         * Constructs a new CompactedBlockNullifierChanges.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedBlockNullifierChanges.
+                         * @implements ICompactedBlockNullifierChanges
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges=} [properties] Properties to set
+                         */
+                        function CompactedBlockNullifierChanges(properties) {
+                            this.nullifiers = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedBlockNullifierChanges startBlockHeight.
+                         * @member {number|Long} startBlockHeight
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @instance
+                         */
+                        CompactedBlockNullifierChanges.prototype.startBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedBlockNullifierChanges endBlockHeight.
+                         * @member {number|Long} endBlockHeight
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @instance
+                         */
+                        CompactedBlockNullifierChanges.prototype.endBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                        /**
+                         * CompactedBlockNullifierChanges nullifiers.
+                         * @member {Array.<Uint8Array>} nullifiers
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @instance
+                         */
+                        CompactedBlockNullifierChanges.prototype.nullifiers = $util.emptyArray;
+
+                        /**
+                         * Creates a new CompactedBlockNullifierChanges instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} CompactedBlockNullifierChanges instance
+                         */
+                        CompactedBlockNullifierChanges.create = function create(properties) {
+                            return new CompactedBlockNullifierChanges(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedBlockNullifierChanges message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges} message CompactedBlockNullifierChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedBlockNullifierChanges.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.startBlockHeight != null && Object.hasOwnProperty.call(message, "startBlockHeight"))
+                                writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startBlockHeight);
+                            if (message.endBlockHeight != null && Object.hasOwnProperty.call(message, "endBlockHeight"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.endBlockHeight);
+                            if (message.nullifiers != null && message.nullifiers.length)
+                                for (var i = 0; i < message.nullifiers.length; ++i)
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.nullifiers[i]);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedBlockNullifierChanges message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges} message CompactedBlockNullifierChanges message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedBlockNullifierChanges.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedBlockNullifierChanges message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} CompactedBlockNullifierChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedBlockNullifierChanges.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.startBlockHeight = reader.uint64();
+                                    break;
+                                case 2:
+                                    message.endBlockHeight = reader.uint64();
+                                    break;
+                                case 3:
+                                    if (!(message.nullifiers && message.nullifiers.length))
+                                        message.nullifiers = [];
+                                    message.nullifiers.push(reader.bytes());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedBlockNullifierChanges message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} CompactedBlockNullifierChanges
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedBlockNullifierChanges.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedBlockNullifierChanges message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedBlockNullifierChanges.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                if (!$util.isInteger(message.startBlockHeight) && !(message.startBlockHeight && $util.isInteger(message.startBlockHeight.low) && $util.isInteger(message.startBlockHeight.high)))
+                                    return "startBlockHeight: integer|Long expected";
+                            if (message.endBlockHeight != null && message.hasOwnProperty("endBlockHeight"))
+                                if (!$util.isInteger(message.endBlockHeight) && !(message.endBlockHeight && $util.isInteger(message.endBlockHeight.low) && $util.isInteger(message.endBlockHeight.high)))
+                                    return "endBlockHeight: integer|Long expected";
+                            if (message.nullifiers != null && message.hasOwnProperty("nullifiers")) {
+                                if (!Array.isArray(message.nullifiers))
+                                    return "nullifiers: array expected";
+                                for (var i = 0; i < message.nullifiers.length; ++i)
+                                    if (!(message.nullifiers[i] && typeof message.nullifiers[i].length === "number" || $util.isString(message.nullifiers[i])))
+                                        return "nullifiers: buffer[] expected";
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedBlockNullifierChanges message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} CompactedBlockNullifierChanges
+                         */
+                        CompactedBlockNullifierChanges.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges();
+                            if (object.startBlockHeight != null)
+                                if ($util.Long)
+                                    (message.startBlockHeight = $util.Long.fromValue(object.startBlockHeight)).unsigned = true;
+                                else if (typeof object.startBlockHeight === "string")
+                                    message.startBlockHeight = parseInt(object.startBlockHeight, 10);
+                                else if (typeof object.startBlockHeight === "number")
+                                    message.startBlockHeight = object.startBlockHeight;
+                                else if (typeof object.startBlockHeight === "object")
+                                    message.startBlockHeight = new $util.LongBits(object.startBlockHeight.low >>> 0, object.startBlockHeight.high >>> 0).toNumber(true);
+                            if (object.endBlockHeight != null)
+                                if ($util.Long)
+                                    (message.endBlockHeight = $util.Long.fromValue(object.endBlockHeight)).unsigned = true;
+                                else if (typeof object.endBlockHeight === "string")
+                                    message.endBlockHeight = parseInt(object.endBlockHeight, 10);
+                                else if (typeof object.endBlockHeight === "number")
+                                    message.endBlockHeight = object.endBlockHeight;
+                                else if (typeof object.endBlockHeight === "object")
+                                    message.endBlockHeight = new $util.LongBits(object.endBlockHeight.low >>> 0, object.endBlockHeight.high >>> 0).toNumber(true);
+                            if (object.nullifiers) {
+                                if (!Array.isArray(object.nullifiers))
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.nullifiers: array expected");
+                                message.nullifiers = [];
+                                for (var i = 0; i < object.nullifiers.length; ++i)
+                                    if (typeof object.nullifiers[i] === "string")
+                                        $util.base64.decode(object.nullifiers[i], message.nullifiers[i] = $util.newBuffer($util.base64.length(object.nullifiers[i])), 0);
+                                    else if (object.nullifiers[i].length >= 0)
+                                        message.nullifiers[i] = object.nullifiers[i];
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedBlockNullifierChanges message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} message CompactedBlockNullifierChanges
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedBlockNullifierChanges.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.nullifiers = [];
+                            if (options.defaults) {
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.startBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.startBlockHeight = options.longs === String ? "0" : 0;
+                                if ($util.Long) {
+                                    var long = new $util.Long(0, 0, true);
+                                    object.endBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                } else
+                                    object.endBlockHeight = options.longs === String ? "0" : 0;
+                            }
+                            if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                if (typeof message.startBlockHeight === "number")
+                                    object.startBlockHeight = options.longs === String ? String(message.startBlockHeight) : message.startBlockHeight;
+                                else
+                                    object.startBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startBlockHeight) : options.longs === Number ? new $util.LongBits(message.startBlockHeight.low >>> 0, message.startBlockHeight.high >>> 0).toNumber(true) : message.startBlockHeight;
+                            if (message.endBlockHeight != null && message.hasOwnProperty("endBlockHeight"))
+                                if (typeof message.endBlockHeight === "number")
+                                    object.endBlockHeight = options.longs === String ? String(message.endBlockHeight) : message.endBlockHeight;
+                                else
+                                    object.endBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.endBlockHeight) : options.longs === Number ? new $util.LongBits(message.endBlockHeight.low >>> 0, message.endBlockHeight.high >>> 0).toNumber(true) : message.endBlockHeight;
+                            if (message.nullifiers && message.nullifiers.length) {
+                                object.nullifiers = [];
+                                for (var j = 0; j < message.nullifiers.length; ++j)
+                                    object.nullifiers[j] = options.bytes === String ? $util.base64.encode(message.nullifiers[j], 0, message.nullifiers[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifiers[j]) : message.nullifiers[j];
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedBlockNullifierChanges to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedBlockNullifierChanges
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedBlockNullifierChanges.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedBlockNullifierChanges;
+                    })();
+
+                    v0.CompactedNullifierUpdateEntries = (function() {
+
+                        /**
+                         * Properties of a CompactedNullifierUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface ICompactedNullifierUpdateEntries
+                         * @property {Array.<org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges>|null} [compactedBlockChanges] CompactedNullifierUpdateEntries compactedBlockChanges
+                         */
+
+                        /**
+                         * Constructs a new CompactedNullifierUpdateEntries.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a CompactedNullifierUpdateEntries.
+                         * @implements ICompactedNullifierUpdateEntries
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries=} [properties] Properties to set
+                         */
+                        function CompactedNullifierUpdateEntries(properties) {
+                            this.compactedBlockChanges = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * CompactedNullifierUpdateEntries compactedBlockChanges.
+                         * @member {Array.<org.dash.platform.dapi.v0.ICompactedBlockNullifierChanges>} compactedBlockChanges
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @instance
+                         */
+                        CompactedNullifierUpdateEntries.prototype.compactedBlockChanges = $util.emptyArray;
+
+                        /**
+                         * Creates a new CompactedNullifierUpdateEntries instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} CompactedNullifierUpdateEntries instance
+                         */
+                        CompactedNullifierUpdateEntries.create = function create(properties) {
+                            return new CompactedNullifierUpdateEntries(properties);
+                        };
+
+                        /**
+                         * Encodes the specified CompactedNullifierUpdateEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries} message CompactedNullifierUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedNullifierUpdateEntries.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.compactedBlockChanges != null && message.compactedBlockChanges.length)
+                                for (var i = 0; i < message.compactedBlockChanges.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.encode(message.compactedBlockChanges[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified CompactedNullifierUpdateEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries} message CompactedNullifierUpdateEntries message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        CompactedNullifierUpdateEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a CompactedNullifierUpdateEntries message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} CompactedNullifierUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedNullifierUpdateEntries.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.compactedBlockChanges && message.compactedBlockChanges.length))
+                                        message.compactedBlockChanges = [];
+                                    message.compactedBlockChanges.push($root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a CompactedNullifierUpdateEntries message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} CompactedNullifierUpdateEntries
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        CompactedNullifierUpdateEntries.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a CompactedNullifierUpdateEntries message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        CompactedNullifierUpdateEntries.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.compactedBlockChanges != null && message.hasOwnProperty("compactedBlockChanges")) {
+                                if (!Array.isArray(message.compactedBlockChanges))
+                                    return "compactedBlockChanges: array expected";
+                                for (var i = 0; i < message.compactedBlockChanges.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.verify(message.compactedBlockChanges[i]);
+                                    if (error)
+                                        return "compactedBlockChanges." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a CompactedNullifierUpdateEntries message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} CompactedNullifierUpdateEntries
+                         */
+                        CompactedNullifierUpdateEntries.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries();
+                            if (object.compactedBlockChanges) {
+                                if (!Array.isArray(object.compactedBlockChanges))
+                                    throw TypeError(".org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.compactedBlockChanges: array expected");
+                                message.compactedBlockChanges = [];
+                                for (var i = 0; i < object.compactedBlockChanges.length; ++i) {
+                                    if (typeof object.compactedBlockChanges[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.compactedBlockChanges: object expected");
+                                    message.compactedBlockChanges[i] = $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.fromObject(object.compactedBlockChanges[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a CompactedNullifierUpdateEntries message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} message CompactedNullifierUpdateEntries
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        CompactedNullifierUpdateEntries.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.compactedBlockChanges = [];
+                            if (message.compactedBlockChanges && message.compactedBlockChanges.length) {
+                                object.compactedBlockChanges = [];
+                                for (var j = 0; j < message.compactedBlockChanges.length; ++j)
+                                    object.compactedBlockChanges[j] = $root.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.toObject(message.compactedBlockChanges[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this CompactedNullifierUpdateEntries to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        CompactedNullifierUpdateEntries.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return CompactedNullifierUpdateEntries;
+                    })();
+
+                    v0.GetRecentCompactedNullifierChangesRequest = (function() {
+
+                        /**
+                         * Properties of a GetRecentCompactedNullifierChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentCompactedNullifierChangesRequest
+                         * @property {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0|null} [v0] GetRecentCompactedNullifierChangesRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentCompactedNullifierChangesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentCompactedNullifierChangesRequest.
+                         * @implements IGetRecentCompactedNullifierChangesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest=} [properties] Properties to set
+                         */
+                        function GetRecentCompactedNullifierChangesRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentCompactedNullifierChangesRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @instance
+                         */
+                        GetRecentCompactedNullifierChangesRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentCompactedNullifierChangesRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentCompactedNullifierChangesRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentCompactedNullifierChangesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} GetRecentCompactedNullifierChangesRequest instance
+                         */
+                        GetRecentCompactedNullifierChangesRequest.create = function create(properties) {
+                            return new GetRecentCompactedNullifierChangesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedNullifierChangesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest} message GetRecentCompactedNullifierChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedNullifierChangesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedNullifierChangesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesRequest} message GetRecentCompactedNullifierChangesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedNullifierChangesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedNullifierChangesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} GetRecentCompactedNullifierChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedNullifierChangesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedNullifierChangesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} GetRecentCompactedNullifierChangesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedNullifierChangesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentCompactedNullifierChangesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentCompactedNullifierChangesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentCompactedNullifierChangesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} GetRecentCompactedNullifierChangesRequest
+                         */
+                        GetRecentCompactedNullifierChangesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentCompactedNullifierChangesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} message GetRecentCompactedNullifierChangesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentCompactedNullifierChangesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentCompactedNullifierChangesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentCompactedNullifierChangesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentCompactedNullifierChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                             * @interface IGetRecentCompactedNullifierChangesRequestV0
+                             * @property {number|Long|null} [startBlockHeight] GetRecentCompactedNullifierChangesRequestV0 startBlockHeight
+                             * @property {boolean|null} [prove] GetRecentCompactedNullifierChangesRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetRecentCompactedNullifierChangesRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest
+                             * @classdesc Represents a GetRecentCompactedNullifierChangesRequestV0.
+                             * @implements IGetRecentCompactedNullifierChangesRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0=} [properties] Properties to set
+                             */
+                            function GetRecentCompactedNullifierChangesRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentCompactedNullifierChangesRequestV0 startBlockHeight.
+                             * @member {number|Long} startBlockHeight
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.prototype.startBlockHeight = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetRecentCompactedNullifierChangesRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetRecentCompactedNullifierChangesRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} GetRecentCompactedNullifierChangesRequestV0 instance
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.create = function create(properties) {
+                                return new GetRecentCompactedNullifierChangesRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedNullifierChangesRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0} message GetRecentCompactedNullifierChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.startBlockHeight != null && Object.hasOwnProperty.call(message, "startBlockHeight"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startBlockHeight);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedNullifierChangesRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.IGetRecentCompactedNullifierChangesRequestV0} message GetRecentCompactedNullifierChangesRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedNullifierChangesRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} GetRecentCompactedNullifierChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.startBlockHeight = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedNullifierChangesRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} GetRecentCompactedNullifierChangesRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentCompactedNullifierChangesRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                    if (!$util.isInteger(message.startBlockHeight) && !(message.startBlockHeight && $util.isInteger(message.startBlockHeight.low) && $util.isInteger(message.startBlockHeight.high)))
+                                        return "startBlockHeight: integer|Long expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentCompactedNullifierChangesRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} GetRecentCompactedNullifierChangesRequestV0
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0();
+                                if (object.startBlockHeight != null)
+                                    if ($util.Long)
+                                        (message.startBlockHeight = $util.Long.fromValue(object.startBlockHeight)).unsigned = true;
+                                    else if (typeof object.startBlockHeight === "string")
+                                        message.startBlockHeight = parseInt(object.startBlockHeight, 10);
+                                    else if (typeof object.startBlockHeight === "number")
+                                        message.startBlockHeight = object.startBlockHeight;
+                                    else if (typeof object.startBlockHeight === "object")
+                                        message.startBlockHeight = new $util.LongBits(object.startBlockHeight.low >>> 0, object.startBlockHeight.high >>> 0).toNumber(true);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentCompactedNullifierChangesRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} message GetRecentCompactedNullifierChangesRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startBlockHeight = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startBlockHeight = options.longs === String ? "0" : 0;
+                                    object.prove = false;
+                                }
+                                if (message.startBlockHeight != null && message.hasOwnProperty("startBlockHeight"))
+                                    if (typeof message.startBlockHeight === "number")
+                                        object.startBlockHeight = options.longs === String ? String(message.startBlockHeight) : message.startBlockHeight;
+                                    else
+                                        object.startBlockHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startBlockHeight) : options.longs === Number ? new $util.LongBits(message.startBlockHeight.low >>> 0, message.startBlockHeight.high >>> 0).toNumber(true) : message.startBlockHeight;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentCompactedNullifierChangesRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentCompactedNullifierChangesRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentCompactedNullifierChangesRequestV0;
+                        })();
+
+                        return GetRecentCompactedNullifierChangesRequest;
+                    })();
+
+                    v0.GetRecentCompactedNullifierChangesResponse = (function() {
+
+                        /**
+                         * Properties of a GetRecentCompactedNullifierChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetRecentCompactedNullifierChangesResponse
+                         * @property {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0|null} [v0] GetRecentCompactedNullifierChangesResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetRecentCompactedNullifierChangesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetRecentCompactedNullifierChangesResponse.
+                         * @implements IGetRecentCompactedNullifierChangesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesResponse=} [properties] Properties to set
+                         */
+                        function GetRecentCompactedNullifierChangesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetRecentCompactedNullifierChangesResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @instance
+                         */
+                        GetRecentCompactedNullifierChangesResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetRecentCompactedNullifierChangesResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetRecentCompactedNullifierChangesResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetRecentCompactedNullifierChangesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} GetRecentCompactedNullifierChangesResponse instance
+                         */
+                        GetRecentCompactedNullifierChangesResponse.create = function create(properties) {
+                            return new GetRecentCompactedNullifierChangesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedNullifierChangesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesResponse} message GetRecentCompactedNullifierChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedNullifierChangesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetRecentCompactedNullifierChangesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetRecentCompactedNullifierChangesResponse} message GetRecentCompactedNullifierChangesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetRecentCompactedNullifierChangesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedNullifierChangesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} GetRecentCompactedNullifierChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedNullifierChangesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetRecentCompactedNullifierChangesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} GetRecentCompactedNullifierChangesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetRecentCompactedNullifierChangesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetRecentCompactedNullifierChangesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetRecentCompactedNullifierChangesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetRecentCompactedNullifierChangesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} GetRecentCompactedNullifierChangesResponse
+                         */
+                        GetRecentCompactedNullifierChangesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetRecentCompactedNullifierChangesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} message GetRecentCompactedNullifierChangesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetRecentCompactedNullifierChangesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetRecentCompactedNullifierChangesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetRecentCompactedNullifierChangesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetRecentCompactedNullifierChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                             * @interface IGetRecentCompactedNullifierChangesResponseV0
+                             * @property {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries|null} [compactedNullifierUpdateEntries] GetRecentCompactedNullifierChangesResponseV0 compactedNullifierUpdateEntries
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetRecentCompactedNullifierChangesResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetRecentCompactedNullifierChangesResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetRecentCompactedNullifierChangesResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse
+                             * @classdesc Represents a GetRecentCompactedNullifierChangesResponseV0.
+                             * @implements IGetRecentCompactedNullifierChangesResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0=} [properties] Properties to set
+                             */
+                            function GetRecentCompactedNullifierChangesResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetRecentCompactedNullifierChangesResponseV0 compactedNullifierUpdateEntries.
+                             * @member {org.dash.platform.dapi.v0.ICompactedNullifierUpdateEntries|null|undefined} compactedNullifierUpdateEntries
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.prototype.compactedNullifierUpdateEntries = null;
+
+                            /**
+                             * GetRecentCompactedNullifierChangesResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetRecentCompactedNullifierChangesResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @instance
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetRecentCompactedNullifierChangesResponseV0 result.
+                             * @member {"compactedNullifierUpdateEntries"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetRecentCompactedNullifierChangesResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["compactedNullifierUpdateEntries", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetRecentCompactedNullifierChangesResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} GetRecentCompactedNullifierChangesResponseV0 instance
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.create = function create(properties) {
+                                return new GetRecentCompactedNullifierChangesResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedNullifierChangesResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0} message GetRecentCompactedNullifierChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.compactedNullifierUpdateEntries != null && Object.hasOwnProperty.call(message, "compactedNullifierUpdateEntries"))
+                                    $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.encode(message.compactedNullifierUpdateEntries, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetRecentCompactedNullifierChangesResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.IGetRecentCompactedNullifierChangesResponseV0} message GetRecentCompactedNullifierChangesResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedNullifierChangesResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} GetRecentCompactedNullifierChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.compactedNullifierUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetRecentCompactedNullifierChangesResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} GetRecentCompactedNullifierChangesResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetRecentCompactedNullifierChangesResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.compactedNullifierUpdateEntries != null && message.hasOwnProperty("compactedNullifierUpdateEntries")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.verify(message.compactedNullifierUpdateEntries);
+                                        if (error)
+                                            return "compactedNullifierUpdateEntries." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetRecentCompactedNullifierChangesResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} GetRecentCompactedNullifierChangesResponseV0
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0();
+                                if (object.compactedNullifierUpdateEntries != null) {
+                                    if (typeof object.compactedNullifierUpdateEntries !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.compactedNullifierUpdateEntries: object expected");
+                                    message.compactedNullifierUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.fromObject(object.compactedNullifierUpdateEntries);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetRecentCompactedNullifierChangesResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} message GetRecentCompactedNullifierChangesResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.compactedNullifierUpdateEntries != null && message.hasOwnProperty("compactedNullifierUpdateEntries")) {
+                                    object.compactedNullifierUpdateEntries = $root.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.toObject(message.compactedNullifierUpdateEntries, options);
+                                    if (options.oneofs)
+                                        object.result = "compactedNullifierUpdateEntries";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetRecentCompactedNullifierChangesResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetRecentCompactedNullifierChangesResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetRecentCompactedNullifierChangesResponseV0;
+                        })();
+
+                        return GetRecentCompactedNullifierChangesResponse;
                     })();
 
                     return v0;

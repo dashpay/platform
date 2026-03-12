@@ -24,6 +24,8 @@ mod transition_no_inputs_error;
 mod transition_no_outputs_error;
 mod transition_over_max_inputs_error;
 mod transition_over_max_outputs_error;
+mod unshield_amount_zero_error;
+mod unshield_value_balance_below_amount_error;
 mod withdrawal_balance_mismatch_error;
 mod withdrawal_below_min_amount_error;
 
@@ -53,5 +55,7 @@ pub use transition_no_inputs_error::*;
 pub use transition_no_outputs_error::*;
 pub use transition_over_max_inputs_error::*;
 pub use transition_over_max_outputs_error::*;
+pub use unshield_amount_zero_error::*;
+pub use unshield_value_balance_below_amount_error::*;
 pub use withdrawal_balance_mismatch_error::*;
 pub use withdrawal_below_min_amount_error::*;

@@ -33,7 +33,7 @@ pub const PROTOCOL_VERSION_12: ProtocolVersion = 12;
 /// This version is for Platform release 3.1.0
 pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
-    drive: DRIVE_VERSION_V7, // changed: shielded pool (commitment tree, nullifiers, anchors, address funds, sinsemilla hashing)
+    drive: DRIVE_VERSION_V7,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V7,

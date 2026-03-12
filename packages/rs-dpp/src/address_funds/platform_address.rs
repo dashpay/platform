@@ -563,6 +563,204 @@ impl PlatformAddress {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Orchard shielded payment address (requires `shielded-bundle-building`)
+// ---------------------------------------------------------------------------
+
+/// Size of the Orchard diversifier (11 bytes).
+#[cfg(feature = "shielded-bundle-building")]
+pub const ORCHARD_DIVERSIFIER_SIZE: usize = 11;
+/// Size of the Orchard diversified transmission key pk_d (32 bytes, Pallas curve point).
+#[cfg(feature = "shielded-bundle-building")]
+pub const ORCHARD_PKD_SIZE: usize = 32;
+/// Total size of a raw Orchard payment address (43 bytes = diversifier + pk_d).
+#[cfg(feature = "shielded-bundle-building")]
+pub const ORCHARD_ADDRESS_SIZE: usize = ORCHARD_DIVERSIFIER_SIZE + ORCHARD_PKD_SIZE;
+
+/// An Orchard shielded payment address.
+///
+/// Composed of a diversifier (11 bytes) and a diversified transmission key (32 bytes).
+/// The diversifier enables a single spending key to derive an unlimited number of
+/// unlinkable payment addresses. Only the holder of the corresponding FullViewingKey
+/// (or IncomingViewingKey) can link diversified addresses to the same wallet.
+///
+/// Bech32m encoding uses type byte `0x10`, producing addresses that start with `z`:
+/// - Mainnet: `dash1z...`
+/// - Testnet: `tdash1z...`
+///
+/// The raw Orchard address format matches Zcash Orchard (43 bytes), but the
+/// string encoding is Dash-specific (no F4Jumble, no Unified Address wrapper).
+///
+/// Use [`From<PaymentAddress>`] to convert from the `orchard` crate's native type,
+/// or [`to_payment_address()`](OrchardAddress::to_payment_address) to convert back
+/// (with pk_d validation).
+///
+/// Requires the `shielded-bundle-building` feature.
+#[cfg(feature = "shielded-bundle-building")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OrchardAddress {
+    /// 11-byte diversifier derived from the FullViewingKey with an index.
+    diversifier: [u8; ORCHARD_DIVERSIFIER_SIZE],
+    /// 32-byte diversified transmission key (point on the Pallas curve).
+    pk_d: [u8; ORCHARD_PKD_SIZE],
+}
+
+#[cfg(feature = "shielded-bundle-building")]
+impl OrchardAddress {
+    /// Type byte for Orchard addresses in bech32m encoding (user-facing).
+    /// Produces 'z' as the first bech32 character.
+    pub const ORCHARD_TYPE: u8 = 0x10;
+
+    /// Creates an OrchardAddress from its raw components.
+    pub fn from_parts(
+        diversifier: [u8; ORCHARD_DIVERSIFIER_SIZE],
+        pk_d: [u8; ORCHARD_PKD_SIZE],
+    ) -> Self {
+        Self { diversifier, pk_d }
+    }
+
+    /// Creates an OrchardAddress from a 43-byte raw address.
+    ///
+    /// The first 11 bytes are the diversifier, the next 32 are pk_d.
+    /// No validation is performed on pk_d; use [`From<PaymentAddress>`]
+    /// for a pre-validated address.
+    pub fn from_raw_bytes(bytes: &[u8; ORCHARD_ADDRESS_SIZE]) -> Self {
+        let mut diversifier = [0u8; ORCHARD_DIVERSIFIER_SIZE];
+        let mut pk_d = [0u8; ORCHARD_PKD_SIZE];
+        diversifier.copy_from_slice(&bytes[..ORCHARD_DIVERSIFIER_SIZE]);
+        pk_d.copy_from_slice(&bytes[ORCHARD_DIVERSIFIER_SIZE..]);
+        Self { diversifier, pk_d }
+    }
+
+    /// Returns the raw 43-byte address (diversifier || pk_d).
+    pub fn to_raw_bytes(&self) -> [u8; ORCHARD_ADDRESS_SIZE] {
+        let mut bytes = [0u8; ORCHARD_ADDRESS_SIZE];
+        bytes[..ORCHARD_DIVERSIFIER_SIZE].copy_from_slice(&self.diversifier);
+        bytes[ORCHARD_DIVERSIFIER_SIZE..].copy_from_slice(&self.pk_d);
+        bytes
+    }
+
+    /// Returns the 11-byte diversifier.
+    pub fn diversifier(&self) -> &[u8; ORCHARD_DIVERSIFIER_SIZE] {
+        &self.diversifier
+    }
+
+    /// Returns the 32-byte diversified transmission key.
+    pub fn pk_d(&self) -> &[u8; ORCHARD_PKD_SIZE] {
+        &self.pk_d
+    }
+
+    /// Encodes the OrchardAddress as a bech32m string for the specified network.
+    ///
+    /// Format: `<HRP>1<data-part>`
+    /// - Data: type_byte (0x10) || diversifier (11 bytes) || pk_d (32 bytes)
+    /// - Total payload: 44 bytes
+    /// - Checksum: bech32m (BIP-350)
+    ///
+    /// # Example
+    /// ```ignore
+    /// let address = OrchardAddress::from_raw_bytes(&raw_bytes);
+    /// let encoded = address.to_bech32m_string(Network::Dash);
+    /// // Returns something like "dash1z..."
+    /// ```
+    pub fn to_bech32m_string(&self, network: Network) -> String {
+        let hrp_str = PlatformAddress::hrp_for_network(network);
+        let hrp = Hrp::parse(hrp_str).expect("HRP is valid");
+
+        let mut payload = Vec::with_capacity(1 + ORCHARD_ADDRESS_SIZE);
+        payload.push(Self::ORCHARD_TYPE);
+        payload.extend_from_slice(&self.diversifier);
+        payload.extend_from_slice(&self.pk_d);
+
+        bech32::encode::<Bech32m>(hrp, &payload).expect("encoding should succeed")
+    }
+
+    /// Converts this address to an Orchard [`PaymentAddress`](grovedb_commitment_tree::PaymentAddress).
+    ///
+    /// Returns an error if `pk_d` is not a valid Pallas curve point.
+    pub fn to_payment_address(
+        &self,
+    ) -> Result<grovedb_commitment_tree::PaymentAddress, ProtocolError> {
+        crate::shielded::builder::orchard_address_to_payment_address(self)
+    }
+
+    /// Decodes a bech32m-encoded Orchard address string.
+    ///
+    /// # Returns
+    /// - `Ok((OrchardAddress, Network))` - The decoded address and its network
+    /// - `Err(ProtocolError)` - If the address is invalid
+    pub fn from_bech32m_string(s: &str) -> Result<(Self, Network), ProtocolError> {
+        let (hrp, data) =
+            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
+
+        let hrp_lower = hrp.as_str().to_ascii_lowercase();
+        let network = match hrp_lower.as_str() {
+            s if s == PLATFORM_HRP_MAINNET => Network::Dash,
+            s if s == PLATFORM_HRP_TESTNET => Network::Testnet,
+            _ => {
+                return Err(ProtocolError::DecodingError(format!(
+                    "invalid HRP '{}': expected '{}' or '{}'",
+                    hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
+                )))
+            }
+        };
+
+        // Validate payload: 1 type byte + 11 diversifier + 32 pk_d = 44 bytes
+        if data.len() != 1 + ORCHARD_ADDRESS_SIZE {
+            return Err(ProtocolError::DecodingError(format!(
+                "invalid Orchard address length: expected {} bytes, got {}",
+                1 + ORCHARD_ADDRESS_SIZE,
+                data.len()
+            )));
+        }
+
+        if data[0] != Self::ORCHARD_TYPE {
+            return Err(ProtocolError::DecodingError(format!(
+                "invalid Orchard address type byte: expected 0x{:02x}, got 0x{:02x}",
+                Self::ORCHARD_TYPE,
+                data[0]
+            )));
+        }
+
+        let mut diversifier = [0u8; ORCHARD_DIVERSIFIER_SIZE];
+        let mut pk_d = [0u8; ORCHARD_PKD_SIZE];
+        diversifier.copy_from_slice(&data[1..1 + ORCHARD_DIVERSIFIER_SIZE]);
+        pk_d.copy_from_slice(&data[1 + ORCHARD_DIVERSIFIER_SIZE..]);
+
+        Ok((Self { diversifier, pk_d }, network))
+    }
+}
+
+/// Infallible conversion from the orchard crate's `PaymentAddress` to `OrchardAddress`.
+///
+/// Extracts the raw 43 bytes (diversifier || pk_d) from the validated address.
+#[cfg(feature = "shielded-bundle-building")]
+impl From<grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
+    fn from(addr: grovedb_commitment_tree::PaymentAddress) -> Self {
+        Self::from_raw_bytes(&addr.to_raw_address_bytes())
+    }
+}
+
+/// Infallible conversion from a reference to `PaymentAddress`.
+#[cfg(feature = "shielded-bundle-building")]
+impl From<&grovedb_commitment_tree::PaymentAddress> for OrchardAddress {
+    fn from(addr: &grovedb_commitment_tree::PaymentAddress) -> Self {
+        Self::from_raw_bytes(&addr.to_raw_address_bytes())
+    }
+}
+
+#[cfg(feature = "shielded-bundle-building")]
+impl std::fmt::Display for OrchardAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Orchard(d={}, pk_d={})",
+            hex::encode(self.diversifier),
+            hex::encode(self.pk_d)
+        )
+    }
+}
+
 impl std::fmt::Display for PlatformAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1320,5 +1518,150 @@ mod tests {
 
         assert_eq!(p2pkh_decoded, p2pkh);
         assert_eq!(p2sh_decoded, p2sh);
+    }
+
+    // ========================
+    // Orchard address tests (require shielded-bundle-building feature)
+    // ========================
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_address_from_parts_roundtrip() {
+        let diversifier = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+        ];
+        let pk_d = [0xAB; 32];
+        let address = OrchardAddress::from_parts(diversifier, pk_d);
+
+        assert_eq!(address.diversifier(), &diversifier);
+        assert_eq!(address.pk_d(), &pk_d);
+
+        let raw = address.to_raw_bytes();
+        assert_eq!(raw.len(), 43);
+        assert_eq!(&raw[..11], &diversifier);
+        assert_eq!(&raw[11..], &pk_d[..]);
+
+        let recovered = OrchardAddress::from_raw_bytes(&raw);
+        assert_eq!(recovered, address);
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_bech32m_mainnet_roundtrip() {
+        let diversifier = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+        ];
+        let pk_d = [0xAB; 32];
+        let address = OrchardAddress::from_parts(diversifier, pk_d);
+
+        let encoded = address.to_bech32m_string(Network::Dash);
+        assert!(
+            encoded.starts_with("dash1z"),
+            "Orchard mainnet address should start with 'dash1z', got: {}",
+            encoded
+        );
+
+        let (decoded, network) =
+            OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
+        assert_eq!(decoded, address);
+        assert_eq!(network, Network::Dash);
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_bech32m_testnet_roundtrip() {
+        let diversifier = [0xFF; 11];
+        let pk_d = [0x42; 32];
+        let address = OrchardAddress::from_parts(diversifier, pk_d);
+
+        let encoded = address.to_bech32m_string(Network::Testnet);
+        assert!(
+            encoded.starts_with("tdash1z"),
+            "Orchard testnet address should start with 'tdash1z', got: {}",
+            encoded
+        );
+
+        let (decoded, network) =
+            OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
+        assert_eq!(decoded, address);
+        assert_eq!(network, Network::Testnet);
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_bech32m_wrong_type_byte_fails() {
+        // Manually construct an address with P2PKH type byte (0xb0) but 44-byte payload
+        let hrp = Hrp::parse("dash").unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE]; // Wrong type byte
+        payload.extend_from_slice(&[0u8; 43]);
+        let encoded = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+
+        let result = OrchardAddress::from_bech32m_string(&encoded);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Orchard address type byte"));
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_bech32m_wrong_length_fails() {
+        // Too short (only 20 bytes instead of 43)
+        let hrp = Hrp::parse("dash").unwrap();
+        let mut payload = vec![OrchardAddress::ORCHARD_TYPE];
+        payload.extend_from_slice(&[0u8; 20]);
+        let encoded = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+
+        let result = OrchardAddress::from_bech32m_string(&encoded);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Orchard address length"));
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_and_platform_addresses_are_distinguishable() {
+        // Verify that the type bytes produce distinct prefixes
+        let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
+        let p2sh = PlatformAddress::P2sh([0xAB; 20]);
+        let orchard = OrchardAddress::from_parts([0xAB; 11], [0xAB; 32]);
+
+        let p2pkh_enc = p2pkh.to_bech32m_string(Network::Dash);
+        let p2sh_enc = p2sh.to_bech32m_string(Network::Dash);
+        let orchard_enc = orchard.to_bech32m_string(Network::Dash);
+
+        // All three start with "dash1" but have different type-byte characters
+        assert!(p2pkh_enc.starts_with("dash1k"), "P2PKH: {}", p2pkh_enc);
+        assert!(p2sh_enc.starts_with("dash1s"), "P2SH: {}", p2sh_enc);
+        assert!(
+            orchard_enc.starts_with("dash1z"),
+            "Orchard: {}",
+            orchard_enc
+        );
+
+        // Cross-decoding should fail
+        assert!(PlatformAddress::from_bech32m_string(&orchard_enc).is_err());
+        assert!(OrchardAddress::from_bech32m_string(&p2pkh_enc).is_err());
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_address_all_zeros() {
+        let address = OrchardAddress::from_parts([0u8; 11], [0u8; 32]);
+        let encoded = address.to_bech32m_string(Network::Dash);
+        let (decoded, _) = OrchardAddress::from_bech32m_string(&encoded).unwrap();
+        assert_eq!(decoded, address);
+    }
+
+    #[cfg(feature = "shielded-bundle-building")]
+    #[test]
+    fn test_orchard_address_display() {
+        let address = OrchardAddress::from_parts([0x01; 11], [0x02; 32]);
+        let display = format!("{}", address);
+        assert!(display.starts_with("Orchard(d="));
+        assert!(display.contains("pk_d="));
     }
 }
