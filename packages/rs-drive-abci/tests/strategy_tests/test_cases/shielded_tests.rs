@@ -1,6 +1,5 @@
 // Feature-gated because shielded strategy tests are long-running (ZK proof generation).
 // Run with: cargo test -p drive-abci --features __shielded_strategy_tests
-// TODO: Add shielded variants to OperationType enum to enable these tests.
 #[cfg(feature = "__shielded_strategy_tests")]
 #[cfg(test)]
 mod tests {

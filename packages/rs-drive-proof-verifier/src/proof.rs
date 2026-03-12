@@ -2597,9 +2597,9 @@ impl FromProof<platform::GetRecentNullifierChangesRequest> for RecentNullifierCh
         let result = RecentNullifierChanges(
             verified_changes
                 .into_iter()
-                .map(|(block_height, nullifiers)| BlockNullifierChanges {
-                    block_height,
-                    nullifiers,
+                .map(|change| BlockNullifierChanges {
+                    block_height: change.block_height,
+                    nullifiers: change.nullifiers.into_inner(),
                 })
                 .collect(),
         );
@@ -2653,12 +2653,10 @@ impl FromProof<platform::GetRecentCompactedNullifierChangesRequest>
         let result = RecentCompactedNullifierChanges(
             verified_changes
                 .into_iter()
-                .map(|(start_block_height, end_block_height, nullifiers)| {
-                    CompactedBlockNullifierChanges {
-                        start_block_height,
-                        end_block_height,
-                        nullifiers,
-                    }
+                .map(|change| CompactedBlockNullifierChanges {
+                    start_block_height: change.start_block,
+                    end_block_height: change.end_block,
+                    nullifiers: change.nullifiers.into_inner(),
                 })
                 .collect(),
         );
