@@ -21,7 +21,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: "false"
+          cache-on-failure: "true"
           workspaces: ". -> target/llvm-cov-target"
 
       - name: Install librocksdb
