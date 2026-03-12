@@ -30,8 +30,10 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@cargo-nextest
 
-      - name: Strip cdylib from dash-sdk (incompatible with static rocksdb)
-        run: sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml
+      - name: Strip cdylib crate-types (incompatible with static rocksdb)
+        run: |
+          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml
+          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Configure core dumps
         run: |
@@ -50,6 +52,8 @@ jobs:
             --package platform-value \
             --package rs-dapi \
             --package platform-wallet \
+            --package rs-sdk-ffi \
+            --package platform-wallet-ffi \
             --package rs-dapi-client \
             --package platform-serialization \
             --all-features \
