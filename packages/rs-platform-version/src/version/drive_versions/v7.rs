@@ -50,9 +50,9 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
             add_to_system_credits_operations: 0,
             remove_from_system_credits: 0,
             remove_from_system_credits_operations: 0,
-            calculate_total_credits_balance: 1, // Changed because we now add the address trees
+            calculate_total_credits_balance: 1,
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V2, // Changed
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V2,
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V2,
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
@@ -84,7 +84,7 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
             apply_batch_low_level_drive_operations: 0,
             apply_batch_grovedb_operations: 0,
         },
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2, //changed
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2,
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
             apply_drive_operations: 0,
