@@ -57,7 +57,11 @@ export type StateTransitionProofResultType =
   | VerifiedNextDistribution
   | VerifiedAddressInfos
   | VerifiedIdentityFullWithAddressInfos
-  | VerifiedIdentityWithAddressInfos;
+  | VerifiedIdentityWithAddressInfos
+  | VerifiedAssetLockConsumed
+  | VerifiedShieldedNullifiers
+  | VerifiedShieldedNullifiersWithAddressInfos
+  | VerifiedShieldedNullifiersWithWithdrawalDocument;
 "#;
 
 #[wasm_bindgen]
@@ -724,6 +728,15 @@ fn build_address_infos_map(
     }))
 }
 
+/// Helper to build `Map<string(hex), boolean>` from shielded nullifier results.
+fn build_nullifier_map(nullifiers: Vec<(Vec<u8>, bool)>) -> Map {
+    Map::from_entries(nullifiers.into_iter().map(|(nullifier, is_spent)| {
+        let key: JsValue = hex::encode(&nullifier).into();
+        let val: JsValue = is_spent.into();
+        (key, val)
+    }))
+}
+
 fn action_status_to_string(status: dpp::group::group_action_status::GroupActionStatus) -> String {
     match status {
         dpp::group::group_action_status::GroupActionStatus::ActionActive => {
@@ -757,6 +770,148 @@ impl VerifiedShieldedPoolStateWasm {
         }
     }
 }
+
+// --- VerifiedAssetLockConsumed ---
+
+#[wasm_bindgen(js_name = "VerifiedAssetLockConsumed")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedAssetLockConsumedWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub status: String,
+    initial_credit_value: Option<u64>,
+    remaining_credit_value: Option<u64>,
+}
+
+#[wasm_bindgen(js_class = VerifiedAssetLockConsumed)]
+impl VerifiedAssetLockConsumedWasm {
+    #[wasm_bindgen(getter, js_name = "initialCreditValue")]
+    pub fn initial_credit_value(&self) -> JsValue {
+        match self.initial_credit_value {
+            Some(v) => BigInt::from(v).into(),
+            None => JsValue::undefined(),
+        }
+    }
+
+    #[wasm_bindgen(getter, js_name = "remainingCreditValue")]
+    pub fn remaining_credit_value(&self) -> JsValue {
+        match self.remaining_credit_value {
+            Some(v) => BigInt::from(v).into(),
+            None => JsValue::undefined(),
+        }
+    }
+}
+
+impl_wasm_type_info!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
+impl_wasm_conversions_serde!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
+
+// --- VerifiedShieldedNullifiers ---
+
+#[wasm_bindgen(js_name = "VerifiedShieldedNullifiers")]
+#[derive(Clone)]
+pub struct VerifiedShieldedNullifiersWasm {
+    nullifiers: Map, // Map<hex(nullifier), boolean>
+}
+
+#[wasm_bindgen(js_class = VerifiedShieldedNullifiers)]
+impl VerifiedShieldedNullifiersWasm {
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[("nullifiers", self.nullifiers.clone().into())])
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> JsValue {
+        self.to_object()
+    }
+}
+
+impl_wasm_type_info!(VerifiedShieldedNullifiersWasm, VerifiedShieldedNullifiers);
+
+// --- VerifiedShieldedNullifiersWithAddressInfos ---
+
+#[wasm_bindgen(js_name = "VerifiedShieldedNullifiersWithAddressInfos")]
+#[derive(Clone)]
+pub struct VerifiedShieldedNullifiersWithAddressInfosWasm {
+    nullifiers: Map,
+    address_infos: Map,
+}
+
+#[wasm_bindgen(js_class = VerifiedShieldedNullifiersWithAddressInfos)]
+impl VerifiedShieldedNullifiersWithAddressInfosWasm {
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(getter = "addressInfos")]
+    pub fn address_infos(&self) -> Map {
+        self.address_infos.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[
+            ("nullifiers", self.nullifiers.clone().into()),
+            ("addressInfos", self.address_infos.clone().into()),
+        ])
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> JsValue {
+        self.to_object()
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedShieldedNullifiersWithAddressInfosWasm,
+    VerifiedShieldedNullifiersWithAddressInfos
+);
+
+// --- VerifiedShieldedNullifiersWithWithdrawalDocument ---
+
+#[wasm_bindgen(js_name = "VerifiedShieldedNullifiersWithWithdrawalDocument")]
+#[derive(Clone)]
+pub struct VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
+    nullifiers: Map,
+    documents: Map,
+}
+
+#[wasm_bindgen(js_class = VerifiedShieldedNullifiersWithWithdrawalDocument)]
+impl VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn documents(&self) -> Map {
+        self.documents.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[
+            ("nullifiers", self.nullifiers.clone().into()),
+            ("documents", self.documents.clone().into()),
+        ])
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> JsValue {
+        self.to_object()
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
+    VerifiedShieldedNullifiersWithWithdrawalDocument
+);
 /// Convert a Rust `StateTransitionProofResult` into the corresponding typed
 /// WASM wrapper, ready to be returned to JavaScript.
 pub fn convert_proof_result(
@@ -918,11 +1073,59 @@ pub fn convert_proof_result(
             .into()
         }
 
-        StateTransitionProofResult::VerifiedAssetLockConsumed(_)
-        | StateTransitionProofResult::VerifiedShieldedNullifiers(_)
-        | StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(_, _)
-        | StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(_, _) => {
-            todo!("shielded proof results not yet implemented in wasm")
+        StateTransitionProofResult::VerifiedAssetLockConsumed(info) => {
+            use dpp::asset_lock::StoredAssetLockInfo;
+            use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+            let (status, initial, remaining) = match info {
+                StoredAssetLockInfo::FullyConsumed => ("FullyConsumed".to_string(), None, None),
+                StoredAssetLockInfo::PartiallyConsumed(val) => (
+                    "PartiallyConsumed".to_string(),
+                    Some(val.initial_credit_value()),
+                    Some(val.remaining_credit_value()),
+                ),
+                StoredAssetLockInfo::NotPresent => ("NotPresent".to_string(), None, None),
+            };
+            VerifiedAssetLockConsumedWasm {
+                status,
+                initial_credit_value: initial,
+                remaining_credit_value: remaining,
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedShieldedNullifiers(nullifiers) => {
+            VerifiedShieldedNullifiersWasm {
+                nullifiers: build_nullifier_map(nullifiers),
+            }
+            .into()
+        }
+
+        StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
+            nullifiers,
+            infos,
+        ) => VerifiedShieldedNullifiersWithAddressInfosWasm {
+            nullifiers: build_nullifier_map(nullifiers),
+            address_infos: build_address_infos_map(infos),
+        }
+        .into(),
+
+        StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(
+            nullifiers,
+            docs,
+        ) => {
+            let doc_map = Map::from_entries(docs.into_iter().map(|(id, maybe_doc)| {
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
+                let val: JsValue = match maybe_doc {
+                    Some(doc) => doc_to_wasm(doc).into(),
+                    None => JsValue::undefined(),
+                };
+                (key, val)
+            }));
+            VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
+                nullifiers: build_nullifier_map(nullifiers),
+                documents: doc_map,
+            }
+            .into()
         }
     };
 
