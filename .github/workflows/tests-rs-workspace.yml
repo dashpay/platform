@@ -24,6 +24,11 @@ jobs:
         with:
           components: llvm-tools
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "false"
+          workspaces: ". -> target/llvm-cov-target"
+
       - name: Install librocksdb
         uses: ./.github/actions/librocksdb
 
