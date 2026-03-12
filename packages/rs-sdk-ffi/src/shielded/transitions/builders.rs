@@ -116,7 +116,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer(
         orchard_bundle.binding_signature,
         wrapper.sdk.version(),
     ) {
-        Ok(st) => StateTransition::from(st),
+        Ok(st) => st,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield(
         orchard_bundle.binding_signature,
         wrapper.sdk.version(),
     ) {
-        Ok(st) => StateTransition::from(st),
+        Ok(st) => st,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
         let addresses: BTreeSet<PlatformAddress> = input_map.keys().copied().collect();
         let address_infos = AddressInfo::fetch_many(&wrapper.sdk, addresses)
             .await
-            .map_err(|e| FFIError::SDKError(e))?;
+            .map_err(FFIError::SDKError)?;
 
         // Build inputs with nonce+1 (next nonce)
         let mut inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
@@ -324,7 +324,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield(
             FFIError::InternalError(format!("Failed to build shield transition: {}", e))
         })?;
 
-        Ok::<StateTransition, FFIError>(StateTransition::from(st))
+        Ok::<StateTransition, FFIError>(st)
     });
 
     match result {
@@ -391,7 +391,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield_from_instant_lock(
         orchard_bundle.binding_signature,
         wrapper.sdk.version(),
     ) {
-        Ok(st) => StateTransition::from(st),
+        Ok(st) => st,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield_from_chain_lock(
         orchard_bundle.binding_signature,
         wrapper.sdk.version(),
     ) {
-        Ok(st) => StateTransition::from(st),
+        Ok(st) => st,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
@@ -527,7 +527,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal(
         core_script,
         wrapper.sdk.version(),
     ) {
-        Ok(st) => StateTransition::from(st),
+        Ok(st) => st,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
