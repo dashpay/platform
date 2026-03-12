@@ -46,6 +46,7 @@ jobs:
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-packages-direct: ${{ steps.override.outputs.rs-packages-direct || steps.filter-rs-direct.outputs.changes }}
+      rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
@@ -76,6 +77,16 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-direct.yml
+
+      - uses: dorny/paths-filter@v3
+        id: filter-rs-workflows
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: |
+            rs-workflows:
+              - .github/workflows/tests-rs-workspace.yml
+              - .github/workflows/tests-rs-package.yml
+              - .github/workflows/tests.yml
 
       - name: Check if Test Suite should run
         id: filter-test-suite
@@ -156,11 +167,7 @@ jobs:
     name: Rust workspace tests
     needs:
       - changes
-    if: >-
-      needs.changes.outputs.rs-packages != '[]'
-      || github.event_name == 'workflow_dispatch'
-      || github.event_name == 'schedule'
-      || github.event_name == 'push'
+    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
 
