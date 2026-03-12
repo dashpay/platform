@@ -26,7 +26,7 @@ pub fn compute_platform_sighash_wasm(
     extra_data: &[u8],
 ) -> WasmDppResult<Vec<u8>> {
     if bundle_commitment.len() != 32 {
-        return Err(crate::error::WasmDppError::invalid_argument(&format!(
+        return Err(crate::error::WasmDppError::invalid_argument(format!(
             "bundleCommitment must be exactly 32 bytes, got {}",
             bundle_commitment.len()
         )));
