@@ -19,11 +19,6 @@ pub enum StateTransitionTypeWasm {
     AddressFundsTransfer = 12,
     AddressFundingFromAssetLock = 13,
     AddressCreditWithdrawal = 14,
-    Shield = 15,
-    ShieldedTransfer = 16,
-    Unshield = 17,
-    ShieldFromAssetLock = 18,
-    ShieldedWithdrawal = 19,
 }
 
 impl From<StateTransitionType> for StateTransitionTypeWasm {
@@ -60,13 +55,7 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::AddressCreditWithdrawal => {
                 StateTransitionTypeWasm::AddressCreditWithdrawal
             }
-            StateTransitionType::Shield => StateTransitionTypeWasm::Shield,
-            StateTransitionType::ShieldedTransfer => StateTransitionTypeWasm::ShieldedTransfer,
-            StateTransitionType::Unshield => StateTransitionTypeWasm::Unshield,
-            StateTransitionType::ShieldFromAssetLock => {
-                StateTransitionTypeWasm::ShieldFromAssetLock
-            }
-            StateTransitionType::ShieldedWithdrawal => StateTransitionTypeWasm::ShieldedWithdrawal,
+            _ => todo!("shielded state transition types not yet implemented in wasm"),
         }
     }
 }
