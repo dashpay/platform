@@ -106,9 +106,9 @@ mod tests {
             .expect("expected operations");
 
         match &ops[0] {
-            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNullifiers {
-                nullifiers,
-            }) => {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { nullifiers },
+            ) => {
                 assert_eq!(nullifiers.len(), 1);
                 assert_eq!(nullifiers[0], [0x11; 32]);
             }
@@ -127,9 +127,9 @@ mod tests {
             .expect("expected operations");
 
         match ops.last().unwrap() {
-            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
-                new_total_balance,
-            }) => {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
                 assert_eq!(*new_total_balance, 9500); // 10000 - 500
             }
             other => panic!("expected UpdateTotalBalance, got {:?}", other),
@@ -138,13 +138,12 @@ mod tests {
 
     #[test]
     fn test_underflow_returns_error() {
-        let action =
-            ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
-                notes: vec![],
-                anchor: [0x00; 32],
-                fee_amount: 10001,
-                current_total_balance: 10000,
-            });
+        let action = ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
+            notes: vec![],
+            anchor: [0x00; 32],
+            fee_amount: 10001,
+            current_total_balance: 10000,
+        });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
 

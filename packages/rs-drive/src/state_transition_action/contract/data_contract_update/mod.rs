@@ -72,36 +72,65 @@ mod tests {
         DataContractUpdateTransitionAction::from(v0)
     }
 
+    /// The expected document type names produced by `get_data_contract_fixture`.
+    const EXPECTED_DOC_TYPES: [&str; 7] = [
+        "indexedDocument",
+        "niceDocument",
+        "noTimeDocument",
+        "optionalUniqueIndexedDocument",
+        "prettyDocument",
+        "uniqueDates",
+        "withByteArrays",
+    ];
+
     #[test]
     fn test_from_v0() {
         let action = make_action();
-        assert!(matches!(
-            action,
-            DataContractUpdateTransitionAction::V0(_)
-        ));
+        assert!(matches!(action, DataContractUpdateTransitionAction::V0(_)));
+        // Verify the fixture values are accessible through the enum wrapper.
+        assert_eq!(action.identity_contract_nonce(), 99);
+        assert_eq!(action.user_fee_increase(), 3);
+        assert_eq!(action.data_contract_ref().version(), 1);
     }
 
     #[test]
     fn test_data_contract_ref() {
         let action = make_action();
         let dc_ref = action.data_contract_ref();
-        let _id = dc_ref.id();
+        // Verify the contract has the expected version and document types.
+        assert_eq!(dc_ref.version(), 1);
+        let doc_types = dc_ref.document_types();
+        assert_eq!(doc_types.len(), EXPECTED_DOC_TYPES.len());
+        for name in &EXPECTED_DOC_TYPES {
+            assert!(
+                dc_ref.has_document_type_for_name(name),
+                "expected document type '{}' not found",
+                name
+            );
+        }
     }
 
     #[test]
     fn test_data_contract_owned() {
         let action = make_action();
         let original_id = action.data_contract_ref().id();
+        let original_owner = action.data_contract_ref().owner_id();
         let dc = action.data_contract();
         assert_eq!(dc.id(), original_id);
+        assert_eq!(dc.owner_id(), original_owner);
+        assert_eq!(dc.version(), 1);
+        assert_eq!(dc.document_types().len(), EXPECTED_DOC_TYPES.len());
     }
 
     #[test]
     fn test_data_contract_mut() {
         let mut action = make_action();
+        let original_id = action.data_contract_ref().id();
         let dc_mut = action.data_contract_mut();
-        // Verify we can obtain a mutable reference without panic.
-        let _id = dc_mut.id();
+        // Verify the mutable reference provides access to the same contract.
+        assert_eq!(dc_mut.id(), original_id);
+        assert_eq!(dc_mut.version(), 1);
+        assert_eq!(dc_mut.document_types().len(), EXPECTED_DOC_TYPES.len());
     }
 
     #[test]
@@ -122,6 +151,20 @@ mod tests {
         let cloned = action.clone();
         assert_eq!(cloned.identity_contract_nonce(), 99);
         assert_eq!(cloned.user_fee_increase(), 3);
+        // Verify the cloned contract preserves identity and structure.
+        assert_eq!(
+            cloned.data_contract_ref().id(),
+            action.data_contract_ref().id()
+        );
+        assert_eq!(
+            cloned.data_contract_ref().owner_id(),
+            action.data_contract_ref().owner_id()
+        );
+        assert_eq!(cloned.data_contract_ref().version(), 1);
+        assert_eq!(
+            cloned.data_contract_ref().document_types().len(),
+            EXPECTED_DOC_TYPES.len()
+        );
     }
 
     #[test]

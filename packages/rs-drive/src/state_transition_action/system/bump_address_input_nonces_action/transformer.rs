@@ -256,10 +256,9 @@ mod tests {
             input_witnesses: vec![],
         };
         let transition = IdentityCreateFromAddressesTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition(
-                transition, 100,
-            );
+        let action = BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition(
+            transition, 100,
+        );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
     }
@@ -279,7 +278,8 @@ mod tests {
         let transition = IdentityCreateFromAddressesTransition::V0(v0);
         let action =
             BumpAddressInputNoncesAction::from_borrowed_identity_create_from_addresses_transition(
-                &transition, 100,
+                &transition,
+                100,
             );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
@@ -303,7 +303,8 @@ mod tests {
         let action_enum = IdentityCreateFromAddressesTransitionAction::V0(v0);
         let action =
             BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition_action(
-                action_enum, 50,
+                action_enum,
+                50,
             );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
@@ -346,10 +347,9 @@ mod tests {
             input_witnesses: vec![],
         };
         let transition = IdentityTopUpFromAddressesTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_identity_topup_from_addresses_transition(
-                transition, 100,
-            );
+        let action = BumpAddressInputNoncesAction::from_identity_topup_from_addresses_transition(
+            transition, 100,
+        );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
     }
@@ -369,7 +369,8 @@ mod tests {
         let transition = IdentityTopUpFromAddressesTransition::V0(v0);
         let action =
             BumpAddressInputNoncesAction::from_borrowed_identity_topup_from_addresses_transition(
-                &transition, 100,
+                &transition,
+                100,
             );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
@@ -392,7 +393,8 @@ mod tests {
         let action_enum = IdentityTopUpFromAddressesTransitionAction::V0(v0);
         let action =
             BumpAddressInputNoncesAction::from_identity_topup_from_addresses_transition_action(
-                action_enum, 75,
+                action_enum,
+                75,
             );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
@@ -433,9 +435,8 @@ mod tests {
             input_witnesses: vec![],
         };
         let transition = AddressFundsTransferTransition::V0(v0);
-        let action = BumpAddressInputNoncesAction::from_address_funds_transfer_transition(
-            transition, 200,
-        );
+        let action =
+            BumpAddressInputNoncesAction::from_address_funds_transfer_transition(transition, 200);
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
     }
@@ -452,10 +453,10 @@ mod tests {
             input_witnesses: vec![],
         };
         let transition = AddressFundsTransferTransition::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_borrowed_address_funds_transfer_transition(
-                &transition, 200,
-            );
+        let action = BumpAddressInputNoncesAction::from_borrowed_address_funds_transfer_transition(
+            &transition,
+            200,
+        );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
     }
@@ -473,10 +474,10 @@ mod tests {
             user_fee_increase: TEST_FEE,
         };
         let action_enum = AddressFundsTransferTransitionAction::V0(v0);
-        let action =
-            BumpAddressInputNoncesAction::from_address_funds_transfer_transition_action(
-                action_enum, 300,
-            );
+        let action = BumpAddressInputNoncesAction::from_address_funds_transfer_transition_action(
+            action_enum,
+            300,
+        );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);
     }
@@ -494,7 +495,8 @@ mod tests {
         let action_enum = AddressFundsTransferTransitionAction::V0(v0);
         let action =
             BumpAddressInputNoncesAction::from_borrowed_address_funds_transfer_transition_action(
-                &action_enum, 300,
+                &action_enum,
+                300,
             );
         assert_is_v0(&action);
         assert_eq!(action.user_fee_increase(), TEST_FEE);

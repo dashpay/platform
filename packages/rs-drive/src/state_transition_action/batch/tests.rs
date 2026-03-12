@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
@@ -16,8 +18,6 @@ use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::version::PlatformVersion;
-use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
 
 use crate::drive::contract::DataContractFetchInfo;
 
@@ -205,7 +205,10 @@ fn test_document_base_action_data_contract_fetch_info_ref() {
     let base = test_document_base();
     let info_ref = base.data_contract_fetch_info_ref();
     // The ref and the cloned Arc should point to the same contract
-    assert_eq!(info_ref.contract.id(), base.data_contract_fetch_info().contract.id());
+    assert_eq!(
+        info_ref.contract.id(),
+        base.data_contract_fetch_info().contract.id()
+    );
 }
 
 #[test]
@@ -1354,10 +1357,7 @@ fn test_freeze_v0_base() {
 #[test]
 fn test_freeze_v0_identity_to_freeze_id() {
     let action = make_freeze_v0();
-    assert_eq!(
-        action.identity_to_freeze_id(),
-        Identifier::from([0xCC; 32])
-    );
+    assert_eq!(action.identity_to_freeze_id(), Identifier::from([0xCC; 32]));
 }
 
 #[test]
@@ -1397,19 +1397,13 @@ fn test_freeze_action_base() {
 #[test]
 fn test_freeze_action_base_owned() {
     let action = make_freeze();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
 fn test_freeze_action_identity_to_freeze_id() {
     let action = make_freeze();
-    assert_eq!(
-        action.identity_to_freeze_id(),
-        Identifier::from([0xCC; 32])
-    );
+    assert_eq!(action.identity_to_freeze_id(), Identifier::from([0xCC; 32]));
 }
 
 #[test]
@@ -1507,10 +1501,7 @@ fn test_unfreeze_action_base() {
 #[test]
 fn test_unfreeze_action_base_owned() {
     let action = make_unfreeze();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -1557,10 +1548,7 @@ fn make_claim_v0() -> TokenClaimTransitionActionV0 {
     TokenClaimTransitionActionV0 {
         base: test_token_base(),
         amount: 300,
-        distribution_info: TokenDistributionInfo::PreProgrammed(
-            1000,
-            Identifier::from([0xDD; 32]),
-        ),
+        distribution_info: TokenDistributionInfo::PreProgrammed(1000, Identifier::from([0xDD; 32])),
         public_note: Some("claim note".to_string()),
     }
 }
@@ -1603,8 +1591,7 @@ fn test_claim_v0_distribution_info() {
 #[test]
 fn test_claim_v0_set_distribution_info() {
     let mut action = make_claim_v0();
-    let new_info =
-        TokenDistributionInfo::PreProgrammed(2000, Identifier::from([0xEE; 32]));
+    let new_info = TokenDistributionInfo::PreProgrammed(2000, Identifier::from([0xEE; 32]));
     action.set_distribution_info(new_info);
     match action.distribution_info() {
         TokenDistributionInfo::PreProgrammed(ts, id) => {
@@ -1644,10 +1631,7 @@ fn test_claim_action_base() {
 #[test]
 fn test_claim_action_base_owned() {
     let action = make_claim();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -1675,8 +1659,7 @@ fn test_claim_action_distribution_info() {
 #[test]
 fn test_claim_action_set_distribution_info() {
     let mut action = make_claim();
-    let new_info =
-        TokenDistributionInfo::PreProgrammed(5000, Identifier::from([0xFF; 32]));
+    let new_info = TokenDistributionInfo::PreProgrammed(5000, Identifier::from([0xFF; 32]));
     action.set_distribution_info(new_info);
     match action.distribution_info() {
         TokenDistributionInfo::PreProgrammed(ts, id) => {
@@ -1773,10 +1756,7 @@ fn test_emergency_action_base() {
 #[test]
 fn test_emergency_action_base_owned() {
     let action = make_emergency();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -1873,10 +1853,7 @@ fn test_destroy_v0_public_note() {
 #[test]
 fn test_destroy_v0_public_note_owned() {
     let action = make_destroy_v0();
-    assert_eq!(
-        action.public_note_owned(),
-        Some("destroy note".to_string())
-    );
+    assert_eq!(action.public_note_owned(), Some("destroy note".to_string()));
 }
 
 #[test]
@@ -1896,10 +1873,7 @@ fn test_destroy_action_base() {
 #[test]
 fn test_destroy_action_base_owned() {
     let action = make_destroy();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -1938,10 +1912,7 @@ fn test_destroy_action_public_note() {
 #[test]
 fn test_destroy_action_public_note_owned() {
     let action = make_destroy();
-    assert_eq!(
-        action.public_note_owned(),
-        Some("destroy note".to_string())
-    );
+    assert_eq!(action.public_note_owned(), Some("destroy note".to_string()));
 }
 
 #[test]
@@ -2002,10 +1973,7 @@ fn test_config_update_v0_public_note() {
 #[test]
 fn test_config_update_v0_public_note_owned() {
     let action = make_config_update_v0();
-    assert_eq!(
-        action.public_note_owned(),
-        Some("config note".to_string())
-    );
+    assert_eq!(action.public_note_owned(), Some("config note".to_string()));
 }
 
 #[test]
@@ -2025,10 +1993,7 @@ fn test_config_update_action_base() {
 #[test]
 fn test_config_update_action_base_owned() {
     let action = make_config_update();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2059,10 +2024,7 @@ fn test_config_update_action_public_note() {
 #[test]
 fn test_config_update_action_public_note_owned() {
     let action = make_config_update();
-    assert_eq!(
-        action.public_note_owned(),
-        Some("config note".to_string())
-    );
+    assert_eq!(action.public_note_owned(), Some("config note".to_string()));
 }
 
 #[test]
@@ -2130,10 +2092,7 @@ fn test_direct_purchase_action_base() {
 #[test]
 fn test_direct_purchase_action_base_owned() {
     let action = make_direct_purchase();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2232,10 +2191,7 @@ fn test_set_price_action_base() {
 #[test]
 fn test_set_price_action_base_owned() {
     let action = make_set_price();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2292,10 +2248,7 @@ fn test_token_transition_action_burn_base() {
 #[test]
 fn test_token_transition_action_burn_base_owned() {
     let action: TokenTransitionAction = make_burn().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2307,10 +2260,7 @@ fn test_token_transition_action_mint_base() {
 #[test]
 fn test_token_transition_action_mint_base_owned() {
     let action: TokenTransitionAction = make_mint().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2322,10 +2272,7 @@ fn test_token_transition_action_transfer_base() {
 #[test]
 fn test_token_transition_action_transfer_base_owned() {
     let action: TokenTransitionAction = make_token_transfer().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2337,10 +2284,7 @@ fn test_token_transition_action_freeze_base() {
 #[test]
 fn test_token_transition_action_freeze_base_owned() {
     let action: TokenTransitionAction = make_freeze().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2352,10 +2296,7 @@ fn test_token_transition_action_unfreeze_base() {
 #[test]
 fn test_token_transition_action_unfreeze_base_owned() {
     let action: TokenTransitionAction = make_unfreeze().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2367,10 +2308,7 @@ fn test_token_transition_action_claim_base() {
 #[test]
 fn test_token_transition_action_claim_base_owned() {
     let action: TokenTransitionAction = make_claim().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2382,10 +2320,7 @@ fn test_token_transition_action_emergency_base() {
 #[test]
 fn test_token_transition_action_emergency_base_owned() {
     let action: TokenTransitionAction = make_emergency().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2397,10 +2332,7 @@ fn test_token_transition_action_destroy_base() {
 #[test]
 fn test_token_transition_action_destroy_base_owned() {
     let action: TokenTransitionAction = make_destroy().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2412,10 +2344,7 @@ fn test_token_transition_action_config_update_base() {
 #[test]
 fn test_token_transition_action_config_update_base_owned() {
     let action: TokenTransitionAction = make_config_update().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2427,10 +2356,7 @@ fn test_token_transition_action_direct_purchase_base() {
 #[test]
 fn test_token_transition_action_direct_purchase_base_owned() {
     let action: TokenTransitionAction = make_direct_purchase().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 #[test]
@@ -2442,10 +2368,7 @@ fn test_token_transition_action_set_price_base() {
 #[test]
 fn test_token_transition_action_set_price_base_owned() {
     let action: TokenTransitionAction = make_set_price().into();
-    assert_eq!(
-        action.base_owned().token_id(),
-        Identifier::from([0xBB; 32])
-    );
+    assert_eq!(action.base_owned().token_id(), Identifier::from([0xBB; 32]));
 }
 
 // historical_document_type_name tests for all 11 variants
@@ -2494,10 +2417,7 @@ fn test_token_transition_action_historical_document_type_name_emergency() {
 #[test]
 fn test_token_transition_action_historical_document_type_name_destroy() {
     let action: TokenTransitionAction = make_destroy().into();
-    assert_eq!(
-        action.historical_document_type_name(),
-        "destroyFrozenFunds"
-    );
+    assert_eq!(action.historical_document_type_name(), "destroyFrozenFunds");
 }
 
 #[test]
@@ -2891,10 +2811,7 @@ fn test_token_transfer_from_v0() {
 fn test_token_freeze_from_v0() {
     let v0 = make_freeze_v0();
     let action: TokenFreezeTransitionAction = v0.into();
-    assert_eq!(
-        action.identity_to_freeze_id(),
-        Identifier::from([0xCC; 32])
-    );
+    assert_eq!(action.identity_to_freeze_id(), Identifier::from([0xCC; 32]));
 }
 
 #[test]

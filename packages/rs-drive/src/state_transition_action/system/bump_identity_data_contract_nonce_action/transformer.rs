@@ -298,7 +298,10 @@ mod tests {
         })
     }
 
-    fn assert_v0_fields(action: &BumpIdentityDataContractNonceAction, expected_contract_id: Identifier) {
+    fn assert_v0_fields(
+        action: &BumpIdentityDataContractNonceAction,
+        expected_contract_id: Identifier,
+    ) {
         match action {
             BumpIdentityDataContractNonceAction::V0(v0) => {
                 assert_eq!(v0.identity_id, Identifier::from(TEST_IDENTITY_ID));

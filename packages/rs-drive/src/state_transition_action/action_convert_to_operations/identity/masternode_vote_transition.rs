@@ -166,7 +166,7 @@ mod tests {
             DriveOperation::IdentityOperation(IdentityOperationType::MasternodeCastVote {
                 voter_pro_tx_hash,
                 strength,
-                vote: _,
+                vote,
                 previous_resource_vote_choice_to_remove,
             }) => {
                 assert_eq!(*voter_pro_tx_hash, [0xAA; 32]); // pro_tx_hash
@@ -175,6 +175,15 @@ mod tests {
                 let (choice, count) = previous_resource_vote_choice_to_remove.as_ref().unwrap();
                 assert_eq!(*choice, ResourceVoteChoice::Lock);
                 assert_eq!(*count, 2);
+
+                // Verify the vote contents: should be Abstain choice
+                match vote {
+                    ResolvedVote::ResolvedResourceVote(resolved) => match resolved {
+                        ResolvedResourceVote::V0(v0) => {
+                            assert_eq!(v0.resource_vote_choice, ResourceVoteChoice::Abstain);
+                        }
+                    },
+                }
             }
             other => panic!("expected MasternodeCastVote, got {:?}", other),
         }
@@ -182,9 +191,25 @@ mod tests {
 
     #[test]
     fn test_third_op_is_deduct_from_prefunded_balance() {
-        let action = make_action();
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
+
+        // Build the vote and compute its expected balance ID before it is consumed
+        let vote = make_resolved_vote();
+        let expected_balance_id = vote
+            .specialized_balance_id()
+            .expect("expected specialized balance id")
+            .expect("expected Some balance id");
+
+        let action = MasternodeVoteTransitionAction::V0(MasternodeVoteTransitionActionV0 {
+            pro_tx_hash: Identifier::from([0xAA; 32]),
+            voter_identity_id: Identifier::from([0xBB; 32]),
+            voting_address: [0xCC; 20],
+            vote_strength: 4,
+            vote,
+            previous_resource_vote_choice_to_remove: Some((ResourceVoteChoice::Lock, 2)),
+            nonce: 77,
+        });
 
         let ops = action
             .into_high_level_drive_operations(&epoch, platform_version)
@@ -193,10 +218,15 @@ mod tests {
         match &ops[2] {
             DriveOperation::PrefundedSpecializedBalanceOperation(
                 PrefundedSpecializedBalanceOperationType::DeductFromPrefundedBalance {
+                    prefunded_specialized_balance_id,
                     remove_balance,
-                    ..
                 },
             ) => {
+                assert_eq!(
+                    *prefunded_specialized_balance_id,
+                    expected_balance_id,
+                    "prefunded_specialized_balance_id should match the vote poll's specialized balance id"
+                );
                 assert_eq!(
                     *remove_balance,
                     platform_version
@@ -231,12 +261,37 @@ mod tests {
         // Should still produce 3 ops
         assert_eq!(ops.len(), 3);
 
+        // Verify nonce op uses the correct voter_identity_id and nonce
+        match &ops[0] {
+            DriveOperation::IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
+                identity_id,
+                nonce,
+            }) => {
+                assert_eq!(*identity_id, [0xBB; 32]); // voter_identity_id
+                assert_eq!(*nonce, 5);
+            }
+            other => panic!("expected UpdateIdentityNonce, got {:?}", other),
+        }
+
         match &ops[1] {
             DriveOperation::IdentityOperation(IdentityOperationType::MasternodeCastVote {
+                voter_pro_tx_hash,
+                strength,
+                vote,
                 previous_resource_vote_choice_to_remove,
-                ..
             }) => {
+                assert_eq!(*voter_pro_tx_hash, [0xAA; 32]); // pro_tx_hash
+                assert_eq!(*strength, 1);
                 assert!(previous_resource_vote_choice_to_remove.is_none());
+
+                // Verify vote choice is Abstain (from make_resolved_vote)
+                match vote {
+                    ResolvedVote::ResolvedResourceVote(resolved) => match resolved {
+                        ResolvedResourceVote::V0(v0) => {
+                            assert_eq!(v0.resource_vote_choice, ResourceVoteChoice::Abstain);
+                        }
+                    },
+                }
             }
             other => panic!("expected MasternodeCastVote, got {:?}", other),
         }

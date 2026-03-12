@@ -63,6 +63,7 @@ pub trait PartiallyUseAssetLockActionAccessorsV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
     use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
     use dpp::address_funds::PlatformAddress;
     use dpp::platform_value::{Bytes32, Bytes36};
@@ -98,6 +99,12 @@ mod tests {
         }
     }
 
+    /// Helper to wrap a V0 struct in the enum so we can call trait methods
+    /// through the `PartiallyUseAssetLockActionAccessorsV0` trait interface.
+    fn wrap_as_action(v0: PartiallyUseAssetLockActionV0) -> PartiallyUseAssetLockAction {
+        PartiallyUseAssetLockAction::V0(v0)
+    }
+
     #[test]
     fn test_v0_default() {
         let action = PartiallyUseAssetLockActionV0::default();
@@ -118,7 +125,10 @@ mod tests {
         assert_eq!(action.asset_lock_outpoint, Bytes36::new([0xCC_u8; 36]));
         assert_eq!(action.initial_credit_value, 10000);
         assert_eq!(action.previous_transaction_hashes.len(), 1);
-        assert_eq!(action.previous_transaction_hashes[0], Bytes32([0xDD_u8; 32]));
+        assert_eq!(
+            action.previous_transaction_hashes[0],
+            Bytes32([0xDD_u8; 32])
+        );
         assert_eq!(action.asset_lock_script, vec![0x76, 0xA9, 0x14]);
         assert_eq!(action.remaining_credit_value, 7000);
         assert_eq!(action.used_credits, 3000);
@@ -140,7 +150,10 @@ mod tests {
         let cloned = action.clone();
         assert_eq!(cloned.asset_lock_outpoint, action.asset_lock_outpoint);
         assert_eq!(cloned.initial_credit_value, action.initial_credit_value);
-        assert_eq!(cloned.previous_transaction_hashes, action.previous_transaction_hashes);
+        assert_eq!(
+            cloned.previous_transaction_hashes,
+            action.previous_transaction_hashes
+        );
         assert_eq!(cloned.asset_lock_script, action.asset_lock_script);
         assert_eq!(cloned.remaining_credit_value, action.remaining_credit_value);
         assert_eq!(cloned.used_credits, action.used_credits);
@@ -185,5 +198,107 @@ mod tests {
         let strategy = action.fee_strategy.as_ref().unwrap();
         assert_eq!(strategy.len(), 1);
         assert_eq!(strategy[0], AddressFundsFeeStrategyStep::DeductFromInput(0));
+    }
+
+    // --- Tests exercising the PartiallyUseAssetLockActionAccessorsV0 trait interface ---
+
+    #[test]
+    fn test_trait_asset_lock_outpoint() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.asset_lock_outpoint(), Bytes36::new([0xCC_u8; 36]));
+    }
+
+    #[test]
+    fn test_trait_initial_credit_value() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.initial_credit_value(), 10000);
+    }
+
+    #[test]
+    fn test_trait_asset_lock_script() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.asset_lock_script(), &vec![0x76_u8, 0xA9, 0x14]);
+    }
+
+    #[test]
+    fn test_trait_asset_lock_script_owned() {
+        let action = wrap_as_action(make_v0());
+        let script = action.asset_lock_script_owned();
+        assert_eq!(script, vec![0x76_u8, 0xA9, 0x14]);
+    }
+
+    #[test]
+    fn test_trait_remaining_credit_value() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.remaining_credit_value(), 7000);
+    }
+
+    #[test]
+    fn test_trait_used_credits() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.used_credits(), 3000);
+    }
+
+    #[test]
+    fn test_trait_user_fee_increase() {
+        let action = wrap_as_action(make_v0());
+        assert_eq!(action.user_fee_increase(), 2);
+    }
+
+    #[test]
+    fn test_trait_previous_transaction_hashes_ref() {
+        let action = wrap_as_action(make_v0());
+        let hashes = action.previous_transaction_hashes_ref();
+        assert_eq!(hashes.len(), 1);
+        assert_eq!(hashes[0], Bytes32([0xDD_u8; 32]));
+    }
+
+    #[test]
+    fn test_trait_inputs_with_remaining_balance_some() {
+        let action = wrap_as_action(make_v0());
+        let inputs = action.inputs_with_remaining_balance();
+        assert!(inputs.is_some());
+        let inputs = inputs.unwrap();
+        assert_eq!(inputs.len(), 1);
+        let addr = PlatformAddress::P2pkh([0xBB_u8; 20]);
+        let (nonce, credits) = inputs.get(&addr).unwrap();
+        assert_eq!(*nonce, 5);
+        assert_eq!(*credits, 3000);
+    }
+
+    #[test]
+    fn test_trait_inputs_with_remaining_balance_none() {
+        let action = wrap_as_action(make_v0_minimal());
+        assert!(action.inputs_with_remaining_balance().is_none());
+    }
+
+    #[test]
+    fn test_trait_fee_strategy_some() {
+        let action = wrap_as_action(make_v0());
+        let strategy = action.fee_strategy();
+        assert!(strategy.is_some());
+        let strategy = strategy.unwrap();
+        assert_eq!(strategy.len(), 1);
+        assert_eq!(strategy[0], AddressFundsFeeStrategyStep::DeductFromInput(0));
+    }
+
+    #[test]
+    fn test_trait_fee_strategy_none() {
+        let action = wrap_as_action(make_v0_minimal());
+        assert!(action.fee_strategy().is_none());
+    }
+
+    #[test]
+    fn test_trait_accessors_on_default_values() {
+        let action = wrap_as_action(PartiallyUseAssetLockActionV0::default());
+        assert_eq!(action.asset_lock_outpoint(), Bytes36::default());
+        assert_eq!(action.initial_credit_value(), 0);
+        assert!(action.asset_lock_script().is_empty());
+        assert_eq!(action.remaining_credit_value(), 0);
+        assert_eq!(action.used_credits(), 0);
+        assert_eq!(action.user_fee_increase(), 0);
+        assert!(action.previous_transaction_hashes_ref().is_empty());
+        assert!(action.inputs_with_remaining_balance().is_none());
+        assert!(action.fee_strategy().is_none());
     }
 }

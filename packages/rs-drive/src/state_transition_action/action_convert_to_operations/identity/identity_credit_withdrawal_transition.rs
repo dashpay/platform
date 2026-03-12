@@ -95,15 +95,13 @@ mod tests {
     }
 
     fn make_action() -> IdentityCreditWithdrawalTransitionAction {
-        IdentityCreditWithdrawalTransitionAction::V0(
-            IdentityCreditWithdrawalTransitionActionV0 {
-                identity_id: Identifier::from([0xAA; 32]),
-                nonce: 10,
-                prepared_withdrawal_document: make_document(),
-                amount: 7500,
-                user_fee_increase: 0,
-            },
-        )
+        IdentityCreditWithdrawalTransitionAction::V0(IdentityCreditWithdrawalTransitionActionV0 {
+            identity_id: Identifier::from([0xAA; 32]),
+            nonce: 10,
+            prepared_withdrawal_document: make_document(),
+            amount: 7500,
+            user_fee_increase: 0,
+        })
     }
 
     #[test]

@@ -83,10 +83,7 @@ mod tests {
                 assert_eq!(*contract_id, [0xBB; 32]);
                 assert_eq!(*nonce, 99);
             }
-            other => panic!(
-                "expected UpdateIdentityContractNonce, got {:?}",
-                other
-            ),
+            other => panic!("expected UpdateIdentityContractNonce, got {:?}", other),
         }
     }
 
@@ -117,10 +114,7 @@ mod tests {
                 assert_eq!(*contract_id, [0x00; 32]);
                 assert_eq!(*nonce, 0);
             }
-            other => panic!(
-                "expected UpdateIdentityContractNonce, got {:?}",
-                other
-            ),
+            other => panic!("expected UpdateIdentityContractNonce, got {:?}", other),
         }
     }
 
@@ -148,10 +142,7 @@ mod tests {
             }) => {
                 assert_ne!(identity_id, contract_id);
             }
-            other => panic!(
-                "expected UpdateIdentityContractNonce, got {:?}",
-                other
-            ),
+            other => panic!("expected UpdateIdentityContractNonce, got {:?}", other),
         }
     }
 }

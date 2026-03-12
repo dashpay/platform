@@ -234,6 +234,9 @@ mod tests {
                 DocumentOperation(DocumentOperationType::AddWithdrawalDocument { .. })
             )
         });
-        assert!(has_withdrawal_doc, "expected AddWithdrawalDocument operation");
+        assert!(
+            has_withdrawal_doc,
+            "expected AddWithdrawalDocument operation"
+        );
     }
 }

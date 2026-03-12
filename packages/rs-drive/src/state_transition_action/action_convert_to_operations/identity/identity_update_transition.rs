@@ -184,7 +184,7 @@ mod tests {
         // Version 1 path: UpdateIdentityRevision + UpdateIdentityNonce
         // (version 0 would omit the nonce update)
         // We check based on what the latest version actually does
-        assert!(ops.len() >= 1);
+        assert_eq!(ops.len(), 2);
 
         match &ops[0] {
             IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
@@ -195,6 +195,18 @@ mod tests {
                 assert_eq!(*revision, 5);
             }
             other => panic!("expected UpdateIdentityRevision, got {:?}", other),
+        }
+
+        // Verify the nonce update operation carries the correct identity and nonce
+        match &ops[1] {
+            IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
+                identity_id,
+                nonce,
+            }) => {
+                assert_eq!(*identity_id, [0xAA; 32]);
+                assert_eq!(*nonce, 10);
+            }
+            other => panic!("expected UpdateIdentityNonce, got {:?}", other),
         }
     }
 
@@ -240,13 +252,37 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
-        // Should have an AddNewKeysToIdentity operation
-        let has_add = ops.iter().any(|op| {
-            matches!(
-                op,
-                IdentityOperation(IdentityOperationType::AddNewKeysToIdentity { .. })
-            )
-        });
-        assert!(has_add, "expected AddNewKeysToIdentity operation");
+        // Should have an AddNewKeysToIdentity operation with correct payload
+        let add_keys_op = ops
+            .iter()
+            .find(|op| {
+                matches!(
+                    op,
+                    IdentityOperation(IdentityOperationType::AddNewKeysToIdentity { .. })
+                )
+            })
+            .expect("expected AddNewKeysToIdentity operation");
+
+        match add_keys_op {
+            IdentityOperation(IdentityOperationType::AddNewKeysToIdentity {
+                identity_id,
+                unique_keys_to_add,
+                non_unique_keys_to_add,
+            }) => {
+                assert_eq!(*identity_id, [0xAA; 32]);
+                // ECDSA_HASH160 is not a unique key type, so it goes into non_unique
+                assert!(
+                    unique_keys_to_add.is_empty(),
+                    "expected no unique keys for masternode transfer key"
+                );
+                assert_eq!(
+                    non_unique_keys_to_add.len(),
+                    1,
+                    "expected exactly one non-unique key"
+                );
+                assert_eq!(non_unique_keys_to_add[0].id(), 1);
+            }
+            _ => unreachable!(),
+        }
     }
 }

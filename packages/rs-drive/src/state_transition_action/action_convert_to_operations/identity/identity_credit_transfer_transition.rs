@@ -125,10 +125,7 @@ mod tests {
                 assert_eq!(*identity_id, [0xAA; 32]);
                 assert_eq!(*balance_to_remove, 5000);
             }
-            other => panic!(
-                "expected RemoveFromIdentityBalance, got {:?}",
-                other
-            ),
+            other => panic!("expected RemoveFromIdentityBalance, got {:?}", other),
         }
     }
 

@@ -130,9 +130,7 @@ mod tests {
             .expect("expected operations");
 
         match &ops[0] {
-            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
-                amount,
-            }) => {
+            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
                 assert_eq!(*amount, 5000);
             }
             other => panic!("expected AddToSystemCredits, got {:?}", other),
@@ -166,9 +164,9 @@ mod tests {
             .expect("expected operations");
 
         match ops.last().unwrap() {
-            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
-                new_total_balance,
-            }) => {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
                 assert_eq!(*new_total_balance, 15000); // 10000 + 5000
             }
             other => panic!("expected UpdateTotalBalance, got {:?}", other),
@@ -177,16 +175,15 @@ mod tests {
 
     #[test]
     fn test_overflow_returns_error() {
-        let action = ShieldFromAssetLockTransitionAction::V0(
-            ShieldFromAssetLockTransitionActionV0 {
+        let action =
+            ShieldFromAssetLockTransitionAction::V0(ShieldFromAssetLockTransitionActionV0 {
                 asset_lock_outpoint: [0xDD; 36],
                 asset_lock_value_to_be_consumed: 1000,
                 signable_bytes_hasher: [0x00; 32],
                 shield_amount: u64::MAX,
                 notes: vec![],
                 current_total_balance: 1,
-            },
-        );
+            });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
 

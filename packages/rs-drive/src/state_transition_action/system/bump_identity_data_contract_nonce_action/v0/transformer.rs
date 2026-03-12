@@ -263,12 +263,11 @@ mod tests {
             document_type_name: "test".to_string(),
             data_contract_id: Identifier::from(TEST_CONTRACT_ID),
         });
-        let action =
-            BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition(
-                &base,
-                Identifier::from(TEST_IDENTITY_ID),
-                TEST_FEE,
-            );
+        let action = BumpIdentityDataContractNonceActionV0::from_borrowed_document_base_transition(
+            &base,
+            Identifier::from(TEST_IDENTITY_ID),
+            TEST_FEE,
+        );
         assert_eq!(action.identity_id, Identifier::from(TEST_IDENTITY_ID));
         assert_eq!(action.data_contract_id, Identifier::from(TEST_CONTRACT_ID));
         assert_eq!(action.identity_contract_nonce, TEST_NONCE);
@@ -290,12 +289,11 @@ mod tests {
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
         });
-        let action =
-            BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
-                base_action,
-                Identifier::from(TEST_IDENTITY_ID),
-                TEST_FEE,
-            );
+        let action = BumpIdentityDataContractNonceActionV0::from_document_base_transition_action(
+            base_action,
+            Identifier::from(TEST_IDENTITY_ID),
+            TEST_FEE,
+        );
         assert_eq!(action.identity_id, Identifier::from(TEST_IDENTITY_ID));
         assert_eq!(action.data_contract_id, contract_id);
         assert_eq!(action.identity_contract_nonce, TEST_NONCE);
@@ -439,8 +437,7 @@ mod tests {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
         };
-        let action =
-            BumpIdentityDataContractNonceActionV0::from_data_contract_update(transition);
+        let action = BumpIdentityDataContractNonceActionV0::from_data_contract_update(transition);
         assert_eq!(action.identity_id, owner_id);
         assert_eq!(action.data_contract_id, contract_id);
         assert_eq!(action.identity_contract_nonce, TEST_NONCE);
@@ -528,14 +525,16 @@ mod tests {
                 Identifier::from(TEST_IDENTITY_ID),
                 TEST_FEE,
             );
-        let owned_result =
-            BumpIdentityDataContractNonceActionV0::from_document_base_transition(
-                base,
-                Identifier::from(TEST_IDENTITY_ID),
-                TEST_FEE,
-            );
+        let owned_result = BumpIdentityDataContractNonceActionV0::from_document_base_transition(
+            base,
+            Identifier::from(TEST_IDENTITY_ID),
+            TEST_FEE,
+        );
         assert_eq!(owned_result.identity_id, borrowed_result.identity_id);
-        assert_eq!(owned_result.data_contract_id, borrowed_result.data_contract_id);
+        assert_eq!(
+            owned_result.data_contract_id,
+            borrowed_result.data_contract_id
+        );
         assert_eq!(
             owned_result.identity_contract_nonce,
             borrowed_result.identity_contract_nonce
@@ -561,14 +560,16 @@ mod tests {
                 Identifier::from(TEST_IDENTITY_ID),
                 TEST_FEE,
             );
-        let owned_result =
-            BumpIdentityDataContractNonceActionV0::from_token_base_transition(
-                base,
-                Identifier::from(TEST_IDENTITY_ID),
-                TEST_FEE,
-            );
+        let owned_result = BumpIdentityDataContractNonceActionV0::from_token_base_transition(
+            base,
+            Identifier::from(TEST_IDENTITY_ID),
+            TEST_FEE,
+        );
         assert_eq!(owned_result.identity_id, borrowed_result.identity_id);
-        assert_eq!(owned_result.data_contract_id, borrowed_result.data_contract_id);
+        assert_eq!(
+            owned_result.data_contract_id,
+            borrowed_result.data_contract_id
+        );
         assert_eq!(
             owned_result.identity_contract_nonce,
             borrowed_result.identity_contract_nonce

@@ -205,16 +205,17 @@ mod tests {
 
     #[test]
     fn test_from_identity_update_transition() {
-        let v0 = dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0 {
-            identity_id: Identifier::from(TEST_ID),
-            revision: 1,
-            nonce: TEST_NONCE,
-            add_public_keys: vec![],
-            disable_public_keys: vec![],
-            user_fee_increase: TEST_FEE,
-            signature_public_key_id: 0,
-            signature: BinaryData::default(),
-        };
+        let v0 =
+            dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0 {
+                identity_id: Identifier::from(TEST_ID),
+                revision: 1,
+                nonce: TEST_NONCE,
+                add_public_keys: vec![],
+                disable_public_keys: vec![],
+                user_fee_increase: TEST_FEE,
+                signature_public_key_id: 0,
+                signature: BinaryData::default(),
+            };
         let transition = IdentityUpdateTransition::V0(v0);
         let action = BumpIdentityNonceAction::from_identity_update_transition(transition);
         assert_v0(&action);
@@ -222,16 +223,17 @@ mod tests {
 
     #[test]
     fn test_from_borrowed_identity_update_transition() {
-        let v0 = dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0 {
-            identity_id: Identifier::from(TEST_ID),
-            revision: 1,
-            nonce: TEST_NONCE,
-            add_public_keys: vec![],
-            disable_public_keys: vec![],
-            user_fee_increase: TEST_FEE,
-            signature_public_key_id: 0,
-            signature: BinaryData::default(),
-        };
+        let v0 =
+            dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0 {
+                identity_id: Identifier::from(TEST_ID),
+                revision: 1,
+                nonce: TEST_NONCE,
+                add_public_keys: vec![],
+                disable_public_keys: vec![],
+                user_fee_increase: TEST_FEE,
+                signature_public_key_id: 0,
+                signature: BinaryData::default(),
+            };
         let transition = IdentityUpdateTransition::V0(v0);
         let action = BumpIdentityNonceAction::from_borrowed_identity_update_transition(&transition);
         assert_v0(&action);
@@ -378,8 +380,7 @@ mod tests {
             signature: BinaryData::default(),
         };
         let transition = IdentityCreditTransferTransition::V0(v0);
-        let action =
-            BumpIdentityNonceAction::from_identity_credit_transfer_transition(transition);
+        let action = BumpIdentityNonceAction::from_identity_credit_transfer_transition(transition);
         assert_v0(&action);
     }
 
@@ -469,10 +470,9 @@ mod tests {
             signature: BinaryData::default(),
         };
         let transition = IdentityCreditWithdrawalTransition::V0(v0);
-        let action =
-            BumpIdentityNonceAction::from_borrowed_identity_credit_withdrawal_transition(
-                &transition,
-            );
+        let action = BumpIdentityNonceAction::from_borrowed_identity_credit_withdrawal_transition(
+            &transition,
+        );
         assert_v0(&action);
     }
 

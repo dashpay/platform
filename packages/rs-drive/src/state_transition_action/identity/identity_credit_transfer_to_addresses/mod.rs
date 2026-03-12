@@ -102,10 +102,7 @@ mod tests {
         let action = IdentityCreditTransferToAddressesTransitionAction::V0(make_v0());
         let addrs = action.recipient_addresses();
         assert_eq!(addrs.len(), 2);
-        assert_eq!(
-            addrs.get(&PlatformAddress::P2pkh([0x11; 20])),
-            Some(&1000)
-        );
+        assert_eq!(addrs.get(&PlatformAddress::P2pkh([0x11; 20])), Some(&1000));
         assert_eq!(addrs.get(&PlatformAddress::P2sh([0x22; 20])), Some(&2000));
     }
 

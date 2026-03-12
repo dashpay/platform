@@ -110,17 +110,25 @@ mod tests {
             .expect("expected operations");
 
         assert_eq!(ops.len(), 2);
-        // All should be SetBalanceToAddress operations
+        // All should be SetBalanceToAddress operations with correct payload values.
+        // BTreeMap iteration is ordered by key, so P2pkh([0xAA; 20]) comes before P2sh([0xCC; 20]).
+        // Collect all (address, nonce, balance) tuples for easy verification.
+        let mut results: Vec<(PlatformAddress, u32, u64)> = Vec::new();
         for op in &ops {
-            assert!(
-                matches!(
-                    op,
-                    AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress { .. })
-                ),
-                "expected SetBalanceToAddress, got {:?}",
-                op
-            );
+            match op {
+                AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
+                    address,
+                    nonce,
+                    balance,
+                }) => {
+                    results.push((*address, *nonce, *balance));
+                }
+                other => panic!("expected SetBalanceToAddress, got {:?}", other),
+            }
         }
+
+        assert!(results.contains(&(PlatformAddress::P2pkh([0xAA; 20]), 1, 1000)));
+        assert!(results.contains(&(PlatformAddress::P2sh([0xCC; 20]), 2, 2000)));
     }
 
     #[test]

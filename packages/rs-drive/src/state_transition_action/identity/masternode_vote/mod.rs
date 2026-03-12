@@ -206,9 +206,7 @@ mod tests {
         assert_eq!(choice, ResourceVoteChoice::Lock);
         assert_eq!(count, 2);
         // After taking, it should be None
-        assert!(action
-            .previous_resource_vote_choice_to_remove()
-            .is_none());
+        assert!(action.previous_resource_vote_choice_to_remove().is_none());
     }
 
     #[test]
@@ -216,8 +214,6 @@ mod tests {
         let mut v0 = make_v0();
         v0.previous_resource_vote_choice_to_remove = None;
         let action = MasternodeVoteTransitionAction::V0(v0);
-        assert!(action
-            .previous_resource_vote_choice_to_remove()
-            .is_none());
+        assert!(action.previous_resource_vote_choice_to_remove().is_none());
     }
 }

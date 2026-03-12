@@ -165,9 +165,7 @@ mod tests {
             .expect("expected operations");
 
         match &ops[0] {
-            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
-                amount,
-            }) => {
+            DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
                 assert_eq!(*amount, 5000); // remaining asset lock value
             }
             other => panic!("expected AddToSystemCredits, got {:?}", other),

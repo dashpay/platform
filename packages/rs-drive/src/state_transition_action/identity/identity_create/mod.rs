@@ -141,9 +141,9 @@ mod tests {
     use super::*;
     use crate::state_transition_action::identity::identity_create::v0::IdentityCreateTransitionActionV0;
     use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::IdentityPublicKey;
     use dpp::platform_value::{Bytes32, Bytes36};
-    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
     use dpp::version::PlatformVersion;
 
@@ -172,10 +172,7 @@ mod tests {
     fn test_from_v0() {
         let v0 = make_v0();
         let action: IdentityCreateTransitionAction = v0.into();
-        assert!(matches!(
-            action,
-            IdentityCreateTransitionAction::V0(_)
-        ));
+        assert!(matches!(action, IdentityCreateTransitionAction::V0(_)));
     }
 
     #[test]
@@ -252,9 +249,11 @@ mod tests {
     fn test_try_from_borrowed_identity_create_transition_action() {
         let platform_version = PlatformVersion::latest();
         let action = IdentityCreateTransitionAction::V0(make_v0());
-        let identity =
-            Identity::try_from_borrowed_identity_create_transition_action(&action, platform_version)
-                .expect("expected identity");
+        let identity = Identity::try_from_borrowed_identity_create_transition_action(
+            &action,
+            platform_version,
+        )
+        .expect("expected identity");
         assert_eq!(identity.id(), Identifier::from([0xAA; 32]));
     }
 }

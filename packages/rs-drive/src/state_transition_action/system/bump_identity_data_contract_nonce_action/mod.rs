@@ -106,7 +106,10 @@ mod tests {
         let cloned = action.clone();
         assert_eq!(cloned.identity_id(), action.identity_id());
         assert_eq!(cloned.data_contract_id(), action.data_contract_id());
-        assert_eq!(cloned.identity_contract_nonce(), action.identity_contract_nonce());
+        assert_eq!(
+            cloned.identity_contract_nonce(),
+            action.identity_contract_nonce()
+        );
         assert_eq!(cloned.user_fee_increase(), action.user_fee_increase());
     }
 

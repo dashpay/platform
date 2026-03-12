@@ -69,10 +69,7 @@ mod tests {
                 assert_eq!(*contract_id, [0xBB; 32]);
                 assert_eq!(*nonce, 77);
             }
-            other => panic!(
-                "expected UpdateIdentityContractNonce, got {:?}",
-                other
-            ),
+            other => panic!("expected UpdateIdentityContractNonce, got {:?}", other),
         }
     }
 }

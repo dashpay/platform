@@ -232,7 +232,10 @@ mod tests {
         let cloned = action.clone();
         assert_eq!(cloned.asset_lock_outpoint(), action.asset_lock_outpoint());
         assert_eq!(cloned.initial_credit_value(), action.initial_credit_value());
-        assert_eq!(cloned.remaining_credit_value(), action.remaining_credit_value());
+        assert_eq!(
+            cloned.remaining_credit_value(),
+            action.remaining_credit_value()
+        );
         assert_eq!(cloned.used_credits(), action.used_credits());
         assert_eq!(cloned.user_fee_increase(), action.user_fee_increase());
         assert_eq!(cloned.asset_lock_script(), action.asset_lock_script());

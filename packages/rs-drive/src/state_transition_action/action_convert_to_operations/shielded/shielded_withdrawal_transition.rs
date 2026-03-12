@@ -89,7 +89,7 @@ mod tests {
     use crate::state_transition_action::shielded::ShieldedActionNote;
     use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
     use dpp::block::epoch::Epoch;
-    use dpp::document::{Document, DocumentV0};
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::Identifier;
     use dpp::version::PlatformVersion;
@@ -149,6 +149,64 @@ mod tests {
         // InsertNullifiers + InsertNote (1) + UpdateTotalBalance
         // + AddWithdrawalDocument + RemoveFromSystemCredits
         assert_eq!(ops.len(), 5);
+
+        // Verify InsertNullifiers carries the correct nullifier from our note
+        match &ops[0] {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::InsertNullifiers { nullifiers },
+            ) => {
+                assert_eq!(nullifiers.len(), 1);
+                assert_eq!(nullifiers[0], [0x11; 32]);
+            }
+            other => panic!("expected InsertNullifiers, got {:?}", other),
+        }
+
+        // Verify InsertNote carries nullifier, cmx, and encrypted_note from our note
+        match &ops[1] {
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNote {
+                nullifier,
+                cmx,
+                encrypted_note,
+            }) => {
+                assert_eq!(*nullifier, [0x11; 32]);
+                assert_eq!(*cmx, [0x22; 32]);
+                assert_eq!(*encrypted_note, vec![1, 2, 3]);
+            }
+            other => panic!("expected InsertNote, got {:?}", other),
+        }
+
+        // Verify UpdateTotalBalance = 10000 - 3000 - 500 = 6500
+        match &ops[2] {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
+                assert_eq!(*new_total_balance, 6500);
+            }
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
+
+        // Verify AddWithdrawalDocument contains our document
+        match &ops[3] {
+            DriveOperation::DocumentOperation(DocumentOperationType::AddWithdrawalDocument {
+                owned_document_info,
+            }) => {
+                assert!(
+                    matches!(&owned_document_info.document_info, DocumentInfo::DocumentOwnedInfo((doc, None)) if doc.id() == Identifier::from([0x11; 32]))
+                );
+                assert_eq!(owned_document_info.owner_id, None);
+            }
+            other => panic!("expected AddWithdrawalDocument, got {:?}", other),
+        }
+
+        // Verify RemoveFromSystemCredits amount = 3000
+        match &ops[4] {
+            DriveOperation::SystemOperation(SystemOperationType::RemoveFromSystemCredits {
+                amount,
+            }) => {
+                assert_eq!(*amount, 3000);
+            }
+            other => panic!("expected RemoveFromSystemCredits, got {:?}", other),
+        }
     }
 
     #[test]
@@ -171,9 +229,9 @@ mod tests {
             )
         });
         match balance_op.unwrap() {
-            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
-                new_total_balance,
-            }) => {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
                 assert_eq!(*new_total_balance, 6500); // 10000 - 3000 - 500
             }
             _ => unreachable!(),
@@ -190,7 +248,7 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
-        let has_doc = ops.iter().any(|op| {
+        let doc_op = ops.iter().find(|op| {
             matches!(
                 op,
                 DriveOperation::DocumentOperation(
@@ -198,7 +256,25 @@ mod tests {
                 )
             )
         });
-        assert!(has_doc, "expected AddWithdrawalDocument operation");
+        assert!(doc_op.is_some(), "expected AddWithdrawalDocument operation");
+
+        // Verify the withdrawal document carries the correct id and owner_id
+        match doc_op.unwrap() {
+            DriveOperation::DocumentOperation(DocumentOperationType::AddWithdrawalDocument {
+                owned_document_info,
+            }) => {
+                match &owned_document_info.document_info {
+                    DocumentInfo::DocumentOwnedInfo((doc, storage_flags)) => {
+                        assert_eq!(doc.id(), Identifier::from([0x11; 32]));
+                        assert_eq!(doc.owner_id(), Identifier::from([0x22; 32]));
+                        assert!(storage_flags.is_none());
+                    }
+                    other => panic!("expected DocumentOwnedInfo, got {:?}", other),
+                }
+                assert_eq!(owned_document_info.owner_id, None);
+            }
+            _ => unreachable!(),
+        }
     }
 
     #[test]
@@ -223,19 +299,17 @@ mod tests {
 
     #[test]
     fn test_underflow_returns_error() {
-        let action = ShieldedWithdrawalTransitionAction::V0(
-            ShieldedWithdrawalTransitionActionV0 {
-                amount: 5000,
-                notes: vec![],
-                anchor: [0x00; 32],
-                core_fee_per_byte: 1,
-                pooling: Pooling::Never,
-                output_script: CoreScript::from_bytes(vec![]),
-                fee_amount: 6000,
-                current_total_balance: 10000, // 5000 + 6000 > 10000
-                prepared_withdrawal_document: make_document(),
-            },
-        );
+        let action = ShieldedWithdrawalTransitionAction::V0(ShieldedWithdrawalTransitionActionV0 {
+            amount: 5000,
+            notes: vec![],
+            anchor: [0x00; 32],
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![]),
+            fee_amount: 6000,
+            current_total_balance: 10000, // 5000 + 6000 > 10000
+            prepared_withdrawal_document: make_document(),
+        });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
 

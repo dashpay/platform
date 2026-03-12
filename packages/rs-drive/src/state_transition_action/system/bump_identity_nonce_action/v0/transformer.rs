@@ -469,8 +469,7 @@ mod tests {
     #[test]
     fn test_from_borrowed_identity_credit_transfer() {
         let transition = make_credit_transfer_transition();
-        let action =
-            BumpIdentityNonceActionV0::from_borrowed_identity_credit_transfer(&transition);
+        let action = BumpIdentityNonceActionV0::from_borrowed_identity_credit_transfer(&transition);
         assert_action_fields(&action);
     }
 
@@ -515,8 +514,7 @@ mod tests {
     #[test]
     fn test_from_identity_credit_withdrawal_action() {
         let action_v0 = make_credit_withdrawal_action();
-        let action =
-            BumpIdentityNonceActionV0::from_identity_credit_withdrawal_action(action_v0);
+        let action = BumpIdentityNonceActionV0::from_identity_credit_withdrawal_action(action_v0);
         assert_action_fields(&action);
     }
 
@@ -533,8 +531,7 @@ mod tests {
     #[test]
     fn test_owned_and_borrowed_identity_update_produce_same_result() {
         let transition = make_identity_update_transition();
-        let borrowed_result =
-            BumpIdentityNonceActionV0::from_borrowed_identity_update(&transition);
+        let borrowed_result = BumpIdentityNonceActionV0::from_borrowed_identity_update(&transition);
         let owned_result = BumpIdentityNonceActionV0::from_identity_update(transition);
         assert_eq!(owned_result.identity_id, borrowed_result.identity_id);
         assert_eq!(owned_result.identity_nonce, borrowed_result.identity_nonce);
@@ -549,8 +546,7 @@ mod tests {
         let transition = make_credit_transfer_transition();
         let borrowed_result =
             BumpIdentityNonceActionV0::from_borrowed_identity_credit_transfer(&transition);
-        let owned_result =
-            BumpIdentityNonceActionV0::from_identity_credit_transfer(transition);
+        let owned_result = BumpIdentityNonceActionV0::from_identity_credit_transfer(transition);
         assert_eq!(owned_result.identity_id, borrowed_result.identity_id);
         assert_eq!(owned_result.identity_nonce, borrowed_result.identity_nonce);
         assert_eq!(

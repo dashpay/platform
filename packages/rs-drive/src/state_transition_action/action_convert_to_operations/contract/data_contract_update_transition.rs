@@ -56,8 +56,7 @@ mod tests {
 
     fn make_action() -> DataContractUpdateTransitionAction {
         let platform_version = PlatformVersion::latest();
-        let fixture =
-            get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let fixture = get_data_contract_fixture(None, 0, platform_version.protocol_version);
         let dc = fixture.data_contract_owned();
         DataContractUpdateTransitionAction::V0(DataContractUpdateTransitionActionV0 {
             data_contract: dc,
@@ -102,10 +101,7 @@ mod tests {
                 assert_eq!(*cid, contract_id);
                 assert_eq!(*nonce, 99);
             }
-            other => panic!(
-                "expected UpdateIdentityContractNonce, got {:?}",
-                other
-            ),
+            other => panic!("expected UpdateIdentityContractNonce, got {:?}", other),
         }
     }
 

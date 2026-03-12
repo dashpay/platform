@@ -121,11 +121,13 @@ mod tests {
             .expect("expected operations");
 
         match &ops[0] {
-            DriveOperation::AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
-                address,
-                nonce,
-                balance,
-            }) => {
+            DriveOperation::AddressFundsOperation(
+                AddressFundsOperationType::SetBalanceToAddress {
+                    address,
+                    nonce,
+                    balance,
+                },
+            ) => {
                 assert_eq!(*address, PlatformAddress::P2pkh([0xAA; 20]));
                 assert_eq!(*nonce, 1);
                 assert_eq!(*balance, 5000);
@@ -145,9 +147,9 @@ mod tests {
             .expect("expected operations");
 
         match ops.last().unwrap() {
-            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
-                new_total_balance,
-            }) => {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => {
                 assert_eq!(*new_total_balance, 13000); // 10000 + 3000
             }
             other => panic!("expected UpdateTotalBalance, got {:?}", other),

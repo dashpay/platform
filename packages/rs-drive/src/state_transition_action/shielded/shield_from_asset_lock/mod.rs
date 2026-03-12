@@ -79,10 +79,7 @@ mod tests {
     #[test]
     fn test_from_v0() {
         let action = make_action();
-        assert!(matches!(
-            action,
-            ShieldFromAssetLockTransitionAction::V0(_)
-        ));
+        assert!(matches!(action, ShieldFromAssetLockTransitionAction::V0(_)));
     }
 
     #[test]

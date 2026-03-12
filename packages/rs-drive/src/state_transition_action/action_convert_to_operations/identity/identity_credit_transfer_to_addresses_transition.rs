@@ -138,10 +138,7 @@ mod tests {
                 assert_eq!(*identity_id, [0xAA; 32]);
                 assert_eq!(*balance_to_remove, 3000); // 1000 + 2000
             }
-            other => panic!(
-                "expected RemoveFromIdentityBalance, got {:?}",
-                other
-            ),
+            other => panic!("expected RemoveFromIdentityBalance, got {:?}", other),
         }
     }
 
@@ -155,15 +152,38 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("expected operations");
 
+        // Collect the (address, amount) pairs from the AddBalanceToAddress operations
+        let mut address_ops: Vec<(&PlatformAddress, u64)> = Vec::new();
         for op in &ops[2..] {
-            assert!(
-                matches!(
-                    op,
-                    AddressFundsOperation(AddressFundsOperationType::AddBalanceToAddress { .. })
-                ),
-                "expected AddBalanceToAddress, got {:?}",
-                op
-            );
+            match op {
+                AddressFundsOperation(AddressFundsOperationType::AddBalanceToAddress {
+                    address,
+                    balance_to_add,
+                }) => {
+                    address_ops.push((address, *balance_to_add));
+                }
+                other => panic!("expected AddBalanceToAddress, got {:?}", other),
+            }
         }
+
+        assert_eq!(address_ops.len(), 2);
+
+        // BTreeMap is sorted by key, so P2pkh < P2sh in PlatformAddress ordering
+        // Verify that we have both expected address/amount pairs
+        let has_p2pkh = address_ops
+            .iter()
+            .any(|(addr, amt)| **addr == PlatformAddress::P2pkh([0x11; 20]) && *amt == 1000);
+        let has_p2sh = address_ops
+            .iter()
+            .any(|(addr, amt)| **addr == PlatformAddress::P2sh([0x22; 20]) && *amt == 2000);
+
+        assert!(
+            has_p2pkh,
+            "expected AddBalanceToAddress with P2pkh([0x11; 20]) and amount 1000"
+        );
+        assert!(
+            has_p2sh,
+            "expected AddBalanceToAddress with P2sh([0x22; 20]) and amount 2000"
+        );
     }
 }
