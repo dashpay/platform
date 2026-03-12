@@ -849,7 +849,7 @@ pub struct MostRecentShieldedAnchor(pub [u8; 32]);
 )]
 pub struct ShieldedNullifierStatus {
     /// The nullifier bytes (32 bytes)
-    pub nullifier: Vec<u8>,
+    pub nullifier: [u8; 32],
     /// Whether this nullifier has been spent
     pub is_spent: bool,
 }
@@ -884,7 +884,7 @@ pub struct ShieldedEncryptedNotesQuery {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct ShieldedNullifiersQuery(pub Vec<Vec<u8>>);
+pub struct ShieldedNullifiersQuery(pub Vec<[u8; 32]>);
 
 /// Query parameters for nullifier trunk state retrieval.
 ///
@@ -900,7 +900,7 @@ pub struct NullifiersTrunkQuery {
     /// The shielded pool type (0 = credit, 1 = main token, 2 = individual token).
     pub pool_type: u32,
     /// Optional 32-byte identifier for individual token pools.
-    pub pool_identifier: Option<Vec<u8>>,
+    pub pool_identifier: Option<[u8; 32]>,
 }
 
 /// Nullifier changes for a single block.

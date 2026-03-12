@@ -2575,11 +2575,18 @@ impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStat
             Some(ShieldedNullifierStatuses(
                 statuses
                     .into_iter()
-                    .map(|(nullifier, is_spent)| ShieldedNullifierStatus {
-                        nullifier,
-                        is_spent,
+                    .map(|(nullifier, is_spent)| {
+                        let nullifier: [u8; 32] = nullifier.try_into().map_err(|_| {
+                            Error::ResultEncodingError {
+                                error: "nullifier from Drive proof is not 32 bytes".to_string(),
+                            }
+                        })?;
+                        Ok(ShieldedNullifierStatus {
+                            nullifier,
+                            is_spent,
+                        })
                     })
-                    .collect(),
+                    .collect::<Result<Vec<_>, Error>>()?,
             ))
         };
 
