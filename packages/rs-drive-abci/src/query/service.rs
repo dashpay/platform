@@ -38,21 +38,22 @@ use dapi_grpc::platform::v0::{
     GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
     GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
     GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetNullifiersBranchStateRequest,
-    GetNullifiersBranchStateResponse, GetNullifiersTrunkStateRequest,
-    GetNullifiersTrunkStateResponse, GetPathElementsRequest, GetPathElementsResponse,
-    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
-    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
-    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
-    GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
-    GetRecentCompactedAddressBalanceChangesRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
+    GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
+    GetNullifiersBranchStateRequest, GetNullifiersBranchStateResponse,
+    GetNullifiersTrunkStateRequest, GetNullifiersTrunkStateResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
+    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
+    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
     GetRecentCompactedAddressBalanceChangesResponse, GetRecentCompactedNullifierChangesRequest,
     GetRecentCompactedNullifierChangesResponse, GetRecentNullifierChangesRequest,
     GetRecentNullifierChangesResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
     GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
     GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
-    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse,
-    GetTokenContractInfoRequest, GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
+    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
+    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
     GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
     GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
@@ -909,6 +910,19 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_most_recent_shielded_anchor(
+        &self,
+        request: Request<GetMostRecentShieldedAnchorRequest>,
+    ) -> Result<Response<GetMostRecentShieldedAnchorResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_most_recent_shielded_anchor,
+            "get_most_recent_shielded_anchor",
+        )
+        .await
+    }
+
 
     async fn get_shielded_pool_state(
         &self,

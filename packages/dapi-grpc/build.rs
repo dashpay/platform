@@ -84,7 +84,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 54] = [
+    const VERSIONED_REQUESTS: [&str; 55] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -135,6 +135,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetRecentCompactedAddressBalanceChangesRequest",
         "GetShieldedEncryptedNotesRequest",
         "GetShieldedAnchorsRequest",
+        "GetMostRecentShieldedAnchorRequest",
         "GetShieldedPoolStateRequest",
         "GetShieldedNullifiersRequest",
         "GetRecentNullifierChangesRequest",
@@ -159,7 +160,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 52] = [
+    const VERSIONED_RESPONSES: [&str; 53] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -208,6 +209,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetRecentCompactedAddressBalanceChangesResponse",
         "GetShieldedEncryptedNotesResponse",
         "GetShieldedAnchorsResponse",
+        "GetMostRecentShieldedAnchorResponse",
         "GetShieldedPoolStateResponse",
         "GetShieldedNullifiersResponse",
         "GetRecentNullifierChangesResponse",
@@ -312,6 +314,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
         .field_attribute("public_key_hash", SERDE_WITH_BYTES)
         .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
+        .field_attribute("nullifiers", SERDE_WITH_BASE64)
         // Get documents fields
         .field_attribute("data_contract_id", SERDE_WITH_BYTES)
         .field_attribute("where", SERDE_WITH_BYTES)

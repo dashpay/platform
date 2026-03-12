@@ -1,12 +1,8 @@
 use crate::platform_wallet_info::PlatformWalletInfo;
 use crate::IdentityManager;
-use dashcore::{Address as DashAddress, Address, Network, Transaction};
+use dashcore::{Address as DashAddress, Network, Transaction};
 use dpp::prelude::CoreBlockHeight;
 use key_wallet::account::{ManagedAccountCollection, TransactionRecord};
-use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
-use key_wallet::wallet::managed_wallet_info::transaction_building::{
-    AccountTypePreference, TransactionError,
-};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{Utxo, Wallet, WalletCoreBalance};
@@ -110,25 +106,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.wallet_info.immature_transactions()
-    }
-
-    fn create_unsigned_payment_transaction(
-        &mut self,
-        wallet: &Wallet,
-        account_index: u32,
-        account_type_pref: Option<AccountTypePreference>,
-        recipients: Vec<(Address, u64)>,
-        fee_level: FeeLevel,
-        current_block_height: u32,
-    ) -> Result<Transaction, TransactionError> {
-        self.wallet_info.create_unsigned_payment_transaction(
-            wallet,
-            account_index,
-            account_type_pref,
-            recipients,
-            fee_level,
-            current_block_height,
-        )
     }
 
     fn update_synced_height(&mut self, current_height: u32) {

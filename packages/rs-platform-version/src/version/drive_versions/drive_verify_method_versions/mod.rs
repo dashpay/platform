@@ -21,6 +21,7 @@ pub struct DriveVerifyMethodVersions {
 pub struct DriveVerifyShieldedMethodVersions {
     pub verify_shielded_pool_state: FeatureVersion,
     pub verify_shielded_anchors: FeatureVersion,
+    pub verify_most_recent_shielded_anchor: FeatureVersion,
     pub verify_shielded_encrypted_notes: FeatureVersion,
     pub verify_shielded_nullifiers: FeatureVersion,
     pub verify_nullifiers_trunk_query: FeatureVersion,
