@@ -28,7 +28,7 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 3,
+            create_initial_state_structure: 3, // changed: adds shielded pool trees (commitment tree, nullifiers, anchors)
         },
         credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
         protocol_upgrade: DriveProtocolUpgradeVersions {
