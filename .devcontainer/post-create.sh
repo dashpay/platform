@@ -48,11 +48,6 @@ if [ -d "$HOST_CONFIG" ] && [ "$(ls -A "$HOST_CONFIG" 2>/dev/null)" ]; then
         cp -a "$HOST_CONFIG/.credentials.json" "$CLAUDE_DIR/.credentials.json"
         chmod 600 "$CLAUDE_DIR/.credentials.json"
     fi
-    # Onboarding state (prevents setup wizard)
-    if [ -f "$HOST_CONFIG/.claude.json.root" ]; then
-        cp -a "$HOST_CONFIG/.claude.json.root" /home/vscode/.claude.json
-        chown vscode:vscode /home/vscode/.claude.json
-    fi
     echo "Host Claude credentials copied."
 else
     echo "No host Claude credentials found. Use ANTHROPIC_API_KEY or 'claude login'."

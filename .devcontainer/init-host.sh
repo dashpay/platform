@@ -17,10 +17,6 @@ if [ -d "$HOME/.claude" ]; then
     # Credentials (OAuth tokens) — required for authentication
     [ -f "$HOME/.claude/.credentials.json" ] && \
         cp -a "$HOME/.claude/.credentials.json" "$CLAUDE_STAGING/.credentials.json" 2>/dev/null || true
-    # Onboarding state — prevents setup wizard
-    [ -f "$HOME/.claude.json" ] && \
-        cp -a "$HOME/.claude.json" "$CLAUDE_STAGING/.claude.json.root" 2>/dev/null || true
-
     # Plugins: always copy (just IDs, no secrets)
     if [ -f "$HOME/.claude/settings.json" ]; then
         jq '{enabledPlugins: .enabledPlugins}' "$HOME/.claude/settings.json" \
