@@ -5,7 +5,7 @@ use grovedb_commitment_tree::{Note, PaymentAddress};
 use rs_dapi_client::RequestSettings;
 
 /// Default maximum number of chunk queries in flight at once.
-pub(super) const DEFAULT_MAX_CONCURRENT: usize = 4;
+pub const DEFAULT_MAX_CONCURRENT: usize = 4;
 
 /// Configuration for [`sync_shielded_notes`](super::sync_shielded_notes).
 pub struct ShieldedSyncConfig {

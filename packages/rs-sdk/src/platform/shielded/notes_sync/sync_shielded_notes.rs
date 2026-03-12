@@ -1,15 +1,10 @@
-//! Shielded note sync: parallel chunk fetching with trial decryption.
-
 use super::decrypt::try_decrypt_note;
+use super::fetch_chunk::fetch_chunk as do_fetch_chunk;
 use super::types::{DecryptedNote, ShieldedSyncConfig, ShieldedSyncResult};
-use crate::error::Error;
-use crate::platform::Fetch;
-use crate::Sdk;
-use drive_proof_verifier::types::ShieldedEncryptedNotesQuery;
-use drive_proof_verifier::types::{ShieldedEncryptedNote, ShieldedEncryptedNotes};
+use crate::{Error, Sdk};
+use drive_proof_verifier::types::ShieldedEncryptedNote;
 use futures::stream::{FuturesUnordered, StreamExt};
 use grovedb_commitment_tree::PreparedIncomingViewingKey;
-use rs_dapi_client::RequestSettings;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -78,7 +73,7 @@ pub async fn sync_shielded_notes(
         next_chunk_index += chunk_size;
         let sdk = sdk.clone();
         futures.push(Box::pin(async move {
-            fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
+            do_fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
         }));
     }
 
@@ -102,7 +97,7 @@ pub async fn sync_shielded_notes(
             next_chunk_index += chunk_size;
             let sdk = sdk.clone();
             futures.push(Box::pin(async move {
-                fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
+                do_fetch_chunk(&sdk, chunk_idx, chunk_size, settings).await
             }));
         }
     }
@@ -170,39 +165,4 @@ pub async fn sync_shielded_notes(
         total_notes_scanned,
         block_height: max_block_height,
     })
-}
-
-/// Fetch a single chunk of encrypted notes from the network.
-///
-/// Returns `(chunk_start_index, notes, block_height)`. An empty vec means no
-/// notes exist at this position (past end of tree).
-async fn fetch_chunk(
-    sdk: &Sdk,
-    chunk_start: u64,
-    chunk_size: u64,
-    settings: RequestSettings,
-) -> Result<(u64, Vec<ShieldedEncryptedNote>, u64), Error> {
-    let query = ShieldedEncryptedNotesQuery {
-        start_index: chunk_start,
-        count: chunk_size as u32,
-    };
-
-    debug!(chunk_start, chunk_size, "fetching shielded notes chunk");
-
-    let (result, metadata) =
-        ShieldedEncryptedNotes::fetch_with_metadata(sdk, query, Some(settings)).await?;
-
-    let notes = match result {
-        Some(ShieldedEncryptedNotes(notes)) => notes,
-        None => Vec::new(),
-    };
-
-    debug!(
-        chunk_start,
-        notes_returned = notes.len(),
-        block_height = metadata.height,
-        "shielded notes chunk fetched"
-    );
-
-    Ok((chunk_start, notes, metadata.height))
 }
