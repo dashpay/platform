@@ -511,7 +511,10 @@ impl_transport_request_grpc!(
     platform_proto::GetRecentCompactedNullifierChangesRequest,
     platform_proto::GetRecentCompactedNullifierChangesResponse,
     PlatformGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        max_decoding_message_size: Some(16 * 1024 * 1024),
+        ..RequestSettings::default()
+    },
     get_recent_compacted_nullifier_changes
 );
 

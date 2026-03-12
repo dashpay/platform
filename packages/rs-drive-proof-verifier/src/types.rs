@@ -890,7 +890,7 @@ pub struct ShieldedNullifiersQuery(pub Vec<Vec<u8>>);
 ///
 /// Used with the `GetNullifiersTrunkStateRequest` RPC to fetch the top levels
 /// of the nullifier tree for privacy-preserving synchronization.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
@@ -901,15 +901,6 @@ pub struct NullifiersTrunkQuery {
     pub pool_type: u32,
     /// Optional 32-byte identifier for individual token pools.
     pub pool_identifier: Option<Vec<u8>>,
-}
-
-impl Default for NullifiersTrunkQuery {
-    fn default() -> Self {
-        Self {
-            pool_type: 0,
-            pool_identifier: None,
-        }
-    }
 }
 
 /// Nullifier changes for a single block.
