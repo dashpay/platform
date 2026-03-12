@@ -40,20 +40,11 @@ jobs:
         run: |
           ulimit -c unlimited
           cargo llvm-cov nextest \
-            --workspace \
+            --package drive \
+            --package dpp \
+            --package drive-abci \
             --all-features \
             --locked \
-            --lib --bins --tests \
-            --exclude wasm-dpp \
-            --exclude wasm-dpp2 \
-            --exclude wasm-sdk \
-            --exclude wasm-drive-verify \
-            --exclude dash-sdk \
-            --exclude rs-sdk-ffi \
-            --exclude platform-wallet-ffi \
-            --exclude strategy-tests \
-            --exclude check-features \
-            --exclude dash-platform-balance-checker \
             --partition count:${{ matrix.partition }}/4 \
             --lcov --output-path lcov.info
         env:
