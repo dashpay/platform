@@ -36,7 +36,7 @@ Run on your **host machine** before opening the devcontainer:
 claude login
 ```
 
-Your OAuth credentials (`~/.claude/.credentials.json`) and enabled plugins are copied into the container. Optionally, agents and skills listed in `.devcontainer/.env` are also copied. No conversation history, project memories, or host settings are transferred. If tokens expire, re-run `claude login` on the host and rebuild.
+Your OAuth credentials (`~/.claude/.credentials.json`) are copied into the container. Optionally, personal agents and skills listed in `.devcontainer/.env` are also copied. No conversation history, project memories, settings, or plugins are transferred. If tokens expire, re-run `claude login` on the host and rebuild.
 
 You can also log in from inside the container using the print-link flow (no browser redirect needed):
 
@@ -121,11 +121,19 @@ devcontainer exec --workspace-folder . claude -p "run the test suite" --dangerou
 
 ### Plugins
 
-Enabled plugins from your host `~/.claude/settings.json` are automatically synced into the container. No configuration needed — plugin IDs contain no secrets.
+Plugins are **not** copied from your host. Use `.claude/settings.local.json` inside the container to enable personal plugins — this file is automatically gitignored by Claude Code:
+
+```json
+{
+  "enabledPlugins": {
+    "my-plugin@my-marketplace": true
+  }
+}
+```
 
 ### Agents & skills
 
-To copy personal agents or skills from `~/.claude/` into the container, create a `.env` file:
+Personal agents and skills are **not** copied automatically. To bring specific ones from your `~/.claude/` into the container, create a `.env` file:
 
 ```bash
 cp .devcontainer/.env.example .devcontainer/.env
@@ -145,15 +153,15 @@ The `.env` file is gitignored — each developer configures their own.
 
 ### Project-level settings
 
-The project's `.claude/` directory (containing `settings.local.json` and `skills/`) is automatically available inside the container via the workspace bind mount. No extra configuration needed.
+The project's `.claude/` directory is available inside the container via the workspace bind mount. Project-level agents (`.claude/agents/`) and skills (`.claude/skills/`) are automatically loaded by Claude Code.
 
 ## Security Model
 
 Claude Code runs with `bypassPermissions` inside the container — it can read, write, and execute anything. The container is the sandbox boundary. To minimize exposure:
 
-- **Only OAuth credentials** are copied from the host (`~/.claude/.credentials.json`). No conversation history, project memories, settings, hooks, scripts, or debug logs are transferred.
-- **Enabled plugins** (just plugin IDs) are synced from host settings. Optionally, listed agents/skills (markdown files only) are copied.
-- **A clean `settings.json`** is generated inside the container with `bypassPermissions` and enabled plugins — your host's permission allowlists, MCP server configs, and hooks are not copied.
+- **Only OAuth credentials** are copied from the host (`~/.claude/.credentials.json`). No conversation history, project memories, settings, plugins, hooks, scripts, or debug logs are transferred.
+- **Agents/skills** are only copied if explicitly listed in `.devcontainer/.env` — nothing personal leaks in by default.
+- **A clean `settings.json`** is generated inside the container with `bypassPermissions` — your host's permission allowlists, MCP server configs, and hooks are not copied.
 - **No shell history** is persisted or shared with the container.
 - **The `.git` directory** is mounted read-write (required for commits/pushes). This is the main trust boundary — Claude can push code.
 
