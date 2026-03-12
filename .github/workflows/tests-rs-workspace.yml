@@ -1,0 +1,115 @@
+on:
+  workflow_call:
+    inputs:
+      partitions:
+        description: Number of test partitions/shards
+        type: number
+        default: 4
+
+jobs:
+  test:
+    name: "Tests (shard ${{ matrix.partition }}/${{ inputs.partitions }})"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          components: llvm-tools
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@cargo-nextest
+
+      - name: Configure core dumps
+        run: |
+          sudo mkdir /cores
+          sudo chmod 777 /cores
+          sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
+
+      - name: Run tests with coverage (shard ${{ matrix.partition }}/${{ inputs.partitions }})
+        run: |
+          ulimit -c unlimited
+          cargo llvm-cov nextest \
+            --workspace \
+            --all-features \
+            --locked \
+            --exclude wasm-dpp \
+            --exclude wasm-dpp2 \
+            --exclude wasm-sdk \
+            --exclude wasm-drive-verify \
+            --exclude rs-sdk-ffi \
+            --exclude platform-wallet-ffi \
+            --exclude strategy-tests \
+            --exclude check-features \
+            --exclude dash-platform-balance-checker \
+            --partition count:${{ matrix.partition }}/${{ inputs.partitions }} \
+            --lcov --output-path lcov.info
+        env:
+          RUST_MIN_STACK: 4194304
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: rust-shard-${{ matrix.partition }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Collect crash artifacts
+        if: failure()
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          if ! compgen -G "/cores/*" > /dev/null; then
+            echo "No core dumps were produced; skipping artifact archive."
+            exit 0
+          fi
+
+          ARTIFACT_DIR=crash-artifacts
+          rm -rf "${ARTIFACT_DIR}"
+          mkdir -p "${ARTIFACT_DIR}/cores" "${ARTIFACT_DIR}/binaries"
+
+          cp -a /cores/. "${ARTIFACT_DIR}/cores/"
+
+          for path in target/debug/deps/*; do
+            if [[ -f "$path" && -x "$path" && ! "$path" == *.d ]]; then
+              cp -a "$path" "${ARTIFACT_DIR}/binaries/"
+            fi
+          done
+
+          (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
+
+      - name: Upload core dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-shard-${{ matrix.partition }}
+          path: core-dumps.zip
+          if-no-files-found: ignore
+          retention-days: 3

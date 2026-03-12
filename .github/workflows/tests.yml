@@ -2,6 +2,10 @@ name: Tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+      - "v*-dev"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -147,6 +151,16 @@ jobs:
       image_name: ${{ matrix.image_name }}
       target: ${{ matrix.target }}
       build_args: ${{ matrix.build_args }}
+
+  rs-workspace-tests:
+    name: Rust workspace tests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      partitions: 4
 
   rs-packages:
     name: Rust packages
