@@ -185,12 +185,26 @@ impl StateTransitionStateValidation for StateTransition {
                     "address credit withdrawal should not have state validation",
                 )))
             }
-            StateTransition::Shield(_)
-            | StateTransition::ShieldedTransfer(_)
-            | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
+            StateTransition::Shield(_) => Err(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("shield should not have state validation"),
+            )),
+            StateTransition::ShieldedTransfer(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shielded transfer should not have state validation",
+                )))
+            }
+            StateTransition::Unshield(_) => Err(Error::Execution(
+                ExecutionError::CorruptedCodeExecution("unshield should not have state validation"),
+            )),
+            StateTransition::ShieldFromAssetLock(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield from asset lock should not have state validation",
+                )))
+            }
+            StateTransition::ShieldedWithdrawal(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shielded withdrawal should not have state validation",
+                )))
             }
         }
     }
@@ -211,14 +225,12 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::AddressCreditWithdrawal(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => false,
-            StateTransition::Shield(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
-                todo!("shielded transitions not yet implemented")
-            }
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 }

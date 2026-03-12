@@ -97,6 +97,7 @@ pub struct DriveAbciQueryDataContractVersions {
 pub struct DriveAbciQueryShieldedVersions {
     pub encrypted_notes: FeatureVersionBounds,
     pub anchors: FeatureVersionBounds,
+    pub most_recent_anchor: FeatureVersionBounds,
     pub pool_state: FeatureVersionBounds,
     pub nullifiers: FeatureVersionBounds,
     pub nullifiers_trunk_state: FeatureVersionBounds,

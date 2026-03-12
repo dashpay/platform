@@ -82,6 +82,8 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "dd99ed1db0350e5f39127573808dd172c6bc2346" }
+nonempty = "0.11"
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
@@ -101,6 +103,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "dd99ed1db0350e5f39127573808dd172c6bc2346", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -120,6 +123,8 @@ testing-config = []
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
 replay = ["dep:time", "tenderdash-abci/serde"]
+# Long-running shielded strategy tests (ZK proof generation)
+__shielded_strategy_tests = []
 [[bin]]
 name = "drive-abci"
 path = "src/main.rs"
@@ -128,4 +133,5 @@ path = "src/main.rs"
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(tokio_unstable)',
   'cfg(create_sdk_test_data)',
+  'cfg(feature, values("__shielded_strategy_tests"))',
 ] }

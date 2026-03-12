@@ -27,6 +27,10 @@ use drive::drive::saved_block_transactions::{
     ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
+use drive::drive::shielded::paths::{
+    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
+    SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+};
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
@@ -108,6 +112,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 11 && platform_version.protocol_version >= 11 {
             self.transition_to_version_11(transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 12 && platform_version.protocol_version >= 12 {
+            self.transition_to_version_12(transaction, platform_version)?;
         }
 
         Ok(())
@@ -590,6 +598,70 @@ impl<C> Platform<C> {
         self.drive.grove_insert_if_not_exists(
             saved_block_path.as_slice().into(),
             &[COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        Ok(())
+    }
+
+    /// We introduced in version 12 Shielded Pools
+    fn transition_to_version_12(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let addresses_path = Drive::addresses_path();
+
+        // Shielded credit pool SumTree under AddressBalances: [AddressBalances] / "s"
+        self.drive.grove_insert_if_not_exists(
+            addresses_path.as_slice().into(),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
+        // [AddressBalances, "s"] / [1]
+        let shielded_pool_path = shielded_credit_pool_path();
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NOTES_KEY],
+            Element::empty_commitment_tree(11).expect("chunk_power 11 is valid"),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NULLIFIERS_KEY],
+            Element::empty_provable_count_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Total balance SumItem(0): [AddressBalances, "s"] / [5]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_TOTAL_BALANCE_KEY],
+            Element::new_sum_item(0),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
+        // Stores block_height_be → anchor_bytes
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
             Element::empty_tree(),
             Some(transaction),
             None,

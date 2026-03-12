@@ -481,6 +481,78 @@ type PlatformgetRecentCompactedAddressBalanceChanges = {
   readonly responseType: typeof platform_pb.GetRecentCompactedAddressBalanceChangesResponse;
 };
 
+type PlatformgetShieldedEncryptedNotes = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetShieldedEncryptedNotesRequest;
+  readonly responseType: typeof platform_pb.GetShieldedEncryptedNotesResponse;
+};
+
+type PlatformgetShieldedAnchors = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetShieldedAnchorsRequest;
+  readonly responseType: typeof platform_pb.GetShieldedAnchorsResponse;
+};
+
+type PlatformgetShieldedPoolState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetShieldedPoolStateRequest;
+  readonly responseType: typeof platform_pb.GetShieldedPoolStateResponse;
+};
+
+type PlatformgetShieldedNullifiers = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetShieldedNullifiersRequest;
+  readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
+};
+
+type PlatformgetNullifiersTrunkState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetNullifiersTrunkStateRequest;
+  readonly responseType: typeof platform_pb.GetNullifiersTrunkStateResponse;
+};
+
+type PlatformgetNullifiersBranchState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetNullifiersBranchStateRequest;
+  readonly responseType: typeof platform_pb.GetNullifiersBranchStateResponse;
+};
+
+type PlatformgetRecentNullifierChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentNullifierChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentNullifierChangesResponse;
+};
+
+type PlatformgetRecentCompactedNullifierChanges = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetRecentCompactedNullifierChangesRequest;
+  readonly responseType: typeof platform_pb.GetRecentCompactedNullifierChangesResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -536,6 +608,14 @@ export class Platform {
   static readonly getAddressesBranchState: PlatformgetAddressesBranchState;
   static readonly getRecentAddressBalanceChanges: PlatformgetRecentAddressBalanceChanges;
   static readonly getRecentCompactedAddressBalanceChanges: PlatformgetRecentCompactedAddressBalanceChanges;
+  static readonly getShieldedEncryptedNotes: PlatformgetShieldedEncryptedNotes;
+  static readonly getShieldedAnchors: PlatformgetShieldedAnchors;
+  static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
+  static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly getNullifiersTrunkState: PlatformgetNullifiersTrunkState;
+  static readonly getNullifiersBranchState: PlatformgetNullifiersBranchState;
+  static readonly getRecentNullifierChanges: PlatformgetRecentNullifierChanges;
+  static readonly getRecentCompactedNullifierChanges: PlatformgetRecentCompactedNullifierChanges;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1046,6 +1126,78 @@ export class PlatformClient {
   getRecentCompactedAddressBalanceChanges(
     requestMessage: platform_pb.GetRecentCompactedAddressBalanceChangesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedAddressBalanceChangesResponse|null) => void
+  ): UnaryResponse;
+  getShieldedEncryptedNotes(
+    requestMessage: platform_pb.GetShieldedEncryptedNotesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedEncryptedNotesResponse|null) => void
+  ): UnaryResponse;
+  getShieldedEncryptedNotes(
+    requestMessage: platform_pb.GetShieldedEncryptedNotesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedEncryptedNotesResponse|null) => void
+  ): UnaryResponse;
+  getShieldedAnchors(
+    requestMessage: platform_pb.GetShieldedAnchorsRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedAnchorsResponse|null) => void
+  ): UnaryResponse;
+  getShieldedAnchors(
+    requestMessage: platform_pb.GetShieldedAnchorsRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedAnchorsResponse|null) => void
+  ): UnaryResponse;
+  getShieldedPoolState(
+    requestMessage: platform_pb.GetShieldedPoolStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedPoolStateResponse|null) => void
+  ): UnaryResponse;
+  getShieldedPoolState(
+    requestMessage: platform_pb.GetShieldedPoolStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedPoolStateResponse|null) => void
+  ): UnaryResponse;
+  getShieldedNullifiers(
+    requestMessage: platform_pb.GetShieldedNullifiersRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getShieldedNullifiers(
+    requestMessage: platform_pb.GetShieldedNullifiersRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
+  ): UnaryResponse;
+  getNullifiersTrunkState(
+    requestMessage: platform_pb.GetNullifiersTrunkStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetNullifiersTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getNullifiersTrunkState(
+    requestMessage: platform_pb.GetNullifiersTrunkStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetNullifiersTrunkStateResponse|null) => void
+  ): UnaryResponse;
+  getNullifiersBranchState(
+    requestMessage: platform_pb.GetNullifiersBranchStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetNullifiersBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getNullifiersBranchState(
+    requestMessage: platform_pb.GetNullifiersBranchStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetNullifiersBranchStateResponse|null) => void
+  ): UnaryResponse;
+  getRecentNullifierChanges(
+    requestMessage: platform_pb.GetRecentNullifierChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentNullifierChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentNullifierChanges(
+    requestMessage: platform_pb.GetRecentNullifierChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentNullifierChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedNullifierChanges(
+    requestMessage: platform_pb.GetRecentCompactedNullifierChangesRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedNullifierChangesResponse|null) => void
+  ): UnaryResponse;
+  getRecentCompactedNullifierChanges(
+    requestMessage: platform_pb.GetRecentCompactedNullifierChangesRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetRecentCompactedNullifierChangesResponse|null) => void
   ): UnaryResponse;
 }
 

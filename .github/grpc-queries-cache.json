@@ -149,7 +149,34 @@
     },
     "getRecentCompactedAddressBalanceChanges": {
       "status": "implemented"
+    },
+    "getShieldedEncryptedNotes": {
+      "status": "implemented"
+    },
+    "getShieldedAnchors": {
+      "status": "implemented"
+    },
+    "getMostRecentShieldedAnchor": {
+      "status": "implemented"
+    },
+    "getShieldedPoolState": {
+      "status": "implemented"
+    },
+    "getShieldedNullifiers": {
+      "status": "implemented"
+    },
+    "getNullifiersTrunkState": {
+      "status": "implemented"
+    },
+    "getNullifiersBranchState": {
+      "status": "implemented"
+    },
+    "getRecentNullifierChanges": {
+      "status": "implemented"
+    },
+    "getRecentCompactedNullifierChanges": {
+      "status": "implemented"
     }
   },
-  "last_updated": "2026-03-10T03:29:59.611614"
+  "last_updated": "2026-03-10T11:25:01.317388"
 }

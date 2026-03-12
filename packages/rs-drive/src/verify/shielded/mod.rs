@@ -1,5 +1,7 @@
 /// Module for verifying compacted nullifier changes
 pub mod verify_compacted_nullifier_changes;
+/// Module for verifying the most recent shielded anchor
+pub mod verify_most_recent_shielded_anchor;
 /// Module for verifying nullifiers branch chunk queries
 pub mod verify_nullifiers_branch_query;
 /// Module for verifying nullifiers trunk chunk queries
