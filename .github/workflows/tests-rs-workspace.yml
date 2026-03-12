@@ -30,6 +30,9 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@cargo-nextest
 
+      - name: Strip cdylib from dash-sdk (incompatible with static rocksdb)
+        run: sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml
+
       - name: Configure core dumps
         run: |
           sudo mkdir /cores
@@ -43,6 +46,12 @@ jobs:
             --package drive \
             --package dpp \
             --package drive-abci \
+            --package dash-sdk \
+            --package platform-value \
+            --package rs-dapi \
+            --package platform-wallet \
+            --package rs-dapi-client \
+            --package platform-serialization \
             --all-features \
             --locked \
             --partition count:${{ matrix.partition }}/4 \
