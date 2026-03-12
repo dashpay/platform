@@ -36,13 +36,14 @@ jobs:
           sudo chmod 777 /cores
           sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
 
-      - name: Run tests with coverage (shard ${{ matrix.partition }}/${{ inputs.partitions }})
+      - name: Run tests with coverage (shard ${{ matrix.partition }}/4)
         run: |
           ulimit -c unlimited
           cargo llvm-cov nextest \
             --workspace \
             --all-features \
             --locked \
+            --lib --bins --tests \
             --exclude wasm-dpp \
             --exclude wasm-dpp2 \
             --exclude wasm-sdk \
