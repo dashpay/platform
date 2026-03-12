@@ -31,68 +31,196 @@ wallet cares about.
 The sync has two phases: a **tree scan** for bulk discovery, and **incremental catch-up**
 for staying current between scans.
 
-### Phase 1: Tree Scan (Trunk/Branch)
+## Phase 1: Tree Scan (Trunk/Branch)
 
-The tree scan proceeds in three steps:
+### The Underlying Data Structure
 
-**Step 1 -- Trunk query.** The wallet requests the top-level snapshot of the Merkle tree.
-The response contains:
-- Elements at the trunk level (keys with their values)
-- Leaf boundary keys pointing to subtrees below the trunk
-- A Merkle proof covering the entire trunk
+Platform stores addresses and nullifiers in a **Merk tree** -- a balanced binary search
+tree (BST) where each node is keyed and ordered. Every internal node has a left child
+(keys less than this node) and a right child (keys greater than this node). Each node
+also carries a Merkle hash of its subtree, making the entire structure cryptographically
+verifiable.
 
-For each target key, the wallet classifies it as:
-- **Found** -- the key appears directly in the trunk elements
-- **Absent** -- the key is proven to not exist (no path to any subtree)
-- **Needs deeper query** -- the key traces to a leaf subtree that must be fetched
+The trunk query returns a *partial* view of this BST: the top N levels are fully
+expanded (you can see the actual keys and values), while deeper subtrees are truncated
+to hash placeholders. The boundary between "expanded" and "truncated" defines the
+**leaf nodes** of the trunk result.
 
 ```
-                    ┌─────────────┐
-                    │  Trunk Root │  ← Step 1: fetch entire trunk
-                    └──────┬──────┘
-                   ┌───────┼───────┐
-                   ▼       ▼       ▼
-                ┌─────┐ ┌─────┐ ┌─────┐
-                │Leaf │ │Leaf │ │Leaf │  ← Step 2: classify target keys
-                │  A  │ │  B  │ │  C  │
-                └──┬──┘ └──┬──┘ └──┬──┘
-                   ▼       ▼       ▼
-                ┌─────┐ ┌─────┐ ┌─────┐
-                │Branch│ │Branch│ │Branch│  ← Step 3: query leaves with
-                │Query │ │Query │ │Query │     unresolved keys
-                └──────┘ └──────┘ └──────┘
+                          ┌──────┐
+                          │  30  │   ← Root node (key=30)
+                          └──┬───┘
+                      ┌──────┴──────┐
+                      ▼             ▼
+                   ┌──────┐     ┌──────┐
+                   │  15  │     │  45  │   ← Internal nodes (expanded)
+                   └──┬───┘     └──┬───┘
+                 ┌────┴────┐  ┌────┴────┐
+                 ▼         ▼  ▼         ▼
+              ┌─────┐  ┌─────┐ ┌─────┐  ┌─────┐
+              │  7  │  │ 22  │ │ 38  │  │ 55  │  ← Leaf nodes
+              │▓▓▓▓▓│  │▓▓▓▓▓│ │▓▓▓▓▓│  │▓▓▓▓▓│     (children are
+              └─────┘  └─────┘ └─────┘  └─────┘      hash placeholders)
+
+              ▓▓▓ = truncated subtree (only hash known, not contents)
 ```
 
-**Step 2 -- Privacy adjustment.** Before querying leaf subtrees, the algorithm checks
-each leaf's element count. If a leaf contains fewer elements than `min_privacy_count`
-(default: 32), the query is expanded to an ancestor subtree that meets the threshold.
-This prevents the server from narrowing down which key the wallet is interested in.
+The trunk result contains three key pieces of data:
+
+- **`elements`**: A `BTreeMap<Vec<u8>, Element>` of key-value pairs at expanded nodes.
+  These are fully resolved -- the wallet can read their values directly.
+- **`leaf_keys`**: A `BTreeMap<Vec<u8>, LeafInfo>` of nodes at the truncation boundary.
+  Each `LeafInfo` has a `hash` (for verifying subsequent branch queries) and an optional
+  `count` (number of elements in the truncated subtree).
+- **`tree`**: The reconstructed BST structure from the proof, used for key tracing.
+
+### Step 1: The Trunk Query
+
+The wallet sends a single trunk query to a Platform node. The request specifies a
+`max_depth` (how many levels of the BST to expand). The server returns the trunk
+elements, the leaf boundary information, and a Merkle proof covering the entire
+result.
+
+The proof is verified against the quorum-signed root hash, ensuring the server
+cannot lie about what the tree contains.
 
 ```rust
-// If a leaf has only 5 elements, the server could guess which one we want.
-// Instead, find an ancestor with >= 32 elements.
-if count < min_privacy_count {
-    // Walk up the tree to find an ancestor with enough elements
-    let (ancestor_key, ancestor_info) = trunk_result
-        .get_ancestor(&leaf_key, min_privacy_count);
+let (trunk_result, metadata) =
+    PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
+```
+
+### Step 2: Classifying Target Keys via BST Traversal
+
+After receiving the trunk, the wallet classifies each of its target keys by traversing
+the BST structure. The `trace_key_to_leaf` method performs a standard binary search:
+
+1. Start at the root node.
+2. Compare the target key against the current node's key.
+3. If equal: the key is found in the trunk elements.
+4. If less: follow the left child.
+5. If greater: follow the right child.
+6. If the current node is a leaf (its children are hash placeholders): the target key
+   is somewhere in this leaf's truncated subtree, but we can't resolve it yet.
+7. If there is no child to follow: the key is proven absent.
+
+This produces exactly three outcomes for each target key:
+
+| Outcome | What it means | Action |
+|---------|---------------|--------|
+| **Found** | Key exists in trunk `elements` | Record the value (balance, spent status) |
+| **Traced to leaf** | Key is in a truncated subtree | Add to `KeyLeafTracker` for branch querying |
+| **Absent** | No path exists in the BST | Key is cryptographically proven to not exist |
+
+```rust
+for key in target_keys {
+    if trunk_result.elements.contains_key(&key) {
+        // Found directly in trunk -- record it
+        result.found.insert(key);
+    } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
+        // Traces to a leaf subtree -- need a branch query
+        tracker.add_key(key, leaf_key, info);
+    } else {
+        // Proven absent from the tree
+        result.absent.insert(key);
+    }
 }
 ```
 
-**Step 3 -- Iterative branch queries.** For each leaf (or privacy-adjusted ancestor),
-the wallet sends a branch query specifying:
-- The leaf boundary key
-- The query depth (how many levels of the subtree to return)
-- The expected root hash (for verification)
+A concrete example: suppose the wallet is looking for key `20` in the tree above.
+The BST traversal goes: root `30` (20 < 30, go left) -> node `15` (20 > 15, go right)
+-> leaf `22` (children are hash placeholders). Key `20` traces to leaf `22` because
+it would be in leaf `22`'s left subtree. The wallet now knows it needs to query
+leaf `22`'s subtree to determine whether key `20` actually exists.
 
-The server returns the subtree's elements and a Merk proof. The wallet verifies the
-proof against the expected hash from the trunk, then classifies each target key again.
-Keys that trace to even deeper subtrees are queued for the next iteration.
+Note that each target key traces to exactly one leaf -- the BST path is deterministic.
+Multiple target keys may trace to the same leaf if they are close together in the key
+space.
 
-Branch queries run in parallel with configurable concurrency (`max_concurrent_requests`,
-default: 10). The iteration continues until all keys are resolved or `max_iterations`
-(default: 50) is reached.
+### Step 3: Privacy Adjustment
 
-### Phase 2: Incremental Catch-Up
+Before querying leaf subtrees, the algorithm applies **privacy adjustment** to prevent
+the server from learning which specific keys the wallet cares about.
+
+Each leaf in the trunk result has an optional `count` -- the number of elements in its
+truncated subtree. If this count is small (below `min_privacy_count`, default 32), then
+querying that specific leaf reveals too much: the server knows the wallet is interested
+in one of only a few keys.
+
+The fix is to query an **ancestor** higher in the tree that has enough elements to
+provide cover:
+
+```
+    Suppose leaf "22" has count=5 (too small for privacy).
+    Its parent "15" has count=50 (enough).
+
+    Instead of asking: "give me the subtree rooted at 22"
+    The wallet asks:   "give me the subtree rooted at 15"
+
+    Now the server sees a query for a 50-element subtree and cannot
+    tell whether the wallet wants key 20 (in 22's subtree) or
+    key 10 (in 7's subtree) or any other key under 15.
+```
+
+The `get_ancestor` method walks up the BST path from the leaf to the root, stopping
+at the first ancestor whose count exceeds `min_privacy_count`. It never returns the
+root itself (that would be equivalent to re-fetching the entire trunk). If no ancestor
+has enough count, it falls back to the node one level below the root.
+
+The query depth is adjusted when using an ancestor: since the ancestor is higher in
+the tree, its subtree is deeper, so the depth parameter is reduced by the number of
+levels climbed.
+
+Deduplication ensures that if multiple target keys expand to the same ancestor, only
+one branch query is sent.
+
+### Step 4: Iterative Branch Queries
+
+For each leaf (or privacy-adjusted ancestor) with unresolved keys, the wallet sends
+a **branch query** specifying:
+- The leaf's key (identifies which subtree to expand)
+- The query depth (how many levels to expand)
+- The expected root hash (the leaf's `hash` from the trunk, used for verification)
+- The checkpoint height (ensures the branch matches the same tree snapshot as the trunk)
+
+The server returns a `GroveBranchQueryResult` with the same structure as the trunk:
+expanded elements, new leaf keys at the next truncation boundary, and a Merk proof.
+The wallet verifies the proof against the expected hash from the parent query.
+
+Each target key in the queried subtree is classified again:
+
+- **Found** in the branch elements -- resolved.
+- **Traced to a deeper leaf** -- the key is in an even deeper truncated subtree.
+  The `KeyLeafTracker` is updated to point to the new, deeper leaf.
+- **Absent** -- proven to not exist within this subtree.
+
+```
+    Iteration 1: Trunk query
+    ┌────────────────────────────────────────────────────┐
+    │  Key 20 traces to leaf 22                          │
+    │  Key 41 traces to leaf 38                          │
+    └────────────────────────────────────────────────────┘
+                            │
+                            ▼
+    Iteration 2: Branch queries for leaves 22 and 38
+    ┌────────────────────────────────────────────────────┐
+    │  Key 20: found in leaf 22's subtree → RESOLVED     │
+    │  Key 41: traces to deeper leaf 40 → CONTINUE       │
+    └────────────────────────────────────────────────────┘
+                            │
+                            ▼
+    Iteration 3: Branch query for leaf 40
+    ┌────────────────────────────────────────────────────┐
+    │  Key 41: proven absent in leaf 40's subtree → DONE │
+    └────────────────────────────────────────────────────┘
+```
+
+Branch queries run in parallel using `FuturesUnordered` with configurable concurrency
+(`max_concurrent_requests`, default: 10). The iteration loop continues until all keys
+are resolved or `max_iterations` (default: 50) is reached. In practice, most keys
+resolve within 2-3 iterations because each branch query expands several levels of the
+tree.
+
+## Phase 2: Incremental Catch-Up
 
 After the tree scan produces a snapshot at some checkpoint height, the wallet needs to
 catch up to the chain tip. This is done with two sub-phases:
@@ -199,28 +327,23 @@ let active = tracker.active_leaves(); // leaves with unresolved keys
 let remaining = tracker.remaining_count();
 ```
 
-## Privacy-Adjusted Leaves
+## Privacy-Adjusted Leaves (Detail)
 
-The `get_privacy_adjusted_leaves` function (in `trunk_branch_sync/mod.rs`) ensures
-that branch queries do not leak information about which specific key is being looked up.
+The `get_privacy_adjusted_leaves` function (in `trunk_branch_sync/mod.rs`) implements
+the privacy adjustment described in Phase 1, Step 3. The full logic for each active
+leaf:
 
-For each active leaf in the tracker:
-
-1. If the leaf's element count >= `min_privacy_count`, query it directly.
-2. If the count is too low, walk up the trunk to find an ancestor with sufficient
-   count. The query depth is adjusted to account for the extra levels.
-3. If no suitable ancestor exists (the entire tree is small), query the leaf anyway.
-
-Duplicate ancestors are deduplicated -- if two target keys would both expand to the
-same ancestor, only one query is made.
-
-The query depth for each leaf is calculated from the element count and clamped to
-platform-version-defined bounds:
-
-```rust
-let tree_depth = calculate_max_tree_depth_from_count(count);
-let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
-```
+1. Calculate the query depth from the leaf's element count using
+   `calculate_max_tree_depth_from_count(count)`, clamped to platform-version bounds
+   `[min_query_depth, max_query_depth]`.
+2. If `count >= min_privacy_count`: query this leaf directly at the calculated depth.
+3. If `count < min_privacy_count`: call `trunk_result.get_ancestor(&leaf_key, min_privacy_count)`
+   to find a higher node. Reduce depth by `levels_up` (the number of tree levels
+   climbed) so the total subtree size returned stays reasonable.
+4. If no suitable ancestor exists (rare -- means the entire tree is small): query the
+   leaf anyway, accepting reduced privacy.
+5. Deduplicate: if two target keys expand to the same ancestor, only one branch query
+   is emitted (tracked via a `BTreeSet<LeafBoundaryKey>`).
 
 ## Concrete Implementations
 
