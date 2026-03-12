@@ -36,7 +36,7 @@ const sdk = EvoSDK.testnetTrusted(); // or mainnetTrusted()
 await sdk.connect();
 
 const epoch = await sdk.epoch.current();
-console.log('Current epoch:', epoch);
+console.log('Current epoch:', epoch.index);
 ```
 
 ## Facades
