@@ -102,8 +102,6 @@ pub use drive_proof_verifier::Error as ProofVerifierError;
 pub mod shielded;
 #[cfg(feature = "shielded")]
 pub use grovedb_commitment_tree;
-#[cfg(feature = "platform-wallet")]
-pub use platform_wallet;
 pub use rs_dapi_client as dapi_client;
 pub mod sync;
 

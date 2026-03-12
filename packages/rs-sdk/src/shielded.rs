@@ -168,7 +168,7 @@ pub async fn sync_shielded_notes(
         .max_encrypted_notes_per_query as u64;
 
     // Validate alignment
-    if chunk_size > 0 && start_index % chunk_size != 0 {
+    if chunk_size > 0 && !start_index.is_multiple_of(chunk_size) {
         return Err(Error::Generic(format!(
             "start_index {} is not chunk-aligned; must be a multiple of {}",
             start_index, chunk_size
@@ -255,7 +255,7 @@ pub async fn sync_shielded_notes(
     // Next start index: round up to next chunk boundary
     let raw_next = start_index + total_notes_scanned;
     let next_start_index = if chunk_size > 0 {
-        ((raw_next + chunk_size - 1) / chunk_size) * chunk_size
+        raw_next.div_ceil(chunk_size) * chunk_size
     } else {
         raw_next
     };

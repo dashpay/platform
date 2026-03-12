@@ -33,7 +33,7 @@ pub struct NullifierSyncConfig {
     /// Optional 32-byte identifier for individual token pools.
     ///
     /// Default: None
-    pub pool_identifier: Option<Vec<u8>>,
+    pub pool_identifier: Option<[u8; 32]>,
 
     /// Maximum age in seconds before a full tree rescan is forced.
     ///
@@ -136,6 +136,9 @@ pub struct NullifierSyncMetrics {
 
     /// Total proof bytes received.
     pub total_proof_bytes: usize,
+
+    /// Number of branch query failures (queries that returned errors but were skipped).
+    pub branch_query_failures: usize,
 
     /// Number of branch iterations (0 = trunk only, 1+ = trunk plus branch rounds).
     pub iterations: usize,

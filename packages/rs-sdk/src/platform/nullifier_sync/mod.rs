@@ -410,11 +410,7 @@ async fn execute_trunk_query(
 ) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
     let trunk_query = NullifiersTrunkQuery {
         pool_type: config.pool_type,
-        pool_identifier: config.pool_identifier.as_deref().map(|id| {
-            let mut arr = [0u8; 32];
-            arr.copy_from_slice(id);
-            arr
-        }),
+        pool_identifier: config.pool_identifier,
     };
 
     let (trunk_state, metadata) =
@@ -502,6 +498,7 @@ fn get_privacy_adjusted_leaves(
 }
 
 /// Execute branch queries in parallel.
+#[allow(clippy::too_many_arguments)]
 async fn execute_branch_queries(
     sdk: &Sdk,
     config: &NullifierSyncConfig,
@@ -520,13 +517,13 @@ async fn execute_branch_queries(
         let expected_hash = info.hash;
         let depth_u32 = depth as u32;
         let pool_type = config.pool_type;
-        let pool_identifier = config.pool_identifier.clone();
+        let pool_identifier = config.pool_identifier;
 
         futures.push(async move {
             execute_single_branch_query(
                 &sdk,
                 pool_type,
-                pool_identifier.as_deref(),
+                pool_identifier.as_ref().map(|a| a.as_slice()),
                 leaf_key.clone(),
                 depth_u32,
                 expected_hash,
@@ -548,6 +545,7 @@ async fn execute_branch_queries(
                     }
                     Err(e) => {
                         warn!("Nullifier branch query failed: {:?}", e);
+                        metrics.branch_query_failures += 1;
                     }
                 }
             }
@@ -563,6 +561,7 @@ async fn execute_branch_queries(
             }
             Err(e) => {
                 warn!("Nullifier branch query failed: {:?}", e);
+                metrics.branch_query_failures += 1;
             }
         }
     }
@@ -571,6 +570,7 @@ async fn execute_branch_queries(
 }
 
 /// Execute a single branch query with retry logic.
+#[allow(clippy::too_many_arguments)]
 async fn execute_single_branch_query(
     sdk: &Sdk,
     pool_type: u32,
