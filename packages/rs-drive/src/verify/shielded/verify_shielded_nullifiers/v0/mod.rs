@@ -55,3 +55,87 @@ impl Drive {
         Ok((root_hash, statuses))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use grovedb::batch::QualifiedGroveDbOp;
+    use grovedb::Element;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_nullifier_spent_status() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nullifier_spent = vec![1u8; 32];
+        let nullifier_unspent = vec![2u8; 32];
+
+        // Insert only the "spent" nullifier into the nullifiers tree
+        let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
+        let op = QualifiedGroveDbOp::insert_only_known_to_not_already_exist_op(
+            nullifiers_path.clone(),
+            nullifier_spent.clone(),
+            Element::new_item(vec![]),
+        );
+
+        drive
+            .grove_apply_batch(
+                GroveDbOpBatch::from_operations(vec![op]),
+                false,
+                None,
+                &platform_version.drive,
+            )
+            .expect("should apply batch");
+
+        // Construct and prove the same path query as the verify function
+        let nullifiers = vec![nullifier_spent.clone(), nullifier_unspent.clone()];
+        let mut query = Query::new();
+        query.insert_keys(nullifiers.clone());
+
+        let path_query = PathQuery {
+            path: nullifiers_path,
+            query: SizedQuery {
+                query,
+                limit: Some(2),
+                offset: None,
+            },
+        };
+
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("should produce proof");
+
+        // Verify
+        let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+            proof.as_slice(),
+            &nullifiers,
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(statuses.len(), 2, "should have 2 statuses");
+
+        // Find the spent one and the unspent one
+        let spent_status = statuses
+            .iter()
+            .find(|(key, _)| key == &nullifier_spent)
+            .expect("should have spent nullifier");
+        assert!(spent_status.1, "spent nullifier should be marked as spent");
+
+        let unspent_status = statuses
+            .iter()
+            .find(|(key, _)| key == &nullifier_unspent)
+            .expect("should have unspent nullifier");
+        assert!(
+            !unspent_status.1,
+            "unspent nullifier should be marked as not spent"
+        );
+    }
+}

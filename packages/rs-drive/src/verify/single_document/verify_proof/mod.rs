@@ -57,3 +57,48 @@ impl SingleDocumentDriveQuery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::query::SingleDocumentDriveQueryContestedStatus;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+
+    #[test]
+    fn test_single_document_verify_proof_unknown_version() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected domain document type");
+
+        let mut platform_version = platform_version.clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .single_document
+            .verify_proof = 255;
+
+        let query = SingleDocumentDriveQuery {
+            contract_id: [0u8; 32],
+            document_type_name: "domain".to_string(),
+            document_type_keeps_history: false,
+            document_id: [0u8; 32],
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+
+        let result = query.verify_proof(false, &[], document_type, &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "SingleDocumentDriveQuery::verify_proof" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

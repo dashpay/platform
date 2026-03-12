@@ -67,3 +67,128 @@ impl Drive {
         Ok((root_hash, nullifier_changes))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_recent_nullifier_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nullifier_1 = [1u8; 32];
+        let nullifier_2 = [2u8; 32];
+        let nullifier_3 = [3u8; 32];
+
+        // Store nullifiers for block 100
+        drive
+            .store_nullifiers_for_block(
+                &[nullifier_1, nullifier_2],
+                100,
+                100_000,
+                None,
+                platform_version,
+            )
+            .expect("should store nullifiers for block 100");
+
+        // Store nullifiers for block 101
+        drive
+            .store_nullifiers_for_block(&[nullifier_3], 101, 101_000, None, platform_version)
+            .expect("should store nullifiers for block 101");
+
+        // Prove from block 100
+        let proof = drive
+            .prove_recent_nullifier_changes(100, None, None, platform_version)
+            .expect("should prove recent nullifier changes");
+
+        // Verify
+        let (root_hash, changes) = Drive::verify_recent_nullifier_changes(
+            proof.as_slice(),
+            100,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(changes.len(), 2, "should have 2 blocks of changes");
+
+        assert_eq!(changes[0].block_height, 100);
+        assert_eq!(changes[0].nullifiers.len(), 2);
+
+        assert_eq!(changes[1].block_height, 101);
+        assert_eq!(changes[1].nullifiers.len(), 1);
+    }
+
+    #[test]
+    fn should_prove_and_verify_empty_recent_nullifier_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Prove from block 100 with no data stored
+        let proof = drive
+            .prove_recent_nullifier_changes(100, None, None, platform_version)
+            .expect("should prove empty recent nullifier changes");
+
+        // Verify
+        let (root_hash, changes) = Drive::verify_recent_nullifier_changes(
+            proof.as_slice(),
+            100,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(changes.is_empty(), "should have no changes");
+    }
+
+    #[test]
+    fn should_prove_and_verify_recent_nullifier_changes_with_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Store 3 blocks of nullifiers
+        for block_height in 100u64..103 {
+            let nullifier = [block_height as u8; 32];
+            drive
+                .store_nullifiers_for_block(
+                    &[nullifier],
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store nullifiers");
+        }
+
+        // Prove from block 100 with limit 2
+        let proof = drive
+            .prove_recent_nullifier_changes(100, Some(2), None, platform_version)
+            .expect("should prove with limit");
+
+        // Verify
+        let (root_hash, changes) = Drive::verify_recent_nullifier_changes(
+            proof.as_slice(),
+            100,
+            Some(2),
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(
+            changes.len(),
+            2,
+            "should have 2 blocks of changes (limited)"
+        );
+        assert_eq!(changes[0].block_height, 100);
+        assert_eq!(changes[1].block_height, 101);
+    }
+}

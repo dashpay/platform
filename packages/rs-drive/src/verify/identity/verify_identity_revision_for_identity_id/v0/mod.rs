@@ -92,3 +92,56 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::Drive;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+
+    #[test]
+    fn should_prove_and_verify_identity_revision() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::first();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        // Build a proof containing just the revision
+        let revision_query = Drive::identity_revision_query(&identity_id);
+        let proof = drive
+            .grove_get_proved_path_query(
+                &revision_query,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("should not error when proving identity revision");
+
+        let (_root_hash, proved_revision) = Drive::verify_identity_revision_for_identity_id(
+            proof.as_slice(),
+            identity_id,
+            false,
+            platform_version,
+        )
+        .expect("expected to verify identity revision");
+
+        assert_eq!(proved_revision, Some(identity.revision()));
+    }
+}

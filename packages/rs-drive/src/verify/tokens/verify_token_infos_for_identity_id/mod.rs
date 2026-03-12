@@ -72,3 +72,41 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_verify_token_infos_for_identity_id_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .token
+            .verify_token_infos_for_identity_id = 255;
+
+        let result: Result<
+            (
+                crate::verify::RootHash,
+                BTreeMap<[u8; 32], Option<IdentityTokenInfo>>,
+            ),
+            Error,
+        > = Drive::verify_token_infos_for_identity_id(
+            &[],
+            &[],
+            [0u8; 32],
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_token_infos_for_identity_id" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

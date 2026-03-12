@@ -62,3 +62,34 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_identity_balance_revision_and_addresses_from_inputs_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_identity_balance_revision_and_addresses_from_inputs = 255;
+
+        let addresses: Vec<PlatformAddress> = vec![];
+        let result = Drive::verify_identity_balance_revision_and_addresses_from_inputs(
+            &[],
+            [0u8; 32],
+            addresses.iter(),
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_identity_balance_revision_and_addresses_from_inputs" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}
