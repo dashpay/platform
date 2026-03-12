@@ -156,7 +156,11 @@ jobs:
     name: Rust workspace tests
     needs:
       - changes
-    if: ${{ needs.changes.outputs.rs-packages != '[]' }}
+    if: >-
+      needs.changes.outputs.rs-packages != '[]'
+      || github.event_name == 'workflow_dispatch'
+      || github.event_name == 'schedule'
+      || github.event_name == 'push'
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
 
