@@ -334,6 +334,7 @@ pub fn get_privacy_adjusted_leaves(
 /// The `branch_config` carries immutable data needed by each branch query
 /// (cloned into each spawned future). The `context` is only used for metrics
 /// updates in the main task after futures complete.
+#[allow(clippy::too_many_arguments)]
 async fn execute_branch_queries_parallel<Ops: TrunkBranchSyncOps>(
     sdk: &Sdk,
     branch_config: &Ops::BranchQueryConfig,
