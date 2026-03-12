@@ -159,8 +159,6 @@ jobs:
     if: ${{ needs.changes.outputs.rs-packages != '[]' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
-    with:
-      partitions: 4
 
   rs-packages:
     name: Rust packages

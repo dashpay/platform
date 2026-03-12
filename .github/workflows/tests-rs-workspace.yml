@@ -1,14 +1,9 @@
 on:
   workflow_call:
-    inputs:
-      partitions:
-        description: Number of test partitions/shards
-        type: number
-        default: 4
 
 jobs:
   test:
-    name: "Tests (shard ${{ matrix.partition }}/${{ inputs.partitions }})"
+    name: "Tests (shard ${{ matrix.partition }}/4)"
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -57,7 +52,7 @@ jobs:
             --exclude strategy-tests \
             --exclude check-features \
             --exclude dash-platform-balance-checker \
-            --partition count:${{ matrix.partition }}/${{ inputs.partitions }} \
+            --partition count:${{ matrix.partition }}/4 \
             --lcov --output-path lcov.info
         env:
           RUST_MIN_STACK: 4194304
