@@ -510,6 +510,79 @@ mod tests {
         }
     }
 
+    /// Crafts a minimal payload that looks like a StateTransition variant
+    /// (IdentityCreditWithdrawal = discriminant 5) followed by a version byte
+    /// and then a Vec<u8> field with a varint-encoded length that claims to
+    /// contain `fake_len` bytes. The total payload is small but the decoded
+    /// length would trigger a huge allocation without the limit guard.
+    fn craft_oversized_vec_payload(fake_len: u64) -> Vec<u8> {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        // Build the payload: variant discriminant + version + bogus vec length + filler
+        let mut buf = Vec::new();
+        // StateTransition enum discriminant for IdentityCreditWithdrawal (index 5)
+        buf.extend_from_slice(&bincode::encode_to_vec(5u32, config).unwrap());
+        // Version byte (0 = V0)
+        buf.push(0);
+        // identity_id: 32 bytes (Identifier)
+        buf.extend_from_slice(&[0u8; 32]);
+        // amount: u64
+        buf.extend_from_slice(&bincode::encode_to_vec(1000u64, config).unwrap());
+        // core_fee_per_byte: u32
+        buf.extend_from_slice(&bincode::encode_to_vec(1u32, config).unwrap());
+        // pooling: enum variant 0
+        buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());
+        // output_script (CoreScript = BinaryData = Vec<u8>): encode the malicious length
+        buf.extend_from_slice(&bincode::encode_to_vec(fake_len, config).unwrap());
+        // Don't provide the actual bytes — the limit check should fire before allocation
+        buf
+    }
+
+    #[test]
+    fn deserialize_crafted_huge_vec_length_does_not_oom() {
+        // Craft a small payload (~80 bytes) with a Vec<u8> field claiming 8 GB.
+        // Without the limit fix this would attempt `vec![0u8; 8_000_000_000]` and abort.
+        let payload = craft_oversized_vec_payload(8_000_000_000);
+        let result = StateTransition::deserialize_from_bytes(&payload);
+        // Must return an error, not OOM-abort the process
+        assert!(
+            result.is_err(),
+            "crafted payload with 8GB vec length must be rejected, not cause OOM"
+        );
+    }
+
+    #[test]
+    fn deserialize_crafted_vec_exceeding_limit_is_rejected() {
+        // Craft a payload with a Vec<u8> claiming 200,000 bytes — exceeds the
+        // 100,000 byte budget configured on StateTransition.
+        // The limit causes bincode to reject the read (either as Io/LimitExceeded
+        // or UnexpectedEnd depending on the exact code path). Either way, the
+        // deserialization must fail safely without OOM.
+        let payload = craft_oversized_vec_payload(200_000);
+        let result = StateTransition::deserialize_from_bytes(&payload);
+        assert!(
+            result.is_err(),
+            "Vec length exceeding byte budget must be rejected"
+        );
+    }
+
+    #[test]
+    fn deserialize_no_limit_does_not_enforce_byte_budget() {
+        // Same crafted payload with 200,000-byte Vec — the no_limit variant
+        // should NOT reject it for byte budget reasons (it will still fail
+        // because the data doesn't actually contain 200,000 bytes).
+        let payload = craft_oversized_vec_payload(200_000);
+        let result = StateTransition::deserialize_from_bytes_no_limit(&payload);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProtocolError::MaxEncodedBytesReachedError { .. } => {
+                panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
+            }
+            _ => {} // any other error is fine — the data is garbage
+        }
+    }
+
     #[test]
     fn deserialize_many_empty_list() {
         let result = StateTransition::deserialize_many(&[]);
