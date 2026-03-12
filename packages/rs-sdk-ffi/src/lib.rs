@@ -22,6 +22,7 @@ mod error;
 mod evonode;
 mod group;
 mod identity;
+mod nullifier_sync;
 mod platform_wallet_types;
 mod protocol_version;
 mod sdk;
@@ -53,6 +54,7 @@ pub use error::*;
 pub use evonode::*;
 pub use group::*;
 pub use identity::*;
+pub use nullifier_sync::*;
 #[allow(unused_imports)]
 pub use platform_wallet_types::*;
 pub use protocol_version::*;
