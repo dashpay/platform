@@ -146,7 +146,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 needs_signature_verification = false;
             }
 
-            let initial_balance_amount = tx_out.value * CREDITS_PER_DUFF;
+            let initial_balance_amount = tx_out.value.saturating_mul(CREDITS_PER_DUFF);
             AssetLockValue::new(
                 initial_balance_amount,
                 tx_out.script_pubkey.0,
@@ -169,7 +169,8 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                     ))
                 })?;
 
-            let block_count = signable_bytes_len as u16 / SHA256_BLOCK_SIZE;
+            let block_count =
+                (signable_bytes_len / SHA256_BLOCK_SIZE as usize).min(u16::MAX as usize) as u16;
 
             execution_context.add_operation(ValidationOperation::DoubleSha256(block_count));
             execution_context.add_operation(ValidationOperation::SignatureVerification(
@@ -209,7 +210,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         // Step 8: Read current shielded pool total balance from GroveDB
         let mut drive_operations = vec![];
         let current_total_balance =
-            read_pool_total_balance(&platform.drive, tx, &mut drive_operations, platform_version)?;
+            read_pool_total_balance(platform.drive, tx, &mut drive_operations, platform_version)?;
 
         // Calculate fees from the GroveDB operations
         let fee = Drive::calculate_fee(

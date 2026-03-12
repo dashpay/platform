@@ -110,7 +110,7 @@ class SwiftDashSDKExample {
         let ownerId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
         let contractSchema = """
         {
-            "$format_version": "0",
+            "$formatVersion": "0",
             "ownerId": "\(ownerId)",
             "documents": {
                 "message": {

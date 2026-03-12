@@ -9,6 +9,3 @@ pub mod partially_use_asset_lock_action;
 
 /// bump address input nonce action
 pub mod bump_address_input_nonces_action;
-
-/// penalize shielded pool action
-pub mod penalize_shielded_pool_action;

@@ -50,9 +50,7 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
 
         // Extract nullifiers from the transition actions
         let nullifiers: Vec<[u8; 32]> = match self {
-            ShieldedTransferTransition::V0(v0) => {
-                v0.actions.iter().map(|a| a.nullifier).collect()
-            }
+            ShieldedTransferTransition::V0(v0) => v0.actions.iter().map(|a| a.nullifier).collect(),
         };
 
         // Read current shielded pool state from GroveDB
@@ -76,25 +74,25 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         }
 
         // Verify the anchor exists in the recorded anchors tree
-        if let Some(err) = validate_anchor_exists(
+        if let Some(consensus_error) = validate_anchor_exists(
             drive,
             &anchor,
             transaction,
             &mut drive_operations,
             platform_version,
         )? {
-            return Ok(err);
+            return Ok(consensus_error);
         }
 
         // Validate nullifiers: intra-bundle duplicates + already-spent in state
-        if let Some(err) = validate_nullifiers(
+        if let Some(consensus_error) = validate_nullifiers(
             drive,
             &nullifiers,
             transaction,
             &mut drive_operations,
             platform_version,
         )? {
-            return Ok(err);
+            return Ok(consensus_error);
         }
 
         // Calculate fees from the GroveDB operations

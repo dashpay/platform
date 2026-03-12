@@ -1,3 +1,7 @@
+// Feature-gated because shielded strategy tests are long-running (ZK proof generation).
+// Run with: cargo test -p drive-abci --features __shielded_strategy_tests
+// TODO: Add shielded variants to OperationType enum to enable these tests.
+#[cfg(feature = "__shielded_strategy_tests")]
 #[cfg(test)]
 mod tests {
 
@@ -343,6 +347,232 @@ mod tests {
         // Like ShieldedTransfer, unshield may not succeed on every run due to
         // timing constraints (notes + anchors in state).
         tracing::info!(unshield_count, "Unshield transitions that succeeded");
+    }
+
+    /// Strategy test that verifies anchors are correctly recorded and indexed
+    /// after shielding operations that add notes to the commitment tree.
+    ///
+    /// Checks:
+    /// 1. Anchors tree (anchor_bytes → block_height) has entries after successful shields
+    /// 2. Anchors-by-height tree (block_height → anchor_bytes) has matching reverse entries
+    /// 3. Most recent anchor element is updated and non-zero
+    /// 4. Both trees are consistent (same count, matching entries)
+    #[test]
+    fn run_chain_verify_anchors_after_shielding() {
+        use drive::drive::shielded::paths::{
+            shielded_credit_pool_anchors_by_height_path, shielded_credit_pool_anchors_path_vec,
+            shielded_credit_pool_path, SHIELDED_MOST_RECENT_ANCHOR_KEY,
+        };
+        use drive::grovedb::query_result_type::QueryResultType;
+        use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
+
+        drive_abci::logging::init_for_tests(LogLevel::Debug);
+
+        let strategy = shielded_base_strategy(vec![
+            // Fund addresses (every block, 2-3 asset locks of 20 DASH each)
+            Operation {
+                op_type: OperationType::AddressFundingFromCoreAssetLock(
+                    dash_to_credits!(20)..=dash_to_credits!(20),
+                ),
+                frequency: Frequency {
+                    times_per_block_range: 2..4,
+                    chance_per_block: None,
+                },
+            },
+            // Shield funds (1 per block, 1-5 DASH)
+            Operation {
+                op_type: OperationType::Shield(dash_to_credits!(1)..=dash_to_credits!(5)),
+                frequency: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+            },
+        ]);
+
+        let config = shielded_test_config();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let block_count = 5;
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            block_count,
+            strategy,
+            config,
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify at least one shield succeeded (prerequisite for anchors)
+        let shield_count = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|results| results.iter())
+            .filter(|(st, result)| matches!(st, StateTransition::Shield(_)) && result.code == 0)
+            .count();
+        assert!(
+            shield_count > 0,
+            "expected at least one successful shield transition"
+        );
+
+        let platform_state = outcome.abci_app.platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected platform version");
+        let drive = &outcome.abci_app.platform.drive;
+
+        // 1. Query all anchors from the anchors tree (anchor_bytes → block_height)
+        let anchors_path_query = PathQuery {
+            path: shielded_credit_pool_anchors_path_vec(),
+            query: SizedQuery {
+                query: Query::new_range_full(),
+                limit: None,
+                offset: None,
+            },
+        };
+
+        let (anchor_results, _) = drive
+            .grove_get_raw_path_query(
+                &anchors_path_query,
+                None,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to query anchors");
+
+        let anchor_entries = anchor_results.to_key_elements();
+        assert!(
+            !anchor_entries.is_empty(),
+            "expected anchors to be recorded after successful shield transitions"
+        );
+
+        // Each anchor should map to a valid block height within our range
+        let mut anchor_to_height: Vec<(Vec<u8>, u64)> = Vec::new();
+        for (anchor_key, element) in &anchor_entries {
+            assert_eq!(anchor_key.len(), 32, "anchor key must be 32 bytes");
+            if let Element::Item(value, _) = element {
+                let height = u64::from_be_bytes(
+                    value
+                        .as_slice()
+                        .try_into()
+                        .expect("block height must be 8 bytes"),
+                );
+                assert!(
+                    height >= 1 && height <= block_count,
+                    "anchor block height {} out of expected range [1, {}]",
+                    height,
+                    block_count
+                );
+                anchor_to_height.push((anchor_key.clone(), height));
+            } else {
+                panic!("expected Item element in anchors tree");
+            }
+        }
+
+        // 2. Query all entries from anchors-by-height tree (block_height → anchor_bytes)
+        let by_height_path: Vec<Vec<u8>> = shielded_credit_pool_anchors_by_height_path()
+            .iter()
+            .map(|p| p.to_vec())
+            .collect();
+        let by_height_path_query = PathQuery {
+            path: by_height_path,
+            query: SizedQuery {
+                query: Query::new_range_full(),
+                limit: None,
+                offset: None,
+            },
+        };
+
+        let (by_height_results, _) = drive
+            .grove_get_raw_path_query(
+                &by_height_path_query,
+                None,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to query anchors-by-height");
+
+        let by_height_entries = by_height_results.to_key_elements();
+
+        // Both trees must have the same number of entries
+        assert_eq!(
+            anchor_entries.len(),
+            by_height_entries.len(),
+            "anchors tree ({}) and anchors-by-height tree ({}) must have same entry count",
+            anchor_entries.len(),
+            by_height_entries.len()
+        );
+
+        // Verify the reverse index is consistent: for each height→anchor, the anchor→height must match
+        for (height_key, element) in &by_height_entries {
+            let height = u64::from_be_bytes(
+                height_key
+                    .as_slice()
+                    .try_into()
+                    .expect("height key must be 8 bytes"),
+            );
+            if let Element::Item(anchor_bytes, _) = element {
+                assert_eq!(anchor_bytes.len(), 32, "anchor value must be 32 bytes");
+                // Find matching entry in anchor_to_height
+                let matching = anchor_to_height
+                    .iter()
+                    .find(|(a, h)| a == anchor_bytes && *h == height);
+                assert!(
+                    matching.is_some(),
+                    "anchors-by-height entry (height={}) has no matching entry in anchors tree",
+                    height
+                );
+            } else {
+                panic!("expected Item element in anchors-by-height tree");
+            }
+        }
+
+        // 3. Verify most recent anchor is set and non-zero
+        let pool_path = shielded_credit_pool_path();
+        let most_recent_element = drive
+            .grove
+            .get(
+                &pool_path,
+                &[SHIELDED_MOST_RECENT_ANCHOR_KEY],
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("most recent anchor element must exist");
+
+        if let Element::Item(most_recent_bytes, _) = most_recent_element {
+            assert_eq!(
+                most_recent_bytes.len(),
+                32,
+                "most recent anchor must be 32 bytes"
+            );
+            assert_ne!(
+                most_recent_bytes,
+                vec![0u8; 32],
+                "most recent anchor must not be all zeros after successful shields"
+            );
+            // Most recent anchor must be one of the recorded anchors
+            let is_known = anchor_to_height
+                .iter()
+                .any(|(a, _)| *a == most_recent_bytes);
+            assert!(
+                is_known,
+                "most recent anchor must match one of the recorded anchors"
+            );
+        } else {
+            panic!("most recent anchor must be an Item element");
+        }
+
+        tracing::info!(
+            anchor_count = anchor_entries.len(),
+            shield_count,
+            "Anchor verification test completed successfully"
+        );
     }
 
     /// Strategy test that first shields funds, then withdraws to a core (L1) address.

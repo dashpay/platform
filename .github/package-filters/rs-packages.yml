@@ -41,6 +41,7 @@ json-schema-compatibility-validator: &json-schema-compatibility-validator
 dpp: &dpp
   - .github/workflows/tests*
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
   - *dashpay-contract
   - *masternode-reward-shares-contract
   - *dpns-contract

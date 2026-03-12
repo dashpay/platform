@@ -17,6 +17,8 @@ use crate::data_contract::change_control_rules::authorized_action_takers::Author
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::GroupContractPosition;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -30,6 +32,7 @@ use std::fmt;
 ///
 /// This configuration is designed to be deterministic and versioned for compatibility
 /// across protocol upgrades and validation environments.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenConfigurationV0 {

@@ -13,7 +13,6 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use dpp::state_transition::batch_transition::batched_transition::DocumentUpdatePriceTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const DOCUMENT_UPDATE_PRICE_OPTIONS_TS: &str = r#"
@@ -87,9 +86,9 @@ impl DocumentUpdatePriceTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "price")]
-    pub fn set_price(&mut self, price: JsValue) -> WasmDppResult<()> {
+    pub fn set_price(&mut self, price: &js_sys::BigInt) -> WasmDppResult<()> {
         use crate::utils::try_to_u64;
-        self.0.set_price(try_to_u64(&price, "price")?);
+        self.0.set_price(try_to_u64(price, "price")?);
         Ok(())
     }
 

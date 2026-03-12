@@ -10,6 +10,10 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
@@ -57,9 +61,11 @@ pub type FrozenIdentifier = Identifier;
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(serde::Serialize, serde::Deserialize)
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]
 pub enum TokenEvent {
     /// Event representing the minting of tokens to a recipient.
@@ -145,6 +151,15 @@ pub enum TokenEvent {
     /// - `Credits`: The number of credits paid.
     DirectPurchase(TokenAmount, Credits),
 }
+
+// Manual impl because TokenEvent is a flat enum with u64-alias tuple variants
+// (TokenAmount, Credits). `#[derive(JsonConvertible)]` would fail: it asserts inner
+// variant types implement `JsonSafeFields`, but TokenAmount/Credits are u64 aliases
+// which intentionally don't. The `#[json_safe_fields]` macro can't annotate tuple
+// variant fields either. Safety is ensured by manual `impl JsonSafeFields` in
+// safe_fields.rs — the developer takes responsibility for these fields.
+#[cfg(feature = "json-conversion")]
+impl JsonConvertible for TokenEvent {}
 
 impl fmt::Display for TokenEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

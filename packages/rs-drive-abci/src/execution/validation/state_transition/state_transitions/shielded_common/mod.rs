@@ -9,15 +9,10 @@ use dpp::prelude::ConsensusValidationResult;
 pub use dpp::shielded::compute_platform_sighash;
 use dpp::shielded::SerializedAction;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_anchors_path, shielded_credit_pool_nullifiers_path,
-    shielded_credit_pool_path, SHIELDED_NOTES_KEY, SHIELDED_TOTAL_BALANCE_KEY,
-};
 use drive::drive::Drive;
 use drive::fees::op::LowLevelDriveOperation;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
-use drive::util::grove_operations::DirectQueryType;
 use grovedb_commitment_tree::{
     redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
     ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
@@ -29,12 +24,8 @@ use std::sync::OnceLock;
 /// Used for shield and shield-from-asset-lock transitions where funds enter the pool.
 pub const FLAGS_OUTPUTS_ONLY: u8 = 0x02;
 
-/// Orchard bundle flags byte: only spends are real (outputs are dummy).
-/// Used for unshield and shielded-withdrawal transitions where funds leave the pool.
-pub const FLAGS_SPENDS_ONLY: u8 = 0x01;
-
 /// Orchard bundle flags byte: both spends and outputs are real.
-/// Used for shielded transfers within the pool.
+/// Used for shielded transfers, unshield, and shielded-withdrawal transitions.
 pub const FLAGS_SPENDS_AND_OUTPUTS: u8 = 0x03;
 
 /// Cached verifying key for shielded proof verification.
@@ -184,8 +175,8 @@ pub fn reconstruct_and_verify_bundle(
     let mut batch = BatchValidator::new();
     batch.add_bundle(&bundle, sighash);
 
-    let mut rng = rand::rngs::OsRng;
-    if !batch.validate(vk, &mut rng) {
+    let rng = rand::rngs::OsRng;
+    if !batch.validate(vk, rng) {
         return Err(InvalidShieldedProofError::new(
             "bundle verification failed: proof, spend auth signatures, or binding signature invalid"
                 .to_string(),
@@ -197,70 +188,34 @@ pub fn reconstruct_and_verify_bundle(
 
 /// Read the current shielded pool total balance from GroveDB.
 /// Returns 0 if the balance key doesn't exist yet.
+///
+/// Delegates to `Drive::read_shielded_pool_total_balance`.
 pub fn read_pool_total_balance(
     drive: &Drive,
     transaction: TransactionArg,
     drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, Error> {
-    let pool_path = shielded_credit_pool_path();
-    Ok(drive
-        .grove_get_raw_value_u64_from_encoded_var_vec(
-            (&pool_path).into(),
-            &[SHIELDED_TOTAL_BALANCE_KEY],
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )?
-        .unwrap_or(0))
+    drive
+        .read_shielded_pool_total_balance(transaction, drive_operations, platform_version)
+        .map_err(Error::Drive)
 }
 
 /// Verify that the anchor exists in the recorded anchors tree.
-/// Anchors are stored as block_height_be → anchor_bytes in [AddressBalances, "s", [6]].
+/// Uses O(1) key lookup instead of scanning the entire tree.
 /// Returns a consensus error if the anchor is not found.
+///
+/// Delegates to `Drive::has_shielded_anchor` for the GroveDB lookup.
 pub fn validate_anchor_exists(
     drive: &Drive,
     anchor: &[u8; 32],
     transaction: TransactionArg,
-    _drive_operations: &mut Vec<LowLevelDriveOperation>,
+    drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
-    use drive::grovedb::query_result_type::QueryResultType;
-    use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
-
-    let anchors_path = shielded_credit_pool_anchors_path();
-    let path_query = PathQuery {
-        path: anchors_path.iter().map(|p| p.to_vec()).collect(),
-        query: SizedQuery {
-            query: Query::new_range_full(),
-            limit: None,
-            offset: None,
-        },
-    };
-
-    let grove_version = &platform_version.drive.grove_version;
-    let results = drive
-        .grove
-        .query_raw(
-            &path_query,
-            true,
-            true,
-            true,
-            QueryResultType::QueryKeyElementPairResultType,
-            transaction,
-            grove_version,
-        )
-        .unwrap()
-        .map_err(drive::error::Error::from)?;
-
-    let found = results.0.to_key_elements().into_iter().any(|(_, element)| {
-        if let Element::Item(value, _) = element {
-            value.as_slice() == anchor
-        } else {
-            false
-        }
-    });
+    let found = drive
+        .has_shielded_anchor(anchor, transaction, drive_operations, platform_version)
+        .map_err(Error::Drive)?;
 
     if !found {
         Ok(Some(ConsensusValidationResult::new_with_error(
@@ -273,6 +228,9 @@ pub fn validate_anchor_exists(
 
 /// Defense-in-depth: reject duplicate nullifiers within the same bundle,
 /// then check that no nullifier has already been spent in state.
+///
+/// Phase 1 (intra-bundle HashSet check) stays here.
+/// Phase 2 delegates to `Drive::has_nullifier` for each GroveDB lookup.
 pub fn validate_nullifiers(
     drive: &Drive,
     nullifiers: &[[u8; 32]],
@@ -280,7 +238,7 @@ pub fn validate_nullifiers(
     drive_operations: &mut Vec<LowLevelDriveOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<Option<ConsensusValidationResult<StateTransitionAction>>, Error> {
-    // Intra-bundle duplicate check
+    // Phase 1: Intra-bundle duplicate check (no GroveDB access)
     let mut seen_nullifiers = std::collections::HashSet::new();
     for nullifier in nullifiers {
         if !seen_nullifiers.insert(nullifier) {
@@ -290,17 +248,11 @@ pub fn validate_nullifiers(
             )));
         }
     }
-    // Check against state
-    let nullifiers_path = shielded_credit_pool_nullifiers_path();
+    // Phase 2: Check against state via Drive method
     for nullifier in nullifiers {
-        let exists = drive.grove_has_raw(
-            (&nullifiers_path).into(),
-            nullifier,
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )?;
+        let exists = drive
+            .has_nullifier(nullifier, transaction, drive_operations, platform_version)
+            .map_err(Error::Drive)?;
         if exists {
             return Ok(Some(ConsensusValidationResult::new_with_error(
                 StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(*nullifier))
@@ -312,6 +264,9 @@ pub fn validate_nullifiers(
 }
 
 /// Check minimum notes threshold for outgoing transitions (anonymity set).
+///
+/// Delegates to `Drive::shielded_pool_notes_count` for the GroveDB lookup.
+/// The threshold check and consensus error wrapping stay here.
 pub fn validate_minimum_pool_notes(
     drive: &Drive,
     transaction: TransactionArg,
@@ -324,14 +279,9 @@ pub fn validate_minimum_pool_notes(
         .event_constants
         .minimum_pool_notes_for_outgoing;
     if min_notes > 0 {
-        let pool_path = shielded_credit_pool_path();
-        let encrypted_notes_count = drive.grove_commitment_tree_count(
-            (&pool_path).into(),
-            &[SHIELDED_NOTES_KEY],
-            transaction,
-            drive_operations,
-            &platform_version.drive,
-        )?;
+        let encrypted_notes_count = drive
+            .shielded_pool_notes_count(transaction, drive_operations, platform_version)
+            .map_err(Error::Drive)?;
         if encrypted_notes_count < min_notes {
             return Ok(Some(ConsensusValidationResult::new_with_error(
                 StateError::InsufficientPoolNotesError(InsufficientPoolNotesError::new(

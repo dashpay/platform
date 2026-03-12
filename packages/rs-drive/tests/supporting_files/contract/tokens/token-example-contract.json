@@ -1,14 +1,14 @@
 {
-  "$format_version": "1",
+  "$formatVersion": "1",
   "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
   "ownerId": "HLfavpy1B2mVHnpYYDKDVM76eWJRqvPfuuASy7cyJBXC",
   "version": 1,
   "documentSchemas": {},
   "tokens": {
     "0": {
-      "$format_version": "0",
+      "$formatVersion": "0",
       "conventions": {
-        "$format_version": "0",
+        "$formatVersion": "0",
         "localizations": {
           "en": {
             "shouldCapitalize": true,
@@ -23,40 +23,36 @@
       "transferable": true,
       "keepsHistory": false,
       "freezeRules": {
-        "V0": {
-          "authorized_to_make_change": "ContractOwner",
-          "admin_action_takers": "ContractOwner",
-          "changing_authorized_action_takers_to_no_one_allowed": false,
-          "changing_admin_action_takers_to_no_one_allowed": false,
-          "self_changing_admin_action_takers_allowed": false
-        }
+        "$formatVersion": "0",
+        "authorizedToMakeChange": "ContractOwner",
+        "adminActionTakers": "ContractOwner",
+        "changingAuthorizedActionTakersToNoOneAllowed": false,
+        "changingAdminActionTakersToNoOneAllowed": false,
+        "selfChangingAdminActionTakersAllowed": false
       },
       "unfreezeRules": {
-        "V0": {
-          "authorized_to_make_change": "ContractOwner",
-          "admin_action_takers": "ContractOwner",
-          "changing_authorized_action_takers_to_no_one_allowed": false,
-          "changing_admin_action_takers_to_no_one_allowed": false,
-          "self_changing_admin_action_takers_allowed": false
-        }
+        "$formatVersion": "0",
+        "authorizedToMakeChange": "ContractOwner",
+        "adminActionTakers": "ContractOwner",
+        "changingAuthorizedActionTakersToNoOneAllowed": false,
+        "changingAdminActionTakersToNoOneAllowed": false,
+        "selfChangingAdminActionTakersAllowed": false
       },
       "destroyFrozenFundsRules": {
-        "V0": {
-          "authorized_to_make_change": "ContractOwner",
-          "admin_action_takers": "ContractOwner",
-          "changing_authorized_action_takers_to_no_one_allowed": false,
-          "changing_admin_action_takers_to_no_one_allowed": false,
-          "self_changing_admin_action_takers_allowed": false
-        }
+        "$formatVersion": "0",
+        "authorizedToMakeChange": "ContractOwner",
+        "adminActionTakers": "ContractOwner",
+        "changingAuthorizedActionTakersToNoOneAllowed": false,
+        "changingAdminActionTakersToNoOneAllowed": false,
+        "selfChangingAdminActionTakersAllowed": false
       },
       "emergencyActionRules": {
-        "V0": {
-          "authorized_to_make_change": "ContractOwner",
-          "admin_action_takers": "ContractOwner",
-          "changing_authorized_action_takers_to_no_one_allowed": false,
-          "changing_admin_action_takers_to_no_one_allowed": false,
-          "self_changing_admin_action_takers_allowed": false
-        }
+        "$formatVersion": "0",
+        "authorizedToMakeChange": "ContractOwner",
+        "adminActionTakers": "ContractOwner",
+        "changingAuthorizedActionTakersToNoOneAllowed": false,
+        "changingAdminActionTakersToNoOneAllowed": false,
+        "selfChangingAdminActionTakersAllowed": false
       }
     }
   }

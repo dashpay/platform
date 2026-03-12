@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
+use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
 impl Drive {
@@ -27,23 +27,16 @@ impl Drive {
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
+        // Anchors are stored as anchor_bytes (key) → block_height_be (value)
         let mut anchors = Vec::with_capacity(proved_key_values.len());
-        for (_, _key, maybe_element) in proved_key_values {
-            match maybe_element {
-                Some(Element::Item(value, _)) => {
-                    let anchor: [u8; 32] = value.try_into().map_err(|_v: Vec<u8>| {
-                        Error::Drive(DriveError::CorruptedElementType(
-                            "anchor value is not 32 bytes",
-                        ))
-                    })?;
-                    anchors.push(anchor);
-                }
-                Some(_) => {
-                    return Err(Error::Drive(DriveError::CorruptedElementType(
-                        "expected Item element for anchor, got different element type",
-                    )));
-                }
-                None => {}
+        for (_, key, maybe_element) in proved_key_values {
+            if maybe_element.is_some() {
+                let anchor: [u8; 32] = key.try_into().map_err(|_v: Vec<u8>| {
+                    Error::Drive(DriveError::CorruptedElementType(
+                        "anchor key is not 32 bytes",
+                    ))
+                })?;
+                anchors.push(anchor);
             }
         }
 

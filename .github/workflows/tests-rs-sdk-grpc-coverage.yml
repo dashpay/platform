@@ -2,13 +2,13 @@ name: Check rs-sdk gRPC coverage
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'packages/rs-sdk/**'
-      - 'packages/dapi-grpc/protos/platform/v0/platform.proto'
-      - '.github/workflows/tests-rs-sdk-grpc-coverage.yml'
-      - '.github/scripts/check-grpc-coverage.py'
-      - '.github/grpc-queries-cache.json'
+  # pull_request:
+  #   paths:
+  #     - 'packages/rs-sdk/**'
+  #     - 'packages/dapi-grpc/protos/platform/v0/platform.proto'
+  #     - '.github/workflows/tests-rs-sdk-grpc-coverage.yml'
+  #     - '.github/scripts/check-grpc-coverage.py'
+  #     - '.github/grpc-queries-cache.json'
   push:
     branches:
       - master
@@ -60,21 +60,22 @@ jobs:
             echo "cache_modified=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit cache updates
-        if: steps.coverage.outputs.cache_modified == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          EXPECTED_BRANCH: ${{ github.head_ref }}
-        run: |
-          BRANCH=$(git branch --show-current)
-          if [ "$BRANCH" != "$EXPECTED_BRANCH" ]; then
-            echo "::error::Expected branch '${EXPECTED_BRANCH}' but on '${BRANCH}'. Refusing to push."
-            exit 1
-          fi
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add .github/grpc-queries-cache.json
-          git commit -m "chore: update gRPC queries cache [skip ci]"
-          git push
+      # Disabled: auto-committing cache updates causes push conflicts on active branches
+      # - name: Commit cache updates
+      #   if: steps.coverage.outputs.cache_modified == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      #   env:
+      #     EXPECTED_BRANCH: ${{ github.head_ref }}
+      #   run: |
+      #     BRANCH=$(git branch --show-current)
+      #     if [ "$BRANCH" != "$EXPECTED_BRANCH" ]; then
+      #       echo "::error::Expected branch '${EXPECTED_BRANCH}' but on '${BRANCH}'. Refusing to push."
+      #       exit 1
+      #     fi
+      #     git config --local user.email "github-actions[bot]@users.noreply.github.com"
+      #     git config --local user.name "github-actions[bot]"
+      #     git add .github/grpc-queries-cache.json
+      #     git commit -m "chore: update gRPC queries cache [skip ci]"
+      #     git push
 
       - name: Upload coverage report
         if: always()

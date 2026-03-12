@@ -141,7 +141,7 @@ impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
             return Ok(wasm_localization.clone());
         }
 
-        // Deserialize as a versioned object (with $format_version)
+        // Deserialize as a versioned object (with $formatVersion)
         serialization::from_object(value.clone()).map(TokenConfigurationLocalizationWasm)
     }
 }

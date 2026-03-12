@@ -356,6 +356,9 @@ where
             platform_version,
         )?;
 
+        // Prune anchors older than the configured retention depth
+        self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue

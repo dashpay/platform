@@ -56,11 +56,11 @@ impl<C> Platform<C> {
                 &platform_version.drive,
             )?;
 
-            // Anchors are stored as block_height_be → anchor_bytes; extract values
+            // Anchors are stored as anchor_bytes → block_height_be; extract keys
             let anchors: Vec<Vec<u8>> = results
                 .to_key_elements()
                 .into_iter()
-                .filter_map(|(_key, element)| element.into_item_bytes().ok())
+                .map(|(key, _element)| key)
                 .collect();
 
             GetShieldedAnchorsResponseV0 {

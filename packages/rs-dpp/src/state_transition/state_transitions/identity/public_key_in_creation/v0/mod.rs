@@ -1,11 +1,13 @@
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 mod types;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 
 use std::convert::TryFrom;
 
@@ -30,6 +32,7 @@ use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyI
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
 )]
@@ -143,7 +146,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
 }
 
 //
-//     #[cfg(feature = "state-transition-value-conversion")]
+//     #[cfg(feature = "value-conversion")]
 //     pub fn from_object(mut raw_object: Value) -> Result<Self, ProtocolError> {
 //         raw_object.try_into().map_err(ProtocolError::ValueError)
 //     }

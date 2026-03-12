@@ -33,14 +33,14 @@
 //! ```
 //!
 //! Deserialization from a platform `BTreeMap<String, Value>` requires a
-//! `$format_version` key. For V0 the map may contain:
+//! `$formatVersion` key. For V0 the map may contain:
 //! - `paymentTokenContractId` (`Identifier` as bytes)
 //! - `tokenContractPosition` (`u16`)
 //! - `minimumTokenCost` (`u64`)
 //! - `maximumTokenCost` (`u64`)
 //! - `gasFeesPaidBy` (one of: `"DocumentOwner"`, `"ContractOwner"`, `"PreferContractOwner"`)
 //!
-//! Unknown `$format_version` values yield an `UnknownVersionMismatch` error.
+//! Unknown `$formatVersion` values yield an `UnknownVersionMismatch` error.
 //!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
@@ -53,15 +53,12 @@ use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
 #[cfg(any(
-    feature = "state-transition-serde-conversion",
-    all(
-        feature = "document-serde-conversion",
-        feature = "data-contract-serde-conversion"
-    ),
+    feature = "serde-conversion",
+    all(feature = "serde-conversion", feature = "serde-conversion"),
 ))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -83,13 +80,11 @@ pub mod v0;
 )]
 #[cfg_attr(
     any(
-        feature = "state-transition-serde-conversion",
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
+        feature = "serde-conversion",
+        all(feature = "serde-conversion", feature = "serde-conversion"),
     ),
-    derive(Serialize, Deserialize)
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
 )]
 /// Versioned container describing how a client intends to pay with tokens.
 ///
@@ -102,6 +97,13 @@ pub mod v0;
 /// See [`v0::TokenPaymentInfoV0`] for the current set of fields and semantics.
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
+    #[cfg_attr(
+        any(
+            feature = "serde-conversion",
+            all(feature = "serde-conversion", feature = "serde-conversion"),
+        ),
+        serde(rename = "0")
+    )]
     V0(TokenPaymentInfoV0),
 }
 
@@ -181,10 +183,10 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     type Error = ProtocolError;
 
     fn try_from(map: BTreeMap<String, Value>) -> Result<Self, Self::Error> {
-        // Expect a `$format_version` discriminator and dispatch to the
+        // Expect a `$formatVersion` discriminator and dispatch to the
         // corresponding versioned structure. This allows backward-compatible
         // support for older serialized payloads.
-        let format_version = map.get_str("$format_version")?;
+        let format_version = map.get_str("$formatVersion")?;
         match format_version {
             "0" => {
                 let token_payment_info: TokenPaymentInfoV0 = map.try_into()?;
@@ -202,13 +204,13 @@ impl TryFrom<BTreeMap<String, Value>> for TokenPaymentInfo {
     }
 }
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 impl TryFrom<TokenPaymentInfo> for Value {
     type Error = Error;
     /// Serialize the versioned token payment info into a platform `Value`.
     ///
     /// This mirrors the map format accepted by `TryFrom<BTreeMap<String, Value>>`,
-    /// including the `$format_version` discriminator.
+    /// including the `$formatVersion` discriminator.
     fn try_from(value: TokenPaymentInfo) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }

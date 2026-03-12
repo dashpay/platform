@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
@@ -46,10 +46,10 @@ export interface IdentityCreditTransferObject {
  * IdentityCreditTransfer serialized as JSON.
  */
 export interface IdentityCreditTransferJSON {
-    amount: string;
+    amount: number | string;
     senderId: string;
     recipientId: string;
-    nonce: string;
+    nonce: number | string;
     userFeeIncrease: number;
     signature?: string;
     signaturePublicKeyId?: number;
@@ -82,6 +82,18 @@ struct IdentityCreditTransferOptionsInput {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
+
+impl From<IdentityCreditTransferTransition> for IdentityCreditTransferWasm {
+    fn from(val: IdentityCreditTransferTransition) -> Self {
+        IdentityCreditTransferWasm(val)
+    }
+}
+
+impl From<IdentityCreditTransferWasm> for IdentityCreditTransferTransition {
+    fn from(val: IdentityCreditTransferWasm) -> Self {
+        val.0
+    }
+}
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
 impl IdentityCreditTransferWasm {
@@ -144,9 +156,9 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(hex: String) -> WasmDppResult<IdentityCreditTransferWasm> {
-        let bytes =
-            decode(hex.as_str(), Base64).map_err(|e| WasmDppError::serialization(e.to_string()))?;
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityCreditTransferWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         IdentityCreditTransferWasm::from_bytes(bytes)
     }
 
@@ -257,9 +269,10 @@ impl IdentityCreditTransferWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityCreditTransferWasm,
     IdentityCreditTransferTransition,
+    IdentityCreditTransfer,
     IdentityCreditTransferObjectJs,
     IdentityCreditTransferJSONJs
 );

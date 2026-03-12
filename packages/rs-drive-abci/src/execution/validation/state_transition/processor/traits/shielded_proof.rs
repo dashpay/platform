@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY, FLAGS_SPENDS_AND_OUTPUTS, FLAGS_SPENDS_ONLY,
+    reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY, FLAGS_SPENDS_AND_OUTPUTS,
 };
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
@@ -15,6 +15,13 @@ pub(crate) trait StateTransitionHasShieldedProofValidationV0 {
     /// Returns true if this state transition has a ZK proof that must be verified
     /// before any state reads.
     fn has_shielded_proof_validation(&self) -> bool;
+
+    /// Returns true if this state transition pays fees from the shielded pool's
+    /// value_balance and requires minimum fee validation.
+    ///
+    /// Shield pays fees from transparent address inputs, and ShieldFromAssetLock
+    /// pays from the asset lock, so neither goes through shielded fee validation.
+    fn has_shielded_minimum_fee_validation(&self) -> bool;
 }
 
 /// A trait for validating the ZK proof of a shielded state transition.
@@ -31,10 +38,25 @@ pub(crate) trait StateTransitionShieldedProofValidationV0 {
 
 impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
     fn has_shielded_proof_validation(&self) -> bool {
+        // Note: ShieldFromAssetLock is intentionally excluded. Its proof verification
+        // is done inside transform_into_action because a failed proof must penalize
+        // the asset lock (via PartiallyUseAssetLockAction). Moving it here would let
+        // attackers spam bad proofs without burning their asset lock.
         matches!(
             self,
             StateTransition::Shield(_)
                 | StateTransition::ShieldedTransfer(_)
+                | StateTransition::Unshield(_)
+                | StateTransition::ShieldedWithdrawal(_)
+        )
+    }
+
+    fn has_shielded_minimum_fee_validation(&self) -> bool {
+        // Only spending transitions pay fees from the shielded pool.
+        // Shield pays from address inputs; ShieldFromAssetLock pays from the asset lock.
+        matches!(
+            self,
+            StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
         )
@@ -175,7 +197,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
-                                0, // value_balance is 0 for shielded transfers (no net flow)
+                                v0.value_balance as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -190,7 +212,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                FLAGS_SPENDS_ONLY,
+                                FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
@@ -207,7 +229,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
-                                FLAGS_SPENDS_ONLY,
+                                FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.unshielding_amount as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),

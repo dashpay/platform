@@ -53,35 +53,35 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
         // Check minimum notes threshold for outgoing transitions (anonymity set)
-        if let Some(err) = validate_minimum_pool_notes(
+        if let Some(consensus_error) = validate_minimum_pool_notes(
             drive,
             transaction,
             &mut drive_operations,
             platform_version,
         )? {
-            return Ok(err);
+            return Ok(consensus_error);
         }
 
         // Verify the anchor exists in the recorded anchors tree
-        if let Some(err) = validate_anchor_exists(
+        if let Some(consensus_error) = validate_anchor_exists(
             drive,
             &anchor,
             transaction,
             &mut drive_operations,
             platform_version,
         )? {
-            return Ok(err);
+            return Ok(consensus_error);
         }
 
         // Validate nullifiers: intra-bundle duplicates + already-spent in state
-        if let Some(err) = validate_nullifiers(
+        if let Some(consensus_error) = validate_nullifiers(
             drive,
             &nullifiers,
             transaction,
             &mut drive_operations,
             platform_version,
         )? {
-            return Ok(err);
+            return Ok(consensus_error);
         }
 
         // Calculate fees from the GroveDB operations
@@ -114,10 +114,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             ));
         }
 
-        let result = UnshieldTransitionAction::try_from_transition(
-            self,
-            current_total_balance,
-        );
+        let result = UnshieldTransitionAction::try_from_transition(self, current_total_balance);
 
         Ok(result.map(|action| action.into()))
     }

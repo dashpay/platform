@@ -13,7 +13,7 @@ use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
 use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -36,7 +36,7 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
     PlatformDeserialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

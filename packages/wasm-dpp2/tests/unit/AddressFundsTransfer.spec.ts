@@ -39,8 +39,10 @@ describe('FeeStrategyStep', () => {
   });
 });
 
-// TODO: Implement AddressFundsTransferTransition in wasm-dpp2
-describe.skip('AddressFundsTransferTransition', () => {
+// NOTE: AddressFundsTransferTransition constructor-based tests are in
+// AddressFundsTransferTransition.spec.ts. The .build() API below requires
+// signing which is a higher-level feature not yet available.
+describe.skip('AddressFundsTransferTransition (.build API)', () => {
   // Valid test private key
   const testPrivateKeyHex = 'c9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
   const testPrivateKeyHex2 = 'a9d9d0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfd';
@@ -48,7 +50,10 @@ describe.skip('AddressFundsTransferTransition', () => {
   describe('build()', () => {
     it('should build a transfer transition with single input and output', () => {
       // Create output address
-      const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const outputAddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const outputAddr = wasm.PlatformAddress.fromBytes(Array.from(outputAddrBytes));
 
       // Create signer and derive input address from private key
@@ -73,10 +78,16 @@ describe.skip('AddressFundsTransferTransition', () => {
 
     it('should build a transfer transition with multiple inputs and outputs', () => {
       // Create output addresses
-      const output1AddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const output1AddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const output1Addr = wasm.PlatformAddress.fromBytes(Array.from(output1AddrBytes));
 
-      const output2AddrBytes = new Uint8Array([0x00, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21]);
+      const output2AddrBytes = new Uint8Array([
+        0x00, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31,
+        30, 29, 28, 27, 26, 25, 24, 23, 22, 21,
+      ]);
       const output2Addr = wasm.PlatformAddress.fromBytes(Array.from(output2AddrBytes));
 
       // Create signer with keys and derive input addresses
@@ -105,7 +116,10 @@ describe.skip('AddressFundsTransferTransition', () => {
     });
 
     it('should build with custom fee strategy', () => {
-      const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const outputAddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const outputAddr = wasm.PlatformAddress.fromBytes(Array.from(outputAddrBytes));
 
       const signer = new wasm.PlatformAddressSigner();
@@ -129,7 +143,10 @@ describe.skip('AddressFundsTransferTransition', () => {
     });
 
     it('should build with user fee increase', () => {
-      const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const outputAddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const outputAddr = wasm.PlatformAddress.fromBytes(Array.from(outputAddrBytes));
 
       const signer = new wasm.PlatformAddressSigner();
@@ -150,7 +167,10 @@ describe.skip('AddressFundsTransferTransition', () => {
     });
 
     it('should fail without inputs', () => {
-      const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const outputAddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const outputAddr = wasm.PlatformAddress.fromBytes(Array.from(outputAddrBytes));
       const output = new wasm.PlatformAddressOutput(outputAddr, BigInt(90000));
 
@@ -188,11 +208,17 @@ describe.skip('AddressFundsTransferTransition', () => {
     });
 
     it('should fail without signer', () => {
-      const inputAddrBytes = new Uint8Array([0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+      const inputAddrBytes = new Uint8Array([
+        0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+        11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+      ]);
       const inputAddr = wasm.PlatformAddress.fromBytes(Array.from(inputAddrBytes));
       const input = new wasm.PlatformAddressInput(inputAddr, BigInt(0), BigInt(100000));
 
-      const outputAddrBytes = new Uint8Array([0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      const outputAddrBytes = new Uint8Array([
+        0x00, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+        10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+      ]);
       const outputAddr = wasm.PlatformAddress.fromBytes(Array.from(outputAddrBytes));
       const output = new wasm.PlatformAddressOutput(outputAddr, BigInt(90000));
 

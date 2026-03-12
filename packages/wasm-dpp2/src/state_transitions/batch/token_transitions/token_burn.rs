@@ -7,7 +7,6 @@ use dpp::state_transition::batch_transition::token_base_transition::token_base_t
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
 use dpp::state_transition::batch_transition::TokenBurnTransition;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -82,8 +81,8 @@ impl TokenBurnTransitionWasm {
     }
 
     #[wasm_bindgen(setter = burnAmount)]
-    pub fn set_burn_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
-        self.0.set_burn_amount(try_to_u64(&amount, "burnAmount")?);
+    pub fn set_burn_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_burn_amount(try_to_u64(amount, "burnAmount")?);
         Ok(())
     }
 

@@ -31,10 +31,8 @@ mod tests {
     /// No signing needed since shielded withdrawal transitions have no ECDSA witnesses
     /// (authenticated purely via Orchard ZK proof + signatures).
     fn create_shielded_withdrawal_transition(
-        amount: u64,
         actions: Vec<SerializedAction>,
-        flags: u8,
-        value_balance: i64,
+        unshielding_amount: u64,
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
@@ -44,10 +42,8 @@ mod tests {
     ) -> StateTransition {
         StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(
             ShieldedWithdrawalTransitionV0 {
-                amount,
                 actions,
-                flags,
-                value_balance,
+                unshielding_amount,
                 anchor,
                 proof,
                 binding_signature,
@@ -59,19 +55,16 @@ mod tests {
     }
 
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
-    /// withdrawal transition. Has a non-zero anchor, valid field sizes, positive amount and
-    /// value_balance.
+    /// withdrawal transition. Has a non-zero anchor, valid field sizes, positive unshielding_amount.
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
         create_shielded_withdrawal_transition(
-            1000, // amount in credits
             vec![create_dummy_serialized_action()],
-            0x03,                   // spends_enabled | outputs_enabled
-            111_549_800,            // amount (1000) + minimum fee for 1 action (111_548_800)
-            [42u8; 32],             // non-zero anchor
-            vec![0u8; 100],         // dummy proof bytes
-            [0u8; 64],              // dummy binding signature
-            1,                      // core_fee_per_byte
-            Pooling::Never,         // pooling strategy
+            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+            [42u8; 32],  // non-zero anchor
+            vec![0u8; 100], // dummy proof bytes
+            [0u8; 64],   // dummy binding signature
+            1,           // core_fee_per_byte
+            Pooling::Never, // pooling strategy
             create_output_script(), // P2PKH output script
         )
     }
@@ -89,9 +82,7 @@ mod tests {
             let platform = setup_platform();
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![], // Empty actions — invalid
-                0x03,
                 1000,
                 [42u8; 32],
                 vec![0u8; 100],
@@ -112,43 +103,48 @@ mod tests {
         }
 
         #[test]
-        fn test_zero_amount_returns_error() {
+        fn test_too_many_actions_returns_error() {
+            // NOTE: We call validate_structure directly because 101 actions (~41KB)
+            // exceeds max_state_transition_size (20KB) before the actions count check
+            // can trigger. This means ShieldedTooManyActionsError is effectively
+            // unreachable through the normal pipeline.
+            use dpp::state_transition::StateTransitionStructureValidation;
+
             let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
 
-            let transition = create_shielded_withdrawal_transition(
-                0, // Zero amount — invalid
-                vec![create_dummy_serialized_action()],
-                0x03,
-                1000,
-                [42u8; 32],
-                vec![0u8; 100],
-                [0u8; 64],
-                1,
-                Pooling::Never,
-                create_output_script(),
-            );
+            // 101 actions exceeds max_shielded_transition_actions (100)
+            let actions: Vec<SerializedAction> =
+                (0..101).map(|_| create_dummy_serialized_action()).collect();
 
-            let processing_result = process_transition(&platform, transition, platform_version);
+            let transition = ShieldedWithdrawalTransitionV0 {
+                actions,
+                unshielding_amount: 111_549_800,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_output_script(),
+            };
+
+            let result = transition.validate_structure(platform_version);
 
             assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UnshieldAmountZeroError(_))
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::ShieldedTooManyActionsError(_)
                 )]
             );
         }
 
         #[test]
-        fn test_zero_value_balance_returns_error() {
+        fn test_zero_unshielding_amount_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                0, // Zero value_balance — invalid (must be positive for withdrawal)
+                0, // Zero unshielding_amount — invalid
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -168,15 +164,13 @@ mod tests {
         }
 
         #[test]
-        fn test_negative_value_balance_returns_error() {
+        fn test_unshielding_amount_exceeding_i64_max_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![create_dummy_serialized_action()],
-                0x03,
-                -1000, // Negative value_balance — invalid (must be positive for withdrawal)
+                i64::MAX as u64 + 1, // Exceeds i64::MAX
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -191,34 +185,6 @@ mod tests {
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-                )]
-            );
-        }
-
-        #[test]
-        fn test_value_balance_less_than_amount_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let transition = create_shielded_withdrawal_transition(
-                2000, // amount = 2000
-                vec![create_dummy_serialized_action()],
-                0x03,
-                1000, // value_balance = 1000 < amount — invalid
-                [42u8; 32],
-                vec![0u8; 100],
-                [0u8; 64],
-                1,
-                Pooling::Never,
-                create_output_script(),
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::UnshieldValueBalanceBelowAmountError(_))
                 )]
             );
         }
@@ -229,9 +195,7 @@ mod tests {
             let platform = setup_platform();
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![create_dummy_serialized_action()],
-                0x03,
                 1000,
                 [42u8; 32],
                 vec![], // Empty proof — invalid
@@ -257,9 +221,7 @@ mod tests {
             let platform = setup_platform();
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![create_dummy_serialized_action()],
-                0x03,
                 1000,
                 [0u8; 32], // All zeros — invalid
                 vec![0u8; 100],
@@ -400,7 +362,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -420,12 +382,11 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance();
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         #[test]
@@ -499,11 +460,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
-            // Compute platform sighash binding transparent fields (output_script, amount)
+            // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
-            let amount = 5_000u64;
+            let unshielding_amount = 499_995_000u64; // value_balance as u64
             let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -511,7 +472,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
             // --- Extract serialized fields ---
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // value_balance should be 499,995,000 (500M spent - 5K output)
@@ -526,10 +487,8 @@ mod tests {
 
             // --- Create and process transition ---
             let transition = create_shielded_withdrawal_transition(
-                amount, // amount = 5000 credits
                 actions,
-                flags,
-                value_balance,
+                value_balance as u64, // unshielding_amount
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -565,10 +524,8 @@ mod tests {
             bad_action.encrypted_note = vec![0u8; 100]; // 100 bytes instead of 216
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![bad_action],
-                0x03,
-                111_549_800, // amount (1000) + minimum fee for 1 action
+                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -615,7 +572,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -635,22 +592,21 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance();
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         /// Build a valid Orchard bundle for shielded withdrawal tests (spend > output).
-        /// The `output_script` and `amount` are bound to the sighash so that
+        /// The `output_script` and `unshielding_amount` are bound to the sighash so that
         /// the resulting bundle can only be used with those specific transparent fields.
-        /// Returns (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig).
+        /// Returns (actions, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_withdrawal_bundle(
             output_script: &CoreScript,
-            amount: u64,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            unshielding_amount: u64,
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = OsRng;
             let pk = get_proving_key();
 
@@ -685,9 +641,9 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
-            // Bind transparent fields (output_script, amount) to the sighash
+            // Bind transparent fields (output_script, unshielding_amount) to the sighash
             let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -695,39 +651,6 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
             serialize_authorized_bundle(&bundle)
-        }
-
-        /// Edge case: i64::MIN value_balance should be caught by structure validation
-        /// (value_balance must be positive). This ensures no integer overflow or
-        /// underflow issues occur when handling the most extreme negative i64 value.
-        #[test]
-        fn test_i64_min_value_balance_handled() {
-            let platform_version = PlatformVersion::latest();
-            let platform = setup_platform();
-
-            let transition = create_shielded_withdrawal_transition(
-                1000,
-                vec![create_dummy_serialized_action()],
-                0x03,
-                i64::MIN, // Most extreme negative value — must be rejected
-                [42u8; 32],
-                vec![0u8; 100],
-                [0u8; 64],
-                1,
-                Pooling::Never,
-                create_output_script(),
-            );
-
-            let processing_result = process_transition(&platform, transition, platform_version);
-
-            // i64::MIN is negative, so structure validation rejects it as
-            // "shielded withdrawal value_balance must be positive"
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
-                )]
-            );
         }
 
         /// AUDIT REGRESSION: Zeroed binding signature is caught by BatchValidator.
@@ -744,18 +667,16 @@ mod tests {
             insert_dummy_encrypted_notes(&platform, 250);
 
             let output_script = create_output_script();
-            let amount = 5_000u64;
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, _binding_sig) =
-                build_valid_shielded_withdrawal_bundle(&output_script, amount);
+            let unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, _binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&output_script, unshielding_amount);
 
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_shielded_withdrawal_transition(
-                amount,
                 actions,
-                flags,
-                value_balance,
+                value_balance as u64, // unshielding_amount
                 anchor_bytes,
                 proof_bytes,
                 [0u8; 64], // ZEROED binding signature
@@ -790,25 +711,23 @@ mod tests {
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
 
-            // Bundle is signed for create_output_script() with amount = 5000
+            // Bundle is signed for create_output_script() with unshielding_amount = 499,995,000
             let output_script = create_output_script();
-            let signed_amount = 5_000u64;
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_shielded_withdrawal_bundle(&output_script, signed_amount);
+            let signed_unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&output_script, signed_unshielding_amount);
             assert_eq!(value_balance, 499_995_000);
 
-            // ATTACK: Inflate value_balance from 499,995,000 to 999,000,000
-            let mutated_value_balance = 999_000_000i64;
+            // ATTACK: Inflate unshielding_amount from 499,995,000 to 999,000,000
+            let mutated_unshielding_amount = 999_000_000u64;
 
             // Set pool balance high enough for the inflated amount
             set_pool_total_balance(&platform, 1_000_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
             let transition = create_shielded_withdrawal_transition(
-                500_000_000, // amount = 500M (inflated from original 5K)
                 actions,
-                flags,
-                mutated_value_balance, // MUTATED: was 499,995,000, now 999,000,000
+                mutated_unshielding_amount, // MUTATED: was 499,995,000, now 999,000,000
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -842,11 +761,11 @@ mod tests {
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
 
-            // Bundle is signed for the ORIGINAL output_script with amount = 5000
+            // Bundle is signed for the ORIGINAL output_script with unshielding_amount = 499,995,000
             let original_script = create_output_script();
-            let amount = 5_000u64;
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_shielded_withdrawal_bundle(&original_script, amount);
+            let unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&original_script, unshielding_amount);
             assert_eq!(value_balance, 499_995_000);
 
             set_pool_total_balance(&platform, 500_000_000);
@@ -856,10 +775,8 @@ mod tests {
             let attacker_script = CoreScript::new_p2pkh([0xAA; 20]);
 
             let transition = create_shielded_withdrawal_transition(
-                amount,
                 actions,
-                flags,
-                value_balance,
+                unshielding_amount,
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -881,36 +798,33 @@ mod tests {
             );
         }
 
-        /// AUDIT REGRESSION: Different amount is caught by platform sighash.
+        /// AUDIT REGRESSION: Different unshielding_amount is caught by platform sighash.
         ///
-        /// The amount is bound to the Orchard bundle via sighash. Changing the
-        /// withdrawal amount after signing causes the sighash to differ, and
+        /// The unshielding_amount is bound to the Orchard bundle via sighash. Changing
+        /// the withdrawal amount after signing causes the sighash to differ, and
         /// signature verification fails. This prevents an attacker from inflating
-        /// the credited withdrawal amount while keeping a valid value_balance.
+        /// the credited withdrawal amount.
         #[test]
-        fn test_different_amount_with_same_valid_bundle_is_rejected() {
+        fn test_different_unshielding_amount_with_same_valid_bundle_is_rejected() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
 
             let output_script = create_output_script();
-            let signed_amount = 5_000u64;
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_shielded_withdrawal_bundle(&output_script, signed_amount);
+            let signed_unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&output_script, signed_unshielding_amount);
             assert_eq!(value_balance, 499_995_000);
 
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
 
-            // ATTACK: Use a smaller amount (4000) but same value_balance
-            // to pocket the difference as extra fee
-            let manipulated_amount = 4_000u64;
+            // ATTACK: Use a different unshielding_amount
+            let manipulated_unshielding_amount = 400_000_000u64;
 
             let transition = create_shielded_withdrawal_transition(
-                manipulated_amount, // MANIPULATED: was 5000, now 4000
                 actions,
-                flags,
-                value_balance, // still 5000 — passes value_balance >= amount check
+                manipulated_unshielding_amount, // MANIPULATED: was 499,995,000, now 400,000,000
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,
@@ -921,7 +835,7 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // Platform sighash includes amount, so changing it causes
+            // Platform sighash includes unshielding_amount, so changing it causes
             // signature verification to fail.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
@@ -949,10 +863,8 @@ mod tests {
             action2.cmx = [99u8; 32]; // Different commitment but same nullifier
 
             let transition = create_shielded_withdrawal_transition(
-                1000,
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                0x03,
-                123_098_600, // amount (1000) + minimum fee for 2 actions (123_097_600)
+                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -1006,7 +918,7 @@ mod tests {
 
         fn serialize_authorized_bundle(
             bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
             let actions: Vec<SerializedAction> = bundle
                 .actions()
                 .iter()
@@ -1026,12 +938,11 @@ mod tests {
                     }
                 })
                 .collect();
-            let flags = bundle.flags().to_byte();
             let value_balance = *bundle.value_balance();
             let anchor = bundle.anchor().to_bytes();
             let proof = bundle.authorization().proof().as_ref().to_vec();
             let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, flags, value_balance, anchor, proof, binding_sig)
+            (actions, value_balance, anchor, proof, binding_sig)
         }
 
         #[test]
@@ -1076,11 +987,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
-            // Compute platform sighash binding transparent fields (output_script, amount)
+            // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
-            let amount = 5_000u64;
+            let unshielding_amount = 499_995_000u64; // value_balance as u64
             let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&amount.to_le_bytes());
+            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -1088,7 +999,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
             // --- Extract serialized fields ---
-            let (actions, flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle(&bundle);
 
             // value_balance should be 499,995,000 (500M spent - 5K output)
@@ -1100,10 +1011,8 @@ mod tests {
 
             // --- Create and process transition ---
             let transition = create_shielded_withdrawal_transition(
-                amount,
                 actions,
-                flags,
-                value_balance,
+                value_balance as u64, // unshielding_amount
                 anchor_bytes,
                 proof_bytes,
                 binding_sig,

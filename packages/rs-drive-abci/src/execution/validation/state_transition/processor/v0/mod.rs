@@ -219,9 +219,11 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         None
     };
 
-    // Validate minimum fee for shielded transitions (stateless, uses public value_balance).
+    // Validate minimum fee for shielded spending transitions (stateless, uses public value_balance).
     // This is cheaper than proof verification so we check it first.
-    if state_transition.has_shielded_proof_validation() {
+    // Only applies to ShieldedTransfer/Unshield/ShieldedWithdrawal — Shield pays from address
+    // inputs and ShieldFromAssetLock pays from the asset lock.
+    if state_transition.has_shielded_minimum_fee_validation() {
         let result = state_transition.validate_minimum_shielded_fee(platform_version)?;
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
