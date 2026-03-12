@@ -338,6 +338,10 @@ impl Fetch for drive_proof_verifier::types::ShieldedAnchors {
     type Request = platform_proto::GetShieldedAnchorsRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::MostRecentShieldedAnchor {
+    type Request = platform_proto::GetMostRecentShieldedAnchorRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
     type Request = platform_proto::GetShieldedEncryptedNotesRequest;
 }

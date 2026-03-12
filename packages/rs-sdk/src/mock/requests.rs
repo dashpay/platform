@@ -38,7 +38,8 @@ use drive_proof_verifier::types::{
     IdentityBalanceAndRevision, IndexMap, MasternodeProtocolVote, NullifiersTrunkState,
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
     RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
-    RecentCompactedNullifierChanges, RecentNullifierChanges, RetrievedValues, ShieldedAnchors,
+    MostRecentShieldedAnchor, RecentCompactedNullifierChanges, RecentNullifierChanges,
+    RetrievedValues, ShieldedAnchors,
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNullifierStatus,
     ShieldedNullifierStatuses, ShieldedPoolState, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
@@ -512,6 +513,7 @@ impl_mock_response!(RecentAddressBalanceChanges);
 impl_mock_response!(RecentCompactedAddressBalanceChanges);
 impl_mock_response!(ShieldedPoolState);
 impl_mock_response!(ShieldedAnchors);
+impl_mock_response!(MostRecentShieldedAnchor);
 impl_mock_response!(ShieldedEncryptedNotes);
 impl_mock_response!(ShieldedEncryptedNote);
 impl_mock_response!(ShieldedNullifierStatuses);

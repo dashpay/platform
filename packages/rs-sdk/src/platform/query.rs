@@ -28,9 +28,10 @@ use dapi_grpc::platform::v0::{
     GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    get_nullifiers_trunk_state_request, get_shielded_anchors_request,
-    get_shielded_encrypted_notes_request, get_shielded_nullifiers_request,
-    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
+    get_most_recent_shielded_anchor_request, get_nullifiers_trunk_state_request,
+    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
+    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
+    GetContestedResourceIdentityVotesRequest, GetMostRecentShieldedAnchorRequest,
     GetNullifiersTrunkStateRequest, GetPrefundedSpecializedBalanceRequest,
     GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
@@ -1015,6 +1016,22 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
         Ok(GetShieldedAnchorsRequest {
             version: Some(get_shielded_anchors_request::Version::V0(
                 get_shielded_anchors_request::GetShieldedAnchorsRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
+    fn query(self, prove: bool) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetMostRecentShieldedAnchorRequest {
+            version: Some(get_most_recent_shielded_anchor_request::Version::V0(
+                get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0 {
+                    prove,
+                },
             )),
         })
     }
