@@ -5,6 +5,7 @@ pub mod epoch;
 pub mod group;
 pub mod identity;
 pub mod protocol;
+pub mod shielded;
 pub mod system;
 pub mod token;
 pub(crate) mod utils;
