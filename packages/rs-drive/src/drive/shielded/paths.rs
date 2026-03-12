@@ -107,6 +107,15 @@ pub fn shielded_credit_pool_anchors_by_height_path() -> [&'static [u8]; 3] {
     ]
 }
 
+/// Path to the anchors-by-height tree as a vec: [AddressBalances, "s", [8]]
+pub fn shielded_credit_pool_anchors_by_height_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::AddressBalances as u8],
+        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+    ]
+}
+
 /// Resolves the nullifiers path based on pool type.
 ///
 /// Pool types:
