@@ -342,7 +342,7 @@ mod tests {
         let start_block_height = 329u64;
         let platform_version = PlatformVersion::latest();
 
-        let result = Drive::verify_compacted_address_balance_changes_v0(
+        let result = Drive::verify_compacted_address_balance_changes(
             &proof,
             start_block_height,
             None,
