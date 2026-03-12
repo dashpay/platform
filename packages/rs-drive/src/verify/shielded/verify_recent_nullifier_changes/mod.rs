@@ -38,3 +38,31 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_recent_nullifier_changes_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .shielded
+            .verify_recent_nullifier_changes = 255;
+
+        let result = Drive::verify_recent_nullifier_changes(&[], 0, None, false, &platform_version);
+
+        assert!(
+            matches!(
+                &result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got is_err={}",
+            result.is_err(),
+        );
+    }
+}

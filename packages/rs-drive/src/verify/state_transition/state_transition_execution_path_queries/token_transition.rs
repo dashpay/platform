@@ -183,3 +183,186 @@ impl TryTransitionIntoPathQuery for TokenTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+    use dpp::data_contract::associated_token::token_keeps_history_rules::TokenKeepsHistoryRules;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_freeze_transition::v0::TokenFreezeTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::token_freeze_transition::TokenFreezeTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_unfreeze_transition::v0::TokenUnfreezeTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
+    use dpp::state_transition::batch_transition::batched_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransition;
+    use std::collections::BTreeMap;
+
+    /// Helper to create a data contract with a single token that does NOT keep any
+    /// historical documents (all keeps_*_history flags are false).
+    fn create_test_contract_and_ids() -> (DataContract, Identifier, Identifier) {
+        // Start from default_most_restrictive and override keeps_history to all-false.
+        let mut token_config = TokenConfigurationV0::default_most_restrictive();
+        *token_config.keeps_history_mut() = TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+            keeps_transfer_history: false,
+            keeps_freezing_history: false,
+            keeps_minting_history: false,
+            keeps_burning_history: false,
+            keeps_direct_pricing_history: false,
+            keeps_direct_purchase_history: false,
+        });
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Identifier::from([1u8; 32]),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(0, TokenConfiguration::V0(token_config))]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        use dpp::data_contract::accessors::v1::DataContractV1Getters;
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+        let owner_id = Identifier::from([5u8; 32]);
+        (contract, token_id, owner_id)
+    }
+
+    fn make_base(contract_id: Identifier, token_id: Identifier) -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: contract_id,
+            token_id,
+            using_group_info: None,
+        })
+    }
+
+    #[test]
+    fn burn_transition_produces_balance_query_without_history() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_and_ids();
+
+        let transition = TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(contract.id(), token_id),
+            burn_amount: 100,
+            public_note: None,
+        }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected path query");
+
+        // The burn transition (no history) should produce a balance query for the owner
+        let expected_query =
+            Drive::token_balance_for_identity_id_query(token_id.to_buffer(), owner_id.to_buffer());
+
+        assert_eq!(path_query.path, expected_query.path);
+        assert_eq!(path_query.query.limit, expected_query.query.limit);
+    }
+
+    #[test]
+    fn freeze_transition_produces_info_query_without_history() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_and_ids();
+        let frozen_identity_id = Identifier::from([10u8; 32]);
+
+        let transition =
+            TokenTransition::Freeze(TokenFreezeTransition::V0(TokenFreezeTransitionV0 {
+                base: make_base(contract.id(), token_id),
+                identity_to_freeze_id: frozen_identity_id,
+                public_note: None,
+            }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected path query");
+
+        // The freeze transition (no history) should produce an info query for the frozen identity
+        let expected_query = Drive::token_info_for_identity_id_query(
+            token_id.to_buffer(),
+            frozen_identity_id.to_buffer(),
+        );
+
+        assert_eq!(path_query.path, expected_query.path);
+        assert_eq!(path_query.query.limit, expected_query.query.limit);
+    }
+
+    #[test]
+    fn unfreeze_transition_produces_info_query_without_history() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_and_ids();
+        let frozen_identity_id = Identifier::from([11u8; 32]);
+
+        let transition =
+            TokenTransition::Unfreeze(TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
+                base: make_base(contract.id(), token_id),
+                frozen_identity_id,
+                public_note: None,
+            }));
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected path query");
+
+        let expected_query = Drive::token_info_for_identity_id_query(
+            token_id.to_buffer(),
+            frozen_identity_id.to_buffer(),
+        );
+
+        assert_eq!(path_query.path, expected_query.path);
+        assert_eq!(path_query.query.limit, expected_query.query.limit);
+    }
+
+    #[test]
+    fn set_price_for_direct_purchase_produces_price_query_without_history() {
+        let platform_version = PlatformVersion::latest();
+        let (contract, token_id, owner_id) = create_test_contract_and_ids();
+
+        let transition = TokenTransition::SetPriceForDirectPurchase(
+            TokenSetPriceForDirectPurchaseTransition::V0(
+                TokenSetPriceForDirectPurchaseTransitionV0 {
+                    base: make_base(contract.id(), token_id),
+                    price: None,
+                    public_note: None,
+                },
+            ),
+        );
+
+        let path_query = transition
+            .try_transition_into_path_query_with_contract(&contract, owner_id, platform_version)
+            .expect("expected path query");
+
+        let expected_query = Drive::token_direct_purchase_price_query(token_id.to_buffer());
+
+        assert_eq!(path_query.path, expected_query.path);
+        assert_eq!(path_query.query.limit, expected_query.query.limit);
+    }
+}

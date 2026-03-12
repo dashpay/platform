@@ -64,3 +64,29 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+
+    #[test]
+    fn test_verify_full_identity_by_identity_id_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_full_identity_by_identity_id = 255;
+
+        let result =
+            Drive::verify_full_identity_by_identity_id(&[], false, [0u8; 32], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_full_identity_by_identity_id" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

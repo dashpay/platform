@@ -263,3 +263,84 @@ impl Drive {
         Ok((returned_root_hash.unwrap(), contracts))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_existing_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let created_contract =
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = created_contract.data_contract_owned();
+        let contract_id = contract.id().to_buffer();
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should insert contract");
+
+        let proof = drive
+            .prove_contract(contract_id, None, platform_version)
+            .expect("should prove contract");
+
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            false,
+            false,
+            contract_id,
+            platform_version,
+        )
+        .expect("should verify contract");
+
+        assert!(
+            verified_contract.is_some(),
+            "verified contract should exist"
+        );
+        let verified = verified_contract.unwrap();
+        assert_eq!(verified.id(), contract.id());
+        assert_eq!(verified.version(), contract.version());
+    }
+
+    #[test]
+    fn should_prove_and_verify_non_existent_contract() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let non_existent_id = [0xffu8; 32];
+
+        let proof = drive
+            .prove_contract(non_existent_id, None, platform_version)
+            .expect("should prove non-existent contract");
+
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            false,
+            false,
+            non_existent_id,
+            platform_version,
+        )
+        .expect("should verify non-existent contract proof");
+
+        assert!(
+            verified_contract.is_none(),
+            "verified contract should be None for non-existent contract"
+        );
+    }
+}

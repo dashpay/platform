@@ -54,3 +54,129 @@ impl DriveDocumentQuery<'_> {
         Ok((root_hash, documents))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::query::DriveDocumentQuery;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_keep_serialized_document_collection() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        // Insert some documents
+        for seed in 1u64..=2 {
+            let document = document_type
+                .random_document(Some(seed), platform_version)
+                .expect("expected a random document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        // Build a query that fetches all documents (any_item_query has limit=1)
+        let query = DriveDocumentQuery::all_items_query(&contract, document_type, None);
+
+        // Get proof
+        let (proof, _cost) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        // Verify proof keeping serialized
+        let (_root_hash, serialized_docs) = query
+            .verify_proof_keep_serialized(proof.as_slice(), platform_version)
+            .expect("expected proof verification to succeed");
+
+        assert_eq!(serialized_docs.len(), 2);
+
+        // Each serialized doc should be non-empty
+        for doc_bytes in &serialized_docs {
+            assert!(
+                !doc_bytes.is_empty(),
+                "serialized document should not be empty"
+            );
+        }
+    }
+
+    #[test]
+    fn should_prove_and_verify_keep_serialized_empty_result() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        // No documents inserted
+        let query = DriveDocumentQuery::any_item_query(&contract, document_type);
+
+        let (proof, _cost) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        let (_root_hash, serialized_docs) = query
+            .verify_proof_keep_serialized(proof.as_slice(), platform_version)
+            .expect("expected proof verification to succeed");
+
+        assert!(serialized_docs.is_empty());
+    }
+}

@@ -69,3 +69,36 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+
+    #[test]
+    fn test_verify_identities_contract_keys_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_identities_contract_keys = 255;
+
+        let result = Drive::verify_identities_contract_keys(
+            &[],
+            &[],
+            &[0u8; 32],
+            None,
+            vec![],
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_identities_contract_keys" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

@@ -193,3 +193,91 @@ impl Drive {
         Ok((root_hash, compacted_changes))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_compacted_nullifier_changes_roundtrip() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Store enough blocks of nullifiers to trigger compaction
+        let max_blocks = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_blocks_before_nullifier_compaction as u64;
+
+        for block_height in 1u64..=(max_blocks + 1) {
+            let nullifier = [block_height as u8; 32];
+            drive
+                .store_nullifiers_for_block(
+                    &[nullifier],
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store nullifiers");
+        }
+
+        // Prove compacted changes from block 1
+        let proof = drive
+            .prove_compacted_nullifier_changes(1, None, None, platform_version)
+            .expect("should prove compacted nullifier changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) =
+            Drive::verify_compacted_nullifier_changes(proof.as_slice(), 1, None, platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        // We should have at least one compacted entry
+        assert!(
+            !compacted_changes.is_empty(),
+            "should have at least one compacted entry"
+        );
+
+        // All entries should have valid block ranges
+        for change in &compacted_changes {
+            assert!(
+                change.start_block <= change.end_block,
+                "start should be <= end"
+            );
+            assert!(
+                !change.nullifiers.is_empty(),
+                "each entry should have nullifiers"
+            );
+        }
+    }
+
+    #[test]
+    fn should_prove_and_verify_empty_compacted_nullifier_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Prove compacted changes from block 100 with no data stored
+        let proof = drive
+            .prove_compacted_nullifier_changes(100, None, None, platform_version)
+            .expect("should prove empty compacted nullifier changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) = Drive::verify_compacted_nullifier_changes(
+            proof.as_slice(),
+            100,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(
+            compacted_changes.is_empty(),
+            "should have no compacted entries when no data stored"
+        );
+    }
+}

@@ -201,7 +201,102 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::balances::credits::CreditOperation;
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_prove_and_verify_compacted_address_balance_changes_roundtrip() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address_1 = PlatformAddress::P2pkh([10; 20]);
+        let address_2 = PlatformAddress::P2sh([11; 20]);
+
+        // Store enough blocks of changes to trigger compaction
+        // The compaction threshold is controlled by platform_version
+        // We insert many blocks to ensure compaction happens
+        let max_blocks = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_blocks_before_compaction as u64;
+
+        for block_height in 1u64..=(max_blocks + 1) {
+            let mut changes = BTreeMap::new();
+            changes.insert(
+                address_1,
+                CreditOperation::AddToCredits(block_height * 1000),
+            );
+            if block_height % 2 == 0 {
+                changes.insert(address_2, CreditOperation::AddToCredits(block_height * 500));
+            }
+            drive
+                .store_address_balances_for_block(
+                    &changes,
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store balances");
+        }
+
+        // Prove compacted changes from block 1
+        let proof = drive
+            .prove_compacted_address_balance_changes(1, None, None, platform_version)
+            .expect("should prove compacted address balance changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            1,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        // We should have at least one compacted entry
+        assert!(
+            !compacted_changes.is_empty(),
+            "should have at least one compacted entry"
+        );
+
+        // All entries should have valid block ranges
+        for (start, end, changes) in &compacted_changes {
+            assert!(*start <= *end, "start should be <= end");
+            assert!(!changes.is_empty(), "each entry should have changes");
+        }
+    }
+
+    #[test]
+    fn should_prove_and_verify_empty_compacted_address_balance_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Prove compacted changes from block 100 with no data stored
+        let proof = drive
+            .prove_compacted_address_balance_changes(100, None, None, platform_version)
+            .expect("should prove empty compacted changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            100,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(
+            compacted_changes.is_empty(),
+            "should have no compacted entries when no data stored"
+        );
+    }
 
     #[test]
     fn test_verify_compacted_address_balance_changes_proof() {
@@ -247,7 +342,7 @@ mod tests {
         let start_block_height = 329u64;
         let platform_version = PlatformVersion::latest();
 
-        let result = Drive::verify_compacted_address_balance_changes_v0(
+        let result = Drive::verify_compacted_address_balance_changes(
             &proof,
             start_block_height,
             None,
