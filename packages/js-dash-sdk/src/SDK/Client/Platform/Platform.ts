@@ -34,6 +34,12 @@ import resolveNameByRecord from './methods/names/resolveByRecord';
 import searchName from './methods/names/search';
 import broadcastStateTransition from './broadcastStateTransition';
 
+import shieldMethod from './methods/shielded/shield';
+import shieldedTransferMethod from './methods/shielded/shieldedTransfer';
+import unshieldMethod from './methods/shielded/unshield';
+import shieldFromAssetLockMethod from './methods/shielded/shieldFromAssetLock';
+import shieldedWithdrawalMethod from './methods/shielded/shieldedWithdrawal';
+
 import logger, { ConfigurableLogger } from '../../../logger';
 import Fetcher from './Fetcher';
 import NonceManager from './NonceManager/NonceManager';
@@ -98,6 +104,14 @@ interface DataContracts {
   history: Function,
 }
 
+interface Shielded {
+  shield: Function,
+  shieldedTransfer: Function,
+  unshield: Function,
+  shieldFromAssetLock: Function,
+  shieldedWithdrawal: Function,
+}
+
 /**
  * Class for Dash Platform
  *
@@ -116,6 +130,11 @@ export class Platform {
   protocolVersion?: number;
 
   public documents: Records;
+
+  /**
+     * Shielded pool operations (shield, transfer, unshield)
+     */
+  public shielded: Shielded;
 
   /**
      * @param {Function} get - get identities from the platform
@@ -179,6 +198,13 @@ export class Platform {
       resolve: resolveName.bind(this),
       resolveByRecord: resolveNameByRecord.bind(this),
       search: searchName.bind(this),
+    };
+    this.shielded = {
+      shield: shieldMethod.bind(this),
+      shieldedTransfer: shieldedTransferMethod.bind(this),
+      unshield: unshieldMethod.bind(this),
+      shieldFromAssetLock: shieldFromAssetLockMethod.bind(this),
+      shieldedWithdrawal: shieldedWithdrawalMethod.bind(this),
     };
     this.identities = {
       register: registerIdentity.bind(this),
