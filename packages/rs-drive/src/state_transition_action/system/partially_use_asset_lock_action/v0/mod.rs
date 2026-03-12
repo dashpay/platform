@@ -59,3 +59,131 @@ pub trait PartiallyUseAssetLockActionAccessorsV0 {
     /// Optional fee strategy (for address funding transitions)
     fn fee_strategy(&self) -> Option<&AddressFundsFeeStrategy>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::platform_value::{Bytes32, Bytes36};
+
+    fn make_v0() -> PartiallyUseAssetLockActionV0 {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xBB_u8; 20]), (5_u32, 3000_u64));
+
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: Bytes36::new([0xCC_u8; 36]),
+            initial_credit_value: 10000,
+            previous_transaction_hashes: vec![Bytes32([0xDD_u8; 32])],
+            asset_lock_script: vec![0x76, 0xA9, 0x14],
+            remaining_credit_value: 7000,
+            used_credits: 3000,
+            user_fee_increase: 2,
+            inputs_with_remaining_balance: Some(inputs),
+            fee_strategy: Some(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
+        }
+    }
+
+    fn make_v0_minimal() -> PartiallyUseAssetLockActionV0 {
+        PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: Bytes36::new([0xAA_u8; 36]),
+            initial_credit_value: 5000,
+            previous_transaction_hashes: vec![],
+            asset_lock_script: vec![],
+            remaining_credit_value: 5000,
+            used_credits: 0,
+            user_fee_increase: 0,
+            inputs_with_remaining_balance: None,
+            fee_strategy: None,
+        }
+    }
+
+    #[test]
+    fn test_v0_default() {
+        let action = PartiallyUseAssetLockActionV0::default();
+        assert_eq!(action.asset_lock_outpoint, Bytes36::default());
+        assert_eq!(action.initial_credit_value, 0);
+        assert!(action.previous_transaction_hashes.is_empty());
+        assert!(action.asset_lock_script.is_empty());
+        assert_eq!(action.remaining_credit_value, 0);
+        assert_eq!(action.used_credits, 0);
+        assert_eq!(action.user_fee_increase, 0);
+        assert!(action.inputs_with_remaining_balance.is_none());
+        assert!(action.fee_strategy.is_none());
+    }
+
+    #[test]
+    fn test_v0_struct_fields() {
+        let action = make_v0();
+        assert_eq!(action.asset_lock_outpoint, Bytes36::new([0xCC_u8; 36]));
+        assert_eq!(action.initial_credit_value, 10000);
+        assert_eq!(action.previous_transaction_hashes.len(), 1);
+        assert_eq!(action.previous_transaction_hashes[0], Bytes32([0xDD_u8; 32]));
+        assert_eq!(action.asset_lock_script, vec![0x76, 0xA9, 0x14]);
+        assert_eq!(action.remaining_credit_value, 7000);
+        assert_eq!(action.used_credits, 3000);
+        assert_eq!(action.user_fee_increase, 2);
+        assert!(action.inputs_with_remaining_balance.is_some());
+        assert!(action.fee_strategy.is_some());
+    }
+
+    #[test]
+    fn test_v0_debug_impl() {
+        let action = make_v0();
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("PartiallyUseAssetLockActionV0"));
+    }
+
+    #[test]
+    fn test_v0_clone() {
+        let action = make_v0();
+        let cloned = action.clone();
+        assert_eq!(cloned.asset_lock_outpoint, action.asset_lock_outpoint);
+        assert_eq!(cloned.initial_credit_value, action.initial_credit_value);
+        assert_eq!(cloned.previous_transaction_hashes, action.previous_transaction_hashes);
+        assert_eq!(cloned.asset_lock_script, action.asset_lock_script);
+        assert_eq!(cloned.remaining_credit_value, action.remaining_credit_value);
+        assert_eq!(cloned.used_credits, action.used_credits);
+        assert_eq!(cloned.user_fee_increase, action.user_fee_increase);
+    }
+
+    #[test]
+    fn test_v0_minimal_no_optional_fields() {
+        let action = make_v0_minimal();
+        assert!(action.inputs_with_remaining_balance.is_none());
+        assert!(action.fee_strategy.is_none());
+        assert!(action.previous_transaction_hashes.is_empty());
+        assert!(action.asset_lock_script.is_empty());
+    }
+
+    #[test]
+    fn test_v0_multiple_previous_hashes() {
+        let action = PartiallyUseAssetLockActionV0 {
+            previous_transaction_hashes: vec![
+                Bytes32([0x11_u8; 32]),
+                Bytes32([0x22_u8; 32]),
+                Bytes32([0x33_u8; 32]),
+            ],
+            ..PartiallyUseAssetLockActionV0::default()
+        };
+        assert_eq!(action.previous_transaction_hashes.len(), 3);
+    }
+
+    #[test]
+    fn test_v0_optional_inputs_content() {
+        let action = make_v0();
+        let inputs = action.inputs_with_remaining_balance.as_ref().unwrap();
+        let addr = PlatformAddress::P2pkh([0xBB_u8; 20]);
+        let (nonce, credits) = inputs.get(&addr).unwrap();
+        assert_eq!(*nonce, 5);
+        assert_eq!(*credits, 3000);
+    }
+
+    #[test]
+    fn test_v0_optional_fee_strategy_content() {
+        let action = make_v0();
+        let strategy = action.fee_strategy.as_ref().unwrap();
+        assert_eq!(strategy.len(), 1);
+        assert_eq!(strategy[0], AddressFundsFeeStrategyStep::DeductFromInput(0));
+    }
+}

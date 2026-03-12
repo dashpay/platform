@@ -54,3 +54,101 @@ impl DriveHighLevelOperationConverter for ShieldedTransferTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::shielded::shielded_transfer::v0::ShieldedTransferTransitionActionV0;
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn make_action() -> ShieldedTransferTransitionAction {
+        ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
+            notes: vec![make_note()],
+            anchor: [0xAA; 32],
+            fee_amount: 500,
+            current_total_balance: 10000,
+        })
+    }
+
+    #[test]
+    fn test_produces_nullifiers_notes_and_balance_update() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // InsertNullifiers + InsertNote (1 note) + UpdateTotalBalance
+        assert_eq!(ops.len(), 3);
+    }
+
+    #[test]
+    fn test_first_op_is_insert_nullifiers() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match &ops[0] {
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNullifiers {
+                nullifiers,
+            }) => {
+                assert_eq!(nullifiers.len(), 1);
+                assert_eq!(nullifiers[0], [0x11; 32]);
+            }
+            other => panic!("expected InsertNullifiers, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_balance_decreases_by_fee_amount() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match ops.last().unwrap() {
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
+                new_total_balance,
+            }) => {
+                assert_eq!(*new_total_balance, 9500); // 10000 - 500
+            }
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_underflow_returns_error() {
+        let action =
+            ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
+                notes: vec![],
+                anchor: [0x00; 32],
+                fee_amount: 10001,
+                current_total_balance: 10000,
+            });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+}

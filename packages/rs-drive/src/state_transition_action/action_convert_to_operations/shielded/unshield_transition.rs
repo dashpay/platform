@@ -69,3 +69,123 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::shielded::unshield::v0::UnshieldTransitionActionV0;
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn make_action() -> UnshieldTransitionAction {
+        UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
+            output_address: PlatformAddress::P2pkh([0xBB; 20]),
+            amount: 3000,
+            notes: vec![make_note()],
+            anchor: [0xAA; 32],
+            fee_amount: 500,
+            current_total_balance: 10000,
+        })
+    }
+
+    #[test]
+    fn test_produces_nullifiers_add_balance_notes_and_update_balance() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // InsertNullifiers + AddBalanceToAddress + InsertNote (1) + UpdateTotalBalance
+        assert_eq!(ops.len(), 4);
+    }
+
+    #[test]
+    fn test_add_balance_to_output_address() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match &ops[1] {
+            DriveOperation::AddressFundsOperation(AddressFundsOperationType::AddBalanceToAddress {
+                address,
+                balance_to_add,
+            }) => {
+                assert_eq!(*address, PlatformAddress::P2pkh([0xBB; 20]));
+                assert_eq!(*balance_to_add, 3000);
+            }
+            other => panic!("expected AddBalanceToAddress, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_balance_decreases_by_amount_plus_fee() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match ops.last().unwrap() {
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
+                new_total_balance,
+            }) => {
+                assert_eq!(*new_total_balance, 6500); // 10000 - 3000 - 500
+            }
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_amount_plus_fee_overflow_returns_error() {
+        let action = UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
+            output_address: PlatformAddress::P2pkh([0xBB; 20]),
+            amount: u64::MAX,
+            notes: vec![],
+            anchor: [0x00; 32],
+            fee_amount: 1,
+            current_total_balance: u64::MAX,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_balance_underflow_returns_error() {
+        let action = UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
+            output_address: PlatformAddress::P2pkh([0xBB; 20]),
+            amount: 5000,
+            notes: vec![],
+            anchor: [0x00; 32],
+            fee_amount: 500,
+            current_total_balance: 5000, // 5000 < 5000 + 500
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+}

@@ -49,3 +49,94 @@ impl DriveHighLevelOperationConverter for BumpAddressInputNoncesAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesActionV0;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_into_high_level_drive_operations_with_single_input() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xBB; 20]), (10_u32, 5000_u64));
+
+        let action = BumpAddressInputNoncesAction::V0(BumpAddressInputNoncesActionV0 {
+            inputs_with_remaining_balance: inputs,
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
+                address,
+                nonce,
+                balance,
+            }) => {
+                assert_eq!(*address, PlatformAddress::P2pkh([0xBB; 20]));
+                assert_eq!(*nonce, 10);
+                assert_eq!(*balance, 5000);
+            }
+            other => panic!("expected SetBalanceToAddress, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_into_high_level_drive_operations_with_multiple_inputs() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (1_u32, 1000_u64));
+        inputs.insert(PlatformAddress::P2sh([0xCC; 20]), (2_u32, 2000_u64));
+
+        let action = BumpAddressInputNoncesAction::V0(BumpAddressInputNoncesActionV0 {
+            inputs_with_remaining_balance: inputs,
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        assert_eq!(ops.len(), 2);
+        // All should be SetBalanceToAddress operations
+        for op in &ops {
+            assert!(
+                matches!(
+                    op,
+                    AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress { .. })
+                ),
+                "expected SetBalanceToAddress, got {:?}",
+                op
+            );
+        }
+    }
+
+    #[test]
+    fn test_into_high_level_drive_operations_with_empty_inputs() {
+        let action = BumpAddressInputNoncesAction::V0(BumpAddressInputNoncesActionV0 {
+            inputs_with_remaining_balance: BTreeMap::new(),
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        assert!(ops.is_empty());
+    }
+}

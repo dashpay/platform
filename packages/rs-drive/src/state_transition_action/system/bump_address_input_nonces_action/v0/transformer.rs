@@ -180,3 +180,321 @@ impl BumpAddressInputNoncesActionV0 {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::identifier::Identifier;
+
+    const TEST_FEE: u16 = 7;
+
+    fn make_inputs() -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0xAA; 20]), (10_u32, 5000_u64));
+        inputs.insert(PlatformAddress::P2sh([0xBB; 20]), (20_u32, 3000_u64));
+        inputs
+    }
+
+    fn make_fee_strategy() -> AddressFundsFeeStrategy {
+        vec![
+            AddressFundsFeeStrategyStep::DeductFromInput(0),
+            AddressFundsFeeStrategyStep::DeductFromInput(1),
+        ]
+    }
+
+    // ---- deduct_penalty_from_inputs tests ----
+
+    #[test]
+    fn test_deduct_penalty_from_inputs_zero_penalty() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let result = deduct_penalty_from_inputs(&inputs, &strategy, 0);
+        // No deduction, balances unchanged
+        for (addr, (nonce, credits)) in &inputs {
+            let (r_nonce, r_credits) = result.get(addr).unwrap();
+            assert_eq!(*r_nonce, *nonce);
+            assert_eq!(*r_credits, *credits);
+        }
+    }
+
+    #[test]
+    fn test_deduct_penalty_from_inputs_partial_from_first() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        // Deduct 1000 from first input (which has 5000)
+        let result = deduct_penalty_from_inputs(&inputs, &strategy, 1000);
+        let addr0 = inputs.keys().next().unwrap();
+        let (_, balance0) = result.get(addr0).unwrap();
+        assert_eq!(*balance0, inputs.get(addr0).unwrap().1 - 1000);
+    }
+
+    #[test]
+    fn test_deduct_penalty_from_inputs_overflow_first_into_second() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let input_keys: Vec<_> = inputs.keys().cloned().collect();
+        let first_balance = inputs.get(&input_keys[0]).unwrap().1;
+        // Deduct more than the first input has, remainder goes to second
+        let penalty = first_balance + 500;
+        let result = deduct_penalty_from_inputs(&inputs, &strategy, penalty);
+        let (_, balance0) = result.get(&input_keys[0]).unwrap();
+        assert_eq!(*balance0, 0);
+        let second_balance = inputs.get(&input_keys[1]).unwrap().1;
+        let (_, balance1) = result.get(&input_keys[1]).unwrap();
+        assert_eq!(*balance1, second_balance - 500);
+    }
+
+    #[test]
+    fn test_deduct_penalty_from_inputs_exceeds_all() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        // Deduct more than total balance
+        let total: Credits = inputs.values().map(|(_, c)| c).sum();
+        let result = deduct_penalty_from_inputs(&inputs, &strategy, total + 1000);
+        for (_, credits) in result.values() {
+            assert_eq!(*credits, 0);
+        }
+    }
+
+    #[test]
+    fn test_deduct_penalty_empty_strategy_uses_remaining_inputs() {
+        let inputs = make_inputs();
+        let empty_strategy: AddressFundsFeeStrategy = vec![];
+        let result = deduct_penalty_from_inputs(&inputs, &empty_strategy, 1000);
+        let total_remaining: Credits = result.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 1000);
+    }
+
+    // ---- from_inputs_with_remaining_balance ----
+
+    #[test]
+    fn test_from_inputs_with_remaining_balance() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let action = BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
+            &inputs, &strategy, 500, TEST_FEE,
+        );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        // Verify penalty was applied
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 500);
+    }
+
+    #[test]
+    fn test_from_inputs_with_remaining_balance_no_penalty() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let action = BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
+            &inputs, &strategy, 0, TEST_FEE,
+        );
+        // No penalty: balances should be identical
+        assert_eq!(action.inputs_with_remaining_balance, inputs);
+    }
+
+    // ---- IdentityCreateFromAddresses ----
+
+    #[test]
+    fn test_from_borrowed_identity_create_from_addresses_transition() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let transition = IdentityCreateFromAddressesTransitionV0 {
+            public_keys: vec![],
+            inputs: inputs.clone(),
+            output: None,
+            fee_strategy: strategy.clone(),
+            user_fee_increase: TEST_FEE,
+            input_witnesses: vec![],
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition(
+                &transition, 200,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 200);
+    }
+
+    #[test]
+    fn test_from_borrowed_identity_create_from_addresses_transition_action() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let action_v0 = IdentityCreateFromAddressesTransitionActionV0 {
+            inputs_with_remaining_balance: inputs.clone(),
+            output: None,
+            fee_strategy: strategy.clone(),
+            public_keys: vec![],
+            identity_id: Identifier::from([0xCC; 32]),
+            fund_identity_amount: 1000,
+            user_fee_increase: TEST_FEE,
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_identity_create_from_addresses_transition_action(
+                &action_v0, 300,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 300);
+    }
+
+    // ---- IdentityTopUpFromAddresses ----
+
+    #[test]
+    fn test_from_borrowed_identity_topup_from_addresses_transition() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let transition = IdentityTopUpFromAddressesTransitionV0 {
+            inputs: inputs.clone(),
+            output: None,
+            identity_id: Identifier::from([0xCC; 32]),
+            fee_strategy: strategy.clone(),
+            user_fee_increase: TEST_FEE,
+            input_witnesses: vec![],
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition(
+                &transition, 100,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 100);
+    }
+
+    #[test]
+    fn test_from_borrowed_identity_topup_from_addresses_transition_action() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let action_v0 = IdentityTopUpFromAddressesTransitionActionV0 {
+            inputs_with_remaining_balance: inputs.clone(),
+            output: None,
+            fee_strategy: strategy.clone(),
+            identity_id: Identifier::from([0xCC; 32]),
+            topup_amount: 500,
+            user_fee_increase: TEST_FEE,
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_identity_topup_from_addresses_transition_action(
+                &action_v0, 250,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 250);
+    }
+
+    // ---- AddressFundsTransfer ----
+
+    #[test]
+    fn test_from_borrowed_address_funds_transfer_transition() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let transition = AddressFundsTransferTransitionV0 {
+            inputs: inputs.clone(),
+            outputs: BTreeMap::new(),
+            fee_strategy: strategy.clone(),
+            user_fee_increase: TEST_FEE,
+            input_witnesses: vec![],
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
+                &transition, 400,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 400);
+    }
+
+    #[test]
+    fn test_from_borrowed_address_funds_transfer_transition_action() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let action_v0 = AddressFundsTransferTransitionActionV0 {
+            inputs_with_remaining_balance: inputs.clone(),
+            outputs: BTreeMap::new(),
+            fee_strategy: strategy.clone(),
+            user_fee_increase: TEST_FEE,
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition_action(
+                &action_v0, 600,
+            );
+        assert_eq!(action.user_fee_increase, TEST_FEE);
+        assert_eq!(action.fee_strategy, strategy);
+        let total_remaining: Credits =
+            action.inputs_with_remaining_balance.values().map(|(_, c)| c).sum();
+        let total_original: Credits = inputs.values().map(|(_, c)| c).sum();
+        assert_eq!(total_remaining, total_original - 600);
+    }
+
+    // ---- nonces are preserved ----
+
+    #[test]
+    fn test_nonces_are_preserved_from_transition() {
+        let inputs = make_inputs();
+        let strategy = make_fee_strategy();
+        let transition = AddressFundsTransferTransitionV0 {
+            inputs: inputs.clone(),
+            outputs: BTreeMap::new(),
+            fee_strategy: strategy,
+            user_fee_increase: TEST_FEE,
+            input_witnesses: vec![],
+        };
+        let action =
+            BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
+                &transition, 0,
+            );
+        // Nonces should be identical to the input nonces
+        for (addr, (original_nonce, _)) in &inputs {
+            let (result_nonce, _) =
+                action.inputs_with_remaining_balance.get(addr).unwrap();
+            assert_eq!(*result_nonce, *original_nonce);
+        }
+    }
+
+    // ---- single input ----
+
+    #[test]
+    fn test_single_input_full_deduction() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x11; 20]), (1_u32, 1000_u64));
+        let strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+        let action = BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
+            &inputs, &strategy, 1000, TEST_FEE,
+        );
+        let (_, balance) = action
+            .inputs_with_remaining_balance
+            .get(&PlatformAddress::P2pkh([0x11; 20]))
+            .unwrap();
+        assert_eq!(*balance, 0);
+    }
+
+    #[test]
+    fn test_empty_inputs() {
+        let inputs = BTreeMap::new();
+        let strategy = vec![];
+        let action = BumpAddressInputNoncesActionV0::from_inputs_with_remaining_balance(
+            &inputs, &strategy, 0, 0,
+        );
+        assert!(action.inputs_with_remaining_balance.is_empty());
+        assert_eq!(action.user_fee_increase, 0);
+    }
+}

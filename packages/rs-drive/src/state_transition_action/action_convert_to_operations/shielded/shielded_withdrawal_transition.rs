@@ -81,3 +81,165 @@ impl DriveHighLevelOperationConverter for ShieldedWithdrawalTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::shielded::shielded_withdrawal::v0::ShieldedWithdrawalTransitionActionV0;
+    use crate::state_transition_action::shielded::ShieldedActionNote;
+    use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use dpp::block::epoch::Epoch;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::identity::core_script::CoreScript;
+    use dpp::platform_value::Identifier;
+    use dpp::version::PlatformVersion;
+    use dpp::withdrawal::Pooling;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x11; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+        }
+    }
+
+    fn make_document() -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::from([0x11; 32]),
+            owner_id: Identifier::from([0x22; 32]),
+            properties: Default::default(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        })
+    }
+
+    fn make_action() -> ShieldedWithdrawalTransitionAction {
+        ShieldedWithdrawalTransitionAction::V0(ShieldedWithdrawalTransitionActionV0 {
+            amount: 3000,
+            notes: vec![make_note()],
+            anchor: [0xAA; 32],
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![0x76, 0xA9]),
+            fee_amount: 500,
+            current_total_balance: 10000,
+            prepared_withdrawal_document: make_document(),
+        })
+    }
+
+    #[test]
+    fn test_produces_nullifiers_notes_balance_withdrawal_doc_and_system_credits() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // InsertNullifiers + InsertNote (1) + UpdateTotalBalance
+        // + AddWithdrawalDocument + RemoveFromSystemCredits
+        assert_eq!(ops.len(), 5);
+    }
+
+    #[test]
+    fn test_balance_decreases_by_amount_plus_fee() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // Find the UpdateTotalBalance op
+        let balance_op = ops.iter().find(|op| {
+            matches!(
+                op,
+                DriveOperation::ShieldedPoolOperation(
+                    ShieldedPoolOperationType::UpdateTotalBalance { .. }
+                )
+            )
+        });
+        match balance_op.unwrap() {
+            DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::UpdateTotalBalance {
+                new_total_balance,
+            }) => {
+                assert_eq!(*new_total_balance, 6500); // 10000 - 3000 - 500
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_has_withdrawal_document() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        let has_doc = ops.iter().any(|op| {
+            matches!(
+                op,
+                DriveOperation::DocumentOperation(
+                    DocumentOperationType::AddWithdrawalDocument { .. }
+                )
+            )
+        });
+        assert!(has_doc, "expected AddWithdrawalDocument operation");
+    }
+
+    #[test]
+    fn test_removes_from_system_credits() {
+        let action = make_action();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match ops.last().unwrap() {
+            DriveOperation::SystemOperation(SystemOperationType::RemoveFromSystemCredits {
+                amount,
+            }) => {
+                assert_eq!(*amount, 3000);
+            }
+            other => panic!("expected RemoveFromSystemCredits, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_underflow_returns_error() {
+        let action = ShieldedWithdrawalTransitionAction::V0(
+            ShieldedWithdrawalTransitionActionV0 {
+                amount: 5000,
+                notes: vec![],
+                anchor: [0x00; 32],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::from_bytes(vec![]),
+                fee_amount: 6000,
+                current_total_balance: 10000, // 5000 + 6000 > 10000
+                prepared_withdrawal_document: make_document(),
+            },
+        );
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let result = action.into_high_level_drive_operations(&epoch, platform_version);
+        assert!(result.is_err());
+    }
+}

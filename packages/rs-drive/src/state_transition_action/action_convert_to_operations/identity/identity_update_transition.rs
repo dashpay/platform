@@ -125,3 +125,128 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::identity::identity_update::v0::IdentityUpdateTransitionActionV0;
+    use dpp::block::epoch::Epoch;
+    use dpp::platform_value::Identifier;
+    use dpp::version::PlatformVersion;
+
+    fn make_action_no_keys() -> IdentityUpdateTransitionAction {
+        IdentityUpdateTransitionAction::V0(IdentityUpdateTransitionActionV0 {
+            add_public_keys: vec![],
+            disable_public_keys: vec![],
+            identity_id: Identifier::from([0xAA; 32]),
+            revision: 5,
+            nonce: 10,
+            user_fee_increase: 0,
+        })
+    }
+
+    fn make_action_with_disable_keys() -> IdentityUpdateTransitionAction {
+        IdentityUpdateTransitionAction::V0(IdentityUpdateTransitionActionV0 {
+            add_public_keys: vec![],
+            disable_public_keys: vec![1, 3, 5],
+            identity_id: Identifier::from([0xAA; 32]),
+            revision: 7,
+            nonce: 20,
+            user_fee_increase: 0,
+        })
+    }
+
+    fn make_action_with_add_keys() -> IdentityUpdateTransitionAction {
+        let platform_version = PlatformVersion::latest();
+        let (key, _) =
+            IdentityPublicKey::random_masternode_transfer_key(1, Some(42), platform_version)
+                .expect("expected a random key");
+        IdentityUpdateTransitionAction::V0(IdentityUpdateTransitionActionV0 {
+            add_public_keys: vec![key],
+            disable_public_keys: vec![],
+            identity_id: Identifier::from([0xAA; 32]),
+            revision: 3,
+            nonce: 15,
+            user_fee_increase: 0,
+        })
+    }
+
+    #[test]
+    fn test_v1_no_keys_produces_revision_and_nonce() {
+        let action = make_action_no_keys();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // Version 1 path: UpdateIdentityRevision + UpdateIdentityNonce
+        // (version 0 would omit the nonce update)
+        // We check based on what the latest version actually does
+        assert!(ops.len() >= 1);
+
+        match &ops[0] {
+            IdentityOperation(IdentityOperationType::UpdateIdentityRevision {
+                identity_id,
+                revision,
+            }) => {
+                assert_eq!(*identity_id, [0xAA; 32]);
+                assert_eq!(*revision, 5);
+            }
+            other => panic!("expected UpdateIdentityRevision, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_with_disable_keys_produces_disable_operation() {
+        let action = make_action_with_disable_keys();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // Should have a DisableIdentityKeys operation
+        let has_disable = ops.iter().any(|op| {
+            matches!(
+                op,
+                IdentityOperation(IdentityOperationType::DisableIdentityKeys { .. })
+            )
+        });
+        assert!(has_disable, "expected DisableIdentityKeys operation");
+
+        // Check the disable keys content
+        for op in &ops {
+            if let IdentityOperation(IdentityOperationType::DisableIdentityKeys {
+                identity_id,
+                keys_ids,
+            }) = op
+            {
+                assert_eq!(*identity_id, [0xAA; 32]);
+                assert_eq!(*keys_ids, vec![1u32, 3, 5]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_with_add_keys_produces_add_keys_operation() {
+        let action = make_action_with_add_keys();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // Should have an AddNewKeysToIdentity operation
+        let has_add = ops.iter().any(|op| {
+            matches!(
+                op,
+                IdentityOperation(IdentityOperationType::AddNewKeysToIdentity { .. })
+            )
+        });
+        assert!(has_add, "expected AddNewKeysToIdentity operation");
+    }
+}

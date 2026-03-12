@@ -82,3 +82,158 @@ impl DriveHighLevelOperationConverter for AddressCreditWithdrawalTransitionActio
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::address_funds::address_credit_withdrawal::v0::AddressCreditWithdrawalTransitionActionV0;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::block::epoch::Epoch;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn make_document() -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::from([0x11; 32]),
+            owner_id: Identifier::from([0x22; 32]),
+            properties: Default::default(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        })
+    }
+
+    fn make_action_with_output() -> AddressCreditWithdrawalTransitionAction {
+        let addr_a = PlatformAddress::P2pkh([0xAA; 20]);
+        let addr_b = PlatformAddress::P2sh([0xCC; 20]);
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr_a, (5_u32, 10000_u64));
+
+        AddressCreditWithdrawalTransitionAction::V0(AddressCreditWithdrawalTransitionActionV0 {
+            inputs_with_remaining_balance: inputs,
+            output: Some((addr_b, 2000)),
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+            prepared_withdrawal_document: make_document(),
+            amount: 8000,
+        })
+    }
+
+    fn make_action_no_output() -> AddressCreditWithdrawalTransitionAction {
+        let addr_a = PlatformAddress::P2pkh([0xAA; 20]);
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr_a, (5_u32, 2000_u64));
+
+        AddressCreditWithdrawalTransitionAction::V0(AddressCreditWithdrawalTransitionActionV0 {
+            inputs_with_remaining_balance: inputs,
+            output: None,
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+            prepared_withdrawal_document: make_document(),
+            amount: 8000,
+        })
+    }
+
+    #[test]
+    fn test_with_output_produces_correct_operation_count() {
+        let action = make_action_with_output();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // SetBalanceToAddress (1 input) + AddBalanceToAddress (output)
+        // + AddWithdrawalDocument + RemoveFromSystemCredits
+        assert_eq!(ops.len(), 4);
+    }
+
+    #[test]
+    fn test_without_output_produces_correct_operation_count() {
+        let action = make_action_no_output();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // SetBalanceToAddress (1 input) + AddWithdrawalDocument + RemoveFromSystemCredits
+        assert_eq!(ops.len(), 3);
+    }
+
+    #[test]
+    fn test_input_balances_are_set() {
+        let action = make_action_with_output();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        match &ops[0] {
+            AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
+                address,
+                nonce,
+                balance,
+            }) => {
+                assert_eq!(*address, PlatformAddress::P2pkh([0xAA; 20]));
+                assert_eq!(*nonce, 5);
+                assert_eq!(*balance, 10000);
+            }
+            other => panic!("expected SetBalanceToAddress, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_system_credits_removal_matches_amount() {
+        let action = make_action_with_output();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        let last = ops.last().unwrap();
+        match last {
+            SystemOperation(SystemOperationType::RemoveFromSystemCredits { amount }) => {
+                assert_eq!(*amount, 8000);
+            }
+            other => panic!("expected RemoveFromSystemCredits, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_has_withdrawal_document_operation() {
+        let action = make_action_with_output();
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        let has_withdrawal_doc = ops.iter().any(|op| {
+            matches!(
+                op,
+                DocumentOperation(DocumentOperationType::AddWithdrawalDocument { .. })
+            )
+        });
+        assert!(has_withdrawal_doc, "expected AddWithdrawalDocument operation");
+    }
+}

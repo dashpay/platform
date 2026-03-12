@@ -51,3 +51,103 @@ impl ShieldFromAssetLockTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_note() -> ShieldedActionNote {
+        ShieldedActionNote {
+            nullifier: [0x55; 32],
+            cmx: [0x66; 32],
+            encrypted_note: vec![0xDE, 0xAD],
+        }
+    }
+
+    fn make_action() -> ShieldFromAssetLockTransitionAction {
+        let v0 = ShieldFromAssetLockTransitionActionV0 {
+            asset_lock_outpoint: [0xAA; 36],
+            asset_lock_value_to_be_consumed: 50000,
+            signable_bytes_hasher: [0xBB; 32],
+            shield_amount: 45000,
+            notes: vec![make_note()],
+            current_total_balance: 200000,
+        };
+        ShieldFromAssetLockTransitionAction::from(v0)
+    }
+
+    #[test]
+    fn test_from_v0() {
+        let action = make_action();
+        assert!(matches!(
+            action,
+            ShieldFromAssetLockTransitionAction::V0(_)
+        ));
+    }
+
+    #[test]
+    fn test_asset_lock_outpoint() {
+        let action = make_action();
+        assert_eq!(*action.asset_lock_outpoint(), [0xAA; 36]);
+    }
+
+    #[test]
+    fn test_asset_lock_value_to_be_consumed() {
+        let action = make_action();
+        assert_eq!(action.asset_lock_value_to_be_consumed(), 50000);
+    }
+
+    #[test]
+    fn test_signable_bytes_hasher() {
+        let action = make_action();
+        assert_eq!(*action.signable_bytes_hasher(), [0xBB; 32]);
+    }
+
+    #[test]
+    fn test_shield_amount() {
+        let action = make_action();
+        assert_eq!(action.shield_amount(), 45000);
+    }
+
+    #[test]
+    fn test_notes() {
+        let action = make_action();
+        let notes = action.notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].nullifier, [0x55; 32]);
+        assert_eq!(notes[0].cmx, [0x66; 32]);
+        assert_eq!(notes[0].encrypted_note, vec![0xDE, 0xAD]);
+    }
+
+    #[test]
+    fn test_zero_values() {
+        let v0 = ShieldFromAssetLockTransitionActionV0 {
+            asset_lock_outpoint: [0x00; 36],
+            asset_lock_value_to_be_consumed: 0,
+            signable_bytes_hasher: [0x00; 32],
+            shield_amount: 0,
+            notes: vec![],
+            current_total_balance: 0,
+        };
+        let action = ShieldFromAssetLockTransitionAction::from(v0);
+        assert_eq!(action.asset_lock_value_to_be_consumed(), 0);
+        assert_eq!(action.shield_amount(), 0);
+        assert!(action.notes().is_empty());
+    }
+
+    #[test]
+    fn test_clone() {
+        let action = make_action();
+        let cloned = action.clone();
+        assert_eq!(cloned.shield_amount(), 45000);
+        assert_eq!(cloned.asset_lock_value_to_be_consumed(), 50000);
+        assert_eq!(cloned.notes().len(), 1);
+    }
+
+    #[test]
+    fn test_debug() {
+        let action = make_action();
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("V0"));
+    }
+}
