@@ -44,9 +44,9 @@ impl<C> Platform<C> {
                 self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
 
             GetMostRecentShieldedAnchorResponseV0 {
-                result: Some(
-                    get_most_recent_shielded_anchor_response_v0::Result::Proof(proof),
-                ),
+                result: Some(get_most_recent_shielded_anchor_response_v0::Result::Proof(
+                    proof,
+                )),
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
@@ -67,12 +67,10 @@ impl<C> Platform<C> {
             };
 
             GetMostRecentShieldedAnchorResponseV0 {
-                result: Some(
-                    get_most_recent_shielded_anchor_response_v0::Result::Anchor(anchor_bytes),
-                ),
-                metadata: Some(
-                    self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                ),
+                result: Some(get_most_recent_shielded_anchor_response_v0::Result::Anchor(
+                    anchor_bytes,
+                )),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
 

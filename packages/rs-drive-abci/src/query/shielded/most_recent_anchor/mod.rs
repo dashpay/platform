@@ -56,9 +56,11 @@ impl<C> Platform<C> {
                     platform_version,
                 )?;
 
-                Ok(result.map(|response_v0| GetMostRecentShieldedAnchorResponse {
-                    version: Some(ResponseVersion::V0(response_v0)),
-                }))
+                Ok(
+                    result.map(|response_v0| GetMostRecentShieldedAnchorResponse {
+                        version: Some(ResponseVersion::V0(response_v0)),
+                    }),
+                )
             }
         }
     }
