@@ -1,11 +1,16 @@
-//! Key-leaf tracking for iterative address synchronization.
+//! Key-leaf tracking for iterative trunk/branch synchronization.
 //!
 //! This module provides the [`KeyLeafTracker`] which tracks which target keys
 //! need branch queries and which leaf subtrees they're located in.
+//!
+//! Used by both nullifier sync and address balance sync.
 
-use super::types::{AddressKey, LeafBoundaryKey};
+use super::LeafBoundaryKey;
 use drive::grovedb::LeafInfo;
 use std::collections::BTreeMap;
+
+/// A target key being searched for in the tree.
+type TargetKey = Vec<u8>;
 
 /// Tracks which target keys need branch queries and which leaf subtrees they're in.
 ///
@@ -16,8 +21,8 @@ use std::collections::BTreeMap;
 /// This tracker maintains the state needed to efficiently batch and execute branch queries.
 #[derive(Debug)]
 pub struct KeyLeafTracker {
-    /// Map: target address key -> leaf boundary key (which subtree contains this target)
-    key_to_leaf: BTreeMap<AddressKey, LeafBoundaryKey>,
+    /// Map: target key -> leaf boundary key (which subtree contains this target)
+    key_to_leaf: BTreeMap<TargetKey, LeafBoundaryKey>,
 
     /// Refcount: leaf boundary key -> number of pending targets in this subtree
     leaf_refcount: BTreeMap<LeafBoundaryKey, usize>,
@@ -45,10 +50,11 @@ impl KeyLeafTracker {
     /// Add a target key with its associated leaf boundary key.
     ///
     /// # Arguments
-    /// - `target`: The address key we're searching for
+    /// - `target`: The key we're searching for
     /// - `leaf`: The leaf boundary key whose subtree contains the target
     /// - `info`: LeafInfo with hash and optional count
-    pub fn add_key(&mut self, target: AddressKey, leaf: LeafBoundaryKey, info: LeafInfo) {
+    pub fn add_key(&mut self, target: impl Into<Vec<u8>>, leaf: LeafBoundaryKey, info: LeafInfo) {
+        let target = target.into();
         *self.leaf_refcount.entry(leaf.clone()).or_insert(0) += 1;
         self.key_to_leaf.insert(target, leaf.clone());
         self.leaf_info.insert(leaf, info);
@@ -71,7 +77,7 @@ impl KeyLeafTracker {
     /// Called when a branch query reveals the key is in an even deeper subtree.
     ///
     /// # Arguments
-    /// - `key`: The target address key being updated
+    /// - `key`: The target key being updated
     /// - `new_leaf`: The new (deeper) leaf boundary key
     /// - `info`: LeafInfo for the new leaf
     pub fn update_leaf(&mut self, key: &[u8], new_leaf: LeafBoundaryKey, info: LeafInfo) {
@@ -105,8 +111,8 @@ impl KeyLeafTracker {
             .collect()
     }
 
-    /// Get all target address keys associated with a specific leaf boundary key.
-    pub fn keys_for_leaf(&self, leaf: &[u8]) -> Vec<AddressKey> {
+    /// Get all target keys associated with a specific leaf boundary key.
+    pub fn keys_for_leaf(&self, leaf: &[u8]) -> Vec<Vec<u8>> {
         self.key_to_leaf
             .iter()
             .filter(|(_, l)| l.as_slice() == leaf)
@@ -114,7 +120,7 @@ impl KeyLeafTracker {
             .collect()
     }
 
-    /// Get the leaf boundary key for a specific target address key.
+    /// Get the leaf boundary key for a specific target key.
     #[allow(dead_code)]
     pub fn get_leaf_for_key(&self, key: &[u8]) -> Option<&LeafBoundaryKey> {
         self.key_to_leaf.get(key)
