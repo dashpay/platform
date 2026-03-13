@@ -1,47 +1,12 @@
 on:
   workflow_call:
+    inputs:
+      zk-changed:
+        description: Whether ZK/shielded related code has changed
+        type: boolean
+        default: false
 
 jobs:
-  detect-zk-changes:
-    name: Detect ZK code changes
-    runs-on: ubuntu-24.04
-    outputs:
-      zk-changed: ${{ steps.check.outputs.zk-changed }}
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check for ZK-related changes
-        id: check
-        run: |
-          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
-          CHANGED=$(git diff --name-only "$BASE_SHA"...HEAD 2>/dev/null || git diff --name-only HEAD~1)
-          echo "Changed files:"
-          echo "$CHANGED"
-
-          # Check for direct shielded/ZK code changes
-          if echo "$CHANGED" | grep -qE \
-            'packages/rs-dpp/src/shielded/|packages/rs-dpp/src/address_funds/orchard|packages/rs-dpp/src/state_transition/state_transitions/shielded/|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/shield|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/shielded_|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/unshield|packages/rs-drive/src/state_transition_action/shielded/|packages/rs-drive/src/verify/shielded/|packages/rs-drive-abci/tests/strategy_tests/test_cases/shielded_tests'; then
-            echo "zk-changed=true" >> "$GITHUB_OUTPUT"
-            echo "ZK-related files changed — ZK tests will run"
-            exit 0
-          fi
-
-          # Check for grovedb version changes (commitment-tree underpins shielded code)
-          GROVEDB_FILES=$(echo "$CHANGED" | grep -E 'Cargo\.(toml|lock)$' || true)
-          if [ -n "$GROVEDB_FILES" ]; then
-            if git diff "$BASE_SHA"...HEAD -- $GROVEDB_FILES 2>/dev/null | grep -qE 'grovedb.*rev\s*=|name = "grovedb'; then
-              echo "zk-changed=true" >> "$GITHUB_OUTPUT"
-              echo "GroveDB version changed — ZK tests will run"
-              exit 0
-            fi
-          fi
-
-          echo "zk-changed=false" >> "$GITHUB_OUTPUT"
-          echo "No ZK-related changes — skipping ZK tests"
-
   test:
     name: "Tests (shard ${{ matrix.partition }}/6)"
     runs-on: ubuntu-24.04
@@ -167,8 +132,7 @@ jobs:
 
   zk-tests:
     name: ZK / Shielded tests
-    needs: detect-zk-changes
-    if: needs.detect-zk-changes.outputs.zk-changed == 'true'
+    if: ${{ inputs.zk-changed }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
