@@ -22,6 +22,8 @@ jobs:
         run: |
           brew list cmake &>/dev/null || brew install cmake
           brew list gmp &>/dev/null || brew install gmp
+          # Homebrew LLVM is keg-only — add to PATH for cmake compiler detection
+          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
 
       - name: Setup Rust
         uses: ./.github/actions/rust
