@@ -14,9 +14,6 @@ jobs:
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -28,15 +25,6 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/rust
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - uses: taiki-e/install-action@cargo-nextest
 
@@ -68,14 +56,8 @@ jobs:
             -E 'not test(/shield/)'
         env:
           RUST_MIN_STACK: 4194304
-          CARGO_INCREMENTAL: "0"
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/darwin
-          # Override sccache CC/CXX wrapping — cmake in bls-dash-sys build.rs
-          # can't handle compound "sccache clang" values on macOS
-          CC: clang
-          CXX: clang++
 
   test-ubuntu:
     name: "Tests (shard ${{ matrix.partition }}/6)"
