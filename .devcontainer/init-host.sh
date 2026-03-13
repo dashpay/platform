@@ -21,7 +21,14 @@ if [ -d "$HOME/.claude" ]; then
     CLAUDE_AGENTS=""
     CLAUDE_SKILLS=""
     ENV_FILE=".devcontainer/.env"
-    [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+    if [ -f "$ENV_FILE" ]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                CLAUDE_AGENTS) CLAUDE_AGENTS="$value" ;;
+                CLAUDE_SKILLS) CLAUDE_SKILLS="$value" ;;
+            esac
+        done < <(grep -E '^(CLAUDE_AGENTS|CLAUDE_SKILLS)=' "$ENV_FILE")
+    fi
 
     if [ -n "$CLAUDE_AGENTS" ]; then
         mkdir -p "$CLAUDE_STAGING/agents"

@@ -26,6 +26,13 @@ fi
 # --- Git configuration ---
 git config --global --add safe.directory "$WORKSPACE"
 
+# Configure git to use HTTPS with GH_TOKEN/GITHUB_TOKEN if available.
+# This allows git push/pull and gh CLI to work without SSH keys.
+if [ -n "${GH_TOKEN:-}" ] || [ -n "${GITHUB_TOKEN:-}" ]; then
+    gh auth setup-git 2>/dev/null || true
+    echo "GitHub auth configured via GH_TOKEN (HTTPS git operations enabled)."
+fi
+
 # --- Cargo permissions ---
 sudo chown -R vscode:vscode /home/vscode/.cargo "$WORKSPACE/target" 2>/dev/null || true
 

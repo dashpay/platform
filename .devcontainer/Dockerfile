@@ -50,11 +50,6 @@ RUN ARCH=$(dpkg --print-architecture) && \
     dpkg -i /tmp/git-delta.deb && \
     rm /tmp/git-delta.deb
 
-# Persist bash/zsh history
-RUN mkdir -p /commandhistory && \
-    touch /commandhistory/.bash_history /commandhistory/.zsh_history && \
-    chown -R vscode:vscode /commandhistory
-
 # Switch to vscode user for Rust and cargo tools
 USER vscode
 

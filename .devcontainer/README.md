@@ -13,16 +13,20 @@ Sandboxed development environment for Dash Platform with Claude Code pre-configu
 
 ## Prerequisites
 
-### SSH keys (for git push/pull)
+### GitHub access (for git push/pull)
 
-VS Code forwards your host's SSH agent into the container automatically. Make sure your key is loaded:
+The easiest option is to export `GH_TOKEN` (or `GITHUB_TOKEN`) on your host. The devcontainer forwards it and configures HTTPS git automatically — no SSH key required:
+
+```bash
+export GH_TOKEN=ghp_...   # add to your shell profile
+```
+
+Alternatively, VS Code forwards your host's SSH agent into the container. Make sure your key is loaded:
 
 ```bash
 ssh-add --apple-use-keychain ~/.ssh/id_rsa   # macOS
 ssh-add ~/.ssh/id_rsa                         # Linux
 ```
-
-Without this, `git push`/`git pull` will fail with `Permission denied (publickey)`.
 
 ### Claude Code authentication
 
@@ -175,7 +179,16 @@ By default, the container has unrestricted network access. To enable a restricti
 "waitFor": "postStartCommand"
 ```
 
-You'll also need to add `iptables ipset iproute2 dnsutils` to the `apt-get install` in the Dockerfile and uncomment the firewall COPY/sudoers block. See `init-firewall.sh` for the domain whitelist.
+You'll also need to make two changes to the `Dockerfile`:
+
+1. Add `iptables ipset iproute2 dnsutils` to the `apt-get install` block.
+2. After the apt-get block, add:
+   ```dockerfile
+   COPY init-firewall.sh /usr/local/bin/init-firewall.sh
+   RUN echo "vscode ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/firewall
+   ```
+
+See `init-firewall.sh` for the domain whitelist.
 
 ## Persistent Data
 
