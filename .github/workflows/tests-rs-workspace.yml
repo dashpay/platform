@@ -72,6 +72,10 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/darwin
+          # Override sccache CC/CXX wrapping — cmake in bls-dash-sys build.rs
+          # can't handle compound "sccache clang" values on macOS
+          CC: clang
+          CXX: clang++
 
   test-ubuntu:
     name: "Tests (shard ${{ matrix.partition }}/6)"
