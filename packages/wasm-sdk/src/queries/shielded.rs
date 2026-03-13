@@ -177,12 +177,16 @@ impl WasmSdk {
             .map(|n| {
                 let uint8_arr = Uint8Array::new(&n);
                 let bytes = uint8_arr.to_vec();
+                if bytes.len() != 32 {
+                    return Err(WasmSdkError::invalid_argument(
+                        "Each nullifier must be exactly 32 bytes",
+                    ));
+                }
                 let mut arr = [0u8; 32];
-                let len = bytes.len().min(32);
-                arr[..len].copy_from_slice(&bytes[..len]);
-                arr
+                arr.copy_from_slice(&bytes);
+                Ok(arr)
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let result = ShieldedNullifierStatuses::fetch(self.as_ref(), query).await?;
@@ -325,12 +329,16 @@ impl WasmSdk {
             .map(|n| {
                 let uint8_arr = Uint8Array::new(&n);
                 let bytes = uint8_arr.to_vec();
+                if bytes.len() != 32 {
+                    return Err(WasmSdkError::invalid_argument(
+                        "Each nullifier must be exactly 32 bytes",
+                    ));
+                }
                 let mut arr = [0u8; 32];
-                let len = bytes.len().min(32);
-                arr[..len].copy_from_slice(&bytes[..len]);
-                arr
+                arr.copy_from_slice(&bytes);
+                Ok(arr)
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let (result, metadata, proof) =
