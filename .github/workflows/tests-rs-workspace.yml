@@ -24,9 +24,6 @@ jobs:
           cache-on-failure: "true"
           workspaces: ". -> target/llvm-cov-target"
 
-      - name: Install librocksdb
-        uses: ./.github/actions/librocksdb
-
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@cargo-nextest
 
@@ -73,10 +70,6 @@ jobs:
             --lcov --output-path lcov.info
         env:
           RUST_MIN_STACK: 4194304
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
 
       - name: Upload coverage
         if: always()
