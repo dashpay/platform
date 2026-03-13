@@ -82,8 +82,7 @@ jobs:
         if: matrix.partition == 1
         run: |
           cargo test \
-            --package wasm-dpp2 \
-            --package wasm-sdk \
+            --workspace \
             --all-features \
             --locked \
             --doc
