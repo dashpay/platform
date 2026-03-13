@@ -85,6 +85,7 @@ jobs:
           filters: |
             rs-workflows:
               - .github/workflows/tests-rs-workspace.yml
+              - .github/workflows/tests-rs-doctests.yml
               - .github/workflows/tests-rs-package.yml
               - .github/workflows/tests.yml
 
@@ -170,6 +171,14 @@ jobs:
     if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
+
+  rs-doctests:
+    name: Rust doctests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-doctests.yml
 
   rs-packages:
     name: Rust packages

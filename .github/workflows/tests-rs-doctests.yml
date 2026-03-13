@@ -1,0 +1,41 @@
+on:
+  workflow_call:
+
+jobs:
+  doctests:
+    name: Doctests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Strip cdylib crate-types (incompatible with static rocksdb)
+        run: |
+          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
+          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
+          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
+          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
+
+      - name: Run doctests
+        run: |
+          cargo test \
+            --workspace \
+            --all-features \
+            --locked \
+            --doc
+        env:
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"

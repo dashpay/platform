@@ -78,20 +78,6 @@ jobs:
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
 
-      - name: Run doctests (shard 1 only)
-        if: matrix.partition == 1
-        run: |
-          cargo test \
-            --workspace \
-            --all-features \
-            --locked \
-            --doc
-        env:
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
       - name: Upload coverage
         if: always()
         uses: codecov/codecov-action@v5
