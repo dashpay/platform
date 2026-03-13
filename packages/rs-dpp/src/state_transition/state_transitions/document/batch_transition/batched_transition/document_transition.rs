@@ -1,7 +1,7 @@
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 use derive_more::{Display, From};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode};
 use crate::prelude::{IdentityNonce, Revision};
@@ -18,10 +18,7 @@ use crate::state_transition::batch_transition::document_replace_transition::v0::
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum DocumentTransition {
     #[display("CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),

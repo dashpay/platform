@@ -35,4 +35,3 @@ const transaction = new Transaction({
 
 storage.updateTransaction(transaction);
 ```
-

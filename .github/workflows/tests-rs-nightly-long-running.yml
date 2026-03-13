@@ -1,0 +1,88 @@
+name: "Nightly: Long-running Rust tests"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 22 * * *" # 22:00 UTC daily, 1 hour before main nightly tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade-fork-tests:
+    name: Version upgrade tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Run nightly-only upgrade fork tests
+        run: |
+          ulimit -c unlimited
+          RUST_MIN_STACK=4194304 cargo test \
+            --package drive-abci \
+            --test strategy_tests \
+            --all-features \
+            --locked \
+            -- --ignored "upgrade_fork_tests"
+        env:
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Collect crash artifacts
+        if: failure()
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          if ! compgen -G "/cores/*" > /dev/null; then
+            echo "No core dumps were produced; skipping artifact archive."
+            exit 0
+          fi
+
+          ARTIFACT_DIR=crash-artifacts
+          rm -rf "${ARTIFACT_DIR}"
+          mkdir -p "${ARTIFACT_DIR}/cores" "${ARTIFACT_DIR}/binaries"
+
+          cp -a /cores/. "${ARTIFACT_DIR}/cores/"
+
+          BIN_PREFIX=drive_abci
+          for path in target/debug/deps/${BIN_PREFIX}-* target/debug/${BIN_PREFIX}-*; do
+            if [[ -f "$path" && -x "$path" ]]; then
+              cp -a "$path" "${ARTIFACT_DIR}/binaries/"
+            fi
+          done
+
+          (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
+
+      - name: Upload core dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-dumps-drive-abci-nightly
+          path: core-dumps.zip
+          if-no-files-found: ignore
+          retention-days: 3

@@ -4,7 +4,7 @@ import DashSDKFFI
 
 struct StateTransitionsView: View {
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     enum TransitionCategory: String, CaseIterable {
         case address = "Address"
         case identity = "Identity"
@@ -12,7 +12,7 @@ struct StateTransitionsView: View {
         case document = "Document"
         case token = "Token"
         case voting = "Voting"
-        
+
         var icon: String {
             switch self {
             case .address: return "building.columns.fill"
@@ -23,7 +23,7 @@ struct StateTransitionsView: View {
             case .voting: return "hand.raised.fill"
             }
         }
-        
+
         var description: String {
             switch self {
             case .address: return "Transfer and withdraw credits using Platform addresses"
@@ -35,7 +35,7 @@ struct StateTransitionsView: View {
             }
         }
     }
-    
+
     var body: some View {
         List {
             ForEach(TransitionCategory.allCases, id: \.self) { category in
@@ -45,7 +45,7 @@ struct StateTransitionsView: View {
                             .font(.title2)
                             .foregroundColor(.blue)
                             .frame(width: 30)
-                        
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text(category.rawValue)
                                 .font(.headline)
@@ -54,7 +54,7 @@ struct StateTransitionsView: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(2)
                         }
-                        
+
                         Spacer()
                     }
                     .padding(.vertical, 8)

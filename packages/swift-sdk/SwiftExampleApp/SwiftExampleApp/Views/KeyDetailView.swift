@@ -11,13 +11,13 @@ struct KeyDetailView: View {
     @State private var showForgetKeyAlert = false
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var appState: AppState
-    
+
     var hasPrivateKey: Bool {
         let result = KeychainManager.shared.hasPrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
         print("🔑 KeyDetailView: hasPrivateKey for key \(publicKey.id) = \(result)")
         return result
     }
-    
+
     var body: some View {
         Form {
             // Key Information Section
@@ -28,35 +28,35 @@ struct KeyDetailView: View {
                     Text("#\(publicKey.id)")
                         .fontWeight(.medium)
                 }
-                
+
                 HStack {
                     Text("Purpose")
                     Spacer()
                     Text(publicKey.purpose.name)
                         .fontWeight(.medium)
                 }
-                
+
                 HStack {
                     Text("Type")
                     Spacer()
                     Text(publicKey.keyType.name)
                         .fontWeight(.medium)
                 }
-                
+
                 HStack {
                     Text("Security Level")
                     Spacer()
                     SecurityLevelBadge(level: publicKey.securityLevel)
                 }
             }
-            
+
             // Public Key Section
             Section("Public Key") {
                 Text(publicKey.data.toHexString())
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
             }
-            
+
             // Private Key Section
             if hasPrivateKey {
                 Section("Private Key") {
@@ -65,11 +65,11 @@ struct KeyDetailView: View {
                             .foregroundColor(.green)
                         Text("Private key is stored securely")
                     }
-                    
+
                     Button(action: viewPrivateKey) {
                         Label("View Private Key", systemImage: "eye.fill")
                     }
-                    
+
                     Button(action: { showForgetKeyAlert = true }) {
                         Label("Forget Private Key", systemImage: "trash")
                     }
@@ -81,19 +81,19 @@ struct KeyDetailView: View {
                         Text("Enter the private key for this public key")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
+
                         TextField("Private key (hex or WIF)", text: $privateKeyInput)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
-                        
+
                         if let error = validationError {
                             Text(error)
                                 .font(.caption)
                                 .foregroundColor(.red)
                         }
                     }
-                    
+
                     Button(action: validateAndStorePrivateKey) {
                         HStack {
                             if isValidating {
@@ -128,12 +128,12 @@ struct KeyDetailView: View {
             Text("Are you sure you want to forget this private key? This action cannot be undone and you will need to re-enter the key to use it again.")
         }
     }
-    
+
     private func viewPrivateKey() {
         // This will trigger the sheet presentation through the parent view
         // For now, we could show an alert or navigate to a secure view
     }
-    
+
     private func validateAndStorePrivateKey() {
         isValidating = true
         validationError = nil
@@ -187,11 +187,11 @@ struct KeyDetailView: View {
             }
         }
     }
-    
+
     private func forgetPrivateKey() {
         // Remove from keychain
         let removed = KeychainManager.shared.deletePrivateKey(identityId: identity.id, keyIndex: Int32(publicKey.id))
-        
+
         if removed {
             // Update the persistent public key to clear the reference
             appState.removePrivateKeyReference(identityId: identity.id, keyId: Int32(publicKey.id))

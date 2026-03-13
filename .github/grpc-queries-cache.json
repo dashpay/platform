@@ -1,9 +1,5 @@
 {
   "known_queries": {
-    "broadcastStateTransition": {
-      "status": "excluded",
-      "reason": "Explicitly excluded as per requirement"
-    },
     "getIdentity": {
       "status": "implemented"
     },
@@ -118,9 +114,6 @@
     "getTokenContractInfo": {
       "status": "implemented"
     },
-    "getTokenPreProgrammedDistributions": {
-      "status": "not_implemented"
-    },
     "getTokenPerpetualDistributionLastClaim": {
       "status": "implemented"
     },
@@ -139,9 +132,51 @@
     "getGroupActionSigners": {
       "status": "implemented"
     },
-    "getConsensusParams": {
-      "status": "not_implemented"
+    "getAddressInfo": {
+      "status": "implemented"
+    },
+    "getAddressesBranchState": {
+      "status": "implemented"
+    },
+    "getAddressesInfos": {
+      "status": "implemented"
+    },
+    "getAddressesTrunkState": {
+      "status": "implemented"
+    },
+    "getRecentAddressBalanceChanges": {
+      "status": "implemented"
+    },
+    "getRecentCompactedAddressBalanceChanges": {
+      "status": "implemented"
+    },
+    "getShieldedEncryptedNotes": {
+      "status": "implemented"
+    },
+    "getShieldedAnchors": {
+      "status": "implemented"
+    },
+    "getMostRecentShieldedAnchor": {
+      "status": "implemented"
+    },
+    "getShieldedPoolState": {
+      "status": "implemented"
+    },
+    "getShieldedNullifiers": {
+      "status": "implemented"
+    },
+    "getNullifiersTrunkState": {
+      "status": "implemented"
+    },
+    "getNullifiersBranchState": {
+      "status": "implemented"
+    },
+    "getRecentNullifierChanges": {
+      "status": "implemented"
+    },
+    "getRecentCompactedNullifierChanges": {
+      "status": "implemented"
     }
   },
-  "last_updated": "2025-07-14T03:27:11.465612"
+  "last_updated": "2026-03-10T11:25:01.317388"
 }

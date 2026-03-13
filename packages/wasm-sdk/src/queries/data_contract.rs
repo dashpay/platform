@@ -164,7 +164,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDataContracts",
-        unchecked_return_type = "Map<Identifier, DataContract | undefined>"
+        unchecked_return_type = "Map<string, DataContract | undefined>"
     )]
     pub async fn get_data_contracts(
         &self,
@@ -181,7 +181,7 @@ impl WasmSdk {
         let contracts_map = Map::new();
 
         for (id, contract) in contracts_result {
-            let key = JsValue::from(IdentifierWasm::from(id));
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
             let value = contract.map(DataContractWasm::from);
             contracts_map.set(&key, &JsValue::from(value));
         }
@@ -226,7 +226,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDataContractsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, DataContract | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, DataContract | undefined>>"
     )]
     pub async fn get_data_contracts_with_proof_info(
         &self,
@@ -244,7 +244,7 @@ impl WasmSdk {
         let contracts_map = Map::new();
 
         for (id, contract_opt) in contracts_result {
-            let key = JsValue::from(IdentifierWasm::from(id));
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
             let value = contract_opt.map(DataContractWasm::from);
 
             contracts_map.set(&key, &JsValue::from(value));

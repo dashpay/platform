@@ -1098,15 +1098,84 @@ impl FromProof<platform::GetAddressesTrunkStateRequest> for PlatformAddressTrunk
     where
         PlatformAddressTrunkState: 'a,
     {
-        let (result, metadata, proof) = GroveTrunkQueryResult::maybe_from_proof_with_metadata(
-            request,
-            response,
-            network,
-            platform_version,
-            provider,
+        let (result, metadata, proof) = <GroveTrunkQueryResult as FromProof<
+            platform::GetAddressesTrunkStateRequest,
+        >>::maybe_from_proof_with_metadata(
+            request, response, network, platform_version, provider
         )?;
 
         Ok((result.map(PlatformAddressTrunkState), metadata, proof))
+    }
+}
+
+impl FromProof<platform::GetNullifiersTrunkStateRequest> for GroveTrunkQueryResult {
+    type Request = platform::GetNullifiersTrunkStateRequest;
+    type Response = platform::GetNullifiersTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        GroveTrunkQueryResult: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        // Extract pool_type and pool_identifier from request
+        let (pool_type, pool_identifier) = match &request.version {
+            Some(platform::get_nullifiers_trunk_state_request::Version::V0(v0)) => {
+                let pool_id = if v0.pool_identifier.is_empty() {
+                    None
+                } else {
+                    Some(v0.pool_identifier.as_slice())
+                };
+                (v0.pool_type, pool_id)
+            }
+            None => return Err(Error::EmptyVersion),
+        };
+
+        let (root_hash, trunk_result) = Drive::verify_nullifiers_trunk_query(
+            &proof.grovedb_proof,
+            pool_type,
+            pool_identifier,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((Some(trunk_result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetNullifiersTrunkStateRequest> for NullifiersTrunkState {
+    type Request = platform::GetNullifiersTrunkStateRequest;
+    type Response = platform::GetNullifiersTrunkStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        NullifiersTrunkState: 'a,
+    {
+        let (result, metadata, proof) = <GroveTrunkQueryResult as FromProof<
+            platform::GetNullifiersTrunkStateRequest,
+        >>::maybe_from_proof_with_metadata(
+            request, response, network, platform_version, provider
+        )?;
+
+        Ok((result.map(NullifiersTrunkState), metadata, proof))
     }
 }
 
@@ -2301,6 +2370,342 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     };
 
     Ok(i)
+}
+
+// --- Shielded Pool Query Proof Verification ---
+
+impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
+    type Request = platform::GetShieldedPoolStateRequest;
+    type Response = platform::GetShieldedPoolStateResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, maybe_balance) =
+            Drive::verify_shielded_pool_state(&proof.grovedb_proof, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_balance.map(ShieldedPoolState),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
+    type Request = platform::GetShieldedAnchorsRequest;
+    type Response = platform::GetShieldedAnchorsResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, anchors) =
+            Drive::verify_shielded_anchors(&proof.grovedb_proof, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = if anchors.is_empty() {
+            None
+        } else {
+            Some(ShieldedAnchors(anchors))
+        };
+
+        Ok((result, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetMostRecentShieldedAnchorRequest> for MostRecentShieldedAnchor {
+    type Request = platform::GetMostRecentShieldedAnchorRequest;
+    type Response = platform::GetMostRecentShieldedAnchorResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, maybe_anchor) = Drive::verify_most_recent_shielded_anchor(
+            &proof.grovedb_proof,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_anchor.map(MostRecentShieldedAnchor),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotes {
+    type Request = platform::GetShieldedEncryptedNotesRequest;
+    type Response = platform::GetShieldedEncryptedNotesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        use dapi_grpc::platform::v0::get_shielded_encrypted_notes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (start_index, count) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_encrypted_notes_request::Version::V0(v0) => (v0.start_index, v0.count),
+        };
+
+        let max_elements = platform_version
+            .drive_abci
+            .query
+            .shielded_queries
+            .max_encrypted_notes_per_query as u32;
+
+        let (root_hash, notes) = Drive::verify_shielded_encrypted_notes(
+            &proof.grovedb_proof,
+            start_index,
+            count,
+            max_elements,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = if notes.is_empty() {
+            None
+        } else {
+            Some(ShieldedEncryptedNotes(
+                notes
+                    .into_iter()
+                    .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
+                        cmx,
+                        nullifier,
+                        encrypted_note,
+                    })
+                    .collect(),
+            ))
+        };
+
+        Ok((result, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetShieldedNullifiersRequest> for ShieldedNullifierStatuses {
+    type Request = platform::GetShieldedNullifiersRequest;
+    type Response = platform::GetShieldedNullifiersResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        use dapi_grpc::platform::v0::get_shielded_nullifiers_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let nullifiers = match request.version.ok_or(Error::EmptyVersion)? {
+            get_shielded_nullifiers_request::Version::V0(v0) => v0.nullifiers,
+        };
+
+        let (root_hash, statuses) = Drive::verify_shielded_nullifiers(
+            &proof.grovedb_proof,
+            &nullifiers,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = if statuses.is_empty() {
+            None
+        } else {
+            Some(ShieldedNullifierStatuses(
+                statuses
+                    .into_iter()
+                    .map(|(nullifier, is_spent)| {
+                        let nullifier: [u8; 32] =
+                            nullifier
+                                .try_into()
+                                .map_err(|_| Error::ResultEncodingError {
+                                    error: "nullifier from Drive proof is not 32 bytes".to_string(),
+                                })?;
+                        Ok(ShieldedNullifierStatus {
+                            nullifier,
+                            is_spent,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?,
+            ))
+        };
+
+        Ok((result, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentNullifierChangesRequest> for RecentNullifierChanges {
+    type Request = platform::GetRecentNullifierChangesRequest;
+    type Response = platform::GetRecentNullifierChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentNullifierChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_nullifier_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_nullifier_changes_request::Version::V0(v0) => v0.start_height,
+        };
+
+        let limit = Some(100u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_recent_nullifier_changes(
+            &proof.grovedb_proof,
+            start_height,
+            limit,
+            false,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentNullifierChanges(
+            verified_changes
+                .into_iter()
+                .map(|change| BlockNullifierChanges {
+                    block_height: change.block_height,
+                    nullifiers: change.nullifiers.into_inner(),
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetRecentCompactedNullifierChangesRequest>
+    for RecentCompactedNullifierChanges
+{
+    type Request = platform::GetRecentCompactedNullifierChangesRequest;
+    type Response = platform::GetRecentCompactedNullifierChangesResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        RecentCompactedNullifierChanges: 'a,
+    {
+        use dapi_grpc::platform::v0::get_recent_compacted_nullifier_changes_request;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let start_block_height = match request.version.ok_or(Error::EmptyVersion)? {
+            get_recent_compacted_nullifier_changes_request::Version::V0(v0) => {
+                v0.start_block_height
+            }
+        };
+
+        let limit = Some(25u16); // Same limit as in query handler
+
+        let (root_hash, verified_changes) = Drive::verify_compacted_nullifier_changes(
+            &proof.grovedb_proof,
+            start_block_height,
+            limit,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let result = RecentCompactedNullifierChanges(
+            verified_changes
+                .into_iter()
+                .map(|change| CompactedBlockNullifierChanges {
+                    start_block_height: change.start_block,
+                    end_block_height: change.end_block,
+                    nullifiers: change.nullifiers.into_inner(),
+                })
+                .collect(),
+        );
+
+        Ok((Some(result), mtd.clone(), proof.clone()))
+    }
 }
 
 /// Determine number of non-None elements

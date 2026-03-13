@@ -161,7 +161,7 @@ var body: some View {
             } header: {
                 Text("Platform Sync Status")
             }
-            
+
             // Section 2: Wallets
             Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
                 if walletsForCurrentNetwork.isEmpty {
@@ -169,14 +169,14 @@ var body: some View {
                         Image(systemName: "wallet.pass")
                             .font(.system(size: 40))
                             .foregroundColor(.gray)
-                        
+
                         Text("No \(unifiedAppState.platformState.currentNetwork.displayName) Wallets")
                             .font(.headline)
-                        
+
                         Text("Create a wallet for \(unifiedAppState.platformState.currentNetwork.displayName)")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        
+
                         Button {
                             showingCreateWallet = true
                         } label: {
@@ -229,9 +229,9 @@ var body: some View {
         }
         // No local polling; rows bind to WalletService progress directly
     }
-    
+
     // MARK: - Sync Methods
-    
+
     private func toggleSync() {
         if walletService.syncProgress.state.isRunning() {
             pauseSync()
@@ -239,17 +239,17 @@ var body: some View {
             startSync()
         }
     }
-    
+
     private func startSync() {
         Task {
             await walletService.startSync()
         }
     }
-    
+
     private func pauseSync() {
         walletService.stopSync()
     }
-    
+
     private func restartHeaderSync() {
         if walletService.syncProgress.state.isRunning() {
             // TODO: Call walletService.restartHeaderSync() when implemented

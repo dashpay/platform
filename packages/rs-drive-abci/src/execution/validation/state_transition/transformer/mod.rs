@@ -7,6 +7,11 @@ use crate::execution::validation::state_transition::address_funds_transfer::Stat
 use crate::execution::validation::state_transition::identity_create::StateTransitionActionTransformerForIdentityCreateTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
+use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
+use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
+use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
+use crate::execution::validation::state_transition::shielded_withdrawal::StateTransitionShieldedWithdrawalTransitionActionTransformer;
+use crate::execution::validation::state_transition::unshield::StateTransitionUnshieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -229,6 +234,52 @@ impl StateTransitionActionTransformer for StateTransition {
                     remaining_address_input_balances.clone(),
                 )
             }
+            StateTransition::Shield(st) => {
+                let Some(remaining_address_input_balances) = remaining_address_input_balances
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we must have remaining address input balances",
+                    )));
+                };
+                st.transform_into_action_for_shield_transition(
+                    platform,
+                    remaining_address_input_balances.clone(),
+                    block_info,
+                    execution_context,
+                    tx,
+                )
+            }
+            StateTransition::ShieldedTransfer(st) => st
+                .transform_into_action_for_shielded_transfer_transition(
+                    platform,
+                    block_info,
+                    execution_context,
+                    tx,
+                ),
+            StateTransition::Unshield(st) => st.transform_into_action_for_unshield_transition(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::ShieldFromAssetLock(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.transform_into_action_for_shield_from_asset_lock_transition(
+                    platform,
+                    signable_bytes,
+                    validation_mode,
+                    block_info,
+                    execution_context,
+                    tx,
+                )
+            }
+            StateTransition::ShieldedWithdrawal(st) => st
+                .transform_into_action_for_shielded_withdrawal_transition(
+                    platform,
+                    block_info,
+                    execution_context,
+                    tx,
+                ),
         }
     }
 }

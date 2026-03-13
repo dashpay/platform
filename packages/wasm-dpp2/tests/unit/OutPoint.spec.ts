@@ -74,7 +74,7 @@ describe('OutPoint', () => {
       const base64 = outpoint.toBase64();
       const bytes = outpoint.toBytes();
 
-      expect(Buffer.from(wasm.OutPoint.fromBase64(base64).toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(wasm.OutPoint.fromBase64(base64).toBytes()).to.deep.equal(bytes);
     });
   });
 });

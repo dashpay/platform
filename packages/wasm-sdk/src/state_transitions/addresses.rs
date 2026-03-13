@@ -33,7 +33,7 @@ use wasm_dpp2::{
 /// Converts address infos from SDK response to a JavaScript Map.
 ///
 /// This helper handles the common pattern of converting IndexMap<PlatformAddress, Option<AddressInfo>>
-/// to Map<PlatformAddress, PlatformAddressInfo> for WASM bindings.
+/// to Map<string(hex), PlatformAddressInfo> for WASM bindings.
 fn address_infos_to_js_map(
     address_infos: IndexMap<PlatformAddress, Option<AddressInfo>>,
     operation_name: &str,
@@ -47,7 +47,7 @@ fn address_infos_to_js_map(
                 address, operation_name
             ))
         })?;
-        let key = JsValue::from(PlatformAddressWasm::from(address));
+        let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
         let value = JsValue::from(PlatformAddressInfoWasm::from(info));
         map.set(&key, &value);
     }
@@ -149,7 +149,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundsTransfer",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funds_transfer(
         &self,
@@ -164,8 +164,8 @@ impl WasmSdk {
         let parsed = deserialize_transfer_options(options.into())?;
 
         // Convert inputs and outputs to maps
-        let inputs_map = outputs_to_btree_map(parsed.inputs);
-        let outputs_map = outputs_to_btree_map(parsed.outputs);
+        let inputs_map = outputs_to_btree_map(parsed.inputs)?;
+        let outputs_map = outputs_to_btree_map(parsed.outputs)?;
 
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
@@ -292,7 +292,7 @@ impl WasmSdk {
         let parsed = deserialize_identity_top_up_options(options.into())?;
 
         // Convert inputs to map
-        let inputs_map = outputs_to_btree_map(parsed.inputs);
+        let inputs_map = outputs_to_btree_map(parsed.inputs)?;
 
         // Use the SDK's top_up_from_addresses method
         let (address_infos, new_balance) = identity
@@ -419,7 +419,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundsWithdraw",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funds_withdraw(
         &self,
@@ -436,10 +436,13 @@ impl WasmSdk {
         let parsed = deserialize_withdraw_options(options.into())?;
 
         // Convert inputs to map
-        let inputs_map = outputs_to_btree_map(parsed.inputs);
+        let inputs_map = outputs_to_btree_map(parsed.inputs)?;
 
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| output.into_inner());
+        let change_output = parsed
+            .change_output
+            .map(|output| output.try_into_inner())
+            .transpose()?;
 
         // Convert fee strategy from input using wasm-dpp2 helper
         let fee_strategy = fee_strategy_from_steps_or_default(parsed.fee_strategy);
@@ -490,7 +493,7 @@ impl WasmSdk {
         let parsed = deserialize_identity_transfer_options(options.into())?;
 
         // Convert outputs to map (recipient addresses with amounts)
-        let outputs_map = outputs_to_btree_map(parsed.outputs);
+        let outputs_map = outputs_to_btree_map(parsed.outputs)?;
 
         // Get the signing key if a specific key ID was requested
         use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -713,7 +716,7 @@ impl WasmSdk {
     /// @returns Promise resolving to Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "addressFundingFromAssetLock",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo>"
     )]
     pub async fn address_funding_from_asset_lock(
         &self,
@@ -901,11 +904,14 @@ impl WasmSdk {
         let parsed = deserialize_identity_create_options(options.into())?;
 
         // Convert inputs to map (address -> amount)
-        let inputs_map = outputs_to_btree_map(parsed.inputs);
+        let inputs_map = outputs_to_btree_map(parsed.inputs)?;
         // Extend inputs with nonces
         let inputs = fetch_nonces_into_address_map(self.inner_sdk(), inputs_map).await?;
         // Convert change output if provided
-        let change_output = parsed.change_output.map(|output| output.into_inner());
+        let change_output = parsed
+            .change_output
+            .map(|output| output.try_into_inner())
+            .transpose()?;
 
         // Use the SDK's put_with_address_funding method
         let (created_identity, address_infos) = identity

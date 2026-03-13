@@ -24,25 +24,18 @@ web-sys = { version = "0.3.64", features = ["console"] }
 thiserror = { version = "2.0.17" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
-    "state-transition-serde-conversion",
-    "state-transition-value-conversion",
-    "data-contract-value-conversion",
-    "data-contract-json-conversion",
+    "json-conversion",
     "state-transitions",
     "cbor",
     "platform-value",
     "json-object",
-    "identity-value-conversion",
     "identity-hashing",
     "factories",
     "client",
     "validation",
     "state-transition-signing",
     "state-transition-validation",
-    "state-transition-json-conversion",
     "extended-document",
-    "document-value-conversion",
-    "document-json-conversion",
     "data-contracts",
 ] }
 itertools = { version = "0.13" }

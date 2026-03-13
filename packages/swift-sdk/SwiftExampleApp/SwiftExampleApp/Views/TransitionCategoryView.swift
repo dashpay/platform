@@ -4,7 +4,7 @@ import SwiftDashSDK
 struct TransitionCategoryView: View {
     let category: StateTransitionsView.TransitionCategory
     @EnvironmentObject var appState: UnifiedAppState
-    
+
     var transitions: [(key: String, label: String, description: String)] {
         switch category {
         case .address:
@@ -49,7 +49,7 @@ struct TransitionCategoryView: View {
             ]
         }
     }
-    
+
     var body: some View {
         if category == .address {
             List {
@@ -64,7 +64,7 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 NavigationLink(destination: WithdrawAddressFundsView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Withdraw Address Funds")
@@ -76,7 +76,7 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 NavigationLink(destination: TopUpAddressFromAssetLockView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Top Up Address (Asset Lock)")
@@ -88,7 +88,7 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 NavigationLink(destination: TopUpIdentityFromAddressesView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Top Up Identity (From Addresses)")
@@ -100,7 +100,7 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 NavigationLink(destination: TransferIdentityToAddressesView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Transfer Identity → Addresses")
@@ -112,7 +112,7 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 NavigationLink(destination: CreateIdentityFromAddressesView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Create Identity (From Addresses)")

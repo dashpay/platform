@@ -3,7 +3,7 @@ use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{Decode, Encode};
 use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of entries in a P2SH signatures vector.
@@ -121,7 +121,7 @@ impl<'de, C> bincode::BorrowDecode<'de, C> for AddressWitness {
     }
 }
 
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 impl Serialize for AddressWitness {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -150,7 +150,7 @@ impl Serialize for AddressWitness {
     }
 }
 
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 impl<'de> Deserialize<'de> for AddressWitness {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -376,7 +376,7 @@ mod tests {
         assert_ne!(id, witness2.unique_id());
     }
 
-    #[cfg(feature = "state-transition-serde-conversion")]
+    #[cfg(feature = "serde-conversion")]
     #[test]
     fn test_p2pkh_serde() {
         let witness = AddressWitness::P2pkh {
@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(witness, deserialized);
     }
 
-    #[cfg(feature = "state-transition-serde-conversion")]
+    #[cfg(feature = "serde-conversion")]
     #[test]
     fn test_p2sh_serde() {
         let witness = AddressWitness::P2sh {

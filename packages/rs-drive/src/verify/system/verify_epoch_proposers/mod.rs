@@ -60,3 +60,41 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_epoch_proposers_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        // NOTE: The dispatch code reads verify_epoch_infos (not verify_epoch_proposers).
+        platform_version
+            .drive
+            .methods
+            .verify
+            .system
+            .verify_epoch_infos = 255;
+
+        let result = Drive::verify_epoch_proposers::<
+            Vec<(Vec<u8>, u64)>,
+            Vec<u8>,
+            std::convert::Infallible,
+        >(
+            &[],
+            0,
+            ProposerQueryType::ByRange(None, None),
+            &platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

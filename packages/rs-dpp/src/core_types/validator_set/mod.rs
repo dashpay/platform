@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
@@ -21,10 +21,7 @@ pub mod v0;
 /// The validator set is only slightly different from a quorum as it does not contain non valid
 /// members
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 #[cfg_attr(
     feature = "core-types-serialization",
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),

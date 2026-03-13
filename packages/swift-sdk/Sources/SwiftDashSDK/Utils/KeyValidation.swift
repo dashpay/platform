@@ -24,13 +24,13 @@ public enum KeyValidation {
         case .eddsa25519Hash160:
             ffiKeyType = 4
         }
-        
+
         let result = privateKeyHex.withCString { privateKeyCStr in
             publicKeyHex.withCString { publicKeyCStr in
                 dash_sdk_validate_private_key_for_public_key(privateKeyCStr, publicKeyCStr, ffiKeyType, isTestnet)
             }
         }
-        
+
         // Check for errors
         if result.error != nil {
             let error = result.error!.pointee
@@ -39,21 +39,21 @@ public enum KeyValidation {
             print("Validation error: \(message)")
             return false
         }
-        
+
         guard result.data != nil else {
             print("No validation result data")
             return false
         }
-        
+
         // The result is a string "true" or "false"
         let resultStr = String(cString: result.data.assumingMemoryBound(to: CChar.self))
-        
+
         // Free the result data
         dash_sdk_string_free(result.data.assumingMemoryBound(to: CChar.self))
-        
+
         return resultStr == "true"
     }
-    
+
     /// Match a private key to its corresponding public key in a list of public keys
     /// Returns the matching public key or nil if no match found
     public static func matchPrivateKeyToPublicKeys(
@@ -62,10 +62,10 @@ public enum KeyValidation {
         isTestnet: Bool = true
     ) -> IdentityPublicKey? {
         let privateKeyHex = privateKeyData.toHexString()
-        
+
         for publicKey in publicKeys {
             let publicKeyHex = publicKey.data.toHexString()
-            
+
             if validatePrivateKeyForPublicKey(
                 privateKeyHex: privateKeyHex,
                 publicKeyHex: publicKeyHex,
@@ -75,7 +75,7 @@ public enum KeyValidation {
                 return publicKey
             }
         }
-        
+
         return nil
     }
 }

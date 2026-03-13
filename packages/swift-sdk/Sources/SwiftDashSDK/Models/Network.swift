@@ -6,7 +6,7 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
     case testnet = "testnet"
     case regtest = "regtest"
     case devnet = "devnet"
-    
+
     init(network: KeyWalletNetwork) {
         switch network {
         case .mainnet: self = .mainnet  // Dash = 0

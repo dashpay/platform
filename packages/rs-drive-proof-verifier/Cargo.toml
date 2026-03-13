@@ -9,9 +9,8 @@ default = []
 mocks = [
   "dep:serde",
   "dep:platform-serialization-derive",
-  "dpp/document-serde-conversion",
+  "dpp/serde-conversion",
   "indexmap/serde",
-  "dpp/data-contract-serde-conversion",
 ]
 
 [dependencies]

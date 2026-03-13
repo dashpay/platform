@@ -17,6 +17,7 @@ pub struct DriveAbciQueryVersions {
     pub system: DriveAbciQuerySystemVersions,
     pub group_queries: DriveAbciQueryGroupVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
+    pub shielded_queries: DriveAbciQueryShieldedVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -90,6 +91,22 @@ pub struct DriveAbciQueryDataContractVersions {
     pub data_contract: FeatureVersionBounds,
     pub data_contract_history: FeatureVersionBounds,
     pub data_contracts: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryShieldedVersions {
+    pub encrypted_notes: FeatureVersionBounds,
+    pub anchors: FeatureVersionBounds,
+    pub most_recent_anchor: FeatureVersionBounds,
+    pub pool_state: FeatureVersionBounds,
+    pub nullifiers: FeatureVersionBounds,
+    pub nullifiers_trunk_state: FeatureVersionBounds,
+    pub nullifiers_branch_state: FeatureVersionBounds,
+    pub recent_nullifier_changes: FeatureVersionBounds,
+    pub recent_compacted_nullifier_changes: FeatureVersionBounds,
+    /// Maximum number of encrypted notes returned per query.
+    /// Should match the BulkAppendTree buffer capacity (2^chunk_power).
+    pub max_encrypted_notes_per_query: u16,
 }
 
 #[derive(Clone, Debug, Default)]

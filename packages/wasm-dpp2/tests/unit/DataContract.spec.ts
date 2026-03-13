@@ -139,10 +139,7 @@ describe('DataContract', () => {
         new PlatformVersion(1),
       );
 
-      const actualBytes = Buffer.from(
-        dataContractFromBase64.toBytes(new PlatformVersion(1)),
-      );
-      expect(actualBytes).to.deep.equal(Buffer.from(bytes));
+      expect(dataContractFromBase64.toBytes(new PlatformVersion(1))).to.deep.equal(bytes);
     });
   });
 
@@ -244,7 +241,7 @@ describe('DataContract', () => {
 
       // Use JSON fixture for setting (numbers, not BigInt)
       const newSchema = {
-        pupup: json.documentSchemas.withdrawal,
+        popup: json.documentSchemas.withdrawal,
       };
 
       dataContract.setSchemas(newSchema, null, true, new PlatformVersion(1));
@@ -253,7 +250,7 @@ describe('DataContract', () => {
 
       // schemas returns object format (BigInt), so compare with object fixture
       const expectedSchema = {
-        pupup: object.documentSchemas.withdrawal,
+        popup: object.documentSchemas.withdrawal,
       };
 
       expect(schemas).to.deep.equal(expectedSchema);

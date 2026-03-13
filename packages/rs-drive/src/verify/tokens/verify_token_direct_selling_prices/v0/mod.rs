@@ -63,3 +63,114 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::prelude::DataContract;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_prove_and_verify_multiple_token_direct_selling_prices() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Default::default(),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([
+                (
+                    0,
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+                ),
+                (
+                    1,
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+                ),
+            ]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        let token_id_1 = contract.token_id(0).expect("expected token at position 0");
+        let token_id_2 = contract.token_id(1).expect("expected token at position 1");
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        // Set price for token 1 only
+        let price_1 = TokenPricingSchedule::SinglePrice(2000);
+        drive
+            .token_set_direct_purchase_price(
+                token_id_1.to_buffer(),
+                Some(price_1.clone()),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to set direct purchase price");
+
+        // Generate proof using the multi-token prove function
+        let proof = drive
+            .prove_tokens_direct_purchase_price(
+                &[token_id_1.to_buffer(), token_id_2.to_buffer()],
+                None,
+                platform_version,
+            )
+            .expect("expected to get proof");
+
+        let (_, verified_prices): (_, BTreeMap<[u8; 32], Option<TokenPricingSchedule>>) =
+            Drive::verify_token_direct_selling_prices(
+                proof.as_slice(),
+                &[token_id_1.to_buffer(), token_id_2.to_buffer()],
+                false,
+                platform_version,
+            )
+            .expect("expected proof verification to succeed");
+
+        assert_eq!(
+            verified_prices,
+            BTreeMap::from([
+                (token_id_1.to_buffer(), Some(price_1)),
+                (token_id_2.to_buffer(), None),
+            ])
+        );
+    }
+}

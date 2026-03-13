@@ -65,7 +65,7 @@ describe('Identity', () => {
 
     it('should set public keys', () => {
       const rawKey = {
-        $version: '0',
+        $formatVersion: '0',
         id: 2,
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
@@ -140,11 +140,11 @@ describe('Identity', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        $version: '0',
+        $formatVersion: '0',
         id: Identifier.from(rawIdentity.id).toString(),
         publicKeys: [
           {
-            $version: '0',
+            $formatVersion: '0',
             id: 0,
             type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),

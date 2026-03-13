@@ -98,6 +98,8 @@ pub use dpp::dashcore_rpc;
 pub use drive;
 pub use drive_proof_verifier::types as query_types;
 pub use drive_proof_verifier::Error as ProofVerifierError;
+#[cfg(feature = "shielded")]
+pub use grovedb_commitment_tree;
 pub use rs_dapi_client as dapi_client;
 pub mod sync;
 

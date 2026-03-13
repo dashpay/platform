@@ -46,3 +46,45 @@ impl DriveDocumentQuery<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+
+    #[test]
+    fn test_document_verify_proof_unknown_version() {
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected domain document type");
+
+        let mut platform_version = platform_version.clone();
+        platform_version.drive.methods.verify.document.verify_proof = 255;
+
+        let query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: Default::default(),
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        let result = query.verify_proof(&[], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_proof" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

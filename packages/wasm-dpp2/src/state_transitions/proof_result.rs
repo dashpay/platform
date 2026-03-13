@@ -17,7 +17,7 @@ use crate::TokenStatusWasm;
 use crate::VoteWasm;
 use crate::data_contract::{DataContractJSONJs, DataContractObjectJs};
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
 use crate::utils::JsMapExt;
@@ -155,7 +155,7 @@ pub struct VerifiedIdentityWasm {
 }
 
 impl_wasm_type_info!(VerifiedIdentityWasm, VerifiedIdentity);
-impl_wasm_conversions!(VerifiedIdentityWasm, VerifiedIdentity);
+impl_wasm_conversions_serde!(VerifiedIdentityWasm, VerifiedIdentity);
 
 // --- VerifiedTokenBalanceAbsence ---
 
@@ -168,10 +168,11 @@ pub struct VerifiedTokenBalanceAbsenceWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
-impl_wasm_conversions!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
+impl_wasm_conversions_serde!(VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceAbsence);
 
 // --- VerifiedTokenBalance ---
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dpp")]
 #[wasm_bindgen(js_name = "VerifiedTokenBalance")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -190,7 +191,7 @@ impl VerifiedTokenBalanceWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
-impl_wasm_conversions!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
+impl_wasm_conversions_serde!(VerifiedTokenBalanceWasm, VerifiedTokenBalance);
 
 // --- VerifiedTokenIdentityInfo ---
 
@@ -205,7 +206,7 @@ pub struct VerifiedTokenIdentityInfoWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
-impl_wasm_conversions!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
+impl_wasm_conversions_serde!(VerifiedTokenIdentityInfoWasm, VerifiedTokenIdentityInfo);
 
 // --- VerifiedTokenPricingSchedule ---
 
@@ -223,7 +224,7 @@ impl_wasm_type_info!(
     VerifiedTokenPricingScheduleWasm,
     VerifiedTokenPricingSchedule
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenPricingScheduleWasm,
     VerifiedTokenPricingSchedule
 );
@@ -239,14 +240,14 @@ pub struct VerifiedTokenStatusWasm {
 }
 
 impl_wasm_type_info!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
-impl_wasm_conversions!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
+impl_wasm_conversions_serde!(VerifiedTokenStatusWasm, VerifiedTokenStatus);
 
 // --- VerifiedTokenIdentitiesBalances ---
 
 #[wasm_bindgen(js_name = "VerifiedTokenIdentitiesBalances")]
 #[derive(Clone)]
 pub struct VerifiedTokenIdentitiesBalancesWasm {
-    balances: Map, // Map<IdentifierWasm, BigInt>
+    balances: Map, // Map<string(base58), BigInt>
 }
 
 #[wasm_bindgen(js_class = VerifiedTokenIdentitiesBalances)]
@@ -297,7 +298,7 @@ pub struct VerifiedPartialIdentityWasm {
 }
 
 impl_wasm_type_info!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
-impl_wasm_conversions!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
+impl_wasm_conversions_serde!(VerifiedPartialIdentityWasm, VerifiedPartialIdentity);
 
 // --- VerifiedBalanceTransfer ---
 
@@ -312,14 +313,14 @@ pub struct VerifiedBalanceTransferWasm {
 }
 
 impl_wasm_type_info!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
-impl_wasm_conversions!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
+impl_wasm_conversions_serde!(VerifiedBalanceTransferWasm, VerifiedBalanceTransfer);
 
 // --- VerifiedDocuments ---
 
 #[wasm_bindgen(js_name = "VerifiedDocuments")]
 #[derive(Clone)]
 pub struct VerifiedDocumentsWasm {
-    documents: Map, // Map<IdentifierWasm, DocumentWasm | undefined>
+    documents: Map, // Map<string(base58), DocumentWasm | undefined>
 }
 
 #[wasm_bindgen(js_class = VerifiedDocuments)]
@@ -370,7 +371,7 @@ impl_wasm_type_info!(
     VerifiedTokenActionWithDocumentWasm,
     VerifiedTokenActionWithDocument
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenActionWithDocumentWasm,
     VerifiedTokenActionWithDocument
 );
@@ -391,7 +392,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithDocumentWasm,
     VerifiedTokenGroupActionWithDocument
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenGroupActionWithDocumentWasm,
     VerifiedTokenGroupActionWithDocument
 );
@@ -424,7 +425,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenBalance
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenBalance
 );
@@ -447,7 +448,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfo
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfo
 );
@@ -470,7 +471,7 @@ impl_wasm_type_info!(
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm,
     VerifiedTokenGroupActionWithTokenPricingSchedule
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm,
     VerifiedTokenGroupActionWithTokenPricingSchedule
 );
@@ -486,7 +487,7 @@ pub struct VerifiedMasternodeVoteWasm {
 }
 
 impl_wasm_type_info!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
-impl_wasm_conversions!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
+impl_wasm_conversions_serde!(VerifiedMasternodeVoteWasm, VerifiedMasternodeVote);
 
 // --- VerifiedNextDistribution ---
 
@@ -499,7 +500,7 @@ pub struct VerifiedNextDistributionWasm {
 }
 
 impl_wasm_type_info!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
-impl_wasm_conversions!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
+impl_wasm_conversions_serde!(VerifiedNextDistributionWasm, VerifiedNextDistribution);
 
 // --- VerifiedAddressInfos ---
 
@@ -734,6 +735,28 @@ fn action_status_to_string(status: dpp::group::group_action_status::GroupActionS
     }
 }
 
+// --- VerifiedShieldedPoolState ---
+
+#[wasm_bindgen(js_name = "VerifiedShieldedPoolState")]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedShieldedPoolStateWasm {
+    pool_balance: Option<u64>,
+}
+
+impl_wasm_type_info!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
+impl_wasm_conversions_serde!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
+
+#[wasm_bindgen(js_class = VerifiedShieldedPoolState)]
+impl VerifiedShieldedPoolStateWasm {
+    #[wasm_bindgen(getter, js_name = "poolBalance")]
+    pub fn pool_balance(&self) -> JsValue {
+        match self.pool_balance {
+            Some(b) => BigInt::from(b).into(),
+            None => JsValue::undefined(),
+        }
+    }
+}
 /// Convert a Rust `StateTransitionProofResult` into the corresponding typed
 /// WASM wrapper, ready to be returned to JavaScript.
 pub fn convert_proof_result(
@@ -786,7 +809,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedTokenIdentitiesBalances(balances) => {
             let map = Map::from_entries(balances.into_iter().map(|(id, amount)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = BigInt::from(amount).into();
                 (key, val)
             }));
@@ -808,7 +831,7 @@ pub fn convert_proof_result(
 
         StateTransitionProofResult::VerifiedDocuments(docs) => {
             let map = Map::from_entries(docs.into_iter().map(|(id, maybe_doc)| {
-                let key: JsValue = IdentifierWasm::from(id).into();
+                let key: JsValue = IdentifierWasm::from(id).to_base58().into();
                 let val: JsValue = match maybe_doc {
                     Some(doc) => doc_to_wasm(doc).into(),
                     None => JsValue::undefined(),
@@ -893,6 +916,13 @@ pub fn convert_proof_result(
                 address_infos: build_address_infos_map(infos),
             }
             .into()
+        }
+
+        StateTransitionProofResult::VerifiedAssetLockConsumed(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiers(_)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(_, _)
+        | StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(_, _) => {
+            todo!("shielded proof results not yet implemented in wasm")
         }
     };
 

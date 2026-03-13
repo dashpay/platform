@@ -24,14 +24,14 @@ use crate::state_transition_action::system::bump_identity_data_contract_nonce_ac
 impl TokenDirectPurchaseTransitionActionV0 {
     /// Converts a borrowed `TokenDirectPurchaseTransitionV0` into a `TokenDirectPurchaseTransitionActionV0` using the provided contract lookup.
     ///
-    /// This method processes the token direct_purchaseing transition and constructs the corresponding transition action while
-    /// looking up necessary data contracts and applying the relevant direct_purchaseing logic. It does not require `drive_operations`
+    /// This method processes the token direct_purchasing transition and constructs the corresponding transition action while
+    /// looking up necessary data contracts and applying the relevant direct_purchasing logic. It does not require `drive_operations`
     /// to be passed as a parameter, but it manages them internally.
     ///
     /// # Arguments
     ///
     /// * `drive` - A reference to the `Drive` instance that handles data storage and retrieval.
-    /// * `owner_id` - The identifier of the owner initiating the direct_purchaseing transition. This is typically the identity
+    /// * `owner_id` - The identifier of the owner initiating the direct_purchasing transition. This is typically the identity
     ///   performing the transaction, such as the user's ID.
     /// * `value` - A reference to the `TokenDirectPurchaseTransitionV0` struct containing the transition data, including token
     ///   amount and recipient.

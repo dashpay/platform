@@ -30,6 +30,7 @@ mod tests {
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade() {
         let platform_version = PlatformVersion::first();
@@ -280,6 +281,9 @@ mod tests {
             .expect("expected to get epoch proposers");
         assert_eq!(epoch_proposers_2.len(), 147);
 
+        // Epochs 0 and 1 have been paid out, so their proposers trees
+        // were deleted by add_mark_as_paid_operations (DeleteChildren
+        // properly cleans up the tree and its contents).
         let epoch_proposers_1 = platform
             .drive
             .fetch_epoch_proposers(
@@ -289,7 +293,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to get epoch proposers");
-        assert_eq!(epoch_proposers_1.len(), 299); // We had 299 proposers in epoch 1
+        assert_eq!(epoch_proposers_1.len(), 0);
 
         let epoch_proposers_0 = platform
             .drive
@@ -300,7 +304,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to get epoch proposers");
-        assert_eq!(epoch_proposers_0.len(), 447); // We had 447 proposers in epoch 0
+        assert_eq!(epoch_proposers_0.len(), 0);
     }
 
     #[test]
@@ -541,6 +545,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_slow_upgrade() {
         let strategy = NetworkStrategy {
@@ -767,6 +772,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
@@ -1094,6 +1100,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_multiple_versions() {
         let strategy = NetworkStrategy {

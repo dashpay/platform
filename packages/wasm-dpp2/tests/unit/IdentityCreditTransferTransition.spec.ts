@@ -65,7 +65,7 @@ describe('IdentityCreditTransfer', () => {
 
       const restored = wasm.IdentityCreditTransfer.fromBase64(base64);
 
-      expect(Buffer.from(restored.toBytes())).to.deep.equal(Buffer.from(bytes));
+      expect(restored.toBytes()).to.deep.equal(bytes);
     });
   });
 
@@ -280,6 +280,39 @@ describe('IdentityCreditTransfer', () => {
       transition.userFeeIncrease = 11;
 
       expect(transition.userFeeIncrease).to.deep.equal(11);
+    });
+  });
+
+  // Note: toJSON/fromJSON/toObject/fromObject are not available in the current WASM build.
+  // The impl_wasm_conversions_inner! macro was added with a js_class name mismatch
+  // (IdentityCreditTransferTransition vs IdentityCreditTransfer).
+  // The Rust source has been fixed. After the next WASM rebuild, these tests should be enabled.
+  //
+  // TODO: Enable after WASM rebuild:
+  // describe('toJSON()', () => { ... });
+  // describe('fromJSON()', () => { ... });
+  // describe('toObject()', () => { ... });
+  // describe('fromObject()', () => { ... });
+
+  describe('bytes round-trip', () => {
+    it('should preserve all field values through bytes serialization', () => {
+      const transition = new wasm.IdentityCreditTransfer({
+        amount: BigInt(100),
+        senderId: '11111111111111111111111111111111',
+        recipientId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        nonce: BigInt(199),
+      });
+
+      const bytes = transition.toBytes();
+      const restored = wasm.IdentityCreditTransfer.fromBytes(bytes);
+
+      expect(restored.amount).to.deep.equal(BigInt(100));
+      expect(restored.senderId.toBase58()).to.equal('11111111111111111111111111111111');
+      expect(restored.recipientId.toBase58()).to.equal('GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec');
+      expect(restored.nonce).to.deep.equal(BigInt(199));
+      expect(restored.userFeeIncrease).to.equal(0);
+      expect(restored.signaturePublicKeyId).to.equal(0);
+      expect(restored.signature).to.deep.equal(Uint8Array.from([]));
     });
   });
 });

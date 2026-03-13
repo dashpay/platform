@@ -15,6 +15,8 @@ pub struct DriveAbciValidationVersions {
     pub has_nonce_validation: FeatureVersion,
     pub has_address_witness_validation: FeatureVersion,
     pub validate_address_witnesses: FeatureVersion,
+    pub validate_shielded_proof: FeatureVersion,
+    pub validate_minimum_shielded_fee: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
@@ -25,6 +27,24 @@ pub struct DriveAbciValidationVersions {
 pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
+    /// Minimum number of encrypted notes in the shielded pool before outgoing
+    /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
+    /// sufficient anonymity set before funds can leave the pool.
+    pub minimum_pool_notes_for_outgoing: u64,
+    /// Number of blocks of anchors to retain. Anchors older than this are
+    /// pruned at the end of each block. Clients must use an anchor no older
+    /// than this many blocks when building shielded transactions.
+    pub shielded_anchor_retention_blocks: u64,
+    /// Anchor pruning is only performed every N blocks to avoid unnecessary
+    /// GroveDB work on every block. Must evenly divide
+    /// `shielded_anchor_retention_blocks`.
+    pub shielded_anchor_pruning_interval: u64,
+    /// Per-bundle fee (in credits) for Halo 2 ZK proof verification.
+    /// Benchmarked at ~30x per-action signature verification cost.
+    pub shielded_proof_verification_fee: u64,
+    /// Per-action fee (in credits) for processing: RedPallas spend auth signature
+    /// verification, nullifier duplicate check, and tree insertion.
+    pub shielded_per_action_processing_fee: u64,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,6 +80,12 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub address_credit_withdrawal: DriveAbciStateTransitionValidationVersion,
     pub address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion,
     pub address_funds_transfer: DriveAbciStateTransitionValidationVersion,
+
+    pub shield_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -84,6 +110,8 @@ pub struct PenaltyAmounts {
     pub validation_of_added_keys_proof_of_possession_failure: u64,
     /// Penalty for address funding with insufficient funds for outputs
     pub address_funds_insufficient_balance: u64,
+    /// Penalty for submitting a shield transition with an invalid ZK proof
+    pub shielded_proof_verification_failure: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

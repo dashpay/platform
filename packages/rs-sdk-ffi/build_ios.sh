@@ -189,7 +189,7 @@ SPV_HEADER_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi/include/dash_spv_ffi.h"
 if [ -f "$KEY_WALLET_HEADER_PATH" ] && [ -f "$SPV_HEADER_PATH" ]; then
     # Create merged header with unified include guard
     MERGED_HEADER="$OUTPUT_DIR/dash_unified_ffi.h"
-    
+
     # Start with unified include guard
     cat > "$MERGED_HEADER" << 'EOF'
 #ifndef DASH_UNIFIED_FFI_H
@@ -233,7 +233,7 @@ typedef struct SignerHandle { unsigned char _private[0]; } SignerHandle;
 // ============================================================================
 
 EOF
-    
+
     # Extract Key Wallet FFI content
     # 1. Skip everything up to and including the last #include <stdlib.h>
     # 2. Skip header guards and pragma once
@@ -255,7 +255,7 @@ EOF
         /^\/\* Generated with cbindgen/ { next }
         found_stdlib && /^\/\*/ { in_content = 1 }
         found_stdlib && /^typedef/ { in_content = 1 }
-        /^#ifdef __cplusplus$/ { 
+        /^#ifdef __cplusplus$/ {
             in_content = 1
             next  # Skip the ifdef __cplusplus line
         }
@@ -265,7 +265,7 @@ EOF
         /^#endif  \/\* KEY_WALLET_FFI_H \*\/$/ { exit }
         in_content { print }
     ' "$KEY_WALLET_HEADER_PATH" >> "$MERGED_HEADER"
-    
+
     # Add separator for SPV FFI
     cat >> "$MERGED_HEADER" << 'EOF'
 
@@ -274,7 +274,7 @@ EOF
 // ============================================================================
 
 EOF
-    
+
     # Extract SPV FFI content
     # Skip duplicate types and problematic parts
     awk '
@@ -294,16 +294,16 @@ EOF
         /^#endif.*DASH_SPV_FFI_H/ { next }
         !skip { print }
     ' "$SPV_HEADER_PATH" >> "$MERGED_HEADER"
-    
+
     # Add separator and SDK content
     cat >> "$MERGED_HEADER" << 'EOF'
 
 // ============================================================================
-// Dash SDK FFI Functions and Types  
+// Dash SDK FFI Functions and Types
 // ============================================================================
 
 EOF
-    
+
     # Extract SDK FFI content (skip the header include guards and system includes)
     sed -e '1,/^#include <stdlib\.h>/d' \
         -e '/^#ifndef DASH_SDK_FFI_H$/d' \
@@ -315,7 +315,7 @@ EOF
         -e '/^}  \/\/ extern "C"$/d' \
         -e '/^#endif.*__cplusplus.*$/d' \
         "$OUTPUT_DIR/dash_sdk_ffi.h" >> "$MERGED_HEADER"
-    
+
     # Close C++ guard and add compatibility notes
     cat >> "$MERGED_HEADER" << 'EOF'
 
@@ -340,7 +340,7 @@ EOF
 
 #endif /* DASH_UNIFIED_FFI_H */
 EOF
-    
+
     # Replace the original header reference with unified header
     cp "$MERGED_HEADER" "$OUTPUT_DIR/dash_sdk_ffi.h"
     echo -e "${GREEN}✓ Headers merged successfully${NC}"

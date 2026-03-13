@@ -34,5 +34,3 @@ done
 
 # Run a container with all volumes mounted and perform the dump
 docker run --rm $volume_mounts -v $volume_dump_dir:/backup busybox tar cf /backup/data.tar.gz -C /all_volumes .
-
-

@@ -168,13 +168,13 @@ impl WasmTrustedContext {
 
     /// Pre-fetch quorum keys and masternode addresses for a local network.
     ///
-    /// Uses the default local quorum sidecar URL (`http://127.0.0.1:2444`).
+    /// Uses the default local quorum sidecar URL (`http://127.0.0.1:22444`).
     ///
     /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
     /// `WasmSdkBuilder.local().withTrustedContext(context)`.
     #[wasm_bindgen(js_name = "prefetchLocal")]
     pub async fn prefetch_local() -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_local_with_url("http://127.0.0.1:2444").await
+        Self::prefetch_local_with_url("http://127.0.0.1:22444").await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a local network

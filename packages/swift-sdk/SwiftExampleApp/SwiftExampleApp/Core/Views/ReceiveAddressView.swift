@@ -6,11 +6,11 @@ struct ReceiveAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
-    
+
     @State private var currentAddress: String = ""
     @State private var isLoadingAddress = false
     @State private var copiedToClipboard = false
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 24) {
@@ -30,13 +30,13 @@ struct ReceiveAddressView: View {
                                 .background(Color.white)
                                 .cornerRadius(12)
                         }
-                        
+
                         // Address
                         VStack(spacing: 12) {
                             Text("Your Dash Address")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                            
+
                             Text(currentAddress)
                                 .font(.system(.body, design: .monospaced))
                                 .multilineTextAlignment(.center)
@@ -48,7 +48,7 @@ struct ReceiveAddressView: View {
                                 }
                         }
                         .padding(.horizontal)
-                        
+
                         // Copy Button
                         Button {
                             copyToClipboard()
@@ -61,7 +61,7 @@ struct ReceiveAddressView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .padding(.horizontal)
-                        
+
                         Spacer()
                     }
                 }
@@ -80,10 +80,10 @@ struct ReceiveAddressView: View {
             await loadAddress()
         }
     }
-    
+
     private func loadAddress() async {
         isLoadingAddress = true
-        
+
         // Try to get existing receive address or generate new one
         if let currentAccount = wallet.accounts.first,
            let lastAddress = currentAccount.externalAddresses.last {
@@ -97,32 +97,32 @@ struct ReceiveAddressView: View {
                 currentAddress = "yMockReceiveAddress\(addressCount)"
             }
         }
-        
+
         isLoadingAddress = false
     }
-    
+
     private func generateQRCode(from string: String) -> UIImage? {
         let context = CIContext()
         let filter = CIFilter.qrCodeGenerator()
-        
+
         filter.message = Data(string.utf8)
-        
+
         if let outputImage = filter.outputImage {
             let transform = CGAffineTransform(scaleX: 10, y: 10)
             let scaledImage = outputImage.transformed(by: transform)
-            
+
             if let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) {
                 return UIImage(cgImage: cgImage)
             }
         }
-        
+
         return nil
     }
-    
+
     private func copyToClipboard() {
         UIPasteboard.general.string = currentAddress
         copiedToClipboard = true
-        
+
         // Reset after 2 seconds
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)

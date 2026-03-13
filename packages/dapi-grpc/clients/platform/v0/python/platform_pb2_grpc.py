@@ -279,6 +279,46 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
                 )
+        self.getShieldedEncryptedNotes = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedEncryptedNotes',
+                request_serializer=platform__pb2.GetShieldedEncryptedNotesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedEncryptedNotesResponse.FromString,
+                )
+        self.getShieldedAnchors = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedAnchors',
+                request_serializer=platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedAnchorsResponse.FromString,
+                )
+        self.getShieldedPoolState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
+                request_serializer=platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedPoolStateResponse.FromString,
+                )
+        self.getShieldedNullifiers = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
+                request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
+                )
+        self.getNullifiersTrunkState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getNullifiersTrunkState',
+                request_serializer=platform__pb2.GetNullifiersTrunkStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetNullifiersTrunkStateResponse.FromString,
+                )
+        self.getNullifiersBranchState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getNullifiersBranchState',
+                request_serializer=platform__pb2.GetNullifiersBranchStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetNullifiersBranchStateResponse.FromString,
+                )
+        self.getRecentNullifierChanges = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getRecentNullifierChanges',
+                request_serializer=platform__pb2.GetRecentNullifierChangesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetRecentNullifierChangesResponse.FromString,
+                )
+        self.getRecentCompactedNullifierChanges = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getRecentCompactedNullifierChanges',
+                request_serializer=platform__pb2.GetRecentCompactedNullifierChangesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetRecentCompactedNullifierChangesResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -607,6 +647,54 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getShieldedEncryptedNotes(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedAnchors(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedPoolState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getShieldedNullifiers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getNullifiersTrunkState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getNullifiersBranchState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getRecentNullifierChanges(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getRecentCompactedNullifierChanges(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -874,6 +962,46 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getRecentCompactedAddressBalanceChanges,
                     request_deserializer=platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.FromString,
                     response_serializer=platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.SerializeToString,
+            ),
+            'getShieldedEncryptedNotes': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedEncryptedNotes,
+                    request_deserializer=platform__pb2.GetShieldedEncryptedNotesRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedEncryptedNotesResponse.SerializeToString,
+            ),
+            'getShieldedAnchors': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedAnchors,
+                    request_deserializer=platform__pb2.GetShieldedAnchorsRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedAnchorsResponse.SerializeToString,
+            ),
+            'getShieldedPoolState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedPoolState,
+                    request_deserializer=platform__pb2.GetShieldedPoolStateRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedPoolStateResponse.SerializeToString,
+            ),
+            'getShieldedNullifiers': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedNullifiers,
+                    request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
+            ),
+            'getNullifiersTrunkState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getNullifiersTrunkState,
+                    request_deserializer=platform__pb2.GetNullifiersTrunkStateRequest.FromString,
+                    response_serializer=platform__pb2.GetNullifiersTrunkStateResponse.SerializeToString,
+            ),
+            'getNullifiersBranchState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getNullifiersBranchState,
+                    request_deserializer=platform__pb2.GetNullifiersBranchStateRequest.FromString,
+                    response_serializer=platform__pb2.GetNullifiersBranchStateResponse.SerializeToString,
+            ),
+            'getRecentNullifierChanges': grpc.unary_unary_rpc_method_handler(
+                    servicer.getRecentNullifierChanges,
+                    request_deserializer=platform__pb2.GetRecentNullifierChangesRequest.FromString,
+                    response_serializer=platform__pb2.GetRecentNullifierChangesResponse.SerializeToString,
+            ),
+            'getRecentCompactedNullifierChanges': grpc.unary_unary_rpc_method_handler(
+                    servicer.getRecentCompactedNullifierChanges,
+                    request_deserializer=platform__pb2.GetRecentCompactedNullifierChangesRequest.FromString,
+                    response_serializer=platform__pb2.GetRecentCompactedNullifierChangesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1783,5 +1911,141 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentCompactedAddressBalanceChanges',
             platform__pb2.GetRecentCompactedAddressBalanceChangesRequest.SerializeToString,
             platform__pb2.GetRecentCompactedAddressBalanceChangesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedEncryptedNotes(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedEncryptedNotes',
+            platform__pb2.GetShieldedEncryptedNotesRequest.SerializeToString,
+            platform__pb2.GetShieldedEncryptedNotesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedAnchors(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedAnchors',
+            platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
+            platform__pb2.GetShieldedAnchorsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedPoolState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
+            platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
+            platform__pb2.GetShieldedPoolStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedNullifiers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
+            platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
+            platform__pb2.GetShieldedNullifiersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getNullifiersTrunkState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getNullifiersTrunkState',
+            platform__pb2.GetNullifiersTrunkStateRequest.SerializeToString,
+            platform__pb2.GetNullifiersTrunkStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getNullifiersBranchState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getNullifiersBranchState',
+            platform__pb2.GetNullifiersBranchStateRequest.SerializeToString,
+            platform__pb2.GetNullifiersBranchStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getRecentNullifierChanges(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentNullifierChanges',
+            platform__pb2.GetRecentNullifierChangesRequest.SerializeToString,
+            platform__pb2.GetRecentNullifierChangesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getRecentCompactedNullifierChanges(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentCompactedNullifierChanges',
+            platform__pb2.GetRecentCompactedNullifierChangesRequest.SerializeToString,
+            platform__pb2.GetRecentCompactedNullifierChangesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

@@ -33,6 +33,7 @@ json-schema-compatibility-validator: &json-schema-compatibility-validator
 
 dpp: &dpp
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
   - *dashpay-contract
   - *masternode-reward-shares-contract
   - *dpns-contract

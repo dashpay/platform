@@ -67,3 +67,37 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_addresses_infos_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .address_funds
+            .verify_addresses_infos = 255;
+
+        let addresses: Vec<PlatformAddress> = vec![];
+
+        let result = Drive::verify_addresses_infos::<
+            std::slice::Iter<PlatformAddress>,
+            Vec<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
+        >(&[], addresses.iter(), false, &platform_version);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

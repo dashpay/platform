@@ -7,6 +7,8 @@ use crate::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters}
 use crate::data_contract::group::methods::v0::GroupMethodsV0;
 use crate::data_contract::group::{GroupMemberPower, GroupRequiredPower};
 use crate::data_contract::GroupContractPosition;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -16,6 +18,7 @@ use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Serialize,
     Deserialize,
@@ -28,6 +31,7 @@ use std::collections::BTreeMap;
     PartialEq,
     Eq,
 )]
+#[serde(rename_all = "camelCase")]
 #[platform_serialize(unversioned)]
 pub struct GroupV0 {
     pub members: BTreeMap<Identifier, GroupMemberPower>,

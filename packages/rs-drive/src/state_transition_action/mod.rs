@@ -11,6 +11,8 @@ pub mod action_convert_to_operations;
 pub mod address_funds;
 /// documents_batch
 pub mod batch;
+/// shielded
+pub mod shielded;
 
 use crate::state_transition_action::address_funds::address_credit_withdrawal::AddressCreditWithdrawalTransitionAction;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
@@ -27,6 +29,11 @@ use crate::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
+use crate::state_transition_action::shielded::shield::ShieldTransitionAction;
+use crate::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
+use crate::state_transition_action::shielded::shielded_transfer::ShieldedTransferTransitionAction;
+use crate::state_transition_action::shielded::shielded_withdrawal::ShieldedWithdrawalTransitionAction;
+use crate::state_transition_action::shielded::unshield::UnshieldTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
 };
@@ -90,6 +97,16 @@ pub enum StateTransitionAction {
     /// partially use the asset lock for funding invalid asset lock transactions like
     /// identity top up and identity create
     BumpAddressInputNoncesAction(BumpAddressInputNoncesAction),
+    /// shield (address -> shielded pool)
+    ShieldAction(ShieldTransitionAction),
+    /// shielded transfer (shielded -> shielded)
+    ShieldedTransferAction(ShieldedTransferTransitionAction),
+    /// unshield (shielded pool -> address)
+    UnshieldAction(UnshieldTransitionAction),
+    /// shield from asset lock (L1 asset lock -> shielded pool)
+    ShieldFromAssetLockAction(ShieldFromAssetLockTransitionAction),
+    /// shielded withdrawal (shielded pool -> L1 core address)
+    ShieldedWithdrawalAction(ShieldedWithdrawalTransitionAction),
 }
 
 impl StateTransitionAction {
@@ -134,6 +151,19 @@ impl StateTransitionAction {
             }
             StateTransitionAction::BumpAddressInputNoncesAction(action) => {
                 action.user_fee_increase()
+            }
+            StateTransitionAction::ShieldAction(action) => action.user_fee_increase(),
+            StateTransitionAction::ShieldedTransferAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
+            StateTransitionAction::UnshieldAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
+            }
+            StateTransitionAction::ShieldFromAssetLockAction(_) => {
+                UserFeeIncrease::default() // 0 (fee comes from asset lock excess)
+            }
+            StateTransitionAction::ShieldedWithdrawalAction(_) => {
+                UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
             }
         }
     }

@@ -260,7 +260,7 @@ RUN --mount=type=secret,id=AWS <<EOS
     cat /root/env
 EOS
 
-# Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
+# Image containing compilation dependencies; used to overcome lack of interpolation in COPY --from
 FROM ${DEPS_IMAGE} AS deps-compilation
 # Stage intentionally left empty
 
@@ -369,6 +369,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
@@ -472,6 +473,7 @@ COPY --parents \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
@@ -588,6 +590,7 @@ COPY --parents \
     packages/rs-dapi \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \
     packages/rs-platform-serialization \
@@ -816,6 +819,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
     packages/rs-platform-encryption \

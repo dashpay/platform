@@ -76,9 +76,12 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::AddressFundingFromAssetLock(_)
-            | StateTransition::AddressCreditWithdrawal(_) => {
-                Ok(SimpleConsensusValidationResult::new())
-            }
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::Shield(_)
+            | StateTransition::ShieldedTransfer(_)
+            | StateTransition::Unshield(_)
+            | StateTransition::ShieldFromAssetLock(_)
+            | StateTransition::ShieldedWithdrawal(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 

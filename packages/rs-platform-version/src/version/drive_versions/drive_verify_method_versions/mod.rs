@@ -14,6 +14,20 @@ pub struct DriveVerifyMethodVersions {
     pub voting: DriveVerifyVoteMethodVersions,
     pub address_funds: DriveVerifyAddressFundsMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
+    pub shielded: DriveVerifyShieldedMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyShieldedMethodVersions {
+    pub verify_shielded_pool_state: FeatureVersion,
+    pub verify_shielded_anchors: FeatureVersion,
+    pub verify_most_recent_shielded_anchor: FeatureVersion,
+    pub verify_shielded_encrypted_notes: FeatureVersion,
+    pub verify_shielded_nullifiers: FeatureVersion,
+    pub verify_nullifiers_trunk_query: FeatureVersion,
+    pub verify_nullifiers_branch_query: FeatureVersion,
+    pub verify_recent_nullifier_changes: FeatureVersion,
+    pub verify_compacted_nullifier_changes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

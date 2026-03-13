@@ -37,7 +37,7 @@ mod update_voter_identity;
 //     // alright, let's focus on creation first
 //     // we need to pass it the list of added master nodes
 //     // we run into the batching problem with that, what we really want is a function that takes
-//     // a sinlge masternode list item and then returns the correct identity.
+//     // a single masternode list item and then returns the correct identity.
 //     // update also works for a very specific identity, hence we are testing on the specific identity level
 //     // so create_owner_id ...
 //     // update_owner_id ...

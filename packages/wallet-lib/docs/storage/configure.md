@@ -13,4 +13,3 @@ Parameters:
 
 Returns: void.  
 Emits: `CONFIGURED`
-

@@ -296,8 +296,9 @@ impl TryInto<JsonValue> for Value {
 
     fn try_into(self) -> Result<JsonValue, Self::Error> {
         Ok(match self {
-            Value::U128(i) => JsonValue::Number((i as u64).into()),
-            Value::I128(i) => JsonValue::Number((i as i64).into()),
+            // U128/I128 can't fit in serde_json::Number (backed by u64/i64/f64) — must be strings
+            Value::U128(i) => JsonValue::String(i.to_string()),
+            Value::I128(i) => JsonValue::String(i.to_string()),
             Value::U64(i) => JsonValue::Number(i.into()),
             Value::I64(i) => JsonValue::Number(i.into()),
             Value::U32(i) => JsonValue::Number(i.into()),

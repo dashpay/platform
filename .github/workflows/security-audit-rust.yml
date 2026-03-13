@@ -1,0 +1,19 @@
+name: "Security: Rust Crates"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 23 * * *"
+
+jobs:
+  rs-crates-security:
+    name: Rust crates security audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Audit crates
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

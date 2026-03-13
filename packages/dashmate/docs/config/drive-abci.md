@@ -127,4 +127,3 @@ These settings control developer and debugging tools:
 
 - Transaction processing time limit: Maximum time allowed for processing a transaction before timeout
 - Epoch time: Length of a single epoch in seconds
-

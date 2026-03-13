@@ -45,7 +45,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "identityTopUp": TransitionDefinition(
             key: "identityTopUp",
             label: "Identity Top Up",
@@ -61,7 +61,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "identityUpdate": TransitionDefinition(
             key: "identityUpdate",
             label: "Identity Update",
@@ -83,7 +83,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "identityCreditTransfer": TransitionDefinition(
             key: "identityCreditTransfer",
             label: "Identity Credit Transfer",
@@ -105,7 +105,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "identityCreditWithdrawal": TransitionDefinition(
             key: "identityCreditWithdrawal",
             label: "Identity Credit Withdrawal",
@@ -134,7 +134,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         // Data Contract Transitions
         "dataContractCreate": TransitionDefinition(
             key: "dataContractCreate",
@@ -232,7 +232,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "dataContractUpdate": TransitionDefinition(
             key: "dataContractUpdate",
             label: "Data Contract Update",
@@ -271,7 +271,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         // Document Transitions
         "documentCreate": TransitionDefinition(
             key: "documentCreate",
@@ -302,7 +302,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "documentReplace": TransitionDefinition(
             key: "documentReplace",
             label: "Document Replace",
@@ -338,7 +338,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "documentDelete": TransitionDefinition(
             key: "documentDelete",
             label: "Document Delete",
@@ -366,7 +366,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "documentTransfer": TransitionDefinition(
             key: "documentTransfer",
             label: "Document Transfer",
@@ -401,7 +401,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "documentUpdatePrice": TransitionDefinition(
             key: "documentUpdatePrice",
             label: "Document Update Price",
@@ -436,7 +436,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "documentPurchase": TransitionDefinition(
             key: "documentPurchase",
             label: "Document Purchase",
@@ -466,7 +466,7 @@ public struct TransitionDefinitions {
                 // Price field removed - will be auto-fetched from document
             ]
         ),
-        
+
         // Token Transitions
         "tokenBurn": TransitionDefinition(
             key: "tokenBurn",
@@ -493,7 +493,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenMint": TransitionDefinition(
             key: "tokenMint",
             label: "Token Mint",
@@ -525,7 +525,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenClaim": TransitionDefinition(
             key: "tokenClaim",
             label: "Token Claim",
@@ -555,7 +555,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenSetPrice": TransitionDefinition(
             key: "tokenSetPrice",
             label: "Token Set Price",
@@ -592,7 +592,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenFreeze": TransitionDefinition(
             key: "tokenFreeze",
             label: "Token Freeze",
@@ -619,7 +619,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenUnfreeze": TransitionDefinition(
             key: "tokenUnfreeze",
             label: "Token Unfreeze",
@@ -646,7 +646,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenDestroyFrozenFunds": TransitionDefinition(
             key: "tokenDestroyFrozenFunds",
             label: "Token Destroy Frozen Funds",
@@ -673,7 +673,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "tokenTransfer": TransitionDefinition(
             key: "tokenTransfer",
             label: "Token Transfer",
@@ -706,7 +706,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         // Voting Transitions
         "dpnsUsername": TransitionDefinition(
             key: "dpnsUsername",
@@ -740,7 +740,7 @@ public struct TransitionDefinitions {
                 )
             ]
         ),
-        
+
         "masternodeVote": TransitionDefinition(
             key: "masternodeVote",
             label: "Masternode Vote",

@@ -117,7 +117,7 @@ describe('Serde Conversions', () => {
         expect(json).to.have.property('metadata');
         expect(json).to.have.property('proof');
 
-        // Verify metadata
+        // Verify metadata (height and timeMs are u64 -> numbers in JSON when small)
         expect(json.metadata.height).to.equal(100);
         expect(json.metadata.coreChainLockedHeight).to.equal(50);
         expect(json.metadata.epoch).to.equal(10);
@@ -136,7 +136,7 @@ describe('Serde Conversions', () => {
         // Verify identity data - id should be Base58 in JSON
         expect(json.data).to.have.property('id');
         expect(json.data.id).to.equal(identifierId);
-        // Values within safe integer range are numbers, large values would be strings
+        // u64 values that are small are serialized as numbers in JSON
         expect(json.data.balance).to.equal(1000000000);
         expect(json.data.revision).to.equal(5);
         expect(json.data.publicKeys).to.be.an('array');
@@ -179,6 +179,52 @@ describe('Serde Conversions', () => {
         expect(restored.proof.round).to.equal(10);
       });
     });
+
+    describe('toObject()', () => {
+      it('should serialize with BigInt data preserved', () => {
+        const chainId = new Uint8Array([1, 2, 3, 4]);
+        const metadata = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
+        const proof = new sdk.ProofInfo(
+          new Uint8Array([10, 20, 30]),
+          new Uint8Array([40, 50, 60]),
+          new Uint8Array([70, 80, 90]),
+          5,
+          new Uint8Array([100, 110, 120]),
+          200,
+        );
+
+        const response = new sdk.ProofMetadataResponse(42, metadata, proof);
+        const obj = response.toObject();
+
+        expect(obj).to.have.property('data');
+        expect(obj).to.have.property('metadata');
+        expect(obj).to.have.property('proof');
+        expect(obj.data).to.equal(42n);
+      });
+
+      it('should round-trip through toObject/fromObject', () => {
+        const chainId = new Uint8Array([1, 2, 3, 4]);
+        const metadata = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
+        const proof = new sdk.ProofInfo(
+          new Uint8Array([10, 20, 30]),
+          new Uint8Array([40, 50, 60]),
+          new Uint8Array([70, 80, 90]),
+          5,
+          new Uint8Array([100, 110, 120]),
+          200,
+        );
+
+        const response = new sdk.ProofMetadataResponse('test-data', metadata, proof);
+        const obj = response.toObject();
+        const restored = sdk.ProofMetadataResponse.fromObject(obj);
+        const obj2 = restored.toObject();
+
+        expect(obj2).to.deep.equal(obj);
+        expect(restored.data).to.equal('test-data');
+        expect(restored.metadata.height).to.equal(100n);
+        expect(restored.proof.round).to.equal(5);
+      });
+    });
   });
 
   describe('ResponseMetadata', () => {
@@ -212,6 +258,56 @@ describe('Serde Conversions', () => {
         const json = meta.toJSON();
         const metaFromJson = sdk.ResponseMetadata.fromJSON(json);
         expect([...metaFromJson.chainId]).to.deep.equal([...chainId]);
+      });
+    });
+
+    describe('toJSON()', () => {
+      it('should match expected JSON for all fields', () => {
+        const chainId = new Uint8Array([1, 2, 3, 4]);
+        const meta = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
+
+        const json = meta.toJSON();
+
+        expect(json.height).to.equal(100);
+        expect(json.coreChainLockedHeight).to.equal(50);
+        expect(json.epoch).to.equal(10);
+        expect(json.timeMs).to.equal(1234567890);
+        expect(json.protocolVersion).to.equal(1);
+        expect(json.chainId).to.equal('AQIDBA==');
+      });
+    });
+
+    describe('toObject()', () => {
+      it('should return BigInt for u64 fields and Uint8Array for chainId', () => {
+        const chainId = new Uint8Array([1, 2, 3, 4]);
+        const meta = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
+
+        const obj = meta.toObject();
+
+        expect(obj.height).to.equal(100n);
+        expect(obj.coreChainLockedHeight).to.equal(50);
+        expect(obj.epoch).to.equal(10);
+        expect(obj.timeMs).to.equal(1234567890n);
+        expect(obj.protocolVersion).to.equal(1);
+        expect(obj.chainId).to.be.instanceOf(Uint8Array);
+        expect([...obj.chainId]).to.deep.equal([1, 2, 3, 4]);
+      });
+    });
+
+    describe('fromObject()', () => {
+      it('should round-trip through Object', () => {
+        const chainId = new Uint8Array([1, 2, 3, 4]);
+        const meta = new sdk.ResponseMetadata(100n, 50, 10, 1234567890n, 1, chainId);
+
+        const obj = meta.toObject();
+        const restored = sdk.ResponseMetadata.fromObject(obj);
+
+        expect(restored.height).to.equal(100n);
+        expect(restored.coreChainLockedHeight).to.equal(50);
+        expect(restored.epoch).to.equal(10);
+        expect(restored.timeMs).to.equal(1234567890n);
+        expect(restored.protocolVersion).to.equal(1);
+        expect([...restored.chainId]).to.deep.equal([1, 2, 3, 4]);
       });
     });
   });
@@ -264,6 +360,34 @@ describe('Serde Conversions', () => {
       it('should round-trip through JSON', () => {
         const json = info.toJSON();
         const roundtrip = sdk.DpnsUsernameInfo.fromJSON(json);
+        expect(roundtrip.identityId.toBase58()).to.equal(expectedBase58);
+        expect(roundtrip.documentId.toBase58()).to.equal(expectedBase58);
+      });
+    });
+
+    describe('toJSON()', () => {
+      it('should include username in JSON output', () => {
+        const json = info.toJSON();
+        expect(json.username).to.equal('alice');
+        expect(json.identityId).to.equal(expectedBase58);
+        expect(json.documentId).to.equal(expectedBase58);
+      });
+    });
+
+    describe('toObject()', () => {
+      it('should include username in Object output', () => {
+        const obj = info.toObject();
+        expect(obj.username).to.equal('alice');
+        expect(Buffer.from(obj.identityId)).to.deep.equal(Buffer.from(bytes));
+        expect(Buffer.from(obj.documentId)).to.deep.equal(Buffer.from(bytes));
+      });
+    });
+
+    describe('fromObject()', () => {
+      it('should round-trip through Object', () => {
+        const obj = info.toObject();
+        const roundtrip = sdk.DpnsUsernameInfo.fromObject(obj);
+        expect(roundtrip.username).to.equal('alice');
         expect(roundtrip.identityId.toBase58()).to.equal(expectedBase58);
         expect(roundtrip.documentId.toBase58()).to.equal(expectedBase58);
       });
