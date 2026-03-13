@@ -56,6 +56,15 @@ jobs:
             --package platform-wallet-ffi \
             --package rs-dapi-client \
             --package platform-serialization \
+            --package dapi-grpc \
+            --package json-schema-compatibility-validator \
+            --package dashpay-contract \
+            --package dpns-contract \
+            --package masternode-reward-shares-contract \
+            --package withdrawals-contract \
+            --package token-history-contract \
+            --package wallet-utils-contract \
+            --package keyword-search-contract \
             --all-features \
             --locked \
             --partition count:${{ matrix.partition }}/4 \
