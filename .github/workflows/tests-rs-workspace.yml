@@ -34,6 +34,14 @@ jobs:
           sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
+      - name: Install mold linker
+        run: sudo apt-get install -y mold
+
+      - name: Configure mold as linker
+        run: |
+          sed -i '/^\[target\.x86_64-unknown-linux-gnu\]$/a linker = "clang"' .cargo/config.toml
+          sed -i '/^\[target\.x86_64-unknown-linux-gnu\]/,/^rustflags/{s/^rustflags = \[/rustflags = [\n    "-C", "link-arg=-fuse-ld=mold",/}' .cargo/config.toml
+
       - name: Setup Rust
         uses: ./.github/actions/rust
 
@@ -153,6 +161,14 @@ jobs:
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
           sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
+
+      - name: Install mold linker
+        run: sudo apt-get install -y mold
+
+      - name: Configure mold as linker
+        run: |
+          sed -i '/^\[target\.x86_64-unknown-linux-gnu\]$/a linker = "clang"' .cargo/config.toml
+          sed -i '/^\[target\.x86_64-unknown-linux-gnu\]/,/^rustflags/{s/^rustflags = \[/rustflags = [\n    "-C", "link-arg=-fuse-ld=mold",/}' .cargo/config.toml
 
       - name: Setup Rust
         uses: ./.github/actions/rust
