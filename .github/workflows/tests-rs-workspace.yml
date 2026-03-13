@@ -43,7 +43,7 @@ jobs:
           echo "No ZK-related changes — skipping ZK tests"
 
   test:
-    name: "Tests (shard ${{ matrix.partition }}/8)"
+    name: "Tests (shard ${{ matrix.partition }}/6)"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6, 7, 8]
+        partition: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Free disk space
         run: |
@@ -92,7 +92,7 @@ jobs:
           sudo chmod 777 /cores
           sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
 
-      - name: Run tests (shard ${{ matrix.partition }}/8)
+      - name: Run tests (shard ${{ matrix.partition }}/6)
         run: |
           ulimit -c unlimited
           cargo nextest run \
@@ -119,7 +119,7 @@ jobs:
             --all-features \
             --locked \
             -E 'not test(/shield/)' \
-            --partition count:${{ matrix.partition }}/8
+            --partition count:${{ matrix.partition }}/6
         env:
           RUST_MIN_STACK: 4194304
           CARGO_INCREMENTAL: "0"
@@ -160,7 +160,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: core-dumps-shard-${{ matrix.partition }}-of-8
+          name: core-dumps-shard-${{ matrix.partition }}-of-6
           path: core-dumps.zip
           if-no-files-found: ignore
           retention-days: 3
