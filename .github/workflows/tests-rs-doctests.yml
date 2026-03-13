@@ -10,19 +10,19 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: "true"
-
       - name: Strip cdylib crate-types (incompatible with static rocksdb)
         run: |
           sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
           sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
 
       - name: Run doctests
         run: |

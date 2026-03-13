@@ -14,6 +14,13 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Strip cdylib crate-types (incompatible with static rocksdb)
+        run: |
+          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
+          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
+          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
+          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
+
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
@@ -26,13 +33,6 @@ jobs:
 
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: taiki-e/install-action@cargo-nextest
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Configure core dumps
         run: |
