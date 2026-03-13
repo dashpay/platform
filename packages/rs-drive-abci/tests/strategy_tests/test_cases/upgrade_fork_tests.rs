@@ -30,6 +30,7 @@ mod tests {
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade() {
         let platform_version = PlatformVersion::first();
@@ -544,6 +545,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_slow_upgrade() {
         let strategy = NetworkStrategy {
@@ -770,6 +772,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
@@ -1097,6 +1100,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Long-running: runs in nightly CI only
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_version_upgrade_multiple_versions() {
         let strategy = NetworkStrategy {
