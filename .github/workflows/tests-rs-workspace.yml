@@ -21,6 +21,11 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Install build dependencies
+        run: |
+          brew list cmake &>/dev/null || brew install cmake
+          brew list gmp &>/dev/null || brew install gmp
+
       - name: Setup Rust
         uses: ./.github/actions/rust
 
