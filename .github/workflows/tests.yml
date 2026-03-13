@@ -2,6 +2,10 @@ name: Tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+      - "v*-dev"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
@@ -42,6 +46,8 @@ jobs:
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-packages-direct: ${{ steps.override.outputs.rs-packages-direct || steps.filter-rs-direct.outputs.changes }}
+      rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
+      zk-changed: ${{ steps.override.outputs.zk-changed || steps.filter-zk.outputs.zk-changed }}
       test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
@@ -73,12 +79,51 @@ jobs:
         with:
           filters: .github/package-filters/rs-packages-direct.yml
 
+      - uses: dorny/paths-filter@v3
+        id: filter-rs-workflows
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: |
+            rs-workflows:
+              - .github/workflows/tests-rs-workspace.yml
+              - .github/workflows/tests-rs-doctests.yml
+              - .github/workflows/tests-rs-package.yml
+              - .github/workflows/tests.yml
+
       - name: Check if Test Suite should run
         id: filter-test-suite
         if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: dorny/paths-filter@v3
         with:
           filters: .github/package-filters/test-suite-triggers.yml
+
+      - name: Check for ZK / shielded code changes
+        id: filter-zk
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
+          CHANGED=$(git diff --name-only "$BASE_SHA"...HEAD 2>/dev/null || git diff --name-only HEAD~1)
+
+          # Check for direct shielded/ZK code changes
+          if echo "$CHANGED" | grep -qE \
+            'packages/rs-dpp/src/shielded/|packages/rs-dpp/src/address_funds/orchard|packages/rs-dpp/src/state_transition/state_transitions/shielded/|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/shield|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/shielded_|packages/rs-drive-abci/src/execution/validation/state_transition/state_transitions/unshield|packages/rs-drive/src/state_transition_action/shielded/|packages/rs-drive/src/verify/shielded/|packages/rs-drive-abci/tests/strategy_tests/test_cases/shielded_tests'; then
+            echo "zk-changed=true" >> "$GITHUB_OUTPUT"
+            echo "ZK-related files changed — ZK tests will run"
+            exit 0
+          fi
+
+          # Check for grovedb version changes (commitment-tree underpins shielded code)
+          GROVEDB_FILES=$(echo "$CHANGED" | grep -E 'Cargo\.(toml|lock)$' || true)
+          if [ -n "$GROVEDB_FILES" ]; then
+            if git diff "$BASE_SHA"...HEAD -- $GROVEDB_FILES 2>/dev/null | grep -qE 'grovedb.*rev\s*=|name = "grovedb'; then
+              echo "zk-changed=true" >> "$GITHUB_OUTPUT"
+              echo "GroveDB version changed — ZK tests will run"
+              exit 0
+            fi
+          fi
+
+          echo "zk-changed=false" >> "$GITHUB_OUTPUT"
+          echo "No ZK-related changes — skipping ZK tests"
 
       - name: Override all outputs for workflow_dispatch
         id: override
@@ -91,6 +136,7 @@ jobs:
           echo "js-packages-direct=$(to_json .github/package-filters/js-packages-direct.yml)" >> "$GITHUB_OUTPUT"
           echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
           echo "rs-packages-direct=$(to_json .github/package-filters/rs-packages-direct.yml)" >> "$GITHUB_OUTPUT"
+          echo 'zk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'run=true' >> "$GITHUB_OUTPUT"
 
   build-js:
@@ -147,6 +193,24 @@ jobs:
       image_name: ${{ matrix.image_name }}
       target: ${{ matrix.target }}
       build_args: ${{ matrix.build_args }}
+
+  rs-workspace-tests:
+    name: Rust workspace tests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      zk-changed: ${{ needs.changes.outputs.zk-changed == 'true' }}
+
+  rs-doctests:
+    name: Rust doctests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-doctests.yml
 
   rs-packages:
     name: Rust packages
