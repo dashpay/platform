@@ -98,7 +98,7 @@ pub unsafe extern "C" fn dash_sdk_token_get_pre_programmed_distributions(
         limit: if limit > 0 { Some(limit) } else { None },
     };
 
-    let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
+    let result: Result<Option<String>, FFIError> = wrapper.runtime.block_on(async {
         use dash_sdk::platform::Fetch;
 
         let distributions = TokenPreProgrammedDistributions::fetch(&wrapper.sdk, query)
@@ -134,16 +134,14 @@ pub unsafe extern "C" fn dash_sdk_token_get_pre_programmed_distributions(
                     })
                     .collect();
 
-                Ok(format!("[{}]", distributions_json.join(",")))
+                Ok(Some(format!("[{}]", distributions_json.join(","))))
             }
-            None => Err(FFIError::NotFound(
-                "No pre-programmed distributions found".to_string(),
-            )),
+            None => Ok(None),
         }
     });
 
     match result {
-        Ok(json_str) => {
+        Ok(Some(json_str)) => {
             let c_str = match CString::new(json_str) {
                 Ok(s) => s,
                 Err(e) => {
@@ -154,6 +152,7 @@ pub unsafe extern "C" fn dash_sdk_token_get_pre_programmed_distributions(
             };
             DashSDKResult::success_string(c_str.into_raw())
         }
+        Ok(None) => DashSDKResult::success(std::ptr::null_mut()),
         Err(e) => DashSDKResult::error(e.into()),
     }
 }

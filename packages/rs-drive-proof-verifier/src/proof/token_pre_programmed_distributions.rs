@@ -67,7 +67,14 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
             None => None,
         };
 
-        let limit = req_v0.limit.map(|l| l as u16);
+        let limit = req_v0
+            .limit
+            .map(|l| {
+                u16::try_from(l).map_err(|_| Error::RequestError {
+                    error: "limit exceeds u16::MAX".into(),
+                })
+            })
+            .transpose()?;
 
         let metadata = response
             .metadata()
@@ -76,24 +83,23 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
 
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
-        let (root_hash, result) = Drive::verify_token_pre_programmed_distributions(
-            &proof.grovedb_proof,
-            token_id,
-            start_at,
-            limit,
-            false,
-            platform_version,
-        )
-        .map_drive_error(&proof, &metadata)?;
+        let (root_hash, result): ([u8; 32], TokenPreProgrammedDistributions) =
+            Drive::verify_token_pre_programmed_distributions(
+                &proof.grovedb_proof,
+                token_id,
+                start_at,
+                limit,
+                false,
+                platform_version,
+            )
+            .map_drive_error(&proof, &metadata)?;
 
         verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
-        let distributions: TokenPreProgrammedDistributions = result;
-
-        if distributions.0.is_empty() {
+        if result.0.is_empty() {
             Ok((None, metadata, proof))
         } else {
-            Ok((Some(distributions), metadata, proof))
+            Ok((Some(result), metadata, proof))
         }
     }
 }

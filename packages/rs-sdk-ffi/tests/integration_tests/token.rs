@@ -16,6 +16,14 @@ fn token0_id_b58() -> String {
     token_id.to_string(Encoding::Base58)
 }
 
+fn token2_id_b58() -> String {
+    // Matches rs-sdk vectors: token id 2 for data contract id [3;32]
+    let data_contract_id = Identifier::new([3u8; 32]);
+    let token_bytes = calculate_token_id(&data_contract_id.to_buffer(), 2);
+    let token_id = Identifier::new(token_bytes);
+    token_id.to_string(Encoding::Base58)
+}
+
 // Pruned: token info test lacks rs-sdk vectors and is outdated
 
 // Pruned: token contract info not backed by rs-sdk vectors
@@ -179,8 +187,8 @@ fn test_token_direct_purchase_prices() {
 fn test_token_pre_programmed_distributions() {
     setup_logs();
 
-    let handle = create_test_sdk_handle("test_token_pre_programmed_distributions");
-    let token_contract_id = to_c_string(&token0_id_b58());
+    let handle = create_test_sdk_handle("test_token_pre_programmed_distributions_present");
+    let token_contract_id = to_c_string(&token2_id_b58());
 
     unsafe {
         let result = dash_sdk_token_get_pre_programmed_distributions(
@@ -200,9 +208,7 @@ fn test_token_pre_programmed_distributions() {
             Ok(None) => {
                 // Token might not have pre-programmed distributions
             }
-            Err(_e) => {
-                // Accept missing mock vector as acceptable in offline mode
-            }
+            Err(e) => panic!("Unexpected error: {}", e),
         }
     }
 

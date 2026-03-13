@@ -666,7 +666,7 @@ pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSc
 /// Pre-programmed token distributions grouped by timestamp.
 ///
 /// Each entry maps a timestamp (in milliseconds) to a collection of
-/// `(Identifier, TokenAmount)` pairs representing the recipients and their amounts.
+/// `(Identifier, Credits)` pairs representing the recipients and their token amounts in credits.
 #[derive(Debug, Clone, Default, derive_more::From)]
 #[cfg_attr(
     feature = "mocks",
