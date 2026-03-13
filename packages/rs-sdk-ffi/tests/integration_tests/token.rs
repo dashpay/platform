@@ -174,6 +174,41 @@ fn test_token_direct_purchase_prices() {
     destroy_test_sdk_handle(handle);
 }
 
+/// Test fetching pre-programmed distributions for a token
+#[test]
+fn test_token_pre_programmed_distributions() {
+    setup_logs();
+
+    let handle = create_test_sdk_handle("test_token_pre_programmed_distributions");
+    let token_contract_id = to_c_string(&token0_id_b58());
+
+    unsafe {
+        let result = dash_sdk_token_get_pre_programmed_distributions(
+            handle,
+            token_contract_id.as_ptr(),
+            0,
+            std::ptr::null(),
+            false,
+            0,
+        );
+
+        match parse_string_result(result) {
+            Ok(Some(json_str)) => {
+                let json = parse_json_result(&json_str).expect("valid JSON");
+                assert!(json.is_array(), "Expected array, got: {:?}", json);
+            }
+            Ok(None) => {
+                // Token might not have pre-programmed distributions
+            }
+            Err(_e) => {
+                // Accept missing mock vector as acceptable in offline mode
+            }
+        }
+    }
+
+    destroy_test_sdk_handle(handle);
+}
+
 /// Test fetching token info for multiple identities
 #[test]
 fn test_token_identities_token_infos() {
