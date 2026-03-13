@@ -144,8 +144,11 @@ impl WasmSdk {
         Ok(array)
     }
 
-    /// Returns the most recent shielded anchor (32 bytes), or undefined if none exists.
-    #[wasm_bindgen(js_name = "getMostRecentShieldedAnchor")]
+    /// Returns the most recent shielded anchor (32 bytes), or null if none exists.
+    #[wasm_bindgen(
+        js_name = "getMostRecentShieldedAnchor",
+        unchecked_return_type = "Uint8Array | null"
+    )]
     pub async fn get_most_recent_shielded_anchor(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{MostRecentShieldedAnchor, NoParamQuery};
@@ -153,7 +156,7 @@ impl WasmSdk {
         let result = MostRecentShieldedAnchor::fetch(self.as_ref(), NoParamQuery {}).await?;
         match result {
             Some(anchor) => Ok(Uint8Array::from(anchor.0.as_slice()).into()),
-            None => Ok(JsValue::UNDEFINED),
+            None => Ok(JsValue::NULL),
         }
     }
 
@@ -200,7 +203,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedPoolStateWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
     )]
     pub async fn get_shielded_pool_state_with_proof_info(
         &self,
@@ -214,7 +217,7 @@ impl WasmSdk {
 
         let data = result
             .map(|s| JsValue::from(BigInt::from(s.0)))
-            .unwrap_or(JsValue::UNDEFINED);
+            .unwrap_or(JsValue::NULL);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -282,7 +285,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getMostRecentShieldedAnchorWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | null>"
     )]
     pub async fn get_most_recent_shielded_anchor_with_proof_info(
         &self,
@@ -299,7 +302,7 @@ impl WasmSdk {
 
         let data = result
             .map(|a| JsValue::from(Uint8Array::from(a.0.as_slice())))
-            .unwrap_or(JsValue::UNDEFINED);
+            .unwrap_or(JsValue::NULL);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,

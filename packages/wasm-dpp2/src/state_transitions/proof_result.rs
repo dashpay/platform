@@ -74,7 +74,7 @@ extern "C" {
 // Helper: build a plain JS object from key-value pairs
 // ============================================================================
 
-fn js_obj(entries: &[(&str, JsValue)]) -> JsValue {
+pub(crate) fn js_obj(entries: &[(&str, JsValue)]) -> JsValue {
     let obj = js_sys::Object::new();
     for (key, val) in entries {
         js_sys::Reflect::set(&obj, &(*key).into(), val).unwrap();
@@ -748,170 +748,13 @@ fn action_status_to_string(status: dpp::group::group_action_status::GroupActionS
     }
 }
 
-// --- VerifiedShieldedPoolState ---
-
-#[wasm_bindgen(js_name = "VerifiedShieldedPoolState")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerifiedShieldedPoolStateWasm {
-    pool_balance: Option<u64>,
-}
-
-impl_wasm_type_info!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
-impl_wasm_conversions_serde!(VerifiedShieldedPoolStateWasm, VerifiedShieldedPoolState);
-
-#[wasm_bindgen(js_class = VerifiedShieldedPoolState)]
-impl VerifiedShieldedPoolStateWasm {
-    #[wasm_bindgen(getter, js_name = "poolBalance")]
-    pub fn pool_balance(&self) -> JsValue {
-        match self.pool_balance {
-            Some(b) => BigInt::from(b).into(),
-            None => JsValue::undefined(),
-        }
-    }
-}
-
-// --- VerifiedAssetLockConsumed ---
-
-#[wasm_bindgen(js_name = "VerifiedAssetLockConsumed")]
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VerifiedAssetLockConsumedWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub status: String,
-    initial_credit_value: Option<u64>,
-    remaining_credit_value: Option<u64>,
-}
-
-#[wasm_bindgen(js_class = VerifiedAssetLockConsumed)]
-impl VerifiedAssetLockConsumedWasm {
-    #[wasm_bindgen(getter, js_name = "initialCreditValue")]
-    pub fn initial_credit_value(&self) -> JsValue {
-        match self.initial_credit_value {
-            Some(v) => BigInt::from(v).into(),
-            None => JsValue::undefined(),
-        }
-    }
-
-    #[wasm_bindgen(getter, js_name = "remainingCreditValue")]
-    pub fn remaining_credit_value(&self) -> JsValue {
-        match self.remaining_credit_value {
-            Some(v) => BigInt::from(v).into(),
-            None => JsValue::undefined(),
-        }
-    }
-}
-
-impl_wasm_type_info!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
-impl_wasm_conversions_serde!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
-
-// --- VerifiedShieldedNullifiers ---
-
-#[wasm_bindgen(js_name = "VerifiedShieldedNullifiers")]
-#[derive(Clone)]
-pub struct VerifiedShieldedNullifiersWasm {
-    nullifiers: Map, // Map<hex(nullifier), boolean>
-}
-
-#[wasm_bindgen(js_class = VerifiedShieldedNullifiers)]
-impl VerifiedShieldedNullifiersWasm {
-    #[wasm_bindgen(getter)]
-    pub fn nullifiers(&self) -> Map {
-        self.nullifiers.clone()
-    }
-
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> JsValue {
-        js_obj(&[("nullifiers", self.nullifiers.clone().into())])
-    }
-
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
-    }
-}
-
-impl_wasm_type_info!(VerifiedShieldedNullifiersWasm, VerifiedShieldedNullifiers);
-
-// --- VerifiedShieldedNullifiersWithAddressInfos ---
-
-#[wasm_bindgen(js_name = "VerifiedShieldedNullifiersWithAddressInfos")]
-#[derive(Clone)]
-pub struct VerifiedShieldedNullifiersWithAddressInfosWasm {
-    nullifiers: Map,
-    address_infos: Map,
-}
-
-#[wasm_bindgen(js_class = VerifiedShieldedNullifiersWithAddressInfos)]
-impl VerifiedShieldedNullifiersWithAddressInfosWasm {
-    #[wasm_bindgen(getter)]
-    pub fn nullifiers(&self) -> Map {
-        self.nullifiers.clone()
-    }
-
-    #[wasm_bindgen(getter = "addressInfos")]
-    pub fn address_infos(&self) -> Map {
-        self.address_infos.clone()
-    }
-
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> JsValue {
-        js_obj(&[
-            ("nullifiers", self.nullifiers.clone().into()),
-            ("addressInfos", self.address_infos.clone().into()),
-        ])
-    }
-
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
-    }
-}
-
-impl_wasm_type_info!(
+// Shielded types are in proof_result_shielded module
+use super::proof_result_shielded::{
+    VerifiedAssetLockConsumedWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
-    VerifiedShieldedNullifiersWithAddressInfos
-);
-
-// --- VerifiedShieldedNullifiersWithWithdrawalDocument ---
-
-#[wasm_bindgen(js_name = "VerifiedShieldedNullifiersWithWithdrawalDocument")]
-#[derive(Clone)]
-pub struct VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
-    nullifiers: Map,
-    documents: Map,
-}
-
-#[wasm_bindgen(js_class = VerifiedShieldedNullifiersWithWithdrawalDocument)]
-impl VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
-    #[wasm_bindgen(getter)]
-    pub fn nullifiers(&self) -> Map {
-        self.nullifiers.clone()
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn documents(&self) -> Map {
-        self.documents.clone()
-    }
-
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> JsValue {
-        js_obj(&[
-            ("nullifiers", self.nullifiers.clone().into()),
-            ("documents", self.documents.clone().into()),
-        ])
-    }
-
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> JsValue {
-        self.to_object()
-    }
-}
-
-impl_wasm_type_info!(
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
-    VerifiedShieldedNullifiersWithWithdrawalDocument
-);
+};
+
 /// Convert a Rust `StateTransitionProofResult` into the corresponding typed
 /// WASM wrapper, ready to be returned to JavaScript.
 pub fn convert_proof_result(
@@ -1085,28 +928,20 @@ pub fn convert_proof_result(
                 ),
                 StoredAssetLockInfo::NotPresent => ("NotPresent".to_string(), None, None),
             };
-            VerifiedAssetLockConsumedWasm {
-                status,
-                initial_credit_value: initial,
-                remaining_credit_value: remaining,
-            }
-            .into()
+            VerifiedAssetLockConsumedWasm::new(status, initial, remaining).into()
         }
 
         StateTransitionProofResult::VerifiedShieldedNullifiers(nullifiers) => {
-            VerifiedShieldedNullifiersWasm {
-                nullifiers: build_nullifier_map(nullifiers),
-            }
-            .into()
+            VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
         }
 
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
             nullifiers,
             infos,
-        ) => VerifiedShieldedNullifiersWithAddressInfosWasm {
-            nullifiers: build_nullifier_map(nullifiers),
-            address_infos: build_address_infos_map(infos),
-        }
+        ) => VerifiedShieldedNullifiersWithAddressInfosWasm::new(
+            build_nullifier_map(nullifiers),
+            build_address_infos_map(infos),
+        )
         .into(),
 
         StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument(
@@ -1121,10 +956,10 @@ pub fn convert_proof_result(
                 };
                 (key, val)
             }));
-            VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
-                nullifiers: build_nullifier_map(nullifiers),
-                documents: doc_map,
-            }
+            VerifiedShieldedNullifiersWithWithdrawalDocumentWasm::new(
+                build_nullifier_map(nullifiers),
+                doc_map,
+            )
             .into()
         }
     };

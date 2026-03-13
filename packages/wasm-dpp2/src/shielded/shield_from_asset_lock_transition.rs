@@ -1,12 +1,54 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_type_info;
+use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ShieldFromAssetLockTransition serialized as a plain object.
+ */
+export interface ShieldFromAssetLockTransitionObject {
+    $version: string;
+    assetLockProof: object;
+    actions: Array<object>;
+    valueBalance: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+    signature: Uint8Array;
+}
+
+/**
+ * ShieldFromAssetLockTransition serialized as JSON (human-readable).
+ */
+export interface ShieldFromAssetLockTransitionJSON {
+    $version: string;
+    assetLockProof: object;
+    actions: Array<object>;
+    valueBalance: number;
+    anchor: number[];
+    proof: number[];
+    bindingSignature: number[];
+    signature: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldFromAssetLockTransitionObject")]
+    pub type ShieldFromAssetLockTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ShieldFromAssetLockTransitionJSON")]
+    pub type ShieldFromAssetLockTransitionJSONJs;
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = ShieldFromAssetLockTransition)]
 pub struct ShieldFromAssetLockTransitionWasm(ShieldFromAssetLockTransition);
 
@@ -24,6 +66,13 @@ impl From<ShieldFromAssetLockTransitionWasm> for ShieldFromAssetLockTransition {
 
 #[wasm_bindgen(js_class = ShieldFromAssetLockTransition)]
 impl ShieldFromAssetLockTransitionWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(value: JsValue) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
+        let inner: ShieldFromAssetLockTransition = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(ShieldFromAssetLockTransitionWasm(inner))
+    }
+
     #[wasm_bindgen(js_name = getType)]
     pub fn get_type(&self) -> u8 {
         self.0.state_transition_type() as u8
@@ -96,12 +145,6 @@ impl ShieldFromAssetLockTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toBytes)]
     pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
         Ok(PlatformSerializable::serialize_to_bytes(
@@ -120,18 +163,18 @@ impl ShieldFromAssetLockTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        serde_wasm_bindgen::to_value(&json).map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toStateTransition)]
     pub fn to_state_transition(&self) -> crate::state_transitions::base::StateTransitionWasm {
         StateTransition::ShieldFromAssetLock(self.0.clone()).into()
     }
 }
+
+impl_wasm_conversions_serde!(
+    ShieldFromAssetLockTransitionWasm,
+    ShieldFromAssetLockTransition,
+    ShieldFromAssetLockTransitionObjectJs,
+    ShieldFromAssetLockTransitionJSONJs
+);
 
 impl_wasm_type_info!(
     ShieldFromAssetLockTransitionWasm,
