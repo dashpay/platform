@@ -95,8 +95,8 @@ Token configuration:
 | Token | Config |
 |-------|--------|
 | `TOKEN_ID_0` | base_supply=100000, frozen for IDENTITY_ID_2, no pricing, no pre-programmed distributions |
-| `TOKEN_ID_1` | base_supply=100100, paused, single price=25, no pre-programmed distributions |
-| `TOKEN_ID_2` | base_supply=100200, pricing schedule (10 levels), pre-programmed distributions (3 timestamps) |
+| `TOKEN_ID_1` | base_supply=100000, paused, single price=25, no pre-programmed distributions |
+| `TOKEN_ID_2` | base_supply=100000, pricing schedule (10 levels), pre-programmed distributions at timestamps 1000, 5000, 10000 |
 
 When adding a new query type, add corresponding test data to the files in `create_genesis_state/test/`
 and reference it in `packages/rs-sdk/tests/fetch/generated_data.rs`.

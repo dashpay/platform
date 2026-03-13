@@ -53,6 +53,7 @@ impl FromProof<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammed
                                     error: "start_recipient must be 32 bytes".into(),
                                 }
                             })?;
+                        // Default to inclusive: if omitted the start recipient is included.
                         let included = start_at_info.start_recipient_included.unwrap_or(true);
                         Some((recipient_id, included))
                     }

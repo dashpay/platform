@@ -165,9 +165,10 @@ mod tests {
     #[test]
     fn test_null_handle() {
         unsafe {
+            let token_id = std::ffi::CString::new("test").unwrap();
             let result = dash_sdk_token_get_pre_programmed_distributions(
                 std::ptr::null(),
-                std::ffi::CString::new("test").unwrap().as_ptr(),
+                token_id.as_ptr(),
                 0,
                 std::ptr::null(),
                 false,
