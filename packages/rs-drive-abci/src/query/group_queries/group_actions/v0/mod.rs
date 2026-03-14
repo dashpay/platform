@@ -342,7 +342,15 @@ mod tests {
 
         let result = platform.query_group_actions_v0(request, &state, version);
 
-        assert!(result.is_err(), "expected an error for zero limit");
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Drive(drive::error::Error::Query(
+                    QuerySyntaxError::InvalidLimit(_)
+                )))
+            ),
+            "expected InvalidLimit error for zero count"
+        );
     }
 
     #[test]
@@ -360,7 +368,15 @@ mod tests {
 
         let result = platform.query_group_actions_v0(request, &state, version);
 
-        assert!(result.is_err(), "expected an error for limit exceeding max");
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Drive(drive::error::Error::Query(
+                    QuerySyntaxError::InvalidLimit(_)
+                )))
+            ),
+            "expected InvalidLimit error for count exceeding max"
+        );
     }
 
     #[test]
@@ -946,6 +962,17 @@ mod tests {
                 metadata: Some(_),
             }) => {
                 assert_eq!(group_actions.len(), 1);
+                let event = group_actions[0]
+                    .event
+                    .as_ref()
+                    .expect("expected event")
+                    .event_type
+                    .as_ref();
+                assert!(matches!(
+                    event,
+                    Some(group_action_event::EventType::TokenEvent(t))
+                        if matches!(t.r#type.as_ref(), Some(token_event::Type::EmergencyAction(_)))
+                ));
             }
             other => panic!("unexpected result: {:?}", other),
         }
@@ -1030,6 +1057,17 @@ mod tests {
                 metadata: Some(_),
             }) => {
                 assert_eq!(group_actions.len(), 1);
+                let event = group_actions[0]
+                    .event
+                    .as_ref()
+                    .expect("expected event")
+                    .event_type
+                    .as_ref();
+                assert!(matches!(
+                    event,
+                    Some(group_action_event::EventType::TokenEvent(t))
+                        if matches!(t.r#type.as_ref(), Some(token_event::Type::UpdatePrice(_)))
+                ));
             }
             other => panic!("unexpected result: {:?}", other),
         }
@@ -1072,6 +1110,17 @@ mod tests {
                 metadata: Some(_),
             }) => {
                 assert_eq!(group_actions.len(), 1);
+                let event = group_actions[0]
+                    .event
+                    .as_ref()
+                    .expect("expected event")
+                    .event_type
+                    .as_ref();
+                assert!(matches!(
+                    event,
+                    Some(group_action_event::EventType::TokenEvent(t))
+                        if matches!(t.r#type.as_ref(), Some(token_event::Type::UpdatePrice(_)))
+                ));
             }
             other => panic!("unexpected result: {:?}", other),
         }

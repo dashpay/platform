@@ -191,7 +191,15 @@ mod tests {
 
         let result = platform.query_group_infos_v0(request, &state, version);
 
-        assert!(result.is_err(), "expected an error for zero limit");
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Drive(drive::error::Error::Query(
+                    QuerySyntaxError::InvalidLimit(_)
+                )))
+            ),
+            "expected InvalidLimit error for zero count"
+        );
     }
 
     #[test]
@@ -207,7 +215,15 @@ mod tests {
 
         let result = platform.query_group_infos_v0(request, &state, version);
 
-        assert!(result.is_err(), "expected an error for limit exceeding max");
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Drive(drive::error::Error::Query(
+                    QuerySyntaxError::InvalidLimit(_)
+                )))
+            ),
+            "expected InvalidLimit error for count exceeding max"
+        );
     }
 
     #[test]
