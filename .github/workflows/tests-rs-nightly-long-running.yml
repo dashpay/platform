@@ -10,6 +10,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check-each-feature:
+    name: "Check each feature (${{ matrix.package }})"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [dash-sdk, rs-dapi-client, rs-dapi, dapi-grpc, dpp, drive-abci]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Setup sccache
+        uses: ./.github/actions/sccache
+        with:
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install librocksdb
+        uses: ./.github/actions/librocksdb
+
+      - name: Get crate info
+        id: crate_info
+        uses: ./.github/actions/crate_info
+        with:
+          package: ${{ matrix.package }}
+
+      - name: Check each feature in ${{ matrix.package }}
+        env:
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+        run: |
+          set -ex
+          echo "Verify all features disabled"
+          features="${{ steps.crate_info.outputs.features }}"
+          fails=""
+          RUSTFLAGS="-D warnings"
+          cargo check --no-default-features --package "${{ matrix.package }}" --locked
+          for feature in $features; do
+            echo " ============== Verify feature $feature =============="
+            cargo check \
+              --no-default-features \
+              --package "${{ matrix.package }}" \
+              --features="${feature}" \
+              --locked || fails="${fails} ${feature}"
+          done
+          if [ -n "$fails" ]; then
+            echo "Failed features: $fails"
+            exit 1
+          fi
+          echo "All features verified"
+
   upgrade-fork-tests:
     name: Version upgrade tests
     runs-on: ubuntu-24.04
