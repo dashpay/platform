@@ -58,6 +58,70 @@ jobs:
             --locked \
             -- --no-deps -D warnings
 
+      - name: Find unused dependencies
+        run: |
+          cargo install cargo-machete 2>/dev/null || true
+          cargo machete
+
+      - name: Detect immutable structure changes
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
+          if [ -z "$CHANGED_RS" ]; then
+            echo "No .rs files changed — skipping"
+            exit 0
+          fi
+
+          # Brace-aware extractor: captures from @tag through the matching closing brace
+          extract_tagged_block() {
+            local tag="$1"
+            awk -v tag="$tag" '
+              $0 ~ tag { found=1; depth=0 }
+              found {
+                for (i=1; i<=length($0); i++) {
+                  c = substr($0,i,1)
+                  if (c == "{") depth++
+                  if (c == "}") depth--
+                }
+                print
+                if (found && depth <= 0 && index($0, "}")) { found=0 }
+              }
+            '
+          }
+
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          for file in $CHANGED_RS; do
+            if [ ! -f "$file" ]; then continue; fi
+            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
+            if [ -z "$BASE_CONTENT" ]; then continue; fi
+
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+
+            if [ -n "$BASE_APPEND" ]; then
+              # Check for deletions, ignoring comment-only lines and the tag itself
+              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
+              if [ -n "$DELETIONS" ]; then
+                echo "Deletions detected in @append_only structures in $file"
+                echo "$DELETIONS"
+                exit 1
+              fi
+            fi
+            if [ -n "$BASE_IMMUTABLE" ]; then
+              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
+              if [ -n "$CHANGES" ]; then
+                echo "Code changes detected in @immutable structures in $file"
+                echo "$CHANGES"
+                exit 1
+              fi
+            fi
+          done
+          echo "No immutable/append_only structure violations found"
+
       - name: Run tests
         run: |
           cargo nextest run \
@@ -327,6 +391,75 @@ jobs:
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Find unused dependencies
+        if: steps.check-mac.outputs.skip == 'false'
+        run: |
+          cargo install cargo-machete 2>/dev/null || true
+          cargo machete
+        env:
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Detect immutable structure changes
+        if: steps.check-mac.outputs.skip == 'false' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
+          if [ -z "$CHANGED_RS" ]; then
+            echo "No .rs files changed — skipping"
+            exit 0
+          fi
+
+          # Brace-aware extractor: captures from @tag through the matching closing brace
+          extract_tagged_block() {
+            local tag="$1"
+            awk -v tag="$tag" '
+              $0 ~ tag { found=1; depth=0 }
+              found {
+                for (i=1; i<=length($0); i++) {
+                  c = substr($0,i,1)
+                  if (c == "{") depth++
+                  if (c == "}") depth--
+                }
+                print
+                if (found && depth <= 0 && index($0, "}")) { found=0 }
+              }
+            '
+          }
+
+          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
+          for file in $CHANGED_RS; do
+            if [ ! -f "$file" ]; then continue; fi
+            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
+            if [ -z "$BASE_CONTENT" ]; then continue; fi
+
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+
+            if [ -n "$BASE_APPEND" ]; then
+              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
+              if [ -n "$DELETIONS" ]; then
+                echo "Deletions detected in @append_only structures in $file"
+                echo "$DELETIONS"
+                exit 1
+              fi
+            fi
+            if [ -n "$BASE_IMMUTABLE" ]; then
+              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
+              if [ -n "$CHANGES" ]; then
+                echo "Code changes detected in @immutable structures in $file"
+                echo "$CHANGES"
+                exit 1
+              fi
+            fi
+          done
+          echo "No immutable/append_only structure violations found"
 
   zk-tests:
     name: ZK / Shielded tests

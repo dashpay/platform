@@ -4799,7 +4799,6 @@ dependencies = [
  "cbc",
  "dashcore",
  "hex",
- "sha2",
  "thiserror 1.0.69",
 ]
 
@@ -4894,10 +4893,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "platform-wallet",
- "serde",
- "serde_json",
  "tempfile",
- "thiserror 1.0.69",
 ]
 
 [[package]]
