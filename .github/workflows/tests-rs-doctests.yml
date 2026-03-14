@@ -6,11 +6,39 @@ jobs:
     name: Doctests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
     steps:
+      - name: Wait and check if Mac runner is available
+        id: check-mac
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 15
+          MAC_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)") | .status' 2>/dev/null || echo "unknown")
+          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
+          if [ "$MAC_STATUS" = "in_progress" ]; then
+            echo "Mac runner picked up the job — skipping Ubuntu doctests"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Mac runner not available (status: $MAC_STATUS) — running doctests on Ubuntu"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space
+        if: steps.check-mac.outputs.skip == 'false'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
+          df -h /
+
       - name: Check out repo
+        if: steps.check-mac.outputs.skip == 'false'
         uses: actions/checkout@v4
 
       - name: Strip cdylib crate-types (incompatible with static rocksdb)
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
@@ -18,16 +46,37 @@ jobs:
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Setup Rust
+        if: steps.check-mac.outputs.skip == 'false'
         uses: ./.github/actions/rust
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Setup sccache
+        if: steps.check-mac.outputs.skip == 'false'
+        uses: ./.github/actions/sccache
         with:
-          cache-on-failure: "true"
+          bucket: ${{ vars.CACHE_S3_BUCKET }}
+          region: ${{ vars.CACHE_REGION }}
+          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
+          access_key_id: ${{ secrets.CACHE_KEY_ID }}
+          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+
+      - name: Install librocksdb
+        if: steps.check-mac.outputs.skip == 'false'
+        uses: ./.github/actions/librocksdb
 
       - name: Run doctests
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           cargo test \
             --workspace \
             --all-features \
             --locked \
             --doc
+        env:
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
+          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
+          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
+          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
+          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"

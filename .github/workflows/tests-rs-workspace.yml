@@ -64,6 +64,17 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
+      - name: Run doctests
+        run: |
+          cargo test \
+            --workspace \
+            --all-features \
+            --locked \
+            --doc
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
   test-ubuntu:
     name: "Tests (shard ${{ matrix.partition }}/6)"
     runs-on: ubuntu-24.04
