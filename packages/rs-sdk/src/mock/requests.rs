@@ -39,7 +39,7 @@ use drive_proof_verifier::types::{
     PlatformAddressTrunkState, PrefundedSpecializedBalance, ProposerBlockCounts,
     RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
     MostRecentShieldedAnchor, RecentCompactedNullifierChanges, RecentNullifierChanges,
-    RetrievedValues, ShieldedAnchors,
+    RetrievedValues, ShieldedAnchors, TokenPreProgrammedDistributions,
     ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNullifierStatus,
     ShieldedNullifierStatuses, ShieldedPoolState, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
@@ -507,6 +507,7 @@ impl_mock_response!(CurrentQuorumsInfo);
 impl_mock_response!(Group);
 impl_mock_response!(TokenPricingSchedule);
 impl_mock_response!(RewardDistributionMoment);
+impl_mock_response!(TokenPreProgrammedDistributions);
 impl_mock_response!(PlatformAddress);
 impl_mock_response!(AddressInfo);
 impl_mock_response!(RecentAddressBalanceChanges);

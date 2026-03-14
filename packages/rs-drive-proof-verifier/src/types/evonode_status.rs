@@ -40,7 +40,6 @@ pub struct EvoNodeStatus {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Information about protocol and software components versions.
 pub struct Version {
     /// Information about software components versions.
@@ -96,7 +95,6 @@ pub struct TenderdashProtocol {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Drive protocol versions.
 pub struct DriveProtocol {
     /// Latest version supported by the node.
@@ -112,7 +110,6 @@ pub struct DriveProtocol {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Information about current time used by the node.
 pub struct Time {
     /// Local time of the node. Unix timestamp since epoch.
@@ -131,7 +128,6 @@ pub struct Time {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Evo node identification information.
 pub struct Node {
     /// Node ID
@@ -145,7 +141,6 @@ pub struct Node {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Layer 2 blockchain information
 pub struct Chain {
     /// Whether the node is catching up with the network.

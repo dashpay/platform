@@ -88,3 +88,5 @@ book/book/
 
 # gRPC coverage report
 grpc-coverage-report.txt
+
+__pycache__/
