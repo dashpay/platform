@@ -1447,15 +1447,15 @@ mod tests {
 
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-        let st = StateTransition::DataContractCreate(
-            DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+        let st = StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+            DataContractCreateTransitionV0 {
                 data_contract: data_contract_serialized,
                 identity_nonce: 0,
                 user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: Default::default(),
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -1467,7 +1467,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (root_hash, proof_result) = result.unwrap();
         assert_ne!(root_hash, [0u8; 32], "root hash should not be all zeros");
         match proof_result {
@@ -1505,15 +1509,15 @@ mod tests {
 
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
-        let st = StateTransition::DataContractUpdate(
-            DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+        let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
+            DataContractUpdateTransitionV0 {
                 identity_contract_nonce: 0,
                 data_contract: data_contract_serialized,
                 user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: Default::default(),
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -1525,7 +1529,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
@@ -1568,7 +1576,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedIdentity(verified_identity) => {
@@ -1589,11 +1601,7 @@ mod tests {
         let identity_id = identity.id().to_buffer();
 
         let proof = drive
-            .prove_identity_balance_and_revision(
-                identity_id,
-                None,
-                &platform_version.drive,
-            )
+            .prove_identity_balance_and_revision(identity_id, None, &platform_version.drive)
             .expect("expected to prove identity balance and revision");
 
         use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -1615,7 +1623,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
@@ -1649,13 +1661,13 @@ mod tests {
 
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
         use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-        let st = StateTransition::IdentityCreditWithdrawal(
-            IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
+        let st = StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+            IdentityCreditWithdrawalTransitionV0 {
                 identity_id: identity.id(),
                 amount: 100,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -1667,7 +1679,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
@@ -1695,11 +1711,9 @@ mod tests {
         // with with_revision=true, which creates a merged query of keys + revision.
         // We need a proof that contains both. Use the same path queries merged together.
         use crate::drive::identity::key::fetch::IdentityKeysRequest;
-        let key_request =
-            IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let keys_path_query = key_request.into_path_query();
-        let revision_path_query =
-            Drive::identity_revision_query(&identity_id);
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
         let merged = grovedb::PathQuery::merge(
             vec![&keys_path_query, &revision_path_query],
             &platform_version.drive.grove_version,
@@ -1729,7 +1743,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
@@ -1790,15 +1808,15 @@ mod tests {
 
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-        let st = StateTransition::IdentityCreditTransfer(
-            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
                 identity_id: sender.id(),
                 recipient_id: recipient.id(),
                 amount: 50,
                 nonce: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -1810,7 +1828,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedBalanceTransfer(
@@ -1874,13 +1896,13 @@ mod tests {
     fn verify_batch_too_many_transitions_returns_error() {
         let platform_version = PlatformVersion::latest();
 
-        use dpp::state_transition::batch_transition::BatchTransition;
-        use dpp::state_transition::batch_transition::BatchTransitionV0;
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
 
         let base1 = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
             id: Default::default(),
@@ -1998,22 +2020,17 @@ mod tests {
             .construct_path_query(platform_version)
             .expect("expected to build path query");
         let proof = drive
-            .grove_get_proved_path_query(
-                &path_query,
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            )
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
             .expect("expected to get proof");
 
         // Build a document delete batch transition
-        use dpp::state_transition::batch_transition::BatchTransition;
-        use dpp::state_transition::batch_transition::BatchTransitionV0;
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
 
         let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
             id: doc_id,
@@ -2024,9 +2041,9 @@ mod tests {
 
         let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
             owner_id: Default::default(),
-            transitions: vec![DocumentTransition::Delete(
-                DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 { base }),
-            )],
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
             ..Default::default()
         }));
 
@@ -2041,7 +2058,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(docs) => {
@@ -2112,22 +2133,17 @@ mod tests {
             .construct_path_query(platform_version)
             .expect("expected to build path query");
         let proof = drive
-            .grove_get_proved_path_query(
-                &path_query,
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            )
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
             .expect("expected to get proof");
 
         // Build a document create batch transition
-        use dpp::state_transition::batch_transition::BatchTransition;
-        use dpp::state_transition::batch_transition::BatchTransitionV0;
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
         use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
 
         let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
             id: doc_id,
@@ -2161,17 +2177,18 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_ok(), "expected verification to succeed, got: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(docs) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
-                assert!(
-                    maybe_doc.is_some(),
-                    "document should exist after creation"
-                );
+                assert!(maybe_doc.is_some(), "document should exist after creation");
             }
             other => panic!("expected VerifiedDocuments, got {:?}", other),
         }
@@ -2185,13 +2202,13 @@ mod tests {
     fn verify_batch_document_unknown_contract_returns_error() {
         let platform_version = PlatformVersion::latest();
 
-        use dpp::state_transition::batch_transition::BatchTransition;
-        use dpp::state_transition::batch_transition::BatchTransitionV0;
         use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
         use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
-        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
 
         let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
             id: Default::default(),
@@ -2202,9 +2219,9 @@ mod tests {
 
         let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
             owner_id: Default::default(),
-            transitions: vec![DocumentTransition::Delete(
-                DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 { base }),
-            )],
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
             ..Default::default()
         }));
 
@@ -2252,15 +2269,15 @@ mod tests {
 
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
         use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
-        let st = StateTransition::DataContractCreate(
-            DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+        let st = StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+            DataContractCreateTransitionV0 {
                 data_contract: data_contract_serialized,
                 identity_nonce: 0,
                 user_fee_increase: 0,
                 signature_public_key_id: 0,
                 signature: Default::default(),
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -2355,13 +2372,13 @@ mod tests {
 
         use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
         use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-        let st = StateTransition::IdentityCreditWithdrawal(
-            IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
+        let st = StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+            IdentityCreditWithdrawalTransitionV0 {
                 identity_id: dpp::prelude::Identifier::random(),
                 amount: 100,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
@@ -2423,15 +2440,15 @@ mod tests {
 
         use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
         use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-        let st = StateTransition::IdentityCreditTransfer(
-            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
                 identity_id: dpp::prelude::Identifier::random(),
                 recipient_id: dpp::prelude::Identifier::random(),
                 amount: 50,
                 nonce: 1,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
