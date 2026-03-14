@@ -5,9 +5,92 @@ on:
         description: Whether ZK/shielded related code has changed
         type: boolean
         default: false
+      doctests-changed:
+        description: Whether doc comments with code examples have changed
+        type: boolean
+        default: false
 
 jobs:
-  test:
+  test-mac:
+    name: Tests (macOS)
+    runs-on: [self-hosted, macOS, ARM64]
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 30
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Clean target if too large
+        run: |
+          SIZE=$(du -sm target 2>/dev/null | cut -f1 || true)
+          SIZE=${SIZE:-0}
+          echo "target/ size: ${SIZE}MB"
+          if [ "$SIZE" -gt 200000 ]; then
+            echo "target/ exceeds 200GB — cleaning"
+            cargo clean
+          fi
+
+      - name: Install build dependencies
+        run: |
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
+          brew list cmake &>/dev/null || brew install cmake
+          brew list gmp &>/dev/null || brew install gmp
+          brew list llvm &>/dev/null || brew install llvm
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          cache: false
+
+      - name: Run tests
+        run: |
+          cargo nextest run \
+            --package drive \
+            --package dpp \
+            --package drive-abci \
+            --package dash-sdk \
+            --package platform-value \
+            --package rs-dapi \
+            --package platform-wallet \
+            --package rs-sdk-ffi \
+            --package platform-wallet-ffi \
+            --package rs-dapi-client \
+            --package platform-serialization \
+            --package dapi-grpc \
+            --package json-schema-compatibility-validator \
+            --package dashpay-contract \
+            --package dpns-contract \
+            --package masternode-reward-shares-contract \
+            --package withdrawals-contract \
+            --package token-history-contract \
+            --package wallet-utils-contract \
+            --package keyword-search-contract \
+            --all-features \
+            --locked \
+            -E 'not test(/shield/)'
+        env:
+          RUST_MIN_STACK: 4194304
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Run doctests
+        if: ${{ inputs.doctests-changed }}
+        run: |
+          cargo test \
+            --workspace \
+            --all-features \
+            --locked \
+            --doc
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+  test-ubuntu:
     name: "Tests (shard ${{ matrix.partition }}/6)"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -19,15 +102,35 @@ jobs:
       matrix:
         partition: [1, 2, 3, 4, 5, 6]
     steps:
+      - name: Wait and check if Mac runner is available
+        id: check-mac
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 15
+          MAC_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)") | .status' 2>/dev/null || echo "unknown")
+          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
+          if [ "$MAC_STATUS" = "in_progress" ]; then
+            echo "Mac runner picked up the job — skipping Ubuntu fallback"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
           df -h /
 
       - name: Check out repo
+        if: steps.check-mac.outputs.skip == 'false'
         uses: actions/checkout@v4
 
       - name: Strip cdylib crate-types (incompatible with static rocksdb)
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
@@ -35,9 +138,11 @@ jobs:
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Setup Rust
+        if: steps.check-mac.outputs.skip == 'false'
         uses: ./.github/actions/rust
 
       - name: Setup sccache
+        if: steps.check-mac.outputs.skip == 'false'
         uses: ./.github/actions/sccache
         with:
           bucket: ${{ vars.CACHE_S3_BUCKET }}
@@ -47,17 +152,21 @@ jobs:
           secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
 
       - name: Install librocksdb
+        if: steps.check-mac.outputs.skip == 'false'
         uses: ./.github/actions/librocksdb
 
       - uses: taiki-e/install-action@cargo-nextest
+        if: steps.check-mac.outputs.skip == 'false'
 
       - name: Configure core dumps
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           sudo mkdir /cores
           sudo chmod 777 /cores
           sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
 
       - name: Run tests (shard ${{ matrix.partition }}/6)
+        if: steps.check-mac.outputs.skip == 'false'
         run: |
           ulimit -c unlimited
           cargo nextest run \
@@ -97,7 +206,7 @@ jobs:
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
 
       - name: Collect crash artifacts
-        if: failure()
+        if: failure() && steps.check-mac.outputs.skip == 'false'
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -122,7 +231,7 @@ jobs:
           (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
 
       - name: Upload core dumps
-        if: failure()
+        if: failure() && steps.check-mac.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: core-dumps-shard-${{ matrix.partition }}-of-6
