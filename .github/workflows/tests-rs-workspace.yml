@@ -22,7 +22,8 @@ jobs:
 
       - name: Clean target if too large
         run: |
-          SIZE=$(du -sm target 2>/dev/null | cut -f1 || echo 0)
+          SIZE=$(du -sm target 2>/dev/null | cut -f1 || true)
+          SIZE=${SIZE:-0}
           echo "target/ size: ${SIZE}MB"
           if [ "$SIZE" -gt 200000 ]; then
             echo "target/ exceeds 200GB — cleaning"
