@@ -33,6 +33,27 @@ jobs:
 
       - uses: taiki-e/install-action@cargo-nextest
 
+      - name: Debug cmake environment
+        run: |
+          echo "=== PATH ==="
+          echo "$PATH"
+          echo "=== cmake ==="
+          which cmake && cmake --version
+          echo "=== clang ==="
+          which clang && clang --version 2>&1 | head -3
+          echo "=== xcrun ==="
+          xcrun --show-sdk-path 2>&1 || echo "xcrun failed — no CLT?"
+          echo "=== test bls-dash-sys cmake ==="
+          BLS_ROOT="$HOME/.cargo/git/checkouts/bls-signatures-8f6fe588daa69dbb/0842b17"
+          if [ -d "$BLS_ROOT" ]; then
+            rm -rf "$BLS_ROOT/build"
+            mkdir -p "$BLS_ROOT/build"
+            cd "$BLS_ROOT/build"
+            cmake .. -DBUILD_BLS_PYTHON_BINDINGS=0 -DBUILD_BLS_TESTS=0 -DBUILD_BLS_BENCHMARKS=0 -DBUILD_BLS_JS_BINDINGS=0 2>&1 || echo "cmake exit code: $?"
+          else
+            echo "bls checkout not found (cargo will fetch it)"
+          fi
+
       - name: Run tests
         run: |
           cargo nextest run \
