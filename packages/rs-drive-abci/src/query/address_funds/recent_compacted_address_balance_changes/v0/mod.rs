@@ -347,13 +347,20 @@ mod tests {
                     !entries.compacted_block_changes.is_empty(),
                     "expected compacted entries"
                 );
-                // Each compacted entry should have changes for both addresses
-                for compacted in &entries.compacted_block_changes {
-                    assert!(
-                        compacted.changes.len() >= 1,
-                        "expected at least one address change per compacted entry"
-                    );
-                }
+                // Verify that both addresses appear across the compacted entries
+                let all_addresses: std::collections::BTreeSet<Vec<u8>> = entries
+                    .compacted_block_changes
+                    .iter()
+                    .flat_map(|c| c.changes.iter().map(|ch| ch.address.clone()))
+                    .collect();
+                assert!(
+                    all_addresses.contains(&ADDR1.to_bytes()),
+                    "missing ADDR1 in compacted changes"
+                );
+                assert!(
+                    all_addresses.contains(&ADDR2.to_bytes()),
+                    "missing ADDR2 in compacted changes"
+                );
             }
             other => panic!("expected CompactedAddressBalanceUpdateEntries result, got {:?}", other),
         }

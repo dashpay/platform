@@ -191,22 +191,29 @@ mod tests {
             Some(get_addresses_infos_response_v0::Result::AddressInfoEntries(entries)) => {
                 assert_eq!(entries.address_info_entries.len(), 2);
 
-                // Find entries by address bytes
+                // Verify each address entry and track which were seen
+                let mut saw_addr1 = false;
+                let mut saw_addr2 = false;
                 for entry in &entries.address_info_entries {
                     let ban = entry
                         .balance_and_nonce
                         .as_ref()
                         .expect("expected balance and nonce");
                     if entry.address == ADDR1.to_bytes() {
+                        assert!(!saw_addr1, "duplicate ADDR1 entry");
+                        saw_addr1 = true;
                         assert_eq!(ban.balance, BALANCE1);
                         assert_eq!(ban.nonce, NONCE1);
                     } else if entry.address == ADDR2.to_bytes() {
+                        assert!(!saw_addr2, "duplicate ADDR2 entry");
+                        saw_addr2 = true;
                         assert_eq!(ban.balance, BALANCE2);
                         assert_eq!(ban.nonce, NONCE2);
                     } else {
                         panic!("unexpected address in response");
                     }
                 }
+                assert!(saw_addr1 && saw_addr2, "expected both addresses");
             }
             other => panic!("expected AddressInfoEntries result, got {:?}", other),
         }
