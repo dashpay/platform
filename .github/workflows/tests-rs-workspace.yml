@@ -73,17 +73,38 @@ jobs:
             echo "No .rs files changed — skipping"
             exit 0
           fi
+
+          # Brace-aware extractor: captures from @tag through the matching closing brace
+          extract_tagged_block() {
+            local tag="$1"
+            awk -v tag="$tag" '
+              $0 ~ tag { found=1; depth=0 }
+              found {
+                for (i=1; i<=length($0); i++) {
+                  c = substr($0,i,1)
+                  if (c == "{") depth++
+                  if (c == "}") depth--
+                }
+                print
+                if (found && depth <= 0 && index($0, "}")) { found=0 }
+              }
+            '
+          }
+
           git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
             BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
-            BASE_APPEND=$(echo "$BASE_CONTENT" | awk '/@append_only/,/}/')
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | awk '/@immutable/,/}/')
-            PR_APPEND=$(awk '/@append_only/,/}/' "$file")
-            PR_IMMUTABLE=$(awk '/@immutable/,/}/' "$file")
+
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+
             if [ -n "$BASE_APPEND" ]; then
-              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^<$" | grep -v "///" | grep -v "//" || true)
+              # Check for deletions, ignoring comment-only lines and the tag itself
+              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
               if [ -n "$DELETIONS" ]; then
                 echo "Deletions detected in @append_only structures in $file"
                 echo "$DELETIONS"
@@ -91,7 +112,7 @@ jobs:
               fi
             fi
             if [ -n "$BASE_IMMUTABLE" ]; then
-              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>][^<>/]" || true)
+              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
               if [ -n "$CHANGES" ]; then
                 echo "Code changes detected in @immutable structures in $file"
                 echo "$CHANGES"
@@ -392,17 +413,37 @@ jobs:
             echo "No .rs files changed — skipping"
             exit 0
           fi
+
+          # Brace-aware extractor: captures from @tag through the matching closing brace
+          extract_tagged_block() {
+            local tag="$1"
+            awk -v tag="$tag" '
+              $0 ~ tag { found=1; depth=0 }
+              found {
+                for (i=1; i<=length($0); i++) {
+                  c = substr($0,i,1)
+                  if (c == "{") depth++
+                  if (c == "}") depth--
+                }
+                print
+                if (found && depth <= 0 && index($0, "}")) { found=0 }
+              }
+            '
+          }
+
           git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
             BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
-            BASE_APPEND=$(echo "$BASE_CONTENT" | awk '/@append_only/,/}/')
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | awk '/@immutable/,/}/')
-            PR_APPEND=$(awk '/@append_only/,/}/' "$file")
-            PR_IMMUTABLE=$(awk '/@immutable/,/}/' "$file")
+
+            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
+            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
+            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
+            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
+
             if [ -n "$BASE_APPEND" ]; then
-              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^<$" | grep -v "///" | grep -v "//" || true)
+              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
               if [ -n "$DELETIONS" ]; then
                 echo "Deletions detected in @append_only structures in $file"
                 echo "$DELETIONS"
@@ -410,7 +451,7 @@ jobs:
               fi
             fi
             if [ -n "$BASE_IMMUTABLE" ]; then
-              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>][^<>/]" || true)
+              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
               if [ -n "$CHANGES" ]; then
                 echo "Code changes detected in @immutable structures in $file"
                 echo "$CHANGES"
