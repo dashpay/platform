@@ -41,6 +41,7 @@ jobs:
           brew list cmake &>/dev/null || brew install cmake
           brew list gmp &>/dev/null || brew install gmp
           brew list llvm &>/dev/null || brew install llvm
+          brew list gnupg &>/dev/null || brew install gnupg
 
       - name: Setup Rust
         uses: ./.github/actions/rust
