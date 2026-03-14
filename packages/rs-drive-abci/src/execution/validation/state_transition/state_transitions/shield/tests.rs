@@ -1178,9 +1178,7 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::BasicError(
-                        BasicError::ShieldedInvalidValueBalanceError(_)
-                    )
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }
