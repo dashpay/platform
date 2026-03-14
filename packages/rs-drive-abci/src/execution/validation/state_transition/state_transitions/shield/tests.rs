@@ -1075,6 +1075,113 @@ mod tests {
                 )]
             );
         }
+
+        /// Regression test for shield input mismatch inflation bug.
+        ///
+        /// An attacker constructs a shield transition where the transparent inputs
+        /// provide far less than the declared shield `amount`. Without the
+        /// `sum(inputs) >= amount` check in structure validation, the pool would be
+        /// credited by `amount` while addresses are only debited by `requested_input_amount`,
+        /// minting credits from nothing.
+        ///
+        /// With the fix, the transition is rejected at structure validation.
+        ///
+        /// Based on reproducer by pasta (commit a85f4b74).
+        #[test]
+        fn test_rejects_shield_when_inputs_less_than_amount() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let initial_address_balance = dash_to_credits!(1.0);
+            let requested_input_amount = 100_000u64;
+            let forged_shield_amount = 50_000_000u64;
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([9u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_address_balance);
+
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(forged_shield_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle(&bundle);
+
+            assert_eq!(
+                (-value_balance) as u64,
+                forged_shield_amount,
+                "bundle should authorize the inflated shield amount",
+            );
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, requested_input_amount));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: forged_shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let witnesses: Vec<AddressWitness> = inputs
+                .keys()
+                .map(|address| {
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .expect("should sign")
+                })
+                .collect();
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let processing_result = process_transition(&mut platform, st, platform_version);
+
+            // The transition must be rejected — inputs (100k) < shield amount (50M).
+            // Structure validation catches this before any state reads or ZK proof verification.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
     }
 
     // ==========================================
