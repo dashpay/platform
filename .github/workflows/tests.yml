@@ -48,6 +48,7 @@ jobs:
       rs-packages-direct: ${{ steps.override.outputs.rs-packages-direct || steps.filter-rs-direct.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       zk-changed: ${{ steps.override.outputs.zk-changed || steps.filter-zk.outputs.zk-changed }}
+      doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
       test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
@@ -125,6 +126,23 @@ jobs:
           echo "zk-changed=false" >> "$GITHUB_OUTPUT"
           echo "No ZK-related changes — skipping ZK tests"
 
+      - name: Check for doctest changes
+        id: filter-doctests
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
+          DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs')
+
+          # Look for added/removed lines in doc comments that contain code fences
+          if echo "$DIFF" | grep -qE '^[+-].*///.*```|^[+-].*//!.*```'; then
+            echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Doc comments with code examples changed — doctests will run"
+            exit 0
+          fi
+
+          echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
+          echo "No doctest changes — skipping doctests"
+
       - name: Override all outputs for workflow_dispatch
         id: override
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -137,6 +155,7 @@ jobs:
           echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
           echo "rs-packages-direct=$(to_json .github/package-filters/rs-packages-direct.yml)" >> "$GITHUB_OUTPUT"
           echo 'zk-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
           echo 'run=true' >> "$GITHUB_OUTPUT"
 
   build-js:
@@ -203,12 +222,13 @@ jobs:
     uses: ./.github/workflows/tests-rs-workspace.yml
     with:
       zk-changed: ${{ needs.changes.outputs.zk-changed == 'true' }}
+      doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
 
   rs-doctests:
     name: Rust doctests
     needs:
       - changes
-    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    if: ${{ needs.changes.outputs.doctests-changed == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-doctests.yml
 
