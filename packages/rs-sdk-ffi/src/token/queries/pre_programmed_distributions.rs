@@ -89,6 +89,12 @@ pub unsafe extern "C" fn dash_sdk_token_get_pre_programmed_distributions(
             start_recipient_included,
         })
     } else {
+        if !start_recipient.is_null() {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "start_recipient provided but start_time_ms is zero".to_string(),
+            ));
+        }
         None
     };
 
