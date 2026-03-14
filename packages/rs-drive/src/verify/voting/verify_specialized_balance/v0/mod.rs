@@ -109,20 +109,11 @@ mod tests {
         let amount = 500u64;
 
         drive
-            .add_prefunded_specialized_balance(
-                balance_id,
-                amount,
-                None,
-                platform_version,
-            )
+            .add_prefunded_specialized_balance(balance_id, amount, None, platform_version)
             .expect("expected to add prefunded specialized balance");
 
         let proof = drive
-            .prove_prefunded_specialized_balance(
-                balance_id.to_buffer(),
-                None,
-                platform_version,
-            )
+            .prove_prefunded_specialized_balance(balance_id.to_buffer(), None, platform_version)
             .expect("expected to get proof");
 
         let (_, balance) = Drive::verify_specialized_balance(
@@ -144,11 +135,7 @@ mod tests {
         let non_existent_balance_id = [0u8; 32];
 
         let proof = drive
-            .prove_prefunded_specialized_balance(
-                non_existent_balance_id,
-                None,
-                platform_version,
-            )
+            .prove_prefunded_specialized_balance(non_existent_balance_id, None, platform_version)
             .expect("expected to get proof");
 
         let (_, balance) = Drive::verify_specialized_balance(

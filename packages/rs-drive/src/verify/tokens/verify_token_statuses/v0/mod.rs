@@ -149,13 +149,8 @@ mod tests {
             .expect("expected to get proof");
 
         let (_, statuses): (_, BTreeMap<[u8; 32], Option<TokenStatus>>) =
-            Drive::verify_token_statuses(
-                proof.as_slice(),
-                &token_ids,
-                false,
-                platform_version,
-            )
-            .expect("expected proof verification to succeed");
+            Drive::verify_token_statuses(proof.as_slice(), &token_ids, false, platform_version)
+                .expect("expected proof verification to succeed");
 
         assert_eq!(statuses.len(), 1);
         assert_eq!(
@@ -178,13 +173,8 @@ mod tests {
             .expect("expected to get proof");
 
         let (_, statuses): (_, BTreeMap<[u8; 32], Option<TokenStatus>>) =
-            Drive::verify_token_statuses(
-                proof.as_slice(),
-                &token_ids,
-                false,
-                platform_version,
-            )
-            .expect("expected proof verification to succeed");
+            Drive::verify_token_statuses(proof.as_slice(), &token_ids, false, platform_version)
+                .expect("expected proof verification to succeed");
 
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses.get(&non_existent_token_id), Some(&None));

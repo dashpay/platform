@@ -405,12 +405,7 @@ mod tests {
             .expect("expected to construct path query");
 
         let proof = drive
-            .grove_get_proved_path_query(
-                &path_query,
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            )
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
             .expect("expected to get proof");
 
         let (_, result) = query

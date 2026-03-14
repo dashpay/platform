@@ -178,14 +178,13 @@ mod tests {
             )
             .expect("expected to get proof");
 
-        let (_, total_balance) =
-            Drive::verify_token_total_supply_and_aggregated_identity_balance(
-                proof.as_slice(),
-                token_id.to_buffer(),
-                false,
-                platform_version,
-            )
-            .expect("expected proof verification to succeed");
+        let (_, total_balance) = Drive::verify_token_total_supply_and_aggregated_identity_balance(
+            proof.as_slice(),
+            token_id.to_buffer(),
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
 
         // base_supply from default_most_restrictive is 100000, plus our mint of 1000
         let expected_supply = (100000 + mint_amount) as i64;

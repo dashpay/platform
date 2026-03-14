@@ -144,12 +144,7 @@ mod tests {
             .construct_path_query_with_known_index(index, platform_version)
             .expect("expected to construct path query");
         let proof = drive
-            .grove_get_proved_path_query(
-                &path_query,
-                None,
-                &mut vec![],
-                &platform_version.drive,
-            )
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
             .expect("expected to get proof");
 
         let (_, values) = query
