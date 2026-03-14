@@ -222,12 +222,13 @@ jobs:
     uses: ./.github/workflows/tests-rs-workspace.yml
     with:
       zk-changed: ${{ needs.changes.outputs.zk-changed == 'true' }}
+      doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
 
   rs-doctests:
     name: Rust doctests
     needs:
       - changes
-    if: ${{ needs.changes.outputs.doctests-changed == 'true' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    if: ${{ needs.changes.outputs.doctests-changed == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-doctests.yml
 
