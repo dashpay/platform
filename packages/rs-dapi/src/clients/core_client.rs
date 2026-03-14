@@ -90,7 +90,7 @@ impl CoreClient {
             .guarded_blocking_call(|client| client.get_block_count())
             .await??;
 
-        Ok(height as u32)
+        Ok(height)
     }
 
     /// Fetch verbose transaction metadata by txid hex string.
