@@ -102,7 +102,7 @@ jobs:
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
   test-ubuntu:
-    name: "Tests (shard ${{ matrix.partition }}/6)"
+    name: "Tests backup (shard ${{ matrix.partition }}/6)"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -251,7 +251,7 @@ jobs:
           retention-days: 3
 
   lint-ubuntu:
-    name: "Formatting & Linting"
+    name: "Formatting & Linting backup"
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
