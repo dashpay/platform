@@ -61,7 +61,7 @@ jobs:
       - name: Find unused dependencies
         run: |
           cargo install cargo-machete 2>/dev/null || true
-          cargo machete --workspace
+          cargo machete
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
@@ -375,7 +375,7 @@ jobs:
         if: steps.check-mac.outputs.skip == 'false'
         run: |
           cargo install cargo-machete 2>/dev/null || true
-          cargo machete --workspace
+          cargo machete
         env:
           ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
