@@ -356,7 +356,12 @@ mod tests {
 
         let result = platform.query_group_actions_v0(request, &state, version);
 
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(Error::Drive(drive::error::Error::Query(
+                QuerySyntaxError::InvalidLimit(_)
+            )))
+        ));
     }
 
     #[test]
@@ -376,7 +381,12 @@ mod tests {
 
         let result = platform.query_group_actions_v0(request, &state, version);
 
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(Error::Drive(drive::error::Error::Query(
+                QuerySyntaxError::InvalidLimit(_)
+            )))
+        ));
     }
 
     #[test]
@@ -394,7 +404,12 @@ mod tests {
 
         let result = platform.query_group_actions_v0(request, &state, version);
 
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(Error::Drive(drive::error::Error::Query(
+                QuerySyntaxError::InvalidLimit(_)
+            )))
+        ));
     }
 
     #[test]
