@@ -22,6 +22,7 @@ jobs:
         run: |
           brew list cmake &>/dev/null || brew install cmake
           brew list gmp &>/dev/null || brew install gmp
+          brew list llvm &>/dev/null || brew install llvm
           # Homebrew LLVM is keg-only — add to PATH for cmake compiler detection
           echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
 
