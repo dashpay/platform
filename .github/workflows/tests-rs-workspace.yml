@@ -166,7 +166,7 @@ jobs:
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
   test-ubuntu:
-    name: "Tests backup (shard ${{ matrix.partition }}/6)"
+    name: "Tests backup (shard ${{ matrix.partition }}/4)"
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -175,7 +175,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4, 5, 6]
+        partition: [1, 2, 3, 4]
     steps:
       - name: Wait and check if Mac runner is available
         id: check-mac
@@ -183,12 +183,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sleep 15
-          MAC_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)") | .status' 2>/dev/null || echo "unknown")
+          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
+          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
+          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
           echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
           if [ "$MAC_STATUS" = "in_progress" ]; then
             echo "Mac runner picked up the job — skipping Ubuntu fallback"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
+            echo "Mac runner already failed — failing Ubuntu fallback too"
+            exit 1
           else
             echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -268,7 +273,7 @@ jobs:
             --all-features \
             --locked \
             -E 'not test(/shield/)' \
-            --partition count:${{ matrix.partition }}/6
+            --partition count:${{ matrix.partition }}/4
         env:
           RUST_MIN_STACK: 4194304
           CARGO_INCREMENTAL: "0"
@@ -309,7 +314,7 @@ jobs:
         if: failure() && steps.check-mac.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
-          name: core-dumps-shard-${{ matrix.partition }}-of-6
+          name: core-dumps-shard-${{ matrix.partition }}-of-4
           path: core-dumps.zip
           if-no-files-found: ignore
           retention-days: 3
@@ -328,12 +333,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sleep 15
-          MAC_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)") | .status' 2>/dev/null || echo "unknown")
+          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
+          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
+          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
           echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
           if [ "$MAC_STATUS" = "in_progress" ]; then
             echo "Mac runner picked up the job — skipping Ubuntu fallback"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
+            echo "Mac runner already failed — failing Ubuntu fallback too"
+            exit 1
           else
             echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
             echo "skip=false" >> "$GITHUB_OUTPUT"
