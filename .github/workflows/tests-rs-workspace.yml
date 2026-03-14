@@ -46,6 +46,10 @@ jobs:
         uses: ./.github/actions/rust
         with:
           cache: false
+          components: llvm-tools
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov 2>/dev/null || true
 
       - name: Check formatting
         run: cargo fmt --check --all
@@ -122,9 +126,9 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          cargo nextest run \
+          cargo llvm-cov nextest \
             --package drive \
             --package dpp \
             --package drive-abci \
@@ -147,11 +151,21 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E 'not test(/shield/)'
+            -E 'not test(/shield/)' \
+            --lcov --output-path lcov.info
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: rust-mac
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Run doctests
         if: ${{ inputs.doctests-changed }}
