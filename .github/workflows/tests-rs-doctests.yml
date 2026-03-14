@@ -3,7 +3,7 @@ on:
 
 jobs:
   doctests:
-    name: Doctests
+    name: Doctests backup
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
