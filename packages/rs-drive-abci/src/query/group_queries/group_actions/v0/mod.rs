@@ -245,3 +245,354 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use dapi_grpc::platform::v0::get_group_actions_request::StartAtActionId;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_invalid_contract_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 8],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_invalid_contract_id_empty() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert_invalid_identifier(result);
+    }
+
+    #[test]
+    fn test_group_contract_position_over_u16_max() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: u16::MAX as u32 + 1,
+            status: 0,
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))]
+                if msg.contains("can not be over u16::MAX")
+        ));
+    }
+
+    #[test]
+    fn test_group_contract_position_over_u16_max_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: u16::MAX as u32 + 1,
+            status: 0,
+            start_at_action_id: None,
+            count: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidParameter(msg))]
+                if msg.contains("can not be over u16::MAX")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_count_zero() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: Some(0),
+            prove: false,
+        };
+
+        let result = platform.query_group_actions_v0(request, &state, version);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_count_over_default_limit() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let over_limit = platform.config.drive.default_query_limit as u32 + 1;
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: Some(over_limit),
+            prove: false,
+        };
+
+        let result = platform.query_group_actions_v0(request, &state, version);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_count_over_u16_max() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: Some(u16::MAX as u32 + 1),
+            prove: false,
+        };
+
+        let result = platform.query_group_actions_v0(request, &state, version);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_start_at_action_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: Some(StartAtActionId {
+                start_action_id: vec![0; 8],
+                start_action_id_included: true,
+            }),
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg.contains("start at action id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_status_value() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 99,
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg.contains("group action status must be Active or Closed")
+        ));
+    }
+
+    #[test]
+    fn test_query_group_actions_no_prove_empty() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0, // ActionActive
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetGroupActionsResponseV0 {
+                result: Some(get_group_actions_response_v0::Result::GroupActions(
+                    GroupActions { group_actions }
+                )),
+                metadata: Some(_),
+            }) if group_actions.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_query_group_actions_prove_returns_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0, // ActionActive
+            start_at_action_id: None,
+            count: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetGroupActionsResponseV0 {
+                result: Some(get_group_actions_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_group_actions_status_closed_no_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 1, // ActionClosed
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetGroupActionsResponseV0 {
+                result: Some(get_group_actions_response_v0::Result::GroupActions(
+                    GroupActions { group_actions }
+                )),
+                metadata: Some(_),
+            }) if group_actions.is_empty()
+        ));
+    }
+
+    #[test]
+    fn test_valid_count_within_limit() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: None,
+            count: Some(5),
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_valid_start_at_action_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: 0,
+            status: 0,
+            start_at_action_id: Some(StartAtActionId {
+                start_action_id: vec![0; 32],
+                start_action_id_included: true,
+            }),
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_group_contract_position_at_u16_max_is_valid() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetGroupActionsRequestV0 {
+            contract_id: vec![0; 32],
+            group_contract_position: u16::MAX as u32,
+            status: 0,
+            start_at_action_id: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_group_actions_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+    }
+}
