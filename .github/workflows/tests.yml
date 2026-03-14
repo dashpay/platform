@@ -48,6 +48,7 @@ jobs:
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       zk-changed: ${{ steps.override.outputs.zk-changed || steps.filter-zk.outputs.zk-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
+      swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
       test-suite: ${{ steps.override.outputs.run || steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
@@ -135,6 +136,17 @@ jobs:
           echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
           echo "No doctest changes — skipping doctests"
 
+      - name: Check for Swift SDK changes
+        id: filter-swift-sdk
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            swift-sdk-changed:
+              - packages/swift-sdk/**
+              - packages/rs-sdk/**
+              - packages/rs-sdk-ffi/**
+
       - name: Override all outputs for workflow_dispatch
         id: override
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -147,6 +159,7 @@ jobs:
           echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
           echo 'zk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'swift-sdk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'run=true' >> "$GITHUB_OUTPUT"
 
   build-js:
@@ -222,6 +235,15 @@ jobs:
     if: ${{ needs.changes.outputs.doctests-changed == 'true' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-doctests.yml
+
+  swift-sdk-build:
+    name: Swift SDK build
+    needs:
+      - changes
+      - rs-workspace-tests
+    if: ${{ needs.changes.outputs.swift-sdk-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/swift-sdk-build.yml
 
   js-packages:
     name: JS packages
