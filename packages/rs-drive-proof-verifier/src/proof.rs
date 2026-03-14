@@ -4,6 +4,7 @@ pub mod token_contract_info;
 pub mod token_direct_purchase;
 pub mod token_info;
 pub mod token_perpetual_distribution_last_claim;
+pub mod token_pre_programmed_distributions;
 pub mod token_status;
 pub mod token_total_supply;
 
