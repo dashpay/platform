@@ -20,11 +20,13 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          # Ensure homebrew binaries take precedence over /usr/local/bin
+          # (mac-runner-2 has a broken /usr/local/bin/cmake that gets SIGKILLed)
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
           brew list cmake &>/dev/null || brew install cmake
           brew list gmp &>/dev/null || brew install gmp
           brew list llvm &>/dev/null || brew install llvm
-          # Homebrew LLVM is keg-only — add to PATH for cmake compiler detection
-          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
 
       - name: Setup Rust
         uses: ./.github/actions/rust
