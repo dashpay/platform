@@ -346,3 +346,80 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+    use crate::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType;
+    use crate::util::object_size_info::DataContractResolvedInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::tests::json_document::json_document_to_contract;
+    use std::sync::Arc;
+
+    #[test]
+    fn should_prove_and_verify_empty_vote_poll_vote_state_proof_documents() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to create a data contract");
+
+        // Insert the DPNS contract so its paths exist in the store
+        drive
+            .insert_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        let arc_contract = Arc::new(data_contract);
+
+        let query = ResolvedContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+                contract: DataContractResolvedInfo::ArcDataContract(arc_contract),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    dpp::platform_value::Value::Text("dash".to_string()),
+                    dpp::platform_value::Value::Text("test".to_string()),
+                ],
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::Documents,
+            offset: None,
+            limit: Some(10),
+            start_at: None,
+            allow_include_locked_and_abstaining_vote_tally: false,
+        };
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("expected to construct path query");
+
+        let proof = drive
+            .grove_get_proved_path_query(
+                &path_query,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to get proof");
+
+        let (_, result) = query
+            .verify_vote_poll_vote_state_proof(proof.as_slice(), platform_version)
+            .expect("expected proof verification to succeed");
+
+        assert!(result.contenders.is_empty());
+        assert_eq!(result.locked_vote_tally, None);
+        assert_eq!(result.abstaining_vote_tally, None);
+        assert_eq!(result.winner, None);
+    }
+}
