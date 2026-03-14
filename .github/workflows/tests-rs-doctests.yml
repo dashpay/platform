@@ -16,12 +16,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           sleep 15
-          MAC_STATUS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)") | .status' 2>/dev/null || echo "unknown")
+          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
+          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
+          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
           echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
           if [ "$MAC_STATUS" = "in_progress" ]; then
             echo "Mac runner picked up the job — skipping Ubuntu doctests"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
+            echo "Mac runner already failed — failing Ubuntu fallback too"
+            exit 1
           else
             echo "Mac runner not available (status: $MAC_STATUS) — running doctests on Ubuntu"
             echo "skip=false" >> "$GITHUB_OUTPUT"
