@@ -103,3 +103,69 @@ fn verify_asset_lock_is_not_spent_and_has_enough_balance<C>(
         })),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::execution::ExecutionError;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Txid;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_return_unknown_version_error() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .common_validation_methods
+            .asset_locks
+            .verify_asset_lock_is_not_spent_and_has_enough_balance = 99;
+
+        let platform = crate::test::helpers::setup::TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let state = platform.state.load_full();
+
+        let platform_ref = crate::platform_types::platform::PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let out_point = OutPoint {
+            txid: Txid::from_byte_array([0u8; 32]),
+            vout: 0,
+        };
+
+        let mut hasher = SignableBytesHasher::Bytes(vec![0u8; 32]);
+
+        let result = verify_asset_lock_is_not_spent_and_has_enough_balance(
+            &platform_ref,
+            &mut hasher,
+            out_point,
+            100,
+            None,
+            &platform_version,
+        );
+
+        match result {
+            Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            })) => {
+                assert_eq!(
+                    method,
+                    "verify_asset_lock_is_not_spent_and_has_enough_balance"
+                );
+                assert_eq!(known_versions, vec![0]);
+                assert_eq!(received, 99);
+            }
+            other => panic!("expected UnknownVersionMismatch error, got {:?}", other),
+        }
+    }
+}

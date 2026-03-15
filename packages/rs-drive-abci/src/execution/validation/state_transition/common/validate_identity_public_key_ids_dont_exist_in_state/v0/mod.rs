@@ -53,3 +53,120 @@ pub(super) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
         Ok(SimpleConsensusValidationResult::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::version::DefaultForPlatformVersion;
+
+    #[test]
+    fn should_pass_when_key_ids_dont_exist_in_state() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let identity =
+            Identity::random_identity(3, Some(50), platform_version).expect("got an identity");
+        let identity_id = identity.id();
+
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should add identity");
+
+        // Create keys with IDs that don't exist in the identity
+        let keys_in_creation: Vec<IdentityPublicKeyInCreation> = vec![
+            IdentityPublicKeyInCreationV0 {
+                id: 100,
+                ..Default::default()
+            }
+            .into(),
+            IdentityPublicKeyInCreationV0 {
+                id: 101,
+                ..Default::default()
+            }
+            .into(),
+        ];
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_key_ids_dont_exist_in_state_v0(
+            identity_id,
+            &keys_in_creation,
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(result.is_valid(), "should be valid when keys don't exist");
+    }
+
+    #[test]
+    fn should_fail_when_key_ids_already_exist_in_state() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let identity =
+            Identity::random_identity(3, Some(50), platform_version).expect("got an identity");
+        let identity_id = identity.id();
+
+        // Get one of the existing key IDs
+        let existing_key_id = identity.public_keys().keys().next().copied().unwrap();
+
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should add identity");
+
+        // Create a key with an ID that already exists
+        let keys_in_creation: Vec<IdentityPublicKeyInCreation> =
+            vec![IdentityPublicKeyInCreationV0 {
+                id: existing_key_id,
+                ..Default::default()
+            }
+            .into()];
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_key_ids_dont_exist_in_state_v0(
+            identity_id,
+            &keys_in_creation,
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(!result.is_valid(), "should be invalid when key IDs exist");
+        assert_eq!(result.errors.len(), 1);
+    }
+}
