@@ -183,3 +183,7 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
         }
     }
 }
+
+// Version dispatch tests for has_identity_nonce_validation were intentionally removed.
+// The version-specific routing (v0 vs v1) is covered by strategy tests that exercise
+// the processor at the platform version used by the test harness.

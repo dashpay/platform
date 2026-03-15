@@ -87,3 +87,70 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
         Ok((root_hash, values))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::object_size_info::DataContractResolvedInfo;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::tests::json_document::json_document_to_contract;
+    use std::sync::Arc;
+
+    #[test]
+    fn should_prove_and_verify_empty_contests_proof() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to create a data contract");
+
+        // Insert the DPNS contract so its paths exist in the store
+        drive
+            .insert_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        let doc_type_name = String::from("domain");
+        let index_name = String::from("parentNameAndLabel");
+        let start_index_values = vec![Value::Text("dash".to_string())];
+        let end_index_values = vec![];
+        let start_at_value = None;
+        let arc_contract = Arc::new(data_contract);
+
+        let query = ResolvedVotePollsByDocumentTypeQuery {
+            contract: DataContractResolvedInfo::ArcDataContract(arc_contract),
+            document_type_name: &doc_type_name,
+            index_name: &index_name,
+            start_index_values: &start_index_values,
+            end_index_values: &end_index_values,
+            start_at_value: &start_at_value,
+            limit: Some(10),
+            order_ascending: true,
+        };
+
+        // Build path query and generate proof from drive
+        let index = query.index().expect("expected to get index");
+        let path_query = query
+            .construct_path_query_with_known_index(index, platform_version)
+            .expect("expected to construct path query");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("expected to get proof");
+
+        let (_, values) = query
+            .verify_contests_proof(proof.as_slice(), platform_version)
+            .expect("expected proof verification to succeed");
+
+        assert!(values.is_empty());
+    }
+}

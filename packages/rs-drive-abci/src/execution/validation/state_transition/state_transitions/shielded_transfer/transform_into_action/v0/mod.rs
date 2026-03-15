@@ -58,6 +58,13 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
+        // Note: validate_minimum_pool_notes is intentionally NOT called here.
+        // Unlike Unshield and ShieldedWithdrawal which reveal a transparent destination
+        // (output address or L1 withdrawal), shielded transfers remain entirely within the
+        // pool with no visible destination. The minimum pool notes threshold exists to
+        // protect the anonymity set when outflows have observable destinations -- it does
+        // not apply to pool-internal transfers.
+
         // Verify the pool has sufficient balance for the fee
         if current_total_balance < fee_amount {
             return Ok(ConsensusValidationResult::new_with_error(

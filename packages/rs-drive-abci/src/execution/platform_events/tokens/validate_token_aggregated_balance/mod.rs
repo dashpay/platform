@@ -52,3 +52,42 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+
+    #[test]
+    fn test_dispatcher_unknown_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut modified_version = platform_version.clone();
+        modified_version
+            .drive_abci
+            .methods
+            .tokens_processing
+            .validate_token_aggregated_balance = 255;
+
+        let result = platform.validate_token_aggregated_balance(&transaction, &modified_version);
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            })) => {
+                assert_eq!(method, "validate_token_aggregated_balance");
+                assert_eq!(known_versions, vec![0]);
+                assert_eq!(received, 255);
+            }
+            _ => panic!("expected UnknownVersionMismatch error"),
+        }
+    }
+}

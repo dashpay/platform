@@ -83,3 +83,35 @@ impl VotePollsByEndDateDriveQuery {
         Ok((root_hash, vote_polls_by_end_date))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_empty_vote_polls_by_end_date() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: Some(10),
+            offset: None,
+            order_ascending: true,
+        };
+
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        let (_, result): (_, BTreeMap<TimestampMillis, Vec<VotePoll>>) = query
+            .verify_vote_polls_by_end_date_proof(proof.as_slice(), platform_version)
+            .expect("expected proof verification to succeed");
+
+        assert!(result.is_empty());
+    }
+}

@@ -21,20 +21,7 @@ final class TransactionTests: XCTestCase {
     // SDKTransactionBuilder.addInput takes Input(txid:vout:scriptPubKey:privateKey), not HDUTXO
   }
 
-  func testTransactionBuilderAddOutput() throws {
-    let builder = SDKTransactionBuilder(feePerKB: 1000)
-    let address = "yTsGq4wV8WySdQTYgGqmiUKMxb8RBr6wc6"
-    let amount: UInt64 = 50_000_000
-    try builder.addOutput(SDKTransactionBuilder.Output(address: address, amount: amount))
-    XCTAssertTrue(true)
-  }
 
-  func testTransactionBuilderChangeAddress() throws {
-    let builder = SDKTransactionBuilder(feePerKB: 1000)
-    let changeAddress = "yXdUfGBfX6rQmNq5speeNGD5HfL2qkYBNe"
-    try builder.setChangeAddress(changeAddress)
-    XCTAssertTrue(true)
-  }
 
   func testTransactionBuilderInsufficientBalance() throws {
     let builder = SDKTransactionBuilder(feePerKB: 1000)

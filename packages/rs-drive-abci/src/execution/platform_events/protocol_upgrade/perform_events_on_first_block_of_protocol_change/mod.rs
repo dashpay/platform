@@ -70,3 +70,95 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+
+    #[test]
+    fn test_perform_events_when_version_method_is_none() {
+        // When the perform_events_on_first_block_of_protocol_change method is None,
+        // the dispatcher should return Ok(()) without doing anything.
+        // We can test this indirectly: the latest platform version has Some(0),
+        // but we can verify the dispatch for a same-version transition (no-op case).
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Calling with previous_protocol_version == current version should be fine
+        // since all transition conditions (previous < X && current >= X) will be false
+        let result = platform.perform_events_on_first_block_of_protocol_change(
+            &platform_state,
+            &block_info,
+            &transaction,
+            platform_version.protocol_version,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_perform_events_unknown_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Create a modified platform version with unknown method version
+        let mut modified_version = platform_version.clone();
+        modified_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .perform_events_on_first_block_of_protocol_change = Some(255);
+
+        let result = platform.perform_events_on_first_block_of_protocol_change(
+            &platform_state,
+            &block_info,
+            &transaction,
+            platform_version.protocol_version,
+            &modified_version,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            })) => {
+                assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
+                assert_eq!(known_versions, vec![0]);
+                assert_eq!(received, 255);
+            }
+            _ => panic!("expected UnknownVersionMismatch error"),
+        }
+    }
+}

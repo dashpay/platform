@@ -556,3 +556,242 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bincode::config;
+
+    fn cfg() -> impl bincode::config::Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    fn pv() -> &'static PlatformVersion {
+        PlatformVersion::first()
+    }
+
+    fn round_trip<T>(value: T) -> T
+    where
+        T: PlatformVersionEncode + crate::PlatformVersionedDecode,
+    {
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap()
+    }
+
+    // -----------------------------------------------------------------------
+    // HashMap
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_map_round_trip() {
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), 1u32);
+        map.insert("b".to_string(), 2);
+        let decoded = round_trip(map.clone());
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn hash_map_empty_round_trip() {
+        let map: HashMap<String, u32> = HashMap::new();
+        let decoded = round_trip(map.clone());
+        assert_eq!(decoded, map);
+    }
+
+    // -----------------------------------------------------------------------
+    // HashSet
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_set_round_trip() {
+        let mut set = HashSet::new();
+        set.insert(10u32);
+        set.insert(20);
+        set.insert(30);
+        let decoded = round_trip(set.clone());
+        assert_eq!(decoded, set);
+    }
+
+    // -----------------------------------------------------------------------
+    // Mutex
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mutex_round_trip() {
+        let value = Mutex::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Mutex<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.lock().unwrap(), 42);
+    }
+
+    // -----------------------------------------------------------------------
+    // RwLock
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rwlock_round_trip() {
+        let value = RwLock::new(99u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: RwLock<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.read().unwrap(), 99);
+    }
+
+    // -----------------------------------------------------------------------
+    // CString / &CStr
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cstring_round_trip() {
+        let value = CString::new("hello").unwrap();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: CString =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn cstr_encode() {
+        let cstr = CString::new("test").unwrap();
+        let cstr_ref: &CStr = cstr.as_c_str();
+        let encoded = crate::platform_encode_to_vec(&cstr_ref, cfg(), pv()).unwrap();
+        let decoded: CString =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded.as_c_str(), cstr_ref);
+    }
+
+    // -----------------------------------------------------------------------
+    // SystemTime
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn system_time_round_trip() {
+        let value = SystemTime::now();
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        let decoded: SystemTime =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    // -----------------------------------------------------------------------
+    // PathBuf / &Path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pathbuf_encode() {
+        let value = PathBuf::from("/tmp/test");
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn path_ref_encode() {
+        let path = Path::new("/tmp/test");
+        let encoded = crate::platform_encode_to_vec(&path, cfg(), pv()).unwrap();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn path_borrow_decode() {
+        let path = Path::new("/usr/local");
+        let encoded = crate::platform_encode_to_vec(&path, cfg(), pv()).unwrap();
+        let decoded: &Path =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, path);
+    }
+
+    // -----------------------------------------------------------------------
+    // IP addresses
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ipv4_round_trip() {
+        let value = Ipv4Addr::new(192, 168, 1, 1);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ipv6_round_trip() {
+        let value = Ipv6Addr::LOCALHOST;
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ip_addr_v4_round_trip() {
+        let value = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ip_addr_v6_round_trip() {
+        let value = IpAddr::V6(Ipv6Addr::LOCALHOST);
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Socket addresses
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn socket_addr_v4_round_trip() {
+        let value = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn socket_addr_v6_round_trip() {
+        let value = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn socket_addr_round_trip() {
+        let value = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 3000));
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Borrow-decode paths for std types
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_map_borrow_decode() {
+        let mut map = HashMap::new();
+        map.insert(1u32, 10u32);
+        map.insert(2, 20);
+        let encoded = crate::platform_encode_to_vec(&map, cfg(), pv()).unwrap();
+        let decoded: HashMap<u32, u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn hash_set_borrow_decode() {
+        let mut set = HashSet::new();
+        set.insert(1u32);
+        set.insert(2);
+        let encoded = crate::platform_encode_to_vec(&set, cfg(), pv()).unwrap();
+        let decoded: HashSet<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, set);
+    }
+
+    #[test]
+    fn mutex_borrow_decode() {
+        let value = Mutex::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Mutex<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.lock().unwrap(), 42);
+    }
+
+    #[test]
+    fn rwlock_borrow_decode() {
+        let value = RwLock::new(99u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: RwLock<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.read().unwrap(), 99);
+    }
+}
