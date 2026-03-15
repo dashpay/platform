@@ -104,6 +104,118 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn test_choose_quorum_v0_empty_quorums_returns_none() {
+        let quorums = BTreeMap::new();
+        let request_id = [0u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_empty_quorums_returns_none() {
+        let quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
+        let request_id = [0u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_single_quorum() {
+        let quorum_hash = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let key = [42u8; 48];
+        let quorums = BTreeMap::from([(quorum_hash, key)]);
+        let request_id = [1u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_some());
+        let (_, returned_key) = result.unwrap();
+        assert_eq!(*returned_key, key);
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_deterministic() {
+        let quorum_hash1 = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+        let quorum_hash2 = QuorumHash::from_slice(
+            hex::decode("000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let key1 = [1u8; 48];
+        let key2 = [2u8; 48];
+        let quorums = BTreeMap::from([(quorum_hash1, key1), (quorum_hash2, key2)]);
+        let request_id = [42u8; 32];
+
+        // Call twice with same inputs - should be deterministic
+        let result1 = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+        let result2 = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result1.is_some());
+        assert!(result2.is_some());
+        assert_eq!(result1.unwrap().0, result2.unwrap().0);
+    }
+
+    #[test]
+    fn test_choose_quorum_v0_single_quorum() {
+        let quorum_hash = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let key = SecretKey::random(&mut rng).public_key();
+        let quorums = BTreeMap::from([(quorum_hash, key)]);
+        let request_id = [1u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_some());
+    }
+
+    #[test]
     fn test_choose_quorum() {
         // Active quorums:
         let quorum_hash1 = QuorumHash::from_slice(

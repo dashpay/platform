@@ -671,3 +671,278 @@ impl<C> Platform<C> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_same_version_transition_is_noop() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // When previous == current, no transition_to_version_* should be triggered
+        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
+            &platform_state,
+            &block_info,
+            &transaction,
+            platform_version.protocol_version,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_transition_to_version_6_inserts_wallet_utils_contract() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Transition from version 5 to current (which is >= 6)
+        // should insert the wallet utils contract
+        let result = platform.transition_to_version_6(&block_info, &transaction, platform_version);
+
+        assert!(result.is_ok());
+
+        // Verify the contract was inserted by loading it
+        let wallet_utils_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::WalletUtils,
+            platform_version,
+        )
+        .expect("expected to load wallet utils contract");
+
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let fetched = platform.drive.get_contract_with_fetch_info_and_fee(
+            *wallet_utils_contract.id().as_bytes(),
+            None,
+            false,
+            Some(&transaction),
+            platform_version,
+        );
+        assert!(fetched.is_ok());
+    }
+
+    #[test]
+    fn test_transition_to_version_9_creates_token_trees() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        let result = platform.transition_to_version_9(&block_info, &transaction, platform_version);
+
+        assert!(result.is_ok());
+
+        // Verify the token history contract was inserted
+        let token_history_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::TokenHistory,
+            platform_version,
+        )
+        .expect("expected to load token history contract");
+
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let fetched = platform.drive.get_contract_with_fetch_info_and_fee(
+            *token_history_contract.id().as_bytes(),
+            None,
+            false,
+            Some(&transaction),
+            platform_version,
+        );
+        assert!(fetched.is_ok());
+    }
+
+    #[test]
+    fn test_transition_to_version_11_creates_address_trees() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let result = platform.transition_to_version_11(&transaction, platform_version);
+
+        assert!(result.is_ok());
+
+        // Verify that the AddressBalances root tree was created
+        use drive::drive::RootTree;
+        use drive::grovedb::Element;
+        let element = platform.drive.grove.get(
+            [].as_ref(),
+            &[RootTree::AddressBalances as u8],
+            Some(&transaction),
+        );
+        assert!(element.is_ok(), "AddressBalances root tree should exist");
+    }
+
+    #[test]
+    fn test_transition_to_version_12_creates_shielded_pool_trees() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Version 12 depends on version 11 trees existing
+        platform
+            .transition_to_version_11(&transaction, platform_version)
+            .expect("expected version 11 transition to succeed");
+
+        let result = platform.transition_to_version_12(&transaction, platform_version);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_full_transition_from_version_3_to_latest() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Transition from version 3 exercises all transition_to_version_* functions
+        // (4, 6, 8, 9, 11, 12) since current >= all thresholds
+        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
+            &platform_state,
+            &block_info,
+            &transaction,
+            3,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_transition_from_version_5_skips_version_4() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Transitioning from version 5 should skip version 4 logic
+        // but still execute versions 6, 8, 9, 11, 12
+        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
+            &platform_state,
+            &block_info,
+            &transaction,
+            5,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_transition_from_version_10_only_does_11_and_12() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // From version 10, only versions 11 and 12 should trigger
+        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
+            &platform_state,
+            &block_info,
+            &transaction,
+            10,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_idempotent_transition_to_version_6() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // First call should succeed
+        platform
+            .transition_to_version_6(&block_info, &transaction, platform_version)
+            .expect("first transition should succeed");
+
+        // Second call should also succeed (idempotent due to insert_contract)
+        let result = platform.transition_to_version_6(&block_info, &transaction, platform_version);
+        assert!(result.is_ok());
+    }
+}

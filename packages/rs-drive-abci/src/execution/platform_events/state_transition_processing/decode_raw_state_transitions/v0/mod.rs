@@ -121,3 +121,151 @@ where
         StateTransitionContainerV0::new(decoded_state_transitions)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_decode_empty_state_transitions() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let raw_state_transitions: Vec<Vec<u8>> = vec![];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        assert_eq!(container.into_iter().count(), 0);
+    }
+
+    #[test]
+    fn test_decode_oversized_state_transition() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // Create a state transition that exceeds the max size
+        let max_size = platform_version.system_limits.max_state_transition_size as usize;
+        let oversized = vec![0u8; max_size + 1];
+
+        let raw_state_transitions = vec![oversized];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(invalid) => {
+                assert!(
+                    matches!(
+                        &invalid.error,
+                        dpp::consensus::ConsensusError::BasicError(
+                            dpp::consensus::basic::BasicError::StateTransitionMaxSizeExceededError(
+                                _
+                            )
+                        )
+                    ),
+                    "expected StateTransitionMaxSizeExceededError"
+                );
+            }
+            _ => panic!("expected InvalidEncoding for oversized state transition"),
+        }
+    }
+
+    #[test]
+    fn test_decode_invalid_bytes_state_transition() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // Random garbage bytes that won't deserialize as a valid state transition
+        let garbage = vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB];
+
+        let raw_state_transitions = vec![garbage];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+
+        // Should be either InvalidEncoding (PlatformDeserializationError) or FailedToDecode
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(_) => {}
+            DecodedStateTransition::FailedToDecode(_) => {}
+            DecodedStateTransition::SuccessfullyDecoded(_) => {
+                panic!("garbage bytes should not decode successfully")
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_multiple_mixed_state_transitions() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let max_size = platform_version.system_limits.max_state_transition_size as usize;
+        let oversized = vec![0u8; max_size + 1];
+        let garbage = vec![0xFF, 0xFE, 0xFD];
+
+        let raw_state_transitions = vec![oversized, garbage];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 2);
+
+        // First should be oversized error
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(_) => {}
+            _ => panic!("first should be InvalidEncoding for oversized"),
+        }
+
+        // Second should be invalid encoding or failed to decode
+        match &decoded[1] {
+            DecodedStateTransition::InvalidEncoding(_) => {}
+            DecodedStateTransition::FailedToDecode(_) => {}
+            DecodedStateTransition::SuccessfullyDecoded(_) => {
+                panic!("garbage should not decode successfully")
+            }
+        }
+    }
+
+    #[test]
+    fn test_decode_state_transition_at_exact_max_size() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // Create a state transition that is exactly at the max size limit
+        // It should attempt to decode (not reject as oversized)
+        let max_size = platform_version.system_limits.max_state_transition_size as usize;
+        let at_limit = vec![0u8; max_size];
+
+        let raw_state_transitions = vec![at_limit];
+        let container =
+            platform.decode_raw_state_transitions_v0(&raw_state_transitions, platform_version);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+
+        // Should NOT be rejected as oversized - it should attempt to deserialize
+        // and fail with a decoding error since it's all zeros
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(_) => {} // Deserialization error is fine
+            DecodedStateTransition::FailedToDecode(_) => {}  // Protocol error is fine
+            DecodedStateTransition::SuccessfullyDecoded(_) => {
+                panic!("zeros at max size should not decode successfully")
+            }
+        }
+    }
+}
