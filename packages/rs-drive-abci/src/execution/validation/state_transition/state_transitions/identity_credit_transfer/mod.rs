@@ -401,7 +401,7 @@ mod tests {
         // Should get a paid consensus error (identity exists but insufficient balance)
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(..)]
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 
@@ -449,7 +449,7 @@ mod tests {
         // Recipient not found should result in a paid consensus error
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(..)]
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 

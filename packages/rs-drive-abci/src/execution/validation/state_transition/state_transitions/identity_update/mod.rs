@@ -1636,7 +1636,7 @@ mod tests {
         // Wrong revision should be a paid consensus error (state error)
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(..)]
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 
@@ -1706,7 +1706,7 @@ mod tests {
         // Disabling nonexistent key should result in a paid consensus error
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(..)]
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 
@@ -1821,7 +1821,7 @@ mod tests {
         // Adding key with an existing ID should result in a paid consensus error
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError(..)]
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 }
