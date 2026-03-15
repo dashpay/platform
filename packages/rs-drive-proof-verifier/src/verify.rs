@@ -79,9 +79,11 @@ pub(crate) fn verify_tenderdash_proof(
     let sign_digest = commit
         .calculate_sign_hash(
             &chain_id,
-            quorum_type.try_into().map_err(|_| Error::ResponseDecodeError {
-                error: format!("quorum type out of range: {}", quorum_type),
-            })?,
+            quorum_type
+                .try_into()
+                .map_err(|_| Error::ResponseDecodeError {
+                    error: format!("quorum type out of range: {}", quorum_type),
+                })?,
             &quorum_hash,
             height as i64,
             round as i32,
@@ -187,9 +189,7 @@ mod tests {
             Ok([0u8; 48])
         }
 
-        fn get_platform_activation_height(
-            &self,
-        ) -> Result<CoreBlockHeight, ContextProviderError> {
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
             Ok(1)
         }
     }
