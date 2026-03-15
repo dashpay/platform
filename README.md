@@ -21,12 +21,12 @@
 <details>
 <summary>Per-Crate Coverage</summary>
 
-| Crate | Coverage |
-|-------|----------|
-| dpp | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dpp)](https://codecov.io/gh/dashpay/platform/component/dpp) |
-| drive | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
-| drive-abci | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
-| sdk | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
+| Crate | Lines | Coverage |
+|-------|------:|----------|
+| [rs-dpp](./packages/rs-dpp) | 129k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dpp)](https://codecov.io/gh/dashpay/platform/component/dpp) |
+| [rs-drive](./packages/rs-drive) | 171k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
+| [rs-drive-abci](./packages/rs-drive-abci) | 125k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
+| [rs-sdk](./packages/rs-sdk) | 23k | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
 
 </details>
 
