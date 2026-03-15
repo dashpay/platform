@@ -106,3 +106,97 @@ impl AppliedRequestSettings {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_settings_override_by() {
+        let base = RequestSettings {
+            timeout: Some(Duration::from_secs(5)),
+            retries: Some(3),
+            connect_timeout: Some(Duration::from_secs(2)),
+            ban_failed_address: Some(true),
+            max_decoding_message_size: Some(1024),
+        };
+
+        // Override with partial settings
+        let override_settings = RequestSettings {
+            timeout: Some(Duration::from_secs(10)),
+            retries: None,
+            connect_timeout: None,
+            ban_failed_address: None,
+            max_decoding_message_size: None,
+        };
+
+        let result = base.override_by(override_settings);
+        assert_eq!(result.timeout, Some(Duration::from_secs(10))); // overridden
+        assert_eq!(result.retries, Some(3)); // preserved from base
+        assert_eq!(result.connect_timeout, Some(Duration::from_secs(2))); // preserved
+        assert_eq!(result.ban_failed_address, Some(true)); // preserved
+        assert_eq!(result.max_decoding_message_size, Some(1024)); // preserved
+    }
+
+    #[test]
+    fn test_request_settings_override_by_empty() {
+        let base = RequestSettings {
+            timeout: Some(Duration::from_secs(5)),
+            retries: Some(3),
+            connect_timeout: None,
+            ban_failed_address: None,
+            max_decoding_message_size: None,
+        };
+
+        let result = base.override_by(RequestSettings::default());
+        assert_eq!(result.timeout, Some(Duration::from_secs(5)));
+        assert_eq!(result.retries, Some(3));
+    }
+
+    #[test]
+    fn test_request_settings_finalize_defaults() {
+        let settings = RequestSettings::default();
+        let applied = settings.finalize();
+
+        assert_eq!(applied.connect_timeout, None);
+        assert_eq!(applied.timeout, Duration::from_secs(10));
+        assert_eq!(applied.retries, 5);
+        assert!(applied.ban_failed_address);
+        assert!(applied.max_decoding_message_size.is_none());
+    }
+
+    #[test]
+    fn test_request_settings_finalize_custom() {
+        let settings = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            timeout: Some(Duration::from_secs(30)),
+            retries: Some(10),
+            ban_failed_address: Some(false),
+            max_decoding_message_size: Some(4096),
+        };
+
+        let applied = settings.finalize();
+        assert_eq!(applied.connect_timeout, Some(Duration::from_secs(3)));
+        assert_eq!(applied.timeout, Duration::from_secs(30));
+        assert_eq!(applied.retries, 10);
+        assert!(!applied.ban_failed_address);
+        assert_eq!(applied.max_decoding_message_size, Some(4096));
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_applied_settings_with_ca_certificate_none() {
+        let applied = RequestSettings::default().finalize();
+        let result = applied.with_ca_certificate(None);
+        assert!(result.ca_certificate.is_none());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_applied_settings_with_ca_certificate_some() {
+        let applied = RequestSettings::default().finalize();
+        let cert = Certificate::from_pem("fake-pem-data");
+        let result = applied.with_ca_certificate(Some(cert));
+        assert!(result.ca_certificate.is_some());
+    }
+}
