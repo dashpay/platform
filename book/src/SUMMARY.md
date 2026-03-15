@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](introduction.md)
+[SDK Support](sdk-support.md)
 [Getting Started](getting-started.md)
 
 ---
