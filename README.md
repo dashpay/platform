@@ -169,6 +169,19 @@ are located in the [packages](./packages) directory. Key packages include:
 - **dashmate** -- Node management and local development tool
 - **dapi** / **rs-dapi** -- Decentralized API server implementations
 
+## SDK support
+
+| SDK | Status | Package |
+|-----|--------|---------|
+| **Rust** | Available now | [`rs-sdk`](./packages/rs-sdk) |
+| **JavaScript** | Available now | [`js-dash-sdk`](./packages/js-dash-sdk) |
+| **iOS (Swift)** | Coming in v3.1 | [`swift-sdk`](./packages/swift-sdk) |
+| **Android** | Coming in v3.2 | -- |
+
+For details on choosing an SDK and what each one provides, see the
+[SDK Support](https://dashpay.github.io/platform/sdk-support.html) chapter in
+The Dash Platform Book.
+
 ## Getting started
 
 For prerequisites, local development setup, and build instructions, see the

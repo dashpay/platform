@@ -5,20 +5,18 @@ developers can build applications on whatever stack they prefer.
 
 ## Available SDKs
 
-| SDK | Language | Package | Use case |
-|-----|----------|---------|----------|
-| **Rust SDK** | Rust | [`rs-sdk`](https://github.com/dashpay/platform/tree/master/packages/rs-sdk) | Server-side applications, full-node tooling, direct protocol access |
-| **JavaScript SDK** | JavaScript / TypeScript | [`js-dash-sdk`](https://github.com/dashpay/platform/tree/master/packages/js-dash-sdk) | Node.js backends, scripts, CLI tools |
-| **WASM SDK** | JavaScript / TypeScript (browser) | [`wasm-sdk`](https://github.com/dashpay/platform/tree/master/packages/wasm-sdk) | Browser-based dApps, client-side applications |
-| **iOS SDK** | Swift | [`swift-sdk`](https://github.com/dashpay/platform/tree/master/packages/swift-sdk) | iOS and macOS applications |
+| SDK | Language | Status | Package | Use case |
+|-----|----------|--------|---------|----------|
+| **Rust SDK** | Rust | Available now | [`rs-sdk`](https://github.com/dashpay/platform/tree/master/packages/rs-sdk) | Server-side applications, full-node tooling, direct protocol access |
+| **JavaScript SDK** | JavaScript / TypeScript | Available now | [`js-dash-sdk`](https://github.com/dashpay/platform/tree/master/packages/js-dash-sdk) | Node.js backends, scripts, CLI tools |
+| **iOS SDK** | Swift | Coming in v3.1 | [`swift-sdk`](https://github.com/dashpay/platform/tree/master/packages/swift-sdk) | iOS and macOS applications |
+| **Android SDK** | Kotlin | Coming in v3.2 | -- | Android applications |
 
 ### Supporting packages
 
 | Package | Purpose |
 |---------|---------|
-| [`rs-sdk-ffi`](https://github.com/dashpay/platform/tree/master/packages/rs-sdk-ffi) | C FFI layer over the Rust SDK; used by the Swift SDK and any language that can call C |
-| [`wasm-dpp2`](https://github.com/dashpay/platform/tree/master/packages/wasm-dpp2) | WASM bindings for Dash Platform Protocol types; used by the WASM SDK |
-| [`js-evo-sdk`](https://github.com/dashpay/platform/tree/master/packages/js-evo-sdk) | Legacy JavaScript SDK (being replaced by `js-dash-sdk`) |
+| [`rs-sdk-ffi`](https://github.com/dashpay/platform/tree/master/packages/rs-sdk-ffi) | C FFI layer over the Rust SDK; used by the Swift SDK, the Android SDK, and any language that can call C |
 
 ## Choosing an SDK
 
@@ -26,16 +24,15 @@ developers can build applications on whatever stack they prefer.
 performance and direct access to all protocol features, or the **JavaScript
 SDK** if your stack is Node.js.
 
-**Building a web app?** Use the **WASM SDK**. It compiles the Rust core to
-WebAssembly so you get the same protocol logic in the browser with TypeScript
-type definitions.
+**Building an iOS or macOS app?** Use the **Swift SDK** (v3.1+), which wraps
+the Rust SDK through an FFI layer and provides native Swift types.
 
-**Building an iOS or macOS app?** Use the **Swift SDK**, which wraps the Rust
-SDK through an FFI layer and provides native Swift types.
+**Building an Android app?** The **Android SDK** (v3.2+) will wrap the same
+FFI layer with native Kotlin types.
 
 **Building for another language?** The **FFI layer** (`rs-sdk-ffi`) exposes a
-C-compatible interface that can be called from Python, Kotlin, C#, or any
-language with C interop support.
+C-compatible interface that can be called from Python, C#, or any language
+with C interop support.
 
 ## What every SDK provides
 
