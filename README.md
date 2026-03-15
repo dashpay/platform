@@ -50,23 +50,26 @@ Smart contract support is planned for Platform v4.0 (targeted for mainnet in
 
 ### How Dash Platform compares
 
-| | Bitcoin | Ethereum | Solana | Polkadot | NEAR | Dash Platform |
-|---|---|---|---|---|---|---|
-| **Primary purpose** | Payments | General-purpose smart contracts | High-throughput smart contracts | Multi-chain shared security | Sharded smart contracts | Decentralized data storage and querying |
-| **Consensus** | Nakamoto (PoW) | Gasper (PoS) | Tower BFT (PoS) | GRANDPA + BABE (PoS) | Nightshade (PoS) | Tenderdash SBFT (masternode quorums, BLS threshold signatures) |
-| **Finality** | Probabilistic (~60 min) | ~13 min (2 epochs) | **~0.4s (optimistic)** | ~12-60s (2 rounds) | **~1-2s** | **Instant (1 block)** |
-| **Decentralized querying** | Keys only (UTXO lookup) | Keys only (no native indexing) | Keys only (via RPC, no proofs) | Keys only (per parachain) | Keys only (via RPC, no proofs) | **Rich queries with indexes, ordering, and ranges -- all with proofs** |
-| **State proofs** | SPV (block headers) | Merkle-Patricia proofs | No native proofs | Merkle proofs (per parachain) | Merkle-Patricia proofs | **GroveDB Merkle proofs for every query** |
-| **Light client trust** | Follows longest chain | Needs sync committee | Trusts RPC provider | Trusts relay chain | Trusts RPC provider | **Cryptographic proof per response -- same security as a full node** |
-| **Data model** | UTXOs | Account / key-value | Account / key-value | Account / key-value | Account / key-value | **Structured documents with secondary indexes** |
-| **Smart contracts** | No (limited Script opcodes) | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | Yes (per-parachain, typically Wasm) | **Yes (Rust / JS / AssemblyScript on Wasm VM)** | Coming in v4.0 |
+| | Ethereum | Solana | Dash Platform |
+|---|---|---|---|
+| **Primary purpose** | General-purpose smart contracts | High-throughput smart contracts | Decentralized data storage and querying |
+| **Consensus** | Gasper (PoS) | Tower BFT (PoS) | Tenderdash SBFT (masternode quorums, BLS threshold signatures) |
+| **Finality** | ~13 min (2 epochs) | **~0.4s (optimistic)** | **Instant (1 block)** |
+| **Decentralized querying** | Keys only (no native indexing) | Keys only (via RPC, no proofs) | **Rich queries with indexes, ordering, and ranges -- all with proofs** |
+| **State proofs** | Merkle-Patricia proofs | No native proofs | **GroveDB Merkle proofs for every query** |
+| **Light client trust** | Needs sync committee | Trusts RPC provider | **Cryptographic proof per response -- same security as a full node** |
+| **Data model** | Account / key-value | Account / key-value | **Structured documents with secondary indexes** |
+| **Smart contracts** | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | Coming in v4.0 |
 
 The standout difference is light client verification. Most chains either offer
-no state proofs (Solana), require trusting intermediaries (Polkadot's relay
-chain, NEAR's RPC providers), or give proofs that are expensive to verify
+no state proofs (Solana) or give proofs that are expensive to verify
 (Ethereum's sync committee). Dash Platform serves a cryptographic proof with
 every query response, and a single BLS threshold signature is all a client needs
 to verify it. A mobile wallet gets the same security guarantees as a full node.
+
+For a comprehensive comparison across more chains, see the
+[Platform Comparison](https://dashpay.github.io/platform/platform-comparison.html)
+chapter in The Dash Platform Book.
 
 ### Architecture deep dive
 
