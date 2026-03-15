@@ -133,7 +133,15 @@ mod tests {
     #[test]
     fn test_first_block_should_always_checkpoint() {
         let platform_version = PlatformVersion::latest();
+        let platform_config = crate::config::PlatformConfig {
+            testing_configs: crate::config::PlatformTestConfig {
+                disable_checkpoints: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
             .build_with_mock_rpc()
             .set_genesis_state();
 
