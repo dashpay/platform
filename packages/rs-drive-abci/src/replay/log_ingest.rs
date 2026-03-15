@@ -1209,4 +1209,747 @@ mod tests {
     const TESTNET_FINALIZE_BLOCK_ONE: &str = r#"Request { value: Some(FinalizeBlock(RequestFinalizeBlock { commit: Some(CommitInfo { round: 0, quorum_hash: [0, 0, 0, 175, 88, 108, 85, 57, 26, 90, 172, 207, 12, 99, 142, 240, 100, 211, 71, 145, 227, 27, 243, 154, 158, 173, 160, 199, 112, 203, 8, 120], block_signature: [135, 31, 49, 75, 118, 108, 104, 68, 227, 56, 171, 253, 41, 152, 98, 72, 166, 144, 178, 146, 18, 67, 56, 20, 130, 110, 158, 62, 6, 77, 138, 57, 113, 138, 206, 99, 241, 112, 245, 11, 237, 77, 36, 214, 24, 174, 166, 1, 21, 165, 233, 228, 11, 201, 201, 241, 5, 23, 224, 16, 178, 200, 142, 7, 105, 222, 229, 179, 82, 115, 216, 243, 16, 48, 204, 162, 100, 154, 25, 120, 1, 85, 170, 219, 228, 3, 170, 60, 81, 141, 68, 116, 22, 7, 239, 249], threshold_vote_extensions: [] }), misbehavior: [], hash: [8, 250, 2, 194, 126, 192, 57, 11, 163, 1, 228, 252, 126, 61, 126, 173, 179, 80, 200, 25, 62, 62, 98, 160, 147, 104, 151, 6, 227, 162, 11, 250], height: 1, round: 0, block: Some(Block { header: Some(Header { version: Some(Consensus { block: 14, app: 1 }), chain_id: "dash-testnet-51", height: 1, time: Some(Timestamp { seconds: 1721353209, nanos: 0 }), last_block_id: Some(BlockId { hash: [], part_set_header: Some(PartSetHeader { total: 0, hash: [] }), state_id: [] }), last_commit_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], data_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], validators_hash: [151, 116, 141, 147, 83, 105, 231, 87, 207, 88, 182, 176, 208, 225, 89, 251, 214, 179, 23, 205, 112, 160, 49, 250, 160, 132, 171, 97, 31, 189, 74, 77], next_validators_hash: [67, 141, 67, 156, 14, 170, 45, 148, 50, 130, 83, 98, 80, 9, 168, 59, 20, 74, 245, 208, 222, 120, 248, 14, 0, 20, 181, 247, 167, 138, 75, 141], consensus_hash: [180, 208, 169, 232, 73, 81, 202, 221, 119, 226, 150, 68, 128, 3, 115, 113, 118, 178, 89, 72, 173, 246, 104, 172, 110, 192, 105, 38, 200, 31, 172, 134], next_consensus_hash: [180, 208, 169, 232, 73, 81, 202, 221, 119, 226, 150, 68, 128, 3, 115, 113, 118, 178, 89, 72, 173, 246, 104, 172, 110, 192, 105, 38, 200, 31, 172, 134], app_hash: [191, 12, 203, 156, 160, 113, 186, 1, 174, 110, 103, 160, 192, 144, 249, 120, 3, 210, 109, 86, 214, 117, 220, 213, 19, 23, 129, 203, 202, 200, 236, 143], results_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], evidence_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], proposed_app_version: 1, proposer_pro_tx_hash: [5, 182, 135, 151, 131, 68, 250, 36, 51, 178, 170, 153, 212, 31, 100, 62, 45, 133, 129, 167, 137, 205, 194, 48, 132, 136, 156, 236, 165, 36, 78, 168], core_chain_locked_height: 1090319 }), data: Some(Data { txs: [] }), evidence: Some(EvidenceList { evidence: [] }), last_commit: Some(Commit { height: 0, round: 0, block_id: Some(BlockId { hash: [], part_set_header: Some(PartSetHeader { total: 0, hash: [] }), state_id: [] }), quorum_hash: [], threshold_block_signature: [], threshold_vote_extensions: [] }), core_chain_lock: Some(CoreChainLock { core_block_height: 1090319, core_block_hash: [188, 208, 158, 250, 148, 183, 195, 57, 139, 20, 13, 219, 224, 167, 123, 230, 49, 159, 25, 154, 160, 12, 51, 34, 68, 102, 209, 84, 48, 1, 0, 0], signature: [149, 121, 58, 158, 78, 248, 78, 170, 243, 117, 235, 255, 251, 46, 2, 74, 179, 31, 158, 246, 193, 93, 23, 193, 136, 122, 196, 15, 108, 247, 172, 6, 169, 101, 215, 149, 150, 32, 35, 97, 252, 255, 134, 112, 170, 172, 13, 222, 3, 228, 106, 52, 44, 158, 242, 165, 19, 40, 253, 34, 104, 130, 246, 229, 84, 55, 221, 223, 40, 152, 72, 43, 159, 46, 78, 5, 1, 158, 149, 145, 239, 220, 27, 196, 104, 176, 16, 54, 90, 38, 68, 184, 43, 57, 17, 245] }) }), block_id: Some(BlockId { hash: [8, 250, 2, 194, 126, 192, 57, 11, 163, 1, 228, 252, 126, 61, 126, 173, 179, 80, 200, 25, 62, 62, 98, 160, 147, 104, 151, 6, 227, 162, 11, 250], part_set_header: Some(PartSetHeader { total: 1, hash: [67, 44, 224, 208, 150, 55, 48, 6, 49, 94, 42, 158, 112, 26, 240, 103, 185, 51, 202, 165, 106, 78, 124, 206, 99, 140, 58, 172, 22, 209, 227, 68] }), state_id: [209, 145, 66, 195, 68, 86, 204, 201, 247, 175, 60, 157, 38, 207, 138, 107, 56, 77, 204, 254, 146, 83, 246, 110, 152, 76, 39, 22, 153, 243, 181, 131] }) })) }"#;
 
     const TESTNET_FINALIZE_BLOCK_TWO: &str = r#"Request { value: Some(FinalizeBlock(RequestFinalizeBlock { commit: Some(CommitInfo { round: 1, quorum_hash: [0, 0, 0, 217, 55, 192, 219, 26, 45, 97, 224, 140, 152, 79, 68, 251, 208, 148, 3, 190, 152, 206, 230, 126, 107, 37, 117, 76, 217, 104, 133, 231], block_signature: [151, 132, 224, 84, 5, 251, 44, 38, 191, 110, 146, 82, 255, 249, 7, 150, 50, 168, 38, 237, 69, 227, 135, 55, 144, 47, 4, 155, 3, 138, 102, 99, 154, 133, 217, 187, 169, 154, 174, 115, 139, 173, 105, 25, 62, 73, 129, 87, 7, 28, 172, 121, 137, 254, 243, 31, 71, 185, 143, 151, 213, 225, 44, 199, 70, 25, 157, 230, 75, 62, 81, 254, 217, 86, 171, 220, 120, 188, 69, 24, 109, 222, 98, 224, 102, 201, 145, 82, 53, 13, 228, 150, 0, 137, 116, 16], threshold_vote_extensions: [] }), misbehavior: [], hash: [98, 147, 39, 112, 110, 207, 177, 37, 173, 61, 20, 160, 95, 228, 179, 90, 184, 83, 202, 86, 64, 254, 53, 133, 57, 32, 50, 21, 253, 32, 16, 172], height: 2, round: 1, block: Some(Block { header: Some(Header { version: Some(Consensus { block: 14, app: 1 }), chain_id: "dash-testnet-51", height: 2, time: Some(Timestamp { seconds: 1724575888, nanos: 328000000 }), last_block_id: Some(BlockId { hash: [8, 250, 2, 194, 126, 192, 57, 11, 163, 1, 228, 252, 126, 61, 126, 173, 179, 80, 200, 25, 62, 62, 98, 160, 147, 104, 151, 6, 227, 162, 11, 250], part_set_header: Some(PartSetHeader { total: 1, hash: [67, 44, 224, 208, 150, 55, 48, 6, 49, 94, 42, 158, 112, 26, 240, 103, 185, 51, 202, 165, 106, 78, 124, 206, 99, 140, 58, 172, 22, 209, 227, 68] }), state_id: [209, 145, 66, 195, 68, 86, 204, 201, 247, 175, 60, 157, 38, 207, 138, 107, 56, 77, 204, 254, 146, 83, 246, 110, 152, 76, 39, 22, 153, 243, 181, 131] }), last_commit_hash: [125, 172, 60, 185, 43, 201, 215, 188, 72, 11, 207, 101, 109, 98, 7, 127, 216, 155, 4, 101, 230, 18, 156, 15, 99, 93, 122, 164, 178, 27, 60, 194], data_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], validators_hash: [67, 141, 67, 156, 14, 170, 45, 148, 50, 130, 83, 98, 80, 9, 168, 59, 20, 74, 245, 208, 222, 120, 248, 14, 0, 20, 181, 247, 167, 138, 75, 141], next_validators_hash: [67, 141, 67, 156, 14, 170, 45, 148, 50, 130, 83, 98, 80, 9, 168, 59, 20, 74, 245, 208, 222, 120, 248, 14, 0, 20, 181, 247, 167, 138, 75, 141], consensus_hash: [180, 208, 169, 232, 73, 81, 202, 221, 119, 226, 150, 68, 128, 3, 115, 113, 118, 178, 89, 72, 173, 246, 104, 172, 110, 192, 105, 38, 200, 31, 172, 134], next_consensus_hash: [180, 208, 169, 232, 73, 81, 202, 221, 119, 226, 150, 68, 128, 3, 115, 113, 118, 178, 89, 72, 173, 246, 104, 172, 110, 192, 105, 38, 200, 31, 172, 134], app_hash: [77, 189, 142, 170, 172, 111, 216, 169, 207, 157, 71, 134, 71, 149, 189, 31, 53, 102, 178, 80, 54, 238, 37, 128, 18, 176, 16, 200, 2, 126, 109, 200], results_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], evidence_hash: [227, 176, 196, 66, 152, 252, 28, 20, 154, 251, 244, 200, 153, 111, 185, 36, 39, 174, 65, 228, 100, 155, 147, 76, 164, 149, 153, 27, 120, 82, 184, 85], proposed_app_version: 1, proposer_pro_tx_hash: [20, 61, 205, 106, 107, 118, 132, 253, 224, 30, 136, 161, 14, 93, 101, 222, 154, 41, 36, 76, 94, 205, 88, 109, 20, 163, 66, 101, 112, 37, 241, 19], core_chain_locked_height: 1090320 }), data: Some(Data { txs: [] }), evidence: Some(EvidenceList { evidence: [] }), last_commit: Some(Commit { height: 1, round: 0, block_id: Some(BlockId { hash: [8, 250, 2, 194, 126, 192, 57, 11, 163, 1, 228, 252, 126, 61, 126, 173, 179, 80, 200, 25, 62, 62, 98, 160, 147, 104, 151, 6, 227, 162, 11, 250], part_set_header: Some(PartSetHeader { total: 1, hash: [67, 44, 224, 208, 150, 55, 48, 6, 49, 94, 42, 158, 112, 26, 240, 103, 185, 51, 202, 165, 106, 78, 124, 206, 99, 140, 58, 172, 22, 209, 227, 68] }), state_id: [209, 145, 66, 195, 68, 86, 204, 201, 247, 175, 60, 157, 38, 207, 138, 107, 56, 77, 204, 254, 146, 83, 246, 110, 152, 76, 39, 22, 153, 243, 181, 131] }), quorum_hash: [0, 0, 0, 175, 88, 108, 85, 57, 26, 90, 172, 207, 12, 99, 142, 240, 100, 211, 71, 145, 227, 27, 243, 154, 158, 173, 160, 199, 112, 203, 8, 120], threshold_block_signature: [135, 31, 49, 75, 118, 108, 104, 68, 227, 56, 171, 253, 41, 152, 98, 72, 166, 144, 178, 146, 18, 67, 56, 20, 130, 110, 158, 62, 6, 77, 138, 57, 113, 138, 206, 99, 241, 112, 245, 11, 237, 77, 36, 214, 24, 174, 166, 1, 21, 165, 233, 228, 11, 201, 201, 241, 5, 23, 224, 16, 178, 200, 142, 7, 105, 222, 229, 179, 82, 115, 216, 243, 16, 48, 204, 162, 100, 154, 25, 120, 1, 85, 170, 219, 228, 3, 170, 60, 81, 141, 68, 116, 22, 7, 239, 249], threshold_vote_extensions: [] }), core_chain_lock: Some(CoreChainLock { core_block_height: 1090320, core_block_hash: [26, 216, 69, 45, 191, 148, 30, 6, 168, 162, 186, 137, 78, 18, 75, 156, 96, 37, 84, 103, 102, 16, 247, 253, 135, 49, 45, 177, 223, 0, 0, 0], signature: [180, 194, 224, 93, 153, 74, 203, 51, 184, 6, 210, 221, 105, 118, 214, 63, 153, 251, 150, 114, 108, 127, 204, 60, 218, 225, 67, 219, 1, 243, 242, 197, 83, 108, 245, 71, 67, 13, 18, 17, 65, 133, 148, 4, 209, 211, 188, 233, 24, 183, 215, 105, 227, 42, 217, 128, 60, 80, 202, 225, 220, 209, 240, 9, 200, 195, 48, 13, 154, 13, 142, 216, 112, 83, 180, 84, 254, 238, 233, 201, 141, 58, 116, 171, 125, 110, 118, 14, 225, 89, 66, 58, 3, 9, 42, 179] }) }), block_id: Some(BlockId { hash: [98, 147, 39, 112, 110, 207, 177, 37, 173, 61, 20, 160, 95, 228, 179, 90, 184, 83, 202, 86, 64, 254, 53, 133, 57, 32, 50, 21, 253, 32, 16, 172], part_set_header: Some(PartSetHeader { total: 1, hash: [200, 235, 186, 216, 169, 238, 109, 8, 187, 66, 3, 161, 186, 230, 247, 3, 129, 181, 218, 148, 158, 153, 68, 17, 111, 14, 75, 230, 202, 104, 255, 47] }), state_id: [45, 73, 190, 78, 51, 91, 154, 204, 110, 181, 196, 96, 54, 5, 235, 82, 94, 133, 4, 141, 52, 209, 253, 137, 36, 137, 200, 161, 182, 225, 218, 147] }) })) }"#;
+
+    // ---- DebugValueParser tests ----
+
+    fn parse_value(raw: &str) -> ParsedValue {
+        DebugValueParser::new(raw)
+            .parse()
+            .expect("should parse successfully")
+    }
+
+    #[test]
+    fn parser_null_value() {
+        let val = parse_value("None");
+        assert!(matches!(val, ParsedValue::Null));
+    }
+
+    #[test]
+    fn parser_bool_true() {
+        let val = parse_value("true");
+        assert!(matches!(val, ParsedValue::Bool(true)));
+    }
+
+    #[test]
+    fn parser_bool_false() {
+        let val = parse_value("false");
+        assert!(matches!(val, ParsedValue::Bool(false)));
+    }
+
+    #[test]
+    fn parser_number_positive() {
+        let val = parse_value("42");
+        assert!(matches!(val, ParsedValue::Number(ref s) if s == "42"));
+    }
+
+    #[test]
+    fn parser_number_negative() {
+        let val = parse_value("-5");
+        assert!(matches!(val, ParsedValue::Number(ref s) if s == "-5"));
+    }
+
+    #[test]
+    fn parser_string_simple() {
+        let val = parse_value(r#""hello""#);
+        assert!(matches!(val, ParsedValue::String(ref s) if s == "hello"));
+    }
+
+    #[test]
+    fn parser_string_escaped() {
+        let val = parse_value(r#""he\"llo""#);
+        assert!(matches!(val, ParsedValue::String(ref s) if s == r#"he"llo"#));
+    }
+
+    #[test]
+    fn parser_string_escape_sequences() {
+        let val = parse_value(r#""a\nb\rc\td\\e""#);
+        assert!(matches!(val, ParsedValue::String(ref s) if s == "a\nb\rc\td\\e"));
+    }
+
+    #[test]
+    fn parser_empty_array() {
+        let val = parse_value("[]");
+        match val {
+            ParsedValue::Array(items) => assert!(items.is_empty()),
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn parser_array_of_numbers() {
+        let val = parse_value("[1, 2, 3]");
+        match val {
+            ParsedValue::Array(items) => assert_eq!(items.len(), 3),
+            _ => panic!("expected array"),
+        }
+    }
+
+    #[test]
+    fn parser_empty_object() {
+        let val = parse_value("{}");
+        match val {
+            ParsedValue::Object(map) => assert!(map.is_empty()),
+            _ => panic!("expected object"),
+        }
+    }
+
+    #[test]
+    fn parser_object_with_fields() {
+        let val = parse_value("{ a: 1, b: 2 }");
+        match val {
+            ParsedValue::Object(map) => {
+                assert_eq!(map.len(), 2);
+                assert!(map.contains_key("a"));
+                assert!(map.contains_key("b"));
+            }
+            _ => panic!("expected object"),
+        }
+    }
+
+    #[test]
+    fn parser_some_wrapping() {
+        let val = parse_value("Some(42)");
+        assert!(matches!(val, ParsedValue::Number(ref s) if s == "42"));
+    }
+
+    #[test]
+    fn parser_tagged_struct() {
+        let val = parse_value("MyStruct { field: 1 }");
+        match val {
+            ParsedValue::Tagged { tag, value } => {
+                assert_eq!(tag, "MyStruct");
+                assert!(matches!(*value, ParsedValue::Object(_)));
+            }
+            _ => panic!("expected tagged"),
+        }
+    }
+
+    #[test]
+    fn parser_tagged_variant() {
+        let val = parse_value("MyEnum(42)");
+        match val {
+            ParsedValue::Tagged { tag, value } => {
+                assert_eq!(tag, "MyEnum");
+                assert!(matches!(*value, ParsedValue::Number(ref s) if s == "42"));
+            }
+            _ => panic!("expected tagged"),
+        }
+    }
+
+    #[test]
+    fn parser_trailing_characters_error() {
+        let result = DebugValueParser::new("42 extra").parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parser_empty_input_error() {
+        let result = DebugValueParser::new("").parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parser_unterminated_string_error() {
+        let result = DebugValueParser::new(r#""unterminated"#).parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parser_bare_object_without_tag() {
+        let val = parse_value("{ key: 42 }");
+        match val {
+            ParsedValue::Object(map) => {
+                assert!(map.contains_key("key"));
+            }
+            _ => panic!("expected object"),
+        }
+    }
+
+    // ---- ParsedValue methods ----
+
+    #[test]
+    fn parsed_value_into_object_direct() {
+        let map = BTreeMap::new();
+        let val = ParsedValue::Object(map);
+        assert!(val.into_object().is_ok());
+    }
+
+    #[test]
+    fn parsed_value_into_object_tagged() {
+        let map = BTreeMap::new();
+        let val = ParsedValue::Tagged {
+            tag: "Wrapper".to_string(),
+            value: Box::new(ParsedValue::Object(map)),
+        };
+        assert!(val.into_object().is_ok());
+    }
+
+    #[test]
+    fn parsed_value_into_object_wrong_type() {
+        let val = ParsedValue::Number("42".to_string());
+        assert!(val.into_object().is_err());
+    }
+
+    #[test]
+    fn parsed_value_to_string_value_string() {
+        let val = ParsedValue::String("hello".to_string());
+        assert_eq!(val.to_string_value().unwrap(), "hello");
+    }
+
+    #[test]
+    fn parsed_value_to_string_value_number() {
+        let val = ParsedValue::Number("42".to_string());
+        assert_eq!(val.to_string_value().unwrap(), "42");
+    }
+
+    #[test]
+    fn parsed_value_to_string_value_tagged() {
+        let val = ParsedValue::Tagged {
+            tag: "T".to_string(),
+            value: Box::new(ParsedValue::String("inner".to_string())),
+        };
+        assert_eq!(val.to_string_value().unwrap(), "inner");
+    }
+
+    #[test]
+    fn parsed_value_to_string_value_wrong_type() {
+        let val = ParsedValue::Bool(true);
+        assert!(val.to_string_value().is_err());
+    }
+
+    // ---- Helper functions ----
+
+    #[test]
+    fn normalize_type_tag_simple() {
+        assert_eq!(normalize_type_tag("Timestamp"), "Timestamp");
+    }
+
+    #[test]
+    fn normalize_type_tag_with_path() {
+        assert_eq!(normalize_type_tag("some::module::Timestamp"), "Timestamp");
+    }
+
+    #[test]
+    fn normalize_field_key_normal() {
+        assert_eq!(normalize_field_key("field".to_string()), "field");
+    }
+
+    #[test]
+    fn normalize_field_key_raw() {
+        assert_eq!(normalize_field_key("r#type".to_string()), "type");
+    }
+
+    #[test]
+    fn camel_to_upper_snake_single() {
+        assert_eq!(camel_to_upper_snake("Default"), "DEFAULT");
+    }
+
+    #[test]
+    fn camel_to_upper_snake_multi() {
+        assert_eq!(
+            camel_to_upper_snake("ThresholdRecover"),
+            "THRESHOLD_RECOVER"
+        );
+    }
+
+    #[test]
+    fn camel_to_upper_snake_empty() {
+        assert_eq!(camel_to_upper_snake(""), "");
+    }
+
+    #[test]
+    fn is_enum_variant_identifier_valid() {
+        assert!(is_enum_variant_identifier("Accept"));
+        assert!(is_enum_variant_identifier("ThresholdRecover"));
+        assert!(is_enum_variant_identifier("Variant123"));
+    }
+
+    #[test]
+    fn is_enum_variant_identifier_invalid() {
+        assert!(!is_enum_variant_identifier("lowercase"));
+        assert!(!is_enum_variant_identifier(""));
+        assert!(!is_enum_variant_identifier("123"));
+    }
+
+    #[test]
+    fn normalize_identifier_value_consensus_version() {
+        let val = normalize_identifier_value("ConsensusVersion0".to_string());
+        assert!(matches!(val, ParsedValue::Number(ref s) if s == "0"));
+    }
+
+    #[test]
+    fn normalize_identifier_value_consensus_version_bare() {
+        // "ConsensusVersion" alone without digits -- not a ConsensusVersion pattern
+        let val = normalize_identifier_value("ConsensusVersion".to_string());
+        // Should fall through to enum variant check (starts uppercase)
+        assert!(matches!(val, ParsedValue::Tagged { ref tag, .. } if tag == "EnumVariant"));
+    }
+
+    #[test]
+    fn normalize_identifier_value_enum_variant() {
+        let val = normalize_identifier_value("Accept".to_string());
+        match val {
+            ParsedValue::Tagged { tag, value } => {
+                assert_eq!(tag, "EnumVariant");
+                assert!(matches!(*value, ParsedValue::String(ref s) if s == "Accept"));
+            }
+            _ => panic!("expected Tagged EnumVariant"),
+        }
+    }
+
+    #[test]
+    fn normalize_identifier_value_lowercase() {
+        let val = normalize_identifier_value("lowercase".to_string());
+        assert!(matches!(val, ParsedValue::String(ref s) if s == "lowercase"));
+    }
+
+    // ---- format_timestamp / format_duration ----
+
+    #[test]
+    fn format_timestamp_valid() {
+        let mut map = BTreeMap::new();
+        map.insert(
+            "seconds".to_string(),
+            ParsedValue::Number("1721353209".to_string()),
+        );
+        map.insert("nanos".to_string(), ParsedValue::Number("0".to_string()));
+        let result = format_timestamp(ParsedValue::Object(map));
+        assert!(result.is_ok());
+        let ts = result.unwrap();
+        assert!(ts.contains("2024"));
+    }
+
+    #[test]
+    fn format_timestamp_nanos_out_of_range() {
+        let mut map = BTreeMap::new();
+        map.insert("seconds".to_string(), ParsedValue::Number("0".to_string()));
+        map.insert(
+            "nanos".to_string(),
+            ParsedValue::Number("2000000000".to_string()),
+        );
+        let result = format_timestamp(ParsedValue::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_duration_valid() {
+        let mut map = BTreeMap::new();
+        map.insert("seconds".to_string(), ParsedValue::Number("30".to_string()));
+        map.insert("nanos".to_string(), ParsedValue::Number("0".to_string()));
+        let result = format_duration(ParsedValue::Object(map));
+        assert!(result.is_ok());
+        let d = result.unwrap();
+        assert_eq!(d, "30000000000");
+    }
+
+    #[test]
+    fn format_duration_negative_seconds_error() {
+        let mut map = BTreeMap::new();
+        map.insert("seconds".to_string(), ParsedValue::Number("-1".to_string()));
+        map.insert("nanos".to_string(), ParsedValue::Number("0".to_string()));
+        let result = format_duration(ParsedValue::Object(map));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_duration_nanos_too_large_error() {
+        let mut map = BTreeMap::new();
+        map.insert("seconds".to_string(), ParsedValue::Number("0".to_string()));
+        map.insert(
+            "nanos".to_string(),
+            ParsedValue::Number("1000000000".to_string()),
+        );
+        let result = format_duration(ParsedValue::Object(map));
+        assert!(result.is_err());
+    }
+
+    // ---- parse_number_field / parse_number_value ----
+
+    #[test]
+    fn parse_number_field_none_defaults_to_zero() {
+        assert_eq!(parse_number_field(None, "test").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_number_field_some_number() {
+        let val = ParsedValue::Number("42".to_string());
+        assert_eq!(parse_number_field(Some(val), "test").unwrap(), 42);
+    }
+
+    #[test]
+    fn parse_number_value_string() {
+        let val = ParsedValue::String("100".to_string());
+        assert_eq!(parse_number_value(val, "test").unwrap(), 100);
+    }
+
+    #[test]
+    fn parse_number_value_bool_true() {
+        let val = ParsedValue::Bool(true);
+        assert_eq!(parse_number_value(val, "test").unwrap(), 1);
+    }
+
+    #[test]
+    fn parse_number_value_bool_false() {
+        let val = ParsedValue::Bool(false);
+        assert_eq!(parse_number_value(val, "test").unwrap(), 0);
+    }
+
+    #[test]
+    fn parse_number_value_tagged() {
+        let val = ParsedValue::Tagged {
+            tag: "T".to_string(),
+            value: Box::new(ParsedValue::Number("99".to_string())),
+        };
+        assert_eq!(parse_number_value(val, "test").unwrap(), 99);
+    }
+
+    #[test]
+    fn parse_number_value_object_error() {
+        let val = ParsedValue::Object(BTreeMap::new());
+        assert!(parse_number_value(val, "test").is_err());
+    }
+
+    #[test]
+    fn parse_number_value_array_error() {
+        let val = ParsedValue::Array(vec![]);
+        assert!(parse_number_value(val, "test").is_err());
+    }
+
+    #[test]
+    fn parse_number_value_invalid_string() {
+        let val = ParsedValue::String("not_a_number".to_string());
+        assert!(parse_number_value(val, "test").is_err());
+    }
+
+    // ---- array_to_hex ----
+
+    #[test]
+    fn array_to_hex_valid() {
+        let values = vec![
+            ParsedValue::Number("255".to_string()),
+            ParsedValue::Number("0".to_string()),
+            ParsedValue::Number("171".to_string()),
+        ];
+        let result = array_to_hex(values).unwrap();
+        assert_eq!(result, "ff00ab");
+    }
+
+    #[test]
+    fn array_to_hex_empty() {
+        let result = array_to_hex(vec![]).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn array_to_hex_out_of_range() {
+        let values = vec![ParsedValue::Number("256".to_string())];
+        assert!(array_to_hex(values).is_err());
+    }
+
+    #[test]
+    fn array_to_hex_wrong_type() {
+        let values = vec![ParsedValue::Bool(true)];
+        assert!(array_to_hex(values).is_err());
+    }
+
+    // ---- Deserializer tests ----
+
+    #[test]
+    fn deserialize_bool_from_string_true() {
+        use serde::Deserialize;
+        let val = ParsedValue::String("true".to_string());
+        let result = bool::deserialize(val).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn deserialize_bool_from_string_false() {
+        use serde::Deserialize;
+        let val = ParsedValue::String("false".to_string());
+        let result = bool::deserialize(val).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn deserialize_bool_from_tagged() {
+        use serde::Deserialize;
+        let val = ParsedValue::Tagged {
+            tag: "T".to_string(),
+            value: Box::new(ParsedValue::Bool(true)),
+        };
+        let result = bool::deserialize(val).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn deserialize_i64_from_number() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("-42".to_string());
+        let result = i64::deserialize(val).unwrap();
+        assert_eq!(result, -42);
+    }
+
+    #[test]
+    fn deserialize_u64_from_number() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("42".to_string());
+        let result = u64::deserialize(val).unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn deserialize_f32_from_number() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("3".to_string());
+        let result = f32::deserialize(val).unwrap();
+        assert!((result - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn deserialize_f64_from_number() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("3".to_string());
+        let result = f64::deserialize(val).unwrap();
+        assert!((result - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn deserialize_string_from_bool() {
+        use serde::Deserialize;
+        let val = ParsedValue::Bool(true);
+        let result = String::deserialize(val).unwrap();
+        assert_eq!(result, "true");
+    }
+
+    #[test]
+    fn deserialize_string_from_array_as_hex() {
+        use serde::Deserialize;
+        let val = ParsedValue::Array(vec![
+            ParsedValue::Number("255".to_string()),
+            ParsedValue::Number("0".to_string()),
+        ]);
+        let result = String::deserialize(val).unwrap();
+        assert_eq!(result, "ff00");
+    }
+
+    #[test]
+    fn deserialize_option_null() {
+        use serde::Deserialize;
+        let val = ParsedValue::Null;
+        let result = Option::<i32>::deserialize(val).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn deserialize_option_some() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("42".to_string());
+        let result = Option::<i32>::deserialize(val).unwrap();
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn deserialize_unit_from_null() {
+        use serde::Deserialize;
+        let val = ParsedValue::Null;
+        let result = <()>::deserialize(val).unwrap();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn deserialize_vec_from_array() {
+        use serde::Deserialize;
+        let val = ParsedValue::Array(vec![
+            ParsedValue::Number("1".to_string()),
+            ParsedValue::Number("2".to_string()),
+            ParsedValue::Number("3".to_string()),
+        ]);
+        let result = Vec::<i32>::deserialize(val).unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn deserialize_map_from_object() {
+        use serde::Deserialize;
+        use std::collections::HashMap;
+        let mut map = BTreeMap::new();
+        map.insert("a".to_string(), ParsedValue::Number("1".to_string()));
+        map.insert("b".to_string(), ParsedValue::Number("2".to_string()));
+        let val = ParsedValue::Object(map);
+        let result = HashMap::<String, i32>::deserialize(val).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result["a"], 1);
+        assert_eq!(result["b"], 2);
+    }
+
+    #[test]
+    fn deserialize_bytes_from_array() {
+        // Test the deserialize_bytes code path via deserialize_any + byte array
+        let values = vec![
+            ParsedValue::Number("1".to_string()),
+            ParsedValue::Number("2".to_string()),
+            ParsedValue::Number("3".to_string()),
+        ];
+        let val = ParsedValue::Array(values);
+        // Use deserialize_seq to verify array deserialization works
+        use serde::Deserialize;
+        let result = Vec::<u8>::deserialize(val).unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn deserialize_ignored_any() {
+        use serde::Deserialize;
+        let val = ParsedValue::Number("42".to_string());
+        let result = serde::de::IgnoredAny::deserialize(val);
+        assert!(result.is_ok());
+    }
+
+    // ---- convert_parsed_request ----
+
+    #[test]
+    fn convert_parsed_request_without_request_tag() {
+        // Should fall through to parse_request_variant directly
+        let val = ParsedValue::Tagged {
+            tag: "Info".to_string(),
+            value: Box::new(ParsedValue::Object({
+                let mut m = BTreeMap::new();
+                m.insert(
+                    "version".to_string(),
+                    ParsedValue::String("1.0".to_string()),
+                );
+                m.insert(
+                    "block_version".to_string(),
+                    ParsedValue::Number("14".to_string()),
+                );
+                m.insert(
+                    "p2p_version".to_string(),
+                    ParsedValue::Number("10".to_string()),
+                );
+                m.insert(
+                    "abci_version".to_string(),
+                    ParsedValue::String("1.0".to_string()),
+                );
+                m
+            })),
+        };
+        let result = convert_parsed_request(val).unwrap();
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), LoadedRequest::Info(_)));
+    }
+
+    #[test]
+    fn parse_request_variant_unsupported() {
+        let val = ParsedValue::Tagged {
+            tag: "Unknown".to_string(),
+            value: Box::new(ParsedValue::Object(BTreeMap::new())),
+        };
+        let result = parse_request_variant(val);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported request variant"));
+    }
+
+    #[test]
+    fn parse_request_variant_flush_returns_none() {
+        let val = ParsedValue::Tagged {
+            tag: "Flush".to_string(),
+            value: Box::new(ParsedValue::Object(BTreeMap::new())),
+        };
+        let result = parse_request_variant(val).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn parse_request_variant_missing_tag() {
+        let val = ParsedValue::Number("42".to_string());
+        let result = parse_request_variant(val);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("missing request variant tag"));
+    }
+
+    // ---- parse_seconds_nanos ----
+
+    #[test]
+    fn parse_seconds_nanos_missing_fields_default_to_zero() {
+        let map = BTreeMap::new();
+        let (seconds, nanos) = parse_seconds_nanos(ParsedValue::Object(map), "test").unwrap();
+        assert_eq!(seconds, 0);
+        assert_eq!(nanos, 0);
+    }
+
+    #[test]
+    fn parse_seconds_nanos_tagged_wrapping() {
+        let mut map = BTreeMap::new();
+        map.insert("seconds".to_string(), ParsedValue::Number("10".to_string()));
+        let val = ParsedValue::Tagged {
+            tag: "T".to_string(),
+            value: Box::new(ParsedValue::Object(map)),
+        };
+        let (seconds, _) = parse_seconds_nanos(val, "test").unwrap();
+        assert_eq!(seconds, 10);
+    }
+
+    #[test]
+    fn parse_seconds_nanos_wrong_type() {
+        let val = ParsedValue::Number("42".to_string());
+        let result = parse_seconds_nanos(val, "test");
+        assert!(result.is_err());
+    }
+
+    // ---- ParseError ----
+
+    #[test]
+    fn parse_error_display() {
+        let err = ParseError::new("test error");
+        assert_eq!(format!("{}", err), "test error");
+    }
+
+    #[test]
+    fn parse_error_from_box() {
+        let boxed: Box<dyn std::error::Error> = "inner error".into();
+        let err = ParseError::from(boxed);
+        assert_eq!(err.message, "inner error");
+    }
+
+    // ---- PrepareProposal parsing ----
+
+    #[test]
+    fn parses_prepare_proposal() {
+        let raw = r#"Request { value: Some(PrepareProposal(RequestPrepareProposal { max_tx_bytes: 2097152, txs: [], local_last_commit: None, misbehavior: [], height: 100, round: 0, time: Some(Timestamp { seconds: 1721353209, nanos: 0 }), next_validators_hash: [], core_chain_locked_height: 1090319, core_chain_lock_update: None, proposer_pro_tx_hash: [], proposed_app_version: 1, version: None, quorum_hash: [], quorum_type: 0 })) }"#;
+        let result = parse_from_log(raw);
+        assert!(matches!(result, LoadedRequest::Prepare(_)));
+    }
+
+    // ---- deserialize_any through tagged ----
+
+    #[test]
+    fn deserialize_any_tagged_unwraps() {
+        use serde::Deserialize;
+        let val = ParsedValue::Tagged {
+            tag: "Wrapper".to_string(),
+            value: Box::new(ParsedValue::Number("42".to_string())),
+        };
+        let result = i64::deserialize(val).unwrap();
+        assert_eq!(result, 42);
+    }
+
+    // ---- vote_extension_type_from_name ----
+
+    #[test]
+    fn vote_extension_type_default() {
+        let result = vote_extension_type_from_name("Default");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn vote_extension_type_unknown() {
+        let result = vote_extension_type_from_name("NonexistentVariant");
+        assert!(result.is_none());
+    }
 }
