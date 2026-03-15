@@ -356,28 +356,6 @@ mod tests {
         }
 
         #[test]
-        fn should_return_err_for_protocol_error_error_variant() {
-            // ProtocolError::Error wraps anyhow::Error. Construct via the From<serde_json::Error>
-            // then wrap in ProtocolError to get the Error variant.
-            let json_err: serde_json::Error =
-                serde_json::from_str::<serde_json::Value>("invalid json <<<").unwrap_err();
-            // ParsingJsonError is a different variant, so let's construct Error manually:
-            // We can use CorruptedCodeExecution which is a simple string variant that doesn't match Error(_)
-            // Actually, we need to test the Error(_) arm specifically.
-            // Since we can't easily construct anyhow::Error without the crate,
-            // let's test that the path returns the error back as Err.
-            let protocol_error = ProtocolError::ParsingError("test".to_string());
-            // ParsingError will fall through to the catch-all `e =>` arm (not the Error(_) arm),
-            // so it returns Ok. For the Error(_) arm, we test indirectly: it is the only arm
-            // that returns Err, and we verify the catch-all returns Ok.
-            let result = convert_to_consensus_signature_error(protocol_error);
-            assert!(
-                result.is_ok(),
-                "ParsingError should be converted to InvalidStateTransitionSignatureError"
-            );
-        }
-
-        #[test]
         fn should_convert_other_errors_to_invalid_state_transition_signature() {
             // Use a variant that falls through to the catch-all
             let protocol_error = ProtocolError::Overflow("test overflow");

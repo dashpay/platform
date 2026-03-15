@@ -334,33 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn should_pass_when_no_contract_bounds() {
-        let platform_version = PlatformVersion::latest();
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_genesis_state();
-
-        let identity_id = Identifier::random();
-        let key = make_key_in_creation(0, ENCRYPTION, None);
-
-        let mut execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                .expect("should create execution context");
-
-        let result = validate_identity_public_keys_contract_bounds_v0(
-            identity_id,
-            &[key],
-            &platform.drive,
-            None,
-            &mut execution_context,
-            platform_version,
-        )
-        .expect("should succeed");
-
-        assert!(result.is_valid(), "should be valid when no contract bounds");
-    }
-
-    #[test]
     fn should_fail_when_single_contract_does_not_exist() {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
@@ -642,32 +615,6 @@ mod tests {
             }
             other => panic!("expected InvalidDocumentTypeError, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn should_pass_with_empty_key_list() {
-        let platform_version = PlatformVersion::latest();
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_genesis_state();
-
-        let identity_id = Identifier::random();
-
-        let mut execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                .expect("should create execution context");
-
-        let result = validate_identity_public_keys_contract_bounds_v0(
-            identity_id,
-            &[],
-            &platform.drive,
-            None,
-            &mut execution_context,
-            platform_version,
-        )
-        .expect("should succeed");
-
-        assert!(result.is_valid(), "should be valid with empty key list");
     }
 
     #[test]

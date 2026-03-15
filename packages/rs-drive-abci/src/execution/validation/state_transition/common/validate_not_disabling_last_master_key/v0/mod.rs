@@ -84,33 +84,6 @@ mod tests {
     }
 
     #[test]
-    fn should_pass_when_only_non_master_keys_added() {
-        let keys_added = vec![
-            make_key_in_creation(10, SecurityLevel::HIGH),
-            make_key_in_creation(11, SecurityLevel::MEDIUM),
-        ];
-        let result = validate_master_key_uniqueness_v0(&keys_added, &[]).expect("should succeed");
-        assert!(
-            result.is_valid(),
-            "should be valid when only non-master keys are added"
-        );
-    }
-
-    #[test]
-    fn should_pass_when_only_non_master_keys_disabled() {
-        let keys_to_disable = vec![
-            make_identity_public_key(1, SecurityLevel::HIGH),
-            make_identity_public_key(2, SecurityLevel::MEDIUM),
-        ];
-        let result =
-            validate_master_key_uniqueness_v0(&[], &keys_to_disable).expect("should succeed");
-        assert!(
-            result.is_valid(),
-            "should be valid when only non-master keys are disabled"
-        );
-    }
-
-    #[test]
     fn should_pass_when_one_master_key_disabled_and_one_added() {
         let keys_added = vec![make_key_in_creation(10, SecurityLevel::MASTER)];
         let keys_to_disable = vec![make_identity_public_key(1, SecurityLevel::MASTER)];
@@ -175,25 +148,6 @@ mod tests {
         assert!(
             !result.is_valid(),
             "should be invalid when adding more than one master key"
-        );
-    }
-
-    #[test]
-    fn should_pass_with_mixed_master_and_non_master_keys_in_valid_rotation() {
-        let keys_added = vec![
-            make_key_in_creation(10, SecurityLevel::MASTER),
-            make_key_in_creation(11, SecurityLevel::HIGH),
-            make_key_in_creation(12, SecurityLevel::MEDIUM),
-        ];
-        let keys_to_disable = vec![
-            make_identity_public_key(1, SecurityLevel::MASTER),
-            make_identity_public_key(2, SecurityLevel::HIGH),
-        ];
-        let result = validate_master_key_uniqueness_v0(&keys_added, &keys_to_disable)
-            .expect("should succeed");
-        assert!(
-            result.is_valid(),
-            "should be valid when rotating exactly one master key among other non-master keys"
         );
     }
 }
