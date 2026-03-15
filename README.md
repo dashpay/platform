@@ -171,9 +171,40 @@ are located in the [packages](./packages) directory. Key packages include:
 
 ## Getting started
 
-For installation, local development setup, and node operation, see the
-[Getting Started](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html)
-guide.
+For a conceptual overview, see the
+[Dash Platform introduction](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html).
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) v20+
+- [Docker](https://docs.docker.com/get-docker/) v20.10+
+- [Rust](https://www.rust-lang.org/tools/install) v1.92+, with wasm32 target
+  (`rustup target add wasm32-unknown-unknown`)
+- [protoc](https://github.com/protocolbuffers/protobuf/releases) v32.0+
+  (set `PROTOC` env var to the binary path if needed)
+- [wasm-bindgen-cli](https://rustwasm.github.io/wasm-bindgen/):
+  `cargo install wasm-bindgen-cli@0.2.103` (version must match `Cargo.lock`)
+- [wasm-pack](https://rustwasm.github.io/wasm-pack/):
+  `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
+- Build essentials -- Debian/Ubuntu:
+  `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
+- **macOS only:** the system `llvm` does not work; install via Homebrew:
+  `brew install llvm` and add `/opt/homebrew/opt/llvm/bin` to your `PATH`
+
+### Setup
+
+```bash
+corepack enable          # Enable corepack / install yarn
+yarn setup               # Install deps, configure, build all packages
+yarn start               # Start local dev environment
+yarn test                # Run full test suite (requires running node)
+yarn stop                # Stop local dev environment
+yarn build               # Rebuild after changes
+yarn reset               # Complete reset of data and builds
+```
+
+To run tests for a specific package:
+`yarn workspace <package_name> test` (see [packages](./packages) for the list).
 
 ## Contributing
 
