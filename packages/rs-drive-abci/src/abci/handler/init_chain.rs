@@ -117,9 +117,11 @@ mod tests {
         // The result will fail because init_chain requires valid genesis data,
         // but the important thing is that the drop path was exercised.
         // We just verify that block_execution_context was cleared.
-        let _result = init_chain::<_, MockCoreRPCLike>(&app, request);
+        let _ = init_chain::<_, MockCoreRPCLike>(&app, request);
 
-        // The block execution context should have been taken (dropped)
-        // during init_chain before it processes genesis state
+        assert!(
+            app.block_execution_context.read().unwrap().is_none(),
+            "expected init_chain to clear existing block execution context"
+        );
     }
 }
