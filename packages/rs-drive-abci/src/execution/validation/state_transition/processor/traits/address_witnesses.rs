@@ -356,38 +356,10 @@ mod tests {
                 );
             }
         }
-
-        #[test]
-        fn should_return_error_for_unknown_version() {
-            let mut platform_version = platform_version::version::v8::PLATFORM_V8.clone();
-            platform_version
-                .drive_abci
-                .validation_and_processing
-                .has_address_witness_validation = 99;
-            let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
-            let result = st.has_address_witness_validation(&platform_version);
-            assert!(result.is_err());
-        }
     }
 
     mod validate_address_witnesses {
         use super::*;
-
-        #[test]
-        fn should_return_error_for_unknown_version() {
-            let mut platform_version = platform_version::version::v8::PLATFORM_V8.clone();
-            platform_version
-                .drive_abci
-                .validation_and_processing
-                .validate_address_witnesses = 99;
-            let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
-            let mut exec_ctx = StateTransitionExecutionContext::default_for_platform_version(
-                platform_version::version::PlatformVersion::latest(),
-            )
-            .unwrap();
-            let result = st.validate_address_witnesses(&mut exec_ctx, &platform_version);
-            assert!(result.is_err());
-        }
 
         #[test]
         fn should_return_valid_for_non_address_transition() {

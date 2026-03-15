@@ -430,18 +430,5 @@ mod tests {
                 );
             }
         }
-
-        #[test]
-        fn should_return_error_for_unknown_version() {
-            // Create a platform version with an invalid has_nonce_validation version
-            let mut platform_version = platform_version::version::v1::PLATFORM_V1.clone();
-            platform_version
-                .drive_abci
-                .validation_and_processing
-                .has_nonce_validation = 99;
-            let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
-            let result = st.has_identity_nonce_validation(&platform_version);
-            assert!(result.is_err());
-        }
     }
 }

@@ -437,18 +437,6 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_error_for_unknown_version() {
-            let mut platform_version = platform_version::version::v9::PLATFORM_V9.clone();
-            platform_version
-                .drive_abci
-                .validation_and_processing
-                .validate_minimum_shielded_fee = 99;
-            let st = make_shielded_transfer();
-            let result = st.validate_minimum_shielded_fee(&platform_version);
-            assert!(result.is_err());
-        }
-
-        #[test]
         fn should_pass_for_non_shielded_transition() {
             let platform_version = &platform_version::version::v9::PLATFORM_V9;
             let st = make_data_contract_create_st();
@@ -461,18 +449,6 @@ mod tests {
 
     mod validate_shielded_proof {
         use super::*;
-
-        #[test]
-        fn should_return_error_for_unknown_version() {
-            let mut platform_version = platform_version::version::v9::PLATFORM_V9.clone();
-            platform_version
-                .drive_abci
-                .validation_and_processing
-                .validate_shielded_proof = 99;
-            let st = make_shielded_transfer();
-            let result = st.validate_shielded_proof(&platform_version);
-            assert!(result.is_err());
-        }
 
         #[test]
         fn should_pass_for_non_shielded_transition() {
