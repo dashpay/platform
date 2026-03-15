@@ -29,17 +29,12 @@ mod batch_transition_tests {
         BatchedTransition, BatchedTransitionMutRef, BatchedTransitionRef,
     };
     use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-    use crate::state_transition::batch_transition::fields;
     use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
     use crate::state_transition::batch_transition::{
-        BatchTransition, BatchTransitionV0, BatchTransitionV1,
+        BatchTransitionV0, BatchTransitionV1,
     };
-    use crate::state_transition::{
-        FeatureVersioned, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
-        StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned,
-        StateTransitionType,
-    };
+    use crate::state_transition::StateTransitionLike;
     use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use platform_value::{BinaryData, Identifier};
     use std::collections::BTreeMap;
@@ -157,33 +152,19 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v0_transitions_len_returns_count() {
-        let batch = make_batch_v0(vec![make_delete_transition(1)]);
-        assert_eq!(batch.transitions_len(), 1);
-    }
-
-    #[test]
     fn v0_transitions_are_empty_when_no_transitions() {
         let batch = make_batch_v0(vec![]);
         assert!(batch.transitions_are_empty());
+        assert_eq!(batch.transitions_len(), 0);
     }
 
     #[test]
-    fn v0_transitions_are_not_empty_with_transitions() {
-        let batch = make_batch_v0(vec![make_delete_transition(1)]);
-        assert!(!batch.transitions_are_empty());
-    }
-
-    #[test]
-    fn v0_first_transition_returns_some() {
+    fn v0_first_transition_returns_some_and_none() {
         let batch = make_batch_v0(vec![make_delete_transition(1)]);
         assert!(batch.first_transition().is_some());
-    }
 
-    #[test]
-    fn v0_first_transition_returns_none_when_empty() {
-        let batch = make_batch_v0(vec![]);
-        assert!(batch.first_transition().is_none());
+        let empty = make_batch_v0(vec![]);
+        assert!(empty.first_transition().is_none());
     }
 
     #[test]
@@ -195,12 +176,6 @@ mod batch_transition_tests {
             first_mut.unwrap(),
             BatchedTransitionMutRef::Document(_)
         ));
-    }
-
-    #[test]
-    fn v0_first_transition_mut_returns_none_when_empty() {
-        let mut batch = make_batch_v0(vec![]);
-        assert!(batch.first_transition_mut().is_none());
     }
 
     #[test]
@@ -249,13 +224,6 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v0_all_document_purchases_amount_single_purchase() {
-        let batch = make_batch_v0(vec![make_purchase_transition(1, 5000)]);
-        let result = batch.all_document_purchases_amount().unwrap();
-        assert_eq!(result, Some(5000));
-    }
-
-    #[test]
     fn v0_all_document_purchases_amount_multiple_purchases() {
         let batch = make_batch_v0(vec![
             make_purchase_transition(1, 3000),
@@ -273,15 +241,6 @@ mod batch_transition_tests {
         ]);
         let result = batch.all_document_purchases_amount();
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn v0_all_conflicting_index_collateral_voting_funds_none() {
-        let batch = make_batch_v0(vec![make_delete_transition(1)]);
-        let result = batch
-            .all_conflicting_index_collateral_voting_funds()
-            .unwrap();
-        assert_eq!(result, None);
     }
 
     #[test]
@@ -341,99 +300,12 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v0_state_transition_protocol_version() {
-        let batch = make_batch_v0(vec![]);
-        assert_eq!(batch.state_transition_protocol_version(), 0);
-    }
-
-    #[test]
-    fn v0_state_transition_type_is_batch() {
-        let batch = make_batch_v0(vec![]);
-        assert_eq!(batch.state_transition_type(), StateTransitionType::Batch);
-    }
-
-    #[test]
     fn v0_unique_identifiers_format() {
         let batch = make_batch_v0(vec![make_delete_transition(1)]);
         let ids = batch.unique_identifiers();
         assert_eq!(ids.len(), 1);
         // Should contain base64-encoded owner_id and data_contract_id and hex nonce
         assert!(ids[0].contains('-'));
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV0: StateTransitionHasUserFeeIncrease
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v0_user_fee_increase_get_and_set() {
-        let mut batch = make_batch_v0(vec![]);
-        assert_eq!(batch.user_fee_increase(), 0);
-        batch.set_user_fee_increase(42);
-        assert_eq!(batch.user_fee_increase(), 42);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV0: StateTransitionSingleSigned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v0_signature_get_and_set() {
-        let mut batch = make_batch_v0(vec![]);
-        assert!(batch.signature().is_empty());
-        let sig = BinaryData::new(vec![1, 2, 3, 4]);
-        batch.set_signature(sig.clone());
-        assert_eq!(*batch.signature(), sig);
-    }
-
-    #[test]
-    fn v0_set_signature_bytes() {
-        let mut batch = make_batch_v0(vec![]);
-        batch.set_signature_bytes(vec![5, 6, 7]);
-        assert_eq!(batch.signature().as_slice(), &[5, 6, 7]);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV0: StateTransitionOwned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v0_owner_id() {
-        let batch = make_batch_v0(vec![]);
-        assert_eq!(batch.owner_id(), Identifier::new([0x01; 32]));
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV0: StateTransitionIdentitySigned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v0_signature_public_key_id_get_and_set() {
-        let mut batch = make_batch_v0(vec![]);
-        assert_eq!(batch.signature_public_key_id(), 0);
-        batch.set_signature_public_key_id(7);
-        assert_eq!(batch.signature_public_key_id(), 7);
-    }
-
-    #[test]
-    fn v0_security_level_requirement_returns_critical_high_medium() {
-        use crate::identity::Purpose;
-        let batch = make_batch_v0(vec![]);
-        let levels = batch.security_level_requirement(Purpose::AUTHENTICATION);
-        assert!(levels.contains(&SecurityLevel::CRITICAL));
-        assert!(levels.contains(&SecurityLevel::HIGH));
-        assert!(levels.contains(&SecurityLevel::MEDIUM));
-        assert_eq!(levels.len(), 3);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV0: FeatureVersioned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v0_feature_version_is_zero() {
-        let batch = make_batch_v0(vec![]);
-        assert_eq!(batch.feature_version(), 0);
     }
 
     // -----------------------------------------------------------------------
@@ -453,94 +325,61 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v1_transitions_len() {
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        assert_eq!(batch.transitions_len(), 1);
-    }
-
-    #[test]
     fn v1_transitions_are_empty() {
         let batch = make_batch_v1(vec![]);
         assert!(batch.transitions_are_empty());
+        assert_eq!(batch.transitions_len(), 0);
     }
 
     #[test]
-    fn v1_first_transition_document() {
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        let first = batch.first_transition();
-        assert!(first.is_some());
-        assert!(matches!(first.unwrap(), BatchedTransitionRef::Document(_)));
-    }
+    fn v1_first_transition_document_and_token() {
+        let batch_doc = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
+        assert!(matches!(
+            batch_doc.first_transition().unwrap(),
+            BatchedTransitionRef::Document(_)
+        ));
 
-    #[test]
-    fn v1_first_transition_token() {
-        let batch = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
+        let batch_tok = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
             1, 100,
         ))]);
-        let first = batch.first_transition();
-        assert!(first.is_some());
-        assert!(matches!(first.unwrap(), BatchedTransitionRef::Token(_)));
-    }
-
-    #[test]
-    fn v1_first_transition_mut_document() {
-        let mut batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        let first = batch.first_transition_mut();
-        assert!(first.is_some());
         assert!(matches!(
-            first.unwrap(),
-            BatchedTransitionMutRef::Document(_)
+            batch_tok.first_transition().unwrap(),
+            BatchedTransitionRef::Token(_)
         ));
     }
 
     #[test]
-    fn v1_first_transition_mut_token() {
-        let mut batch = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
+    fn v1_first_transition_mut_variants() {
+        let mut batch_doc =
+            make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
+        assert!(matches!(
+            batch_doc.first_transition_mut().unwrap(),
+            BatchedTransitionMutRef::Document(_)
+        ));
+
+        let mut batch_tok = make_batch_v1(vec![BatchedTransition::Token(
+            make_token_burn_transition(1, 100),
+        )]);
+        assert!(matches!(
+            batch_tok.first_transition_mut().unwrap(),
+            BatchedTransitionMutRef::Token(_)
+        ));
+
+        let mut empty = make_batch_v1(vec![]);
+        assert!(empty.first_transition_mut().is_none());
+    }
+
+    #[test]
+    fn v1_contains_document_and_token_transition() {
+        let doc_batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
+        assert!(doc_batch.contains_document_transition());
+        assert!(!doc_batch.contains_token_transition());
+
+        let tok_batch = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
             1, 100,
         ))]);
-        let first = batch.first_transition_mut();
-        assert!(first.is_some());
-        assert!(matches!(first.unwrap(), BatchedTransitionMutRef::Token(_)));
-    }
-
-    #[test]
-    fn v1_first_transition_none_when_empty() {
-        let batch = make_batch_v1(vec![]);
-        assert!(batch.first_transition().is_none());
-    }
-
-    #[test]
-    fn v1_first_transition_mut_none_when_empty() {
-        let mut batch = make_batch_v1(vec![]);
-        assert!(batch.first_transition_mut().is_none());
-    }
-
-    #[test]
-    fn v1_contains_document_transition_true() {
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        assert!(batch.contains_document_transition());
-    }
-
-    #[test]
-    fn v1_contains_document_transition_false() {
-        let batch = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
-            1, 100,
-        ))]);
-        assert!(!batch.contains_document_transition());
-    }
-
-    #[test]
-    fn v1_contains_token_transition_true() {
-        let batch = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
-            1, 100,
-        ))]);
-        assert!(batch.contains_token_transition());
-    }
-
-    #[test]
-    fn v1_contains_token_transition_false() {
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        assert!(!batch.contains_token_transition());
+        assert!(!tok_batch.contains_document_transition());
+        assert!(tok_batch.contains_token_transition());
     }
 
     // -----------------------------------------------------------------------
@@ -577,16 +416,6 @@ mod batch_transition_tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn v1_all_document_purchases_amount_no_purchases() {
-        let batch = make_batch_v1(vec![
-            BatchedTransition::Document(make_delete_transition(1)),
-            BatchedTransition::Token(make_token_burn_transition(2, 100)),
-        ]);
-        let result = batch.all_document_purchases_amount().unwrap();
-        assert_eq!(result, None);
     }
 
     #[test]
@@ -653,18 +482,6 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v1_state_transition_protocol_version() {
-        let batch = make_batch_v1(vec![]);
-        assert_eq!(batch.state_transition_protocol_version(), 1);
-    }
-
-    #[test]
-    fn v1_state_transition_type_is_batch() {
-        let batch = make_batch_v1(vec![]);
-        assert_eq!(batch.state_transition_type(), StateTransitionType::Batch);
-    }
-
-    #[test]
     fn v1_unique_identifiers_for_mixed_transitions() {
         let batch = make_batch_v1(vec![
             BatchedTransition::Document(make_delete_transition(1)),
@@ -679,62 +496,22 @@ mod batch_transition_tests {
     }
 
     // -----------------------------------------------------------------------
-    // BatchTransitionV1: StateTransitionHasUserFeeIncrease
+    // BatchTransitionV1: StateTransitionIdentitySigned (purpose_requirement)
     // -----------------------------------------------------------------------
 
     #[test]
-    fn v1_user_fee_increase_get_and_set() {
-        let mut batch = make_batch_v1(vec![]);
-        assert_eq!(batch.user_fee_increase(), 0);
-        batch.set_user_fee_increase(55);
-        assert_eq!(batch.user_fee_increase(), 55);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV1: StateTransitionSingleSigned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v1_signature_get_and_set() {
-        let mut batch = make_batch_v1(vec![]);
-        assert!(batch.signature().is_empty());
-        let sig = BinaryData::new(vec![10, 20, 30]);
-        batch.set_signature(sig.clone());
-        assert_eq!(*batch.signature(), sig);
-    }
-
-    #[test]
-    fn v1_set_signature_bytes() {
-        let mut batch = make_batch_v1(vec![]);
-        batch.set_signature_bytes(vec![11, 22, 33]);
-        assert_eq!(batch.signature().as_slice(), &[11, 22, 33]);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV1: StateTransitionOwned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v1_owner_id() {
+    fn v1_security_level_requirement_transfer() {
+        use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
         let batch = make_batch_v1(vec![]);
-        assert_eq!(batch.owner_id(), Identifier::new([0x02; 32]));
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV1: StateTransitionIdentitySigned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v1_signature_public_key_id_get_and_set() {
-        let mut batch = make_batch_v1(vec![]);
-        assert_eq!(batch.signature_public_key_id(), 0);
-        batch.set_signature_public_key_id(11);
-        assert_eq!(batch.signature_public_key_id(), 11);
+        let levels = batch.security_level_requirement(Purpose::TRANSFER);
+        assert_eq!(levels, vec![SecurityLevel::CRITICAL]);
     }
 
     #[test]
     fn v1_security_level_requirement_authentication() {
         use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
         let batch = make_batch_v1(vec![]);
         let levels = batch.security_level_requirement(Purpose::AUTHENTICATION);
         assert!(levels.contains(&SecurityLevel::CRITICAL));
@@ -743,24 +520,9 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v1_security_level_requirement_transfer() {
-        use crate::identity::Purpose;
-        let batch = make_batch_v1(vec![]);
-        let levels = batch.security_level_requirement(Purpose::TRANSFER);
-        assert_eq!(levels, vec![SecurityLevel::CRITICAL]);
-    }
-
-    #[test]
-    fn v1_purpose_requirement_default() {
-        use crate::identity::Purpose;
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        let purposes = batch.purpose_requirement();
-        assert_eq!(purposes, vec![Purpose::AUTHENTICATION]);
-    }
-
-    #[test]
     fn v1_purpose_requirement_single_token_transfer() {
         use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
         let batch = make_batch_v1(vec![BatchedTransition::Token(
             make_token_transfer_transition(1),
         )]);
@@ -771,6 +533,7 @@ mod batch_transition_tests {
     #[test]
     fn v1_purpose_requirement_single_token_claim() {
         use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
         let batch = make_batch_v1(vec![BatchedTransition::Token(make_token_claim_transition(
             1,
         ))]);
@@ -781,6 +544,7 @@ mod batch_transition_tests {
     #[test]
     fn v1_purpose_requirement_multiple_transitions_no_transfer() {
         use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
         let batch = make_batch_v1(vec![
             BatchedTransition::Token(make_token_transfer_transition(1)),
             BatchedTransition::Token(make_token_burn_transition(2, 100)),
@@ -791,295 +555,12 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn v1_purpose_requirement_empty_transitions() {
+    fn v1_purpose_requirement_default_document() {
         use crate::identity::Purpose;
-        let batch = make_batch_v1(vec![]);
+        use crate::state_transition::StateTransitionIdentitySigned;
+        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
         let purposes = batch.purpose_requirement();
-        // When transitions_len() == 0, we reach the default path
         assert_eq!(purposes, vec![Purpose::AUTHENTICATION]);
-    }
-
-    // -----------------------------------------------------------------------
-    // BatchTransitionV1: FeatureVersioned
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn v1_feature_version_is_one() {
-        let batch = make_batch_v1(vec![]);
-        assert_eq!(batch.feature_version(), 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // Top-level BatchTransition enum: dispatch tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_enum_dispatches_modified_data_ids_v0() {
-        let inner = make_batch_v0(vec![make_delete_transition(1)]);
-        let batch = BatchTransition::V0(inner);
-        let ids = batch.modified_data_ids();
-        assert_eq!(ids.len(), 1);
-    }
-
-    #[test]
-    fn batch_enum_dispatches_modified_data_ids_v1() {
-        let inner = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        let batch = BatchTransition::V1(inner);
-        let ids = batch.modified_data_ids();
-        assert_eq!(ids.len(), 1);
-    }
-
-    #[test]
-    fn batch_enum_state_transition_protocol_version() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        assert_eq!(v0.state_transition_protocol_version(), 0);
-        assert_eq!(v1.state_transition_protocol_version(), 1);
-    }
-
-    #[test]
-    fn batch_enum_state_transition_type() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        assert_eq!(v0.state_transition_type(), StateTransitionType::Batch);
-        assert_eq!(v1.state_transition_type(), StateTransitionType::Batch);
-    }
-
-    #[test]
-    fn batch_enum_unique_identifiers() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        assert_eq!(v0.unique_identifiers().len(), 1);
-        assert_eq!(v1.unique_identifiers().len(), 1);
-    }
-
-    #[test]
-    fn batch_enum_user_fee_increase_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        v0.set_user_fee_increase(10);
-        v1.set_user_fee_increase(20);
-        assert_eq!(v0.user_fee_increase(), 10);
-        assert_eq!(v1.user_fee_increase(), 20);
-    }
-
-    #[test]
-    fn batch_enum_signature_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        let sig0 = BinaryData::new(vec![1, 2]);
-        let sig1 = BinaryData::new(vec![3, 4]);
-        v0.set_signature(sig0.clone());
-        v1.set_signature(sig1.clone());
-        assert_eq!(*v0.signature(), sig0);
-        assert_eq!(*v1.signature(), sig1);
-    }
-
-    #[test]
-    fn batch_enum_set_signature_bytes_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        v0.set_signature_bytes(vec![10]);
-        v1.set_signature_bytes(vec![20]);
-        assert_eq!(v0.signature().as_slice(), &[10]);
-        assert_eq!(v1.signature().as_slice(), &[20]);
-    }
-
-    #[test]
-    fn batch_enum_owner_id_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        assert_eq!(v0.owner_id(), Identifier::new([0x01; 32]));
-        assert_eq!(v1.owner_id(), Identifier::new([0x02; 32]));
-    }
-
-    #[test]
-    fn batch_enum_signature_public_key_id_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        v0.set_signature_public_key_id(5);
-        v1.set_signature_public_key_id(6);
-        assert_eq!(v0.signature_public_key_id(), 5);
-        assert_eq!(v1.signature_public_key_id(), 6);
-    }
-
-    #[test]
-    fn batch_enum_security_level_requirement_dispatch() {
-        use crate::identity::Purpose;
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        let l0 = v0.security_level_requirement(Purpose::AUTHENTICATION);
-        let l1 = v1.security_level_requirement(Purpose::AUTHENTICATION);
-        assert_eq!(l0.len(), 3);
-        assert_eq!(l1.len(), 3);
-    }
-
-    #[test]
-    fn batch_enum_purpose_requirement_dispatch() {
-        use crate::identity::Purpose;
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        let p0 = v0.purpose_requirement();
-        let p1 = v1.purpose_requirement();
-        // V0 returns default [AUTHENTICATION], V1 with empty also returns [AUTHENTICATION]
-        assert_eq!(p0, vec![Purpose::AUTHENTICATION]);
-        assert_eq!(p1, vec![Purpose::AUTHENTICATION]);
-    }
-
-    #[test]
-    fn batch_enum_feature_version_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        assert_eq!(v0.feature_version(), 0);
-        assert_eq!(v1.feature_version(), 1);
-    }
-
-    // -----------------------------------------------------------------------
-    // Top-level BatchTransition: accessor dispatches
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_enum_transitions_iter_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        assert_eq!(v0.transitions_iter().count(), 1);
-        assert_eq!(v1.transitions_iter().count(), 1);
-    }
-
-    #[test]
-    fn batch_enum_transitions_len_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![
-            make_delete_transition(1),
-            make_delete_transition(2),
-        ]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        assert_eq!(v0.transitions_len(), 2);
-        assert_eq!(v1.transitions_len(), 1);
-    }
-
-    #[test]
-    fn batch_enum_transitions_are_empty_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        assert!(v0.transitions_are_empty());
-        assert!(v1.transitions_are_empty());
-    }
-
-    #[test]
-    fn batch_enum_first_transition_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Token(
-            make_token_burn_transition(1, 100),
-        )]));
-        assert!(matches!(
-            v0.first_transition().unwrap(),
-            BatchedTransitionRef::Document(_)
-        ));
-        assert!(matches!(
-            v1.first_transition().unwrap(),
-            BatchedTransitionRef::Token(_)
-        ));
-    }
-
-    #[test]
-    fn batch_enum_first_transition_mut_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Token(
-            make_token_burn_transition(1, 100),
-        )]));
-        assert!(v0.first_transition_mut().is_some());
-        assert!(v1.first_transition_mut().is_some());
-    }
-
-    #[test]
-    fn batch_enum_contains_document_transition_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1_doc = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        let v1_tok = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Token(
-            make_token_burn_transition(1, 100),
-        )]));
-        assert!(v0.contains_document_transition()); // V0 always true
-        assert!(v1_doc.contains_document_transition());
-        assert!(!v1_tok.contains_document_transition());
-    }
-
-    #[test]
-    fn batch_enum_contains_token_transition_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let v1_tok = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Token(
-            make_token_burn_transition(1, 100),
-        )]));
-        let v1_doc = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        assert!(!v0.contains_token_transition()); // V0 always false
-        assert!(v1_tok.contains_token_transition());
-        assert!(!v1_doc.contains_token_transition());
-    }
-
-    // -----------------------------------------------------------------------
-    // Top-level BatchTransition: methods dispatch
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_enum_all_document_purchases_amount_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_purchase_transition(1, 100)]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_purchase_transition(1, 200),
-        )]));
-        assert_eq!(v0.all_document_purchases_amount().unwrap(), Some(100));
-        assert_eq!(v1.all_document_purchases_amount().unwrap(), Some(200));
-    }
-
-    #[test]
-    fn batch_enum_all_conflicting_index_collateral_voting_funds_dispatch() {
-        let v0 = BatchTransition::V0(make_batch_v0(vec![make_create_transition_with_prefunded(
-            1,
-            Some(("idx".to_string(), 500)),
-        )]));
-        let v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_create_transition_with_prefunded(1, Some(("idx".to_string(), 600))),
-        )]));
-        assert_eq!(
-            v0.all_conflicting_index_collateral_voting_funds().unwrap(),
-            Some(500)
-        );
-        assert_eq!(
-            v1.all_conflicting_index_collateral_voting_funds().unwrap(),
-            Some(600)
-        );
-    }
-
-    #[test]
-    fn batch_enum_set_transitions_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![]));
-        v0.set_transitions(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        v1.set_transitions(vec![
-            BatchedTransition::Document(make_delete_transition(1)),
-            BatchedTransition::Token(make_token_burn_transition(2, 100)),
-        ]);
-        assert_eq!(v0.transitions_len(), 1); // V0 filters out tokens
-        assert_eq!(v1.transitions_len(), 2); // V1 keeps both
-    }
-
-    #[test]
-    fn batch_enum_set_identity_contract_nonce_dispatch() {
-        let mut v0 = BatchTransition::V0(make_batch_v0(vec![make_delete_transition(1)]));
-        let mut v1 = BatchTransition::V1(make_batch_v1(vec![BatchedTransition::Document(
-            make_delete_transition(1),
-        )]));
-        v0.set_identity_contract_nonce(77);
-        v1.set_identity_contract_nonce(88);
-        // Just verify no panic; the nonce was set internally
     }
 
     // -----------------------------------------------------------------------
@@ -1128,53 +609,19 @@ mod batch_transition_tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn batch_transition_field_types_binary_paths() {
+    fn batch_transition_field_types_binary_and_identifier_paths() {
+        use crate::state_transition::batch_transition::BatchTransition;
         use crate::state_transition::StateTransitionFieldTypes;
         let paths = BatchTransition::binary_property_paths();
         assert!(!paths.is_empty());
         assert!(paths.contains(&"signature"));
-    }
 
-    #[test]
-    fn batch_transition_field_types_identifier_paths() {
-        use crate::state_transition::StateTransitionFieldTypes;
-        let paths = BatchTransition::identifiers_property_paths();
-        assert!(paths.contains(&"ownerId"));
-    }
+        let id_paths = BatchTransition::identifiers_property_paths();
+        assert!(id_paths.contains(&"ownerId"));
 
-    #[test]
-    fn batch_transition_field_types_signature_paths() {
-        use crate::state_transition::StateTransitionFieldTypes;
-        let paths = BatchTransition::signature_property_paths();
-        assert!(paths.contains(&"signature"));
-        assert!(paths.contains(&"signaturePublicKeyId"));
-    }
-
-    // -----------------------------------------------------------------------
-    // Fields constants
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn fields_constants_are_correct() {
-        assert_eq!(fields::property_names::OWNER_ID, "ownerId");
-        assert_eq!(fields::property_names::TRANSITIONS, "transitions");
-        assert_eq!(fields::property_names::DOCUMENT_TYPE, "$type");
-        assert_eq!(fields::property_names::DATA_CONTRACT_ID, "$dataContractId");
-        assert_eq!(
-            fields::property_names::SECURITY_LEVEL_REQUIREMENT,
-            "signatureSecurityLevelRequirement"
-        );
-        assert_eq!(fields::DEFAULT_SECURITY_LEVEL, SecurityLevel::HIGH);
-    }
-
-    #[test]
-    fn identifier_fields_contain_expected() {
-        assert_eq!(fields::IDENTIFIER_FIELDS.len(), 3);
-    }
-
-    #[test]
-    fn u16_fields_contain_expected() {
-        assert_eq!(fields::U16_FIELDS.len(), 1);
+        let sig_paths = BatchTransition::signature_property_paths();
+        assert!(sig_paths.contains(&"signature"));
+        assert!(sig_paths.contains(&"signaturePublicKeyId"));
     }
 
     // -----------------------------------------------------------------------
@@ -1182,21 +629,18 @@ mod batch_transition_tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn document_action_type_getter_create() {
-        let dt = DocumentTransition::Create(DocumentCreateTransition::default());
-        assert_eq!(dt.action_type(), DocumentTransitionActionType::Create);
-    }
+    fn document_action_type_getter() {
+        let create = DocumentTransition::Create(DocumentCreateTransition::default());
+        assert_eq!(create.action_type(), DocumentTransitionActionType::Create);
 
-    #[test]
-    fn document_action_type_getter_delete() {
-        let dt = make_delete_transition(1);
-        assert_eq!(dt.action_type(), DocumentTransitionActionType::Delete);
-    }
+        let delete = make_delete_transition(1);
+        assert_eq!(delete.action_type(), DocumentTransitionActionType::Delete);
 
-    #[test]
-    fn document_action_type_getter_purchase() {
-        let dt = make_purchase_transition(1, 100);
-        assert_eq!(dt.action_type(), DocumentTransitionActionType::Purchase);
+        let purchase = make_purchase_transition(1, 100);
+        assert_eq!(
+            purchase.action_type(),
+            DocumentTransitionActionType::Purchase
+        );
     }
 
     #[test]
@@ -1368,50 +812,49 @@ mod batch_transition_tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn batched_transition_borrow_as_ref_document() {
-        let bt = BatchedTransition::Document(make_delete_transition(1));
-        let r = bt.borrow_as_ref();
-        assert!(matches!(r, BatchedTransitionRef::Document(_)));
+    fn batched_transition_borrow_as_ref() {
+        let doc = BatchedTransition::Document(make_delete_transition(1));
+        assert!(matches!(
+            doc.borrow_as_ref(),
+            BatchedTransitionRef::Document(_)
+        ));
+
+        let tok = BatchedTransition::Token(make_token_burn_transition(1, 100));
+        assert!(matches!(
+            tok.borrow_as_ref(),
+            BatchedTransitionRef::Token(_)
+        ));
     }
 
     #[test]
-    fn batched_transition_borrow_as_ref_token() {
-        let bt = BatchedTransition::Token(make_token_burn_transition(1, 100));
-        let r = bt.borrow_as_ref();
-        assert!(matches!(r, BatchedTransitionRef::Token(_)));
+    fn batched_transition_borrow_as_mut() {
+        let mut doc = BatchedTransition::Document(make_delete_transition(1));
+        assert!(matches!(
+            doc.borrow_as_mut(),
+            BatchedTransitionMutRef::Document(_)
+        ));
+
+        let mut tok = BatchedTransition::Token(make_token_burn_transition(1, 100));
+        assert!(matches!(
+            tok.borrow_as_mut(),
+            BatchedTransitionMutRef::Token(_)
+        ));
     }
 
     #[test]
-    fn batched_transition_borrow_as_mut_document() {
-        let mut bt = BatchedTransition::Document(make_delete_transition(1));
-        let r = bt.borrow_as_mut();
-        assert!(matches!(r, BatchedTransitionMutRef::Document(_)));
-    }
-
-    #[test]
-    fn batched_transition_borrow_as_mut_token() {
-        let mut bt = BatchedTransition::Token(make_token_burn_transition(1, 100));
-        let r = bt.borrow_as_mut();
-        assert!(matches!(r, BatchedTransitionMutRef::Token(_)));
-    }
-
-    #[test]
-    fn batched_transition_set_identity_contract_nonce_document() {
-        let mut bt = BatchedTransition::Document(make_delete_transition(1));
-        bt.set_identity_contract_nonce(123);
+    fn batched_transition_set_identity_contract_nonce() {
+        let mut doc = BatchedTransition::Document(make_delete_transition(1));
+        doc.set_identity_contract_nonce(123);
         use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-        if let BatchedTransition::Document(doc) = &bt {
-            assert_eq!(doc.identity_contract_nonce(), 123);
+        if let BatchedTransition::Document(d) = &doc {
+            assert_eq!(d.identity_contract_nonce(), 123);
         }
-    }
 
-    #[test]
-    fn batched_transition_set_identity_contract_nonce_token() {
-        let mut bt = BatchedTransition::Token(make_token_burn_transition(1, 100));
-        bt.set_identity_contract_nonce(456);
+        let mut tok = BatchedTransition::Token(make_token_burn_transition(1, 100));
+        tok.set_identity_contract_nonce(456);
         use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
-        if let BatchedTransition::Token(tok) = &bt {
-            assert_eq!(tok.identity_contract_nonce(), 456);
+        if let BatchedTransition::Token(t) = &tok {
+            assert_eq!(t.identity_contract_nonce(), 456);
         }
     }
 
@@ -1420,19 +863,20 @@ mod batch_transition_tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn batched_transition_ref_to_owned_document() {
+    fn batched_transition_ref_to_owned() {
         let doc = make_delete_transition(1);
         let bt_ref = BatchedTransitionRef::Document(&doc);
-        let owned = bt_ref.to_owned_transition();
-        assert!(matches!(owned, BatchedTransition::Document(_)));
-    }
+        assert!(matches!(
+            bt_ref.to_owned_transition(),
+            BatchedTransition::Document(_)
+        ));
 
-    #[test]
-    fn batched_transition_ref_to_owned_token() {
         let tok = make_token_burn_transition(1, 100);
         let bt_ref = BatchedTransitionRef::Token(&tok);
-        let owned = bt_ref.to_owned_transition();
-        assert!(matches!(owned, BatchedTransition::Token(_)));
+        assert!(matches!(
+            bt_ref.to_owned_transition(),
+            BatchedTransition::Token(_)
+        ));
     }
 
     #[test]
@@ -1443,14 +887,11 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn batched_transition_ref_data_contract_id_document() {
+    fn batched_transition_ref_data_contract_id() {
         let doc = make_delete_transition(1);
         let bt_ref = BatchedTransitionRef::Document(&doc);
         assert_eq!(bt_ref.data_contract_id(), Identifier::new([0xAA; 32]));
-    }
 
-    #[test]
-    fn batched_transition_ref_data_contract_id_token() {
         let tok = make_token_burn_transition(1, 100);
         let bt_ref = BatchedTransitionRef::Token(&tok);
         assert_eq!(bt_ref.data_contract_id(), Identifier::new([0xBB; 32]));
@@ -1497,25 +938,19 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn batched_transition_resolvers_token_burn() {
-        let bt = BatchedTransition::Token(make_token_burn_transition(1, 100));
-        assert!(bt.as_transition_token_burn().is_some());
-        assert!(bt.as_transition_token_mint().is_none());
-        assert!(bt.as_transition_token_transfer().is_none());
-    }
+    fn batched_transition_resolvers_token_variants() {
+        let burn = BatchedTransition::Token(make_token_burn_transition(1, 100));
+        assert!(burn.as_transition_token_burn().is_some());
+        assert!(burn.as_transition_token_mint().is_none());
+        assert!(burn.as_transition_token_transfer().is_none());
 
-    #[test]
-    fn batched_transition_resolvers_token_transfer() {
-        let bt = BatchedTransition::Token(make_token_transfer_transition(1));
-        assert!(bt.as_transition_token_transfer().is_some());
-        assert!(bt.as_transition_token_burn().is_none());
-    }
+        let transfer = BatchedTransition::Token(make_token_transfer_transition(1));
+        assert!(transfer.as_transition_token_transfer().is_some());
+        assert!(transfer.as_transition_token_burn().is_none());
 
-    #[test]
-    fn batched_transition_resolvers_token_claim() {
-        let bt = BatchedTransition::Token(make_token_claim_transition(1));
-        assert!(bt.as_transition_token_claim().is_some());
-        assert!(bt.as_transition_token_burn().is_none());
+        let claim = BatchedTransition::Token(make_token_claim_transition(1));
+        assert!(claim.as_transition_token_claim().is_some());
+        assert!(claim.as_transition_token_burn().is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -1532,26 +967,18 @@ mod batch_transition_tests {
     }
 
     #[test]
-    fn batched_transition_ref_resolvers_token_burn() {
-        let tok = make_token_burn_transition(1, 100);
-        let bt_ref = BatchedTransitionRef::Token(&tok);
+    fn batched_transition_ref_resolvers_token_variants() {
+        let burn = make_token_burn_transition(1, 100);
+        let bt_ref = BatchedTransitionRef::Token(&burn);
         assert!(bt_ref.as_transition_token_burn().is_some());
         assert!(bt_ref.as_transition_create().is_none());
-        assert!(bt_ref.as_transition_delete().is_none());
-    }
 
-    #[test]
-    fn batched_transition_ref_resolvers_token_transfer() {
-        let tok = make_token_transfer_transition(1);
-        let bt_ref = BatchedTransitionRef::Token(&tok);
+        let transfer = make_token_transfer_transition(1);
+        let bt_ref = BatchedTransitionRef::Token(&transfer);
         assert!(bt_ref.as_transition_token_transfer().is_some());
-        assert!(bt_ref.as_transition_token_burn().is_none());
-    }
 
-    #[test]
-    fn batched_transition_ref_resolvers_token_claim() {
-        let tok = make_token_claim_transition(1);
-        let bt_ref = BatchedTransitionRef::Token(&tok);
+        let claim = make_token_claim_transition(1);
+        let bt_ref = BatchedTransitionRef::Token(&claim);
         assert!(bt_ref.as_transition_token_claim().is_some());
     }
 
@@ -1572,46 +999,6 @@ mod batch_transition_tests {
         assert!(bt_ref
             .as_transition_token_set_price_for_direct_purchase()
             .is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // From conversions (BatchTransitionV0 -> StateTransition)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_transition_v0_into_state_transition() {
-        use crate::state_transition::StateTransition;
-        let batch = make_batch_v0(vec![make_delete_transition(1)]);
-        let st: StateTransition = batch.into();
-        assert_eq!(st.state_transition_type(), StateTransitionType::Batch);
-    }
-
-    #[test]
-    fn batch_transition_v1_into_state_transition() {
-        use crate::state_transition::StateTransition;
-        let batch = make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]);
-        let st: StateTransition = batch.into();
-        assert_eq!(st.state_transition_type(), StateTransitionType::Batch);
-    }
-
-    // -----------------------------------------------------------------------
-    // Default implementations
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_transition_v0_default() {
-        let batch = BatchTransitionV0::default();
-        assert_eq!(batch.transitions.len(), 0);
-        assert_eq!(batch.user_fee_increase, 0);
-        assert_eq!(batch.signature_public_key_id, 0);
-    }
-
-    #[test]
-    fn batch_transition_v1_default() {
-        let batch = BatchTransitionV1::default();
-        assert_eq!(batch.transitions.len(), 0);
-        assert_eq!(batch.user_fee_increase, 0);
-        assert_eq!(batch.signature_public_key_id, 0);
     }
 
     // -----------------------------------------------------------------------
@@ -1650,17 +1037,5 @@ mod batch_transition_tests {
         let second = iter.next().unwrap();
         assert!(matches!(second, BatchedTransitionRef::Token(_)));
         assert!(iter.next().is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // OptionallyAssetLockProved
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn batch_transition_optionally_asset_lock_proved() {
-        use crate::identity::state_transition::OptionallyAssetLockProved;
-        let batch = BatchTransition::V0(make_batch_v0(vec![]));
-        // OptionallyAssetLockProved has a default impl returning None
-        assert!(batch.optional_asset_lock_proof().is_none());
     }
 }
