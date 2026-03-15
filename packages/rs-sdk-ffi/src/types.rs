@@ -1182,9 +1182,206 @@ pub unsafe extern "C" fn dash_sdk_name_timestamp_list_free(list: *mut DashSDKNam
     }
 }
 
+/// Helper to free the entries inside a `DashSDKAddressInfoMap` without freeing
+/// the map struct itself (used when the map is embedded in another struct).
+///
+/// # Safety
+/// Caller must ensure the map's entries pointer and count are valid.
+unsafe fn free_address_info_map_entries(map: &DashSDKAddressInfoMap) {
+    if !map.entries.is_null() && map.count > 0 {
+        let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
+        for entry in entries_slice.iter() {
+            if !entry.address.is_null() && entry.address_len > 0 {
+                let _ = Vec::from_raw_parts(entry.address, entry.address_len, entry.address_len);
+            }
+        }
+        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+    }
+}
+
+/// Free a `DashSDKResult` and all resources it owns.
+///
+/// This is a unified free function that inspects the `data_type` field and
+/// dispatches to the correct cleanup logic for the `data` pointer. It also
+/// frees the `error` field when present. After this call the pointed-to
+/// `DashSDKResult` has its `data` and `error` fields set to null so that
+/// accidental double-frees are harmless no-ops.
+///
+/// # Safety
+/// - `result` must be a valid, non-null pointer to a `DashSDKResult` whose
+///   `data` and `error` fields were produced by this SDK and have not yet
+///   been freed.
+/// - If `result` is null this is a no-op.
+/// - After this call, the `data` and `error` pointers inside the struct are
+///   set to null. The `DashSDKResult` struct itself is **not** freed (it is
+///   typically stack-allocated by the caller).
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_result_free(result: *mut DashSDKResult) {
+    if result.is_null() {
+        return;
+    }
+
+    let res = &mut *result;
+
+    // ── Free the error field ──────────────────────────────────────────
+    if !res.error.is_null() {
+        let error = Box::from_raw(res.error);
+        if !error.message.is_null() {
+            let _ = std::ffi::CString::from_raw(error.message);
+        }
+        // Box is dropped here, freeing the DashSDKError struct
+        res.error = std::ptr::null_mut();
+    }
+
+    // ── Free the data field based on data_type ────────────────────────
+    if !res.data.is_null() {
+        match res.data_type {
+            DashSDKResultDataType::NoData => {
+                // No data to free; the pointer may be non-null for legacy
+                // reasons but no allocation was made via Box.
+            }
+
+            DashSDKResultDataType::String => {
+                // data is a *mut c_char from CString::into_raw
+                let _ = std::ffi::CString::from_raw(res.data as *mut c_char);
+            }
+
+            DashSDKResultDataType::BinaryData => {
+                // data is Box<DashSDKBinaryData>
+                dash_sdk_binary_data_free(res.data as *mut DashSDKBinaryData);
+            }
+
+            DashSDKResultDataType::ResultIdentityHandle => {
+                // data is Box<Identity> cast to *mut IdentityHandle
+                dash_sdk_identity_destroy_ptr(res.data as *mut IdentityHandle);
+            }
+
+            DashSDKResultDataType::ResultDocumentHandle => {
+                // data is Box<Document> cast to *mut DocumentHandle
+                dash_sdk_document_destroy_ptr(res.data as *mut DocumentHandle);
+            }
+
+            DashSDKResultDataType::ResultDataContractHandle => {
+                // data is Box<DataContract> cast to *mut DataContractHandle
+                dash_sdk_data_contract_destroy_ptr(res.data as *mut DataContractHandle);
+            }
+
+            DashSDKResultDataType::IdentityBalanceMap => {
+                dash_sdk_identity_balance_map_free(res.data as *mut DashSDKIdentityBalanceMap);
+            }
+
+            DashSDKResultDataType::ResultPublicKeyHandle => {
+                // data is Box<IdentityPublicKey> cast to *mut IdentityPublicKeyHandle
+                dash_sdk_public_key_destroy_ptr(res.data as *mut IdentityPublicKeyHandle);
+            }
+
+            DashSDKResultDataType::AddressInfo => {
+                dash_sdk_address_info_free(res.data as *mut DashSDKAddressInfo);
+            }
+
+            DashSDKResultDataType::AddressInfoMap => {
+                dash_sdk_address_info_map_free(res.data as *mut DashSDKAddressInfoMap);
+            }
+
+            DashSDKResultDataType::TrunkState => {
+                dash_sdk_trunk_state_free(res.data as *mut DashSDKTrunkState);
+            }
+
+            DashSDKResultDataType::BranchState => {
+                dash_sdk_branch_state_free(res.data as *mut DashSDKBranchState);
+            }
+
+            DashSDKResultDataType::RecentBalanceChanges => {
+                dash_sdk_recent_balance_changes_free(res.data as *mut DashSDKRecentBalanceChanges);
+            }
+
+            DashSDKResultDataType::CompactedBalanceChanges => {
+                dash_sdk_compacted_balance_changes_free(
+                    res.data as *mut DashSDKCompactedBalanceChanges,
+                );
+            }
+
+            DashSDKResultDataType::IdentityTopUpFromAddressesResult => {
+                let inner = Box::from_raw(
+                    res.data as *mut super::identity::DashSDKIdentityTopUpFromAddressesResult,
+                );
+                free_address_info_map_entries(&inner.address_info_map);
+            }
+
+            DashSDKResultDataType::IdentityTransferToAddressesResult => {
+                let inner = Box::from_raw(
+                    res.data as *mut super::identity::DashSDKIdentityTransferToAddressesResult,
+                );
+                free_address_info_map_entries(&inner.address_info_map);
+            }
+
+            DashSDKResultDataType::IdentityCreateFromAddressesResult => {
+                let inner = Box::from_raw(
+                    res.data as *mut super::identity::DashSDKIdentityCreateFromAddressesResult,
+                );
+                free_address_info_map_entries(&inner.address_info_map);
+                // Note: identity_handle inside is intentionally NOT freed here.
+                // The caller must free it separately via dash_sdk_identity_destroy,
+                // consistent with dash_sdk_identity_create_from_addresses_result_free.
+            }
+        }
+
+        res.data = std::ptr::null_mut();
+    }
+}
+
+// ── Internal helpers for freeing handle types by pointer ──────────────
+// These thin wrappers exist so that `dash_sdk_result_free` can free
+// opaque handles without importing concrete platform types directly.
+// They mirror the logic of the existing `dash_sdk_*_destroy` functions.
+
+/// Free an identity handle pointer (internal helper).
+///
+/// # Safety
+/// - `handle` must be a valid `*mut IdentityHandle` produced by `Box::into_raw`.
+unsafe fn dash_sdk_identity_destroy_ptr(handle: *mut IdentityHandle) {
+    if !handle.is_null() {
+        // IdentityHandle is an opaque ZST; the actual allocation is Box<Identity>.
+        let _ = Box::from_raw(handle as *mut dash_sdk::dpp::prelude::Identity);
+    }
+}
+
+/// Free a document handle pointer (internal helper).
+///
+/// # Safety
+/// - `handle` must be a valid `*mut DocumentHandle` produced by `Box::into_raw`.
+unsafe fn dash_sdk_document_destroy_ptr(handle: *mut DocumentHandle) {
+    if !handle.is_null() {
+        let _ = Box::from_raw(handle as *mut dash_sdk::dpp::document::Document);
+    }
+}
+
+/// Free a data contract handle pointer (internal helper).
+///
+/// # Safety
+/// - `handle` must be a valid `*mut DataContractHandle` produced by `Box::into_raw`.
+unsafe fn dash_sdk_data_contract_destroy_ptr(handle: *mut DataContractHandle) {
+    if !handle.is_null() {
+        let _ = Box::from_raw(handle as *mut dash_sdk::dpp::prelude::DataContract);
+    }
+}
+
+/// Free a public key handle pointer (internal helper).
+///
+/// # Safety
+/// - `handle` must be a valid `*mut IdentityPublicKeyHandle` produced by `Box::into_raw`.
+unsafe fn dash_sdk_public_key_destroy_ptr(handle: *mut IdentityPublicKeyHandle) {
+    if !handle.is_null() {
+        let _ = Box::from_raw(handle as *mut dash_sdk::dpp::identity::IdentityPublicKey);
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
 
     /// Verifies that `DashSDKResult::success_binary` now correctly shrinks
     /// Vec capacity to match len via `into_boxed_slice()`, so that the free
@@ -1278,5 +1475,146 @@ mod tests {
              The fix guarantees capacity == len via into_boxed_slice().",
             struct_size,
         );
+    }
+
+    /// Verify that calling `dash_sdk_result_free` with a null pointer does
+    /// not panic or crash.
+    #[test]
+    fn test_dash_sdk_result_free_null_pointer() {
+        unsafe {
+            dash_sdk_result_free(std::ptr::null_mut());
+        }
+        // If we reach here without a crash, the test passes.
+    }
+
+    /// Verify that `dash_sdk_result_free` properly frees an error-only result.
+    #[test]
+    fn test_dash_sdk_result_free_error_result() {
+        unsafe {
+            let error = super::super::DashSDKError::new(
+                super::super::DashSDKErrorCode::InternalError,
+                "test error message".to_string(),
+            );
+            let mut result = DashSDKResult::error(error);
+
+            // Sanity: error is non-null, data is null
+            assert!(!result.error.is_null());
+            assert!(result.data.is_null());
+
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            // After free, both pointers should be null
+            assert!(result.error.is_null());
+            assert!(result.data.is_null());
+        }
+    }
+
+    /// Verify that `dash_sdk_result_free` properly frees a success result
+    /// containing a String data type.
+    #[test]
+    fn test_dash_sdk_result_free_success_string() {
+        unsafe {
+            let c_string = CString::new("hello from FFI").unwrap();
+            let mut result = DashSDKResult::success_string(c_string.into_raw());
+
+            assert!(!result.data.is_null());
+            assert!(result.error.is_null());
+            assert_eq!(result.data_type, DashSDKResultDataType::String);
+
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            assert!(result.data.is_null());
+        }
+    }
+
+    /// Verify that `dash_sdk_result_free` properly frees a success result
+    /// containing binary data.
+    #[test]
+    fn test_dash_sdk_result_free_success_binary() {
+        unsafe {
+            let data = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
+            let mut result = DashSDKResult::success_binary(data);
+
+            assert!(!result.data.is_null());
+            assert!(result.error.is_null());
+            assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
+
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            assert!(result.data.is_null());
+        }
+    }
+
+    /// Verify that `dash_sdk_result_free` properly frees a success result
+    /// containing an identity balance map.
+    #[test]
+    fn test_dash_sdk_result_free_success_identity_balance_map() {
+        unsafe {
+            let entries = vec![
+                DashSDKIdentityBalanceEntry {
+                    identity_id: [1u8; 32],
+                    balance: 1000,
+                },
+                DashSDKIdentityBalanceEntry {
+                    identity_id: [2u8; 32],
+                    balance: 2000,
+                },
+            ];
+            let entries_len = entries.len();
+            let entries_ptr =
+                Box::into_raw(entries.into_boxed_slice()) as *mut DashSDKIdentityBalanceEntry;
+
+            let map = DashSDKIdentityBalanceMap {
+                entries: entries_ptr,
+                count: entries_len,
+            };
+            let mut result = DashSDKResult::success_identity_balance_map(map);
+
+            assert!(!result.data.is_null());
+            assert_eq!(result.data_type, DashSDKResultDataType::IdentityBalanceMap);
+
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            assert!(result.data.is_null());
+        }
+    }
+
+    /// Verify that `dash_sdk_result_free` properly frees a NoData success
+    /// result (null data pointer).
+    #[test]
+    fn test_dash_sdk_result_free_success_no_data() {
+        unsafe {
+            let mut result = DashSDKResult::success(std::ptr::null_mut());
+
+            assert!(result.data.is_null());
+            assert!(result.error.is_null());
+            assert_eq!(result.data_type, DashSDKResultDataType::NoData);
+
+            // Should be a no-op, no crash
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            assert!(result.data.is_null());
+            assert!(result.error.is_null());
+        }
+    }
+
+    /// Verify double-free safety: after `dash_sdk_result_free` nulls the
+    /// pointers, calling it again on the same struct is a safe no-op.
+    #[test]
+    fn test_dash_sdk_result_free_double_free_safety() {
+        unsafe {
+            let error = super::super::DashSDKError::new(
+                super::super::DashSDKErrorCode::NetworkError,
+                "double free test".to_string(),
+            );
+            let mut result = DashSDKResult::error(error);
+
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+            // Second call should be a no-op
+            dash_sdk_result_free(&mut result as *mut DashSDKResult);
+
+            assert!(result.error.is_null());
+            assert!(result.data.is_null());
+        }
     }
 }
