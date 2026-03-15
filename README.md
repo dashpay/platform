@@ -43,21 +43,34 @@ a mobile wallet, a browser app, a third-party service -- query decentralized
 state and **know** the answer is correct, without running a full node and
 without trusting the node that served the response?
 
-Platform's answer combines three pieces. First,
-[Tenderdash](https://github.com/dashpay/tenderdash) runs Scalable Byzantine
-Fault Tolerant (SBFT) consensus across a rotating quorum of masternodes. Unlike
-classical BFT where every validator signs every block, Tenderdash selects a
-deterministic quorum for each block and recovers a single BLS threshold
-signature from that quorum. One compact signature attests to the entire
-committed state. Second,
-[GroveDB](https://github.com/dashpay/grovedb) stores all platform state in an
-authenticated tree structure (a hierarchy of Merkle trees). Every piece of
-data -- a document, an identity balance, a token supply -- has a Merkle path
-from itself up to a single root hash. Third, **Drive** (this repository's core
-component) ties these together: it commits the GroveDB root hash into
-Tenderdash blocks. The threshold signature on a block therefore signs the state
-root, and the state root cryptographically commits to every individual piece of
-data in the system.
+Platform's answer stacks four layers. At the bottom,
+[GroveDB](https://github.com/dashpay/grovedb) provides the raw authenticated
+storage -- a hierarchy of Merkle trees where every key-value pair has a
+cryptographic path up to a single root hash. GroveDB handles insertions,
+deletions, and proof generation, but it knows nothing about documents,
+identities, or application logic. Think of it as Platform's assembly language:
+powerful and provable, but operating at the level of individual tree operations.
+
+**Drive** is the layer that gives GroveDB meaning -- much as C gives structure
+and abstraction over assembly. Drive organizes GroveDB's raw trees into a
+structured query system with secondary indexes: it defines how documents,
+identities, balances, tokens, and data contracts are laid out across the tree
+hierarchy, how indexes are maintained, and how queries are translated into
+authenticated tree operations. When an application asks "give me all documents
+where `owner = X`, sorted by `createdAt`", it is Drive that maps that query onto
+the right set of GroveDB tree traversals and returns a result with a proof.
+
+Above Drive sits **Drive-ABCI**, the execution layer that ties everything
+together. It connects Drive to
+[Tenderdash](https://github.com/dashpay/tenderdash) consensus via ABCI,
+validates and applies state transitions, enforces protocol rules, and commits
+the GroveDB root hash into each consensus block. Tenderdash itself runs Scalable
+Byzantine Fault Tolerant (SBFT) consensus across a rotating quorum of
+masternodes. Unlike classical BFT where every validator signs every block,
+Tenderdash selects a deterministic quorum for each block and recovers a single
+BLS threshold signature from that quorum. One compact signature attests to the
+entire committed state, and that state root cryptographically commits to every
+individual piece of data in the system.
 
 The result is that to verify any single query result, a client needs only three
 things: the data itself, its Merkle proof against the state root, and the
@@ -129,7 +142,8 @@ project:
 This is a monorepo containing all packages that comprise Dash Platform. Packages
 are located in the [packages](./packages) directory. Key packages include:
 
-- **rs-drive** / **rs-drive-abci** -- Drive storage engine and ABCI application
+- **rs-drive** -- Drive query and indexing layer over GroveDB
+- **rs-drive-abci** -- Execution layer connecting Drive to Tenderdash consensus
 - **rs-dpp** -- Dash Platform Protocol (data contracts, documents, state
   transitions, identities)
 - **rs-sdk** -- Rust SDK for building applications on Dash Platform
