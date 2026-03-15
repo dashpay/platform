@@ -175,7 +175,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: lcov.info
-          flags: rust-mac
+          flags: rust
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
@@ -527,6 +527,8 @@ jobs:
 
       - name: Setup Rust
         uses: ./.github/actions/rust
+        with:
+          components: llvm-tools
 
       - name: Setup sccache
         uses: ./.github/actions/sccache
@@ -541,16 +543,18 @@ jobs:
         uses: ./.github/actions/librocksdb
 
       - uses: taiki-e/install-action@cargo-nextest
+      - uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Run ZK / Shielded tests
+      - name: Run ZK / Shielded tests with coverage
         run: |
-          cargo nextest run \
+          cargo llvm-cov nextest \
             --package dpp \
             --package drive-abci \
             --package drive \
             --all-features \
             --locked \
-            -E 'test(/shield/)'
+            -E 'test(/shield/)' \
+            --lcov --output-path lcov-shielded.info
         env:
           RUST_MIN_STACK: 4194304
           CARGO_INCREMENTAL: "0"
@@ -561,3 +565,12 @@ jobs:
           ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
           SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
           SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
+
+      - name: Upload shielded coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov-shielded.info
+          flags: rust-shielded
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
