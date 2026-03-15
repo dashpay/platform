@@ -55,14 +55,19 @@ impl<C> Platform<C> {
 
         let purposes = check_validation_result_with_data!(purposes
             .into_iter()
-            .map(
-                |purpose| Purpose::try_from(purpose as u8).map_err(|_| QueryError::Query(
-                    QuerySyntaxError::InvalidKeyParameter(format!(
+            .map(|purpose| {
+                if purpose < 0 || purpose > u8::MAX as i32 {
+                    return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter(
+                        "purpose out of bounds".to_string(),
+                    )));
+                }
+                Purpose::try_from(purpose as u8).map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!(
                         "purpose {} not recognized",
                         purpose
-                    ))
-                ))
-            )
+                    )))
+                })
+            })
             .collect::<Result<Vec<Purpose>, QueryError>>());
 
         let response = if prove {
