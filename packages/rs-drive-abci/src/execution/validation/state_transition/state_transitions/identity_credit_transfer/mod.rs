@@ -123,21 +123,100 @@ impl StateTransitionStateValidation for IdentityCreditTransferTransition {
 mod tests {
     use super::*;
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::execution::validation::state_transition::tests::setup_identity_return_master_key;
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
+    use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::signer::Signer;
+    use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::prelude::Identifier;
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dpp::state_transition::StateTransition;
     use platform_version::version::PlatformVersion;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    /// Creates an identity with a master authentication key and a TRANSFER purpose key,
+    /// adds it to the platform, and returns the identity, signer, and transfer key.
+    fn setup_identity_with_transfer_key(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
+        let platform_version = PlatformVersion::latest();
+        let mut signer = SimpleSigner::default();
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                1,
+                &mut rng,
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
+
+        let (transfer_key, transfer_private_key) =
+            IdentityPublicKey::random_key_with_known_attributes(
+                2,
+                &mut rng,
+                Purpose::TRANSFER,
+                SecurityLevel::CRITICAL,
+                KeyType::ECDSA_SECP256K1,
+                None,
+                platform_version,
+            )
+            .expect("expected to get transfer key pair");
+
+        signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key),
+                (1, critical_public_key),
+                (2, transfer_key.clone()),
+            ]),
+            balance: credits,
+            revision: 0,
+        }
+        .into();
+
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add a new identity");
+
+        (identity, signer, transfer_key)
+    }
 
     fn create_signed_transfer(
         identity_id: dpp::prelude::Identifier,
@@ -180,8 +259,8 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let (identity, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 500, dash_to_credits!(1.0));
+        let (identity, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 500, dash_to_credits!(1.0));
 
         let platform_state = platform.state.load();
 
@@ -192,7 +271,7 @@ mod tests {
             200_000,
             1,
             &signer,
-            &key,
+            &transfer_key,
         );
 
         let transaction = platform.drive.grove.start_transaction();
@@ -234,22 +313,19 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let (identity, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 500, dash_to_credits!(1.0));
-
-        let (recipient, _, _, _) =
-            setup_identity_return_master_key(&mut platform, 501, dash_to_credits!(0.5));
+        let (identity, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 500, dash_to_credits!(1.0));
 
         let platform_state = platform.state.load();
 
         // Transfer amount below minimum (100_000)
         let transfer_bytes = create_signed_transfer(
             identity.id(),
-            recipient.id(),
-            99_999, // below MIN_TRANSFER_AMOUNT of 100_000
+            Identifier::random(), // any valid recipient
+            99_999,               // below MIN_TRANSFER_AMOUNT of 100_000
             1,
             &signer,
-            &key,
+            &transfer_key,
         );
 
         let transaction = platform.drive.grove.start_transaction();
@@ -291,37 +367,29 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        // Create an identity that exists (recipient) and one that does not (sender)
-        let (recipient, _, _, _) =
-            setup_identity_return_master_key(&mut platform, 501, dash_to_credits!(0.5));
-
-        // Create an identity but don't add it to the platform
-        let (non_existent, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 502, dash_to_credits!(1.0));
-
-        // Now remove the sender from the platform by creating a fresh platform state
-        // Actually, we need to use an identity that was added but simulate "not found"
-        // The simpler approach: use process_raw with the sender who doesn't exist in identity tree
-        // We can't easily do this without first removing. Instead, let's test by using
-        // a non-existent identity_id in the transition
+        // Create an identity with a transfer key (will be used to sign, but the
+        // transition will reference a non-existent sender identity_id)
+        let (_existing_identity, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 502, dash_to_credits!(1.0));
 
         let platform_state = platform.state.load();
 
-        let fake_sender_id = dpp::prelude::Identifier::random();
+        // Use a fake sender identity_id that doesn't exist in the platform
+        let fake_sender_id = Identifier::random();
         let transfer: IdentityCreditTransferTransition = IdentityCreditTransferTransitionV0 {
             identity_id: fake_sender_id,
-            recipient_id: recipient.id(),
+            recipient_id: Identifier::random(),
             amount: 200_000,
             nonce: 1,
             user_fee_increase: 0,
-            signature_public_key_id: key.id(),
+            signature_public_key_id: transfer_key.id(),
             signature: Default::default(),
         }
         .into();
 
         let mut st: StateTransition = transfer.into();
         let data = st.signable_bytes().expect("signable bytes");
-        st.set_signature(signer.sign(&key, data.as_slice()).expect("sign"));
+        st.set_signature(signer.sign(&transfer_key, data.as_slice()).expect("sign"));
         let transfer_bytes = st.serialize_to_bytes().expect("serialize");
 
         let transaction = platform.drive.grove.start_transaction();
@@ -365,11 +433,11 @@ mod tests {
             .set_genesis_state();
 
         // Create sender with very low balance
-        let (sender, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 600, dash_to_credits!(0.001));
+        let (sender, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 600, dash_to_credits!(0.001));
 
-        let (recipient, _, _, _) =
-            setup_identity_return_master_key(&mut platform, 601, dash_to_credits!(0.5));
+        let (recipient, _, _) =
+            setup_identity_with_transfer_key(&mut platform, 601, dash_to_credits!(0.5));
 
         let platform_state = platform.state.load();
 
@@ -380,7 +448,7 @@ mod tests {
             dash_to_credits!(1.0), // more than the 0.001 balance
             1,
             &signer,
-            &key,
+            &transfer_key,
         );
 
         let transaction = platform.drive.grove.start_transaction();
@@ -398,10 +466,13 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        // Should get a paid consensus error (identity exists but insufficient balance)
+        // Insufficient balance is caught by the balance pre-check which returns
+        // an unpaid consensus error since the identity can't afford processing fees
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError { .. }]
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(_)
+            )]
         );
     }
 
@@ -421,15 +492,21 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let (sender, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 700, dash_to_credits!(1.0));
+        let (sender, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 700, dash_to_credits!(1.0));
 
         let platform_state = platform.state.load();
 
         // Transfer to a non-existent recipient
-        let fake_recipient_id = dpp::prelude::Identifier::random();
-        let transfer_bytes =
-            create_signed_transfer(sender.id(), fake_recipient_id, 200_000, 1, &signer, &key);
+        let fake_recipient_id = Identifier::random();
+        let transfer_bytes = create_signed_transfer(
+            sender.id(),
+            fake_recipient_id,
+            200_000,
+            1,
+            &signer,
+            &transfer_key,
+        );
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -446,10 +523,14 @@ mod tests {
             )
             .expect("expected to process state transition");
 
-        // Recipient not found should result in a paid consensus error
+        // Recipient not found returns IdentityNotFoundError (a SignatureError variant)
+        // as an unpaid consensus error since the state validation doesn't produce
+        // an execution event on failure
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::PaidConsensusError { .. }]
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::SignatureError(_)
+            )]
         );
     }
 
@@ -469,11 +550,11 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let (sender, signer, _, key) =
-            setup_identity_return_master_key(&mut platform, 800, dash_to_credits!(1.0));
+        let (sender, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 800, dash_to_credits!(1.0));
 
-        let (recipient, _, _, _) =
-            setup_identity_return_master_key(&mut platform, 801, dash_to_credits!(0.5));
+        let (recipient, _, _) =
+            setup_identity_with_transfer_key(&mut platform, 801, dash_to_credits!(0.5));
 
         let platform_state = platform.state.load();
 
@@ -484,7 +565,7 @@ mod tests {
             transfer_amount,
             1,
             &signer,
-            &key,
+            &transfer_key,
         );
 
         let transaction = platform.drive.grove.start_transaction();
