@@ -215,11 +215,14 @@ mod tests {
 
     #[test]
     fn deserialize_string_or_number_from_float() {
-        // Note: f64 "3.0" parsed as string then from_str to u64 will fail
-        // But integer-valued floats should work if FromStr accepts them
-        let json = r#"{"value": 7}"#;
-        let s: TestStruct = serde_json::from_str(json).unwrap();
-        assert_eq!(s.value, 7);
+        #[derive(Deserialize)]
+        struct FloatTest {
+            #[serde(deserialize_with = "deserialize_string_or_number")]
+            value: f64,
+        }
+        let json = r#"{"value": 7.25}"#;
+        let s: FloatTest = serde_json::from_str(json).unwrap();
+        assert_eq!(s.value, 7.25);
     }
 
     #[test]
