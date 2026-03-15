@@ -199,6 +199,7 @@ jobs:
 
   test-ubuntu:
     name: "Tests backup (shard ${{ matrix.partition }}/4)"
+    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -352,6 +353,7 @@ jobs:
 
   lint-ubuntu:
     name: "Formatting & Linting backup"
+    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
