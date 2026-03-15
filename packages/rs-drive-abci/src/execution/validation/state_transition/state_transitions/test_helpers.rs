@@ -649,7 +649,8 @@ pub fn serialize_authorized_bundle_u64(
     bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
 ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
     let actions = serialize_bundle_actions(bundle);
-    let value_balance = *bundle.value_balance() as u64;
+    let value_balance = u64::try_from(*bundle.value_balance())
+        .expect("shielded-transfer requires a non-negative value_balance");
     let anchor = bundle.anchor().to_bytes();
     let proof = bundle.authorization().proof().as_ref().to_vec();
     let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
