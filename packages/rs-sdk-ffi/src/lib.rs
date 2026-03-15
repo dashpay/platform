@@ -169,12 +169,19 @@ pub extern "C" fn dash_sdk_init() {
     // Initialize any other subsystems if needed
 }
 
-/// Enable logging with the specified level
+/// Enable logging with the specified level.
+///
+/// This function initializes a `tracing` subscriber with the given log level.
+/// It configures per-crate filter directives directly, without touching
+/// environment variables, making it safe to call from any thread context
+/// (including after a Tokio runtime has started).
+///
+/// If a global subscriber has already been set (e.g., by a previous call),
+/// subsequent calls are a no-op and the original level is retained.
+///
 /// Level values: 0 = Error, 1 = Warn, 2 = Info, 3 = Debug, 4 = Trace
 #[no_mangle]
 pub extern "C" fn dash_sdk_enable_logging(level: u8) {
-    use std::env;
-
     let log_level = match level {
         0 => "error",
         1 => "warn",
@@ -184,17 +191,24 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
         _ => "info",
     };
 
-    // Set RUST_LOG environment variable for detailed logging
-    env::set_var(
-        "RUST_LOG",
-        format!(
-            "dash_sdk={},rs_sdk={},dapi_grpc={},h2={},tower={},hyper={},tonic={}",
-            log_level, log_level, log_level, log_level, log_level, log_level, log_level
-        ),
+    // Build the filter string with per-crate directives -- identical to what
+    // was previously stored in RUST_LOG, but constructed in-process so there
+    // is no data-race with concurrent `env::var` reads on other threads.
+    let filter_string = format!(
+        "dash_sdk={log_level},rs_sdk={log_level},dapi_grpc={log_level},\
+         h2={log_level},tower={log_level},hyper={log_level},tonic={log_level}"
     );
 
-    // Note: env_logger initialization is done in SDK creation
-    // We just set the environment variable here
+    // Create an EnvFilter directly from the string -- this never reads
+    // environment variables.
+    let filter = tracing_subscriber::EnvFilter::new(filter_string);
+
+    // Initialize the global tracing subscriber.  `try_init` returns Err if a
+    // subscriber is already installed; we intentionally ignore that so that
+    // calling this function more than once is harmless.
+    let _ = tracing_subscriber::fmt::fmt()
+        .with_env_filter(filter)
+        .try_init();
 
     tracing::info!(level = log_level, "logging enabled");
 }
@@ -204,4 +218,54 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
 pub extern "C" fn dash_sdk_version() -> *const std::os::raw::c_char {
     static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
     VERSION.as_ptr() as *const std::os::raw::c_char
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `dash_sdk_enable_logging` does NOT set the RUST_LOG
+    /// environment variable.  This is the core property that makes the
+    /// function safe to call from a multi-threaded context.
+    #[test]
+    fn enable_logging_does_not_set_env_var() {
+        // Remove RUST_LOG if it happens to be set by the test harness so
+        // we can detect whether our function re-introduces it.
+        //
+        // Safety: this test binary is single-threaded at this point (the
+        // Tokio runtime has not been started yet), so the remove is safe.
+        unsafe {
+            std::env::remove_var("RUST_LOG");
+        }
+
+        // Call the function under test with each supported level.
+        for level in 0..=5 {
+            dash_sdk_enable_logging(level);
+        }
+
+        // The function must NOT have set RUST_LOG.
+        assert!(
+            std::env::var("RUST_LOG").is_err(),
+            "RUST_LOG should not be set by dash_sdk_enable_logging; \
+             env::set_var must not be used because it is a data race \
+             in multi-threaded programs"
+        );
+    }
+
+    /// Verify that the function can be called from multiple threads
+    /// concurrently without panicking (i.e., no data race).
+    #[test]
+    fn enable_logging_is_thread_safe() {
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                std::thread::spawn(move || {
+                    dash_sdk_enable_logging(i % 5);
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread should not panic");
+        }
+    }
 }
