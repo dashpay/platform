@@ -605,3 +605,95 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
             .expect("should commit transaction");
     }
 }
+
+// ==========================================
+// Shared Orchard Proving Key & Serialization
+// ==========================================
+
+use grovedb_commitment_tree::{Authorized as OrchardAuthorized, Bundle, DashMemo, ProvingKey};
+use std::sync::OnceLock;
+
+/// Single process-wide proving key shared by ALL shielded tests.
+///
+/// `ProvingKey::build()` costs ~1-2 s. Previously every test module had its
+/// own `static OnceLock<ProvingKey>`, so running N modules in parallel could
+/// build the key N times simultaneously.  With a single static the key is
+/// built at most once per test binary invocation.
+static SHARED_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+
+/// Returns a reference to the lazily-initialized proving key.
+pub fn get_proving_key() -> &'static ProvingKey {
+    SHARED_PROVING_KEY.get_or_init(ProvingKey::build)
+}
+
+/// Serialize an authorized Orchard bundle into the platform-compatible
+/// format used by **spend** transitions (unshield, shielded-withdrawal).
+///
+/// Returns `(actions, value_balance_i64, anchor, proof, binding_sig)`.
+pub fn serialize_authorized_bundle_i64(
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+    let actions = serialize_bundle_actions(bundle);
+    let value_balance = *bundle.value_balance();
+    let anchor = bundle.anchor().to_bytes();
+    let proof = bundle.authorization().proof().as_ref().to_vec();
+    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    (actions, value_balance, anchor, proof, binding_sig)
+}
+
+/// Serialize an authorized Orchard bundle into the platform-compatible
+/// format used by **shielded-transfer** transitions (value_balance as `u64`).
+///
+/// Returns `(actions, value_balance_u64, anchor, proof, binding_sig)`.
+pub fn serialize_authorized_bundle_u64(
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+    let actions = serialize_bundle_actions(bundle);
+    let value_balance = *bundle.value_balance() as u64;
+    let anchor = bundle.anchor().to_bytes();
+    let proof = bundle.authorization().proof().as_ref().to_vec();
+    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    (actions, value_balance, anchor, proof, binding_sig)
+}
+
+/// Serialize an authorized Orchard bundle into the platform-compatible
+/// format used by **shield** transitions (includes flags byte).
+///
+/// Returns `(actions, flags, value_balance_i64, anchor, proof, binding_sig)`.
+pub fn serialize_authorized_bundle_with_flags(
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+    let actions = serialize_bundle_actions(bundle);
+    let flags = bundle.flags().to_byte();
+    let value_balance = *bundle.value_balance();
+    let anchor = bundle.anchor().to_bytes();
+    let proof = bundle.authorization().proof().as_ref().to_vec();
+    let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+    (actions, flags, value_balance, anchor, proof, binding_sig)
+}
+
+/// Internal helper: extract `Vec<SerializedAction>` from bundle actions.
+fn serialize_bundle_actions(
+    bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+) -> Vec<SerializedAction> {
+    bundle
+        .actions()
+        .iter()
+        .map(|action| {
+            let enc = action.encrypted_note();
+            let mut encrypted_note = Vec::with_capacity(216);
+            encrypted_note.extend_from_slice(&enc.epk_bytes);
+            encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+            encrypted_note.extend_from_slice(&enc.out_ciphertext);
+
+            SerializedAction {
+                nullifier: action.nullifier().to_bytes(),
+                rk: <[u8; 32]>::from(action.rk()),
+                cmx: action.cmx().to_bytes(),
+                encrypted_note,
+                cv_net: action.cv_net().to_bytes(),
+                spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+            }
+        })
+        .collect()
+}
