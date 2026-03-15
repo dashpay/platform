@@ -163,13 +163,6 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
-      - name: Reset GPG state (fix stale keyboxd locks on self-hosted runners)
-        if: always()
-        run: |
-          gpgconf --kill all 2>/dev/null || true
-          rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
-          rm -rf ~/.gnupg/.#* 2>/dev/null || true
-
       - name: Upload coverage
         if: always()
         uses: codecov/codecov-action@v5
