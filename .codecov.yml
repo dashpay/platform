@@ -17,6 +17,8 @@ ignore:
   - "packages/wasm-dpp/**"
   - "packages/wasm-dpp2/**"
   - "packages/wasm-sdk/**"
+  - "**/block_end/validator_set_update/v0/**"
+  - "**/block_end/validator_set_update/v1/**"
 
 coverage:
   status:
