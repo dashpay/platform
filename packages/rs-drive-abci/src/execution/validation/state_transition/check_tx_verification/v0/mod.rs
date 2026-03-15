@@ -470,3 +470,539 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
+    use crate::platform_types::platform::PlatformRef;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::dash_to_credits;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::native_bls::NativeBlsModule;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
+    use dpp::version::DefaultForPlatformVersion;
+    use platform_version::version::PlatformVersion;
+
+    /// Helper to build a signed DataContractCreate StateTransition and return it alongside
+    /// the platform instance. This keeps individual tests concise.
+    fn setup_data_contract_create_transition(
+        credits: dpp::fee::Credits,
+    ) -> (
+        crate::test::helpers::setup::TempPlatform<MockCoreRPCLike>,
+        StateTransition,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, credits);
+
+        let mut data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        // Upgrade config to V1 (required since protocol version 12)
+        data_contract
+            .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+        let data_contract_create_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            1,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create transition");
+
+        let state_transition: StateTransition = data_contract_create_transition.into();
+
+        (platform, state_transition)
+    }
+
+    mod first_time_check {
+        use super::*;
+
+        #[test]
+        fn should_return_valid_result_for_data_contract_create() {
+            let platform_version = PlatformVersion::latest();
+            let (platform, state_transition) =
+                setup_data_contract_create_transition(dash_to_credits!(2.0));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an error");
+            let validation_result = result.unwrap();
+            assert!(
+                validation_result.is_valid(),
+                "validation should succeed: {:?}",
+                validation_result.errors
+            );
+            // For FirstTimeCheck, the execution event should be Some(Some(...))
+            assert!(validation_result.data.is_some());
+            assert!(validation_result.data.unwrap().is_some());
+        }
+
+        #[test]
+        fn should_return_invalid_result_for_insufficient_balance() {
+            let platform_version = PlatformVersion::latest();
+            // Give the identity very little balance -- not enough for the data contract create.
+            // The minimum balance pre-check should reject this.
+            let (platform, state_transition) = setup_data_contract_create_transition(1);
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(
+                result.is_ok(),
+                "should not return an Error, just an invalid validation result"
+            );
+            let validation_result = result.unwrap();
+            assert!(
+                !validation_result.is_valid(),
+                "validation should fail for insufficient balance"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_for_bad_signature() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let mut data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to get contract");
+
+            // Upgrade config to V1 (required since protocol version 12)
+            data_contract
+                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+            let data_contract_create_transition =
+                DataContractCreateTransition::new_from_data_contract(
+                    data_contract,
+                    1,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to create transition");
+
+            let mut state_transition: StateTransition = data_contract_create_transition.into();
+
+            // Corrupt the signature to make it invalid
+            state_transition.set_signature(dpp::platform_value::BinaryData::new(vec![0u8; 65]));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an Error");
+            let validation_result = result.unwrap();
+            assert!(
+                !validation_result.is_valid(),
+                "validation should fail for bad signature"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_for_replayed_nonce() {
+            let platform_version = PlatformVersion::latest();
+            let (platform, state_transition) =
+                setup_data_contract_create_transition(dash_to_credits!(2.0));
+
+            let serialized = state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_state = platform.state.load();
+
+            // First, process the transition to consume the nonce
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    std::slice::from_ref(&serialized),
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Now try the same transition again -- the nonce should be invalid
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an Error");
+            let validation_result = result.unwrap();
+            assert!(
+                !validation_result.is_valid(),
+                "should fail because the nonce has already been used"
+            );
+            assert!(
+                validation_result.errors.iter().any(|e| matches!(
+                    e,
+                    ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+                )),
+                "expected InvalidIdentityNonceError but got: {:?}",
+                validation_result.errors
+            );
+        }
+    }
+
+    mod recheck {
+        use super::*;
+
+        #[test]
+        fn should_return_valid_result_for_data_contract_create_recheck() {
+            let platform_version = PlatformVersion::latest();
+            let (platform, state_transition) =
+                setup_data_contract_create_transition(dash_to_credits!(2.0));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            // Recheck for a DataContractCreate: no asset lock proof, has identity nonce,
+            // goes through the non-asset-lock recheck path
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::Recheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an error");
+            let validation_result = result.unwrap();
+            assert!(
+                validation_result.is_valid(),
+                "recheck should pass for valid transition: {:?}",
+                validation_result.errors
+            );
+            assert!(
+                validation_result.data.is_some(),
+                "should return an execution event for recheck"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_for_replayed_nonce_on_recheck() {
+            let platform_version = PlatformVersion::latest();
+            let (platform, state_transition) =
+                setup_data_contract_create_transition(dash_to_credits!(2.0));
+
+            let serialized = state_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let platform_state = platform.state.load();
+
+            // Process the transition first to consume the nonce
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    std::slice::from_ref(&serialized),
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Recheck should fail because the nonce is spent
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::Recheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an Error");
+            let validation_result = result.unwrap();
+            assert!(
+                !validation_result.is_valid(),
+                "recheck should fail because nonce was consumed"
+            );
+            assert!(
+                validation_result.errors.iter().any(|e| matches!(
+                    e,
+                    ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+                )),
+                "expected InvalidIdentityNonceError but got: {:?}",
+                validation_result.errors
+            );
+        }
+
+        #[test]
+        fn should_return_valid_recheck_with_identity_fetched() {
+            // Verifies the recheck path where uses_identity_in_state=true,
+            // so the code fetches identity via owner_id.
+            let platform_version = PlatformVersion::latest();
+            let (platform, state_transition) =
+                setup_data_contract_create_transition(dash_to_credits!(2.0));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::Recheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            assert!(
+                validation_result.is_valid(),
+                "recheck should pass: {:?}",
+                validation_result.errors
+            );
+        }
+    }
+
+    mod identity_update {
+        use super::*;
+        use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+
+        #[test]
+        fn should_return_valid_result_for_identity_update_first_check() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            // Build an identity update that disables a key
+            let update_transition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![key.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            };
+
+            let mut state_transition: StateTransition =
+                IdentityUpdateTransition::from(update_transition).into();
+
+            // Sign with master key (key id 0)
+            let master_key_private = *signer
+                .private_keys
+                .iter()
+                .find(|(pub_key, _)| pub_key.id() == 0)
+                .map(|(_, priv_key)| priv_key)
+                .expect("expected master key");
+
+            let master_key = identity
+                .get_public_key_by_id(0)
+                .expect("expected master key");
+
+            state_transition
+                .sign(master_key, &master_key_private, &NativeBlsModule)
+                .expect("expected to sign");
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::FirstTimeCheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an error");
+            let validation_result = result.unwrap();
+            assert!(
+                validation_result.is_valid(),
+                "identity update should pass first check: {:?}",
+                validation_result.errors
+            );
+        }
+
+        #[test]
+        fn should_return_valid_result_for_identity_update_recheck() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(2.0));
+
+            let update_transition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![key.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            };
+
+            let mut state_transition: StateTransition =
+                IdentityUpdateTransition::from(update_transition).into();
+
+            let master_key_private = *signer
+                .private_keys
+                .iter()
+                .find(|(pub_key, _)| pub_key.id() == 0)
+                .map(|(_, priv_key)| priv_key)
+                .expect("expected master key");
+
+            let master_key = identity
+                .get_public_key_by_id(0)
+                .expect("expected master key");
+
+            state_transition
+                .sign(master_key, &master_key_private, &NativeBlsModule)
+                .expect("expected to sign");
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition_to_execution_event_for_check_tx_v0(
+                &platform_ref,
+                state_transition,
+                CheckTxLevel::Recheck,
+                platform_version,
+            );
+
+            assert!(result.is_ok(), "should not return an error");
+            let validation_result = result.unwrap();
+            assert!(
+                validation_result.is_valid(),
+                "identity update recheck should pass: {:?}",
+                validation_result.errors
+            );
+        }
+    }
+}
