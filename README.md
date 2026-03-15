@@ -12,6 +12,8 @@
 <p align="center">
   <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="GitHub CI Status" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
   <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg"></a>
+  <a href="https://github.com/dashpay/platform/graphs/commit-activity"><img alt="commit activity" src="https://img.shields.io/github/commit-activity/m/dashpay/platform"></a>
+  <a href="https://github.com/dashpay/platform/commits"><img alt="last commit" src="https://img.shields.io/github/last-commit/dashpay/platform"></a>
   <a href="https://discordapp.com/invite/PXbUxJB"><img alt="General Chat" src="https://img.shields.io/badge/discord-General_chat-738adb"></a>
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
