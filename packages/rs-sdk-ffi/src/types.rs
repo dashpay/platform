@@ -51,14 +51,28 @@ pub enum DashSDKNetwork {
     SDKLocal = 4,
 }
 
-/// SDK configuration
+/// SDK configuration passed from C callers.
+///
+/// # Pointer lifetime
+///
+/// `dapi_addresses` is a borrowed `*const c_char` whose memory is owned by the
+/// caller. The pointer is **only read during the FFI entry-point call** (e.g.,
+/// `dash_sdk_create`, `dash_sdk_create_trusted`, `dash_sdk_create_with_callbacks`)
+/// and the string data is copied into Rust-owned memory immediately. Callers may
+/// free the original C string as soon as the creation function returns.
+///
+/// `Copy` is intentionally **not** derived: duplicating raw pointers via implicit
+/// copies risks use-after-free if the original string is freed while a copy is
+/// still in use.
 #[repr(C)]
-#[derive(Copy, Clone)]
 pub struct DashSDKConfig {
     /// Network to connect to
     pub network: DashSDKNetwork,
     /// Comma-separated list of DAPI addresses (e.g., "http://127.0.0.1:3000,http://127.0.0.1:3001")
-    /// If null or empty, will use mock SDK
+    /// If null or empty, will use mock SDK.
+    ///
+    /// This pointer is only read during the creation call; the string data is
+    /// immediately copied into Rust-owned memory.
     pub dapi_addresses: *const c_char,
     /// Skip asset lock proof verification (for testing)
     pub skip_asset_lock_proof_verification: bool,
