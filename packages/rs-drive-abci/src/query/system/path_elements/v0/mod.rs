@@ -13,8 +13,28 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::RootTree;
 use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
+
+/// Returns `true` if the given root tree is publicly queryable.
+///
+/// Only trees containing externally-visible data are allowed. Internal system
+/// trees (Misc, Pools, SpentAssetLockTransactions, WithdrawalTransactions,
+/// Versions, GroupActions, PreFundedSpecializedBalances, SavedBlockTransactions,
+/// AddressBalances) are blocked to prevent information disclosure.
+fn is_publicly_queryable_root_tree(root_tree: &RootTree) -> bool {
+    matches!(
+        root_tree,
+        RootTree::DataContractDocuments
+            | RootTree::Identities
+            | RootTree::UniquePublicKeyHashesToIdentities
+            | RootTree::NonUniquePublicKeyKeyHashesToIdentities
+            | RootTree::Tokens
+            | RootTree::Balances
+            | RootTree::Votes
+    )
+}
 
 impl<C> Platform<C> {
     pub(super) fn query_path_elements_v0(
@@ -23,6 +43,45 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetPathElementsResponseV0>, Error> {
+        // Validate that the requested path targets an allowed root tree.
+        // This prevents external callers from reading internal system data
+        // such as total credits, pool balances, or spent asset lock transactions.
+        if let Some(first_segment) = path.first() {
+            if first_segment.len() != 1 {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(format!(
+                        "root path segment must be exactly 1 byte, got {}",
+                        first_segment.len()
+                    )),
+                ));
+            }
+            let root_tree_byte = first_segment[0];
+            match RootTree::try_from(root_tree_byte) {
+                Ok(root_tree) => {
+                    if !is_publicly_queryable_root_tree(&root_tree) {
+                        return Ok(QueryValidationResult::new_with_error(
+                            QueryError::InvalidArgument(format!(
+                                "path query not allowed for root tree '{}'",
+                                root_tree
+                            )),
+                        ));
+                    }
+                }
+                Err(_) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(format!(
+                            "unknown root tree byte: {}",
+                            root_tree_byte
+                        )),
+                    ));
+                }
+            }
+        } else {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument("path must not be empty".to_string()),
+            ));
+        }
+
         if keys.len() > platform_version.drive_abci.query.max_returned_elements as usize {
             return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                 QuerySyntaxError::InvalidLimit(format!(
@@ -83,11 +142,9 @@ mod tests {
     use dpp::dashcore::Network;
     use drive::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
     use drive::drive::RootTree;
-    use drive::grovedb::Element;
-    use integer_encoding::VarInt;
 
     #[test]
-    fn test_query_total_system_credits_from_path_elements_query() {
+    fn test_query_misc_tree_is_blocked() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let platform_version = PlatformVersion::latest();
@@ -95,7 +152,7 @@ mod tests {
         platform
             .drive
             .add_to_system_credits(100, None, platform_version)
-            .expect("expected to insert identity");
+            .expect("expected to add system credits");
 
         let request = GetPathElementsRequestV0 {
             path: vec![vec![RootTree::Misc as u8]],
@@ -107,28 +164,147 @@ mod tests {
             .query_path_elements_v0(request, &state, version)
             .expect("expected query to succeed");
 
-        let response_data = response.into_data().expect("expected data");
+        // The query should be rejected because Misc is an internal-only tree
+        let errors = response.errors;
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            QueryError::InvalidArgument(msg) => {
+                assert!(
+                    msg.contains("not allowed"),
+                    "expected 'not allowed' in error message, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidArgument error, got: {:?}", other),
+        }
+    }
 
-        let get_path_elements_response_v0::Result::Elements(mut elements) =
-            response_data.result.expect("expected a result")
-        else {
-            panic!("expected elements")
+    #[test]
+    fn test_query_pools_tree_is_blocked() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Pools as u8]],
+            keys: vec![vec![0]],
+            prove: false,
         };
 
-        assert_eq!(elements.elements.len(), 1);
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
 
-        let element = Element::deserialize(
-            elements.elements.remove(0).as_slice(),
-            &platform_version.drive.grove_version,
-        )
-        .expect("expected to deserialize element");
+        let errors = response.errors;
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            QueryError::InvalidArgument(msg) => {
+                assert!(
+                    msg.contains("not allowed"),
+                    "expected 'not allowed' in error message, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidArgument error, got: {:?}", other),
+        }
+    }
 
-        let Element::Item(value, _) = element else {
-            panic!("expected item")
+    #[test]
+    fn test_query_identities_tree_is_allowed() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::Identities as u8]],
+            keys: vec![vec![0; 32]],
+            prove: false,
         };
 
-        let (amount, _) = u64::decode_var(value.as_slice()).expect("expected amount");
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
 
-        assert_eq!(amount, 100);
+        // The query should be accepted (no validation errors).
+        // It may return no data if the identity doesn't exist, but the path
+        // validation itself should pass.
+        assert!(
+            response.errors.is_empty(),
+            "expected no validation errors for Identities tree, got: {:?}",
+            response.errors
+        );
+    }
+
+    #[test]
+    fn test_query_data_contract_documents_tree_is_allowed() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![RootTree::DataContractDocuments as u8]],
+            keys: vec![vec![0; 32]],
+            prove: false,
+        };
+
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            response.errors.is_empty(),
+            "expected no validation errors for DataContractDocuments tree, got: {:?}",
+            response.errors
+        );
+    }
+
+    #[test]
+    fn test_query_empty_path_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![],
+            keys: vec![vec![0]],
+            prove: false,
+        };
+
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        let errors = response.errors;
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            QueryError::InvalidArgument(msg) => {
+                assert!(
+                    msg.contains("empty"),
+                    "expected 'empty' in error message, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidArgument error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_query_unknown_root_tree_byte_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetPathElementsRequestV0 {
+            path: vec![vec![255]],
+            keys: vec![vec![0]],
+            prove: false,
+        };
+
+        let response = platform
+            .query_path_elements_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        let errors = response.errors;
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            QueryError::InvalidArgument(msg) => {
+                assert!(
+                    msg.contains("unknown root tree byte"),
+                    "expected 'unknown root tree byte' in error message, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidArgument error, got: {:?}", other),
+        }
     }
 }
