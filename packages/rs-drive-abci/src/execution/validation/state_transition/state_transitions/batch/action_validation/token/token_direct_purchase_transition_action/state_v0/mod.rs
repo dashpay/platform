@@ -28,6 +28,11 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl TokenDirectPurchaseTransitionActionStateValidationV0 for TokenDirectPurchaseTransitionAction {
+    // Security note: direct purchases intentionally do NOT check token pause status.
+    // A paused token restricts transfers but not purchases. This allows token issuers
+    // to pause trading/movement while still permitting new buyers to acquire tokens
+    // (e.g., during a distribution event or when transfers are temporarily frozen for
+    // compliance reasons). This is by design, not a missing check.
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,

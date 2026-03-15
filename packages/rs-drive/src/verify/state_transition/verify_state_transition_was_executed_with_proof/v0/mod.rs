@@ -1360,3 +1360,1154 @@ impl Drive {
         }
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::Drive;
+    use crate::query::ContractLookupFn;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+    use dpp::document::DocumentV0Getters;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::prelude::DataContract;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::StateTransition;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use platform_version::TryIntoPlatformVersioned;
+    use std::sync::Arc;
+
+    /// Helper: set up drive, insert a DPNS contract, return (drive, contract)
+    fn setup_drive_and_contract() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let created_contract =
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = created_contract.data_contract_owned();
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+        (drive, contract)
+    }
+
+    /// Helper: set up drive and add an identity, return (drive, identity)
+    fn setup_drive_and_identity() -> (Drive, Identity) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a platform identity");
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add identity");
+        (drive, identity)
+    }
+
+    // -----------------------------------------------------------------------
+    // DataContractCreate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_data_contract_create_happy_path() {
+        let (drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id().to_buffer();
+
+        // Generate a proof for this contract
+        let proof = drive
+            .prove_contract(contract_id, None, platform_version)
+            .expect("expected to prove contract");
+
+        // Build the DataContractCreate state transition from the contract
+        let data_contract_serialized: DataContractInSerializationFormat = contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to serialize contract");
+
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+        let st = StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+            DataContractCreateTransitionV0 {
+                data_contract: data_contract_serialized,
+                identity_nonce: 0,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (root_hash, proof_result) = result.unwrap();
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be all zeros");
+        match proof_result {
+            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
+                assert_eq!(
+                    verified_contract.id(),
+                    contract.id(),
+                    "verified contract id should match"
+                );
+            }
+            other => panic!("expected VerifiedDataContract, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // DataContractUpdate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_data_contract_update_happy_path() {
+        let (drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id().to_buffer();
+
+        // For the update transition, we use the same contract (version hasn't changed
+        // in the fixture, but the proof verifies the contract is as expected).
+        let proof = drive
+            .prove_contract(contract_id, None, platform_version)
+            .expect("expected to prove contract");
+
+        let data_contract_serialized: DataContractInSerializationFormat = contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to serialize contract");
+
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+        let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
+            DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 0,
+                data_contract: data_contract_serialized,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
+                assert_eq!(verified_contract.id(), contract.id());
+            }
+            other => panic!("expected VerifiedDataContract, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_create_happy_path() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+
+        let proof = drive
+            .prove_full_identity(identity_id, None, &platform_version.drive)
+            .expect("expected to prove full identity");
+
+        use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+        let st = StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+            IdentityCreateTransitionV0 {
+                identity_id: identity.id(),
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedIdentity(verified_identity) => {
+                assert_eq!(verified_identity.id(), identity.id());
+            }
+            other => panic!("expected VerifiedIdentity, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityTopUp
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_top_up_happy_path() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+
+        let proof = drive
+            .prove_identity_balance_and_revision(identity_id, None, &platform_version.drive)
+            .expect("expected to prove identity balance and revision");
+
+        use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+        let st = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0 {
+                identity_id: identity.id(),
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+                assert_eq!(partial_identity.id, identity.id());
+                assert!(
+                    partial_identity.balance.is_some(),
+                    "balance should be present"
+                );
+                assert!(
+                    partial_identity.revision.is_some(),
+                    "revision should be present"
+                );
+            }
+            other => panic!("expected VerifiedPartialIdentity, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreditWithdrawal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_credit_withdrawal_happy_path() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+
+        let proof = drive
+            .prove_identity_balance(identity_id, None, &platform_version.drive)
+            .expect("expected to prove identity balance");
+
+        use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+        let st = StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+            IdentityCreditWithdrawalTransitionV0 {
+                identity_id: identity.id(),
+                amount: 100,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+                assert_eq!(partial_identity.id, identity.id());
+                assert!(
+                    partial_identity.balance.is_some(),
+                    "balance should be present after withdrawal verification"
+                );
+            }
+            other => panic!("expected VerifiedPartialIdentity, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityUpdate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_update_happy_path() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+
+        // The verify function for IdentityUpdate uses verify_identity_keys_by_identity_id
+        // with with_revision=true, which creates a merged query of keys + revision.
+        // We need a proof that contains both. Use the same path queries merged together.
+        use crate::drive::identity::key::fetch::IdentityKeysRequest;
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let keys_path_query = key_request.into_path_query();
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let merged = grovedb::PathQuery::merge(
+            vec![&keys_path_query, &revision_path_query],
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to merge path queries");
+        let proof = drive
+            .grove_get_proved_path_query(&merged, None, &mut vec![], &platform_version.drive)
+            .expect("expected to prove identity keys and revision");
+
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+                assert_eq!(partial_identity.id, identity.id());
+                assert!(
+                    !partial_identity.loaded_public_keys.is_empty(),
+                    "loaded public keys should not be empty"
+                );
+            }
+            other => panic!("expected VerifiedPartialIdentity, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreditTransfer
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_credit_transfer_happy_path() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let sender = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a sender identity");
+        let recipient = Identity::random_identity(3, Some(15), platform_version)
+            .expect("expected a recipient identity");
+
+        drive
+            .add_new_identity(
+                sender.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add sender identity");
+        drive
+            .add_new_identity(
+                recipient.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add recipient identity");
+
+        // The transfer verification calls verify_identity_balance_for_identity_id twice
+        // with verify_subset_of_proof=true, so we need a merged proof of both balances.
+        let proof = drive
+            .prove_many_identity_balances(
+                &[sender.id().to_buffer(), recipient.id().to_buffer()],
+                None,
+                &platform_version.drive,
+            )
+            .expect("expected to prove both balances");
+
+        use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
+                identity_id: sender.id(),
+                recipient_id: recipient.id(),
+                amount: 50,
+                nonce: 1,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedBalanceTransfer(
+                sender_partial,
+                recipient_partial,
+            ) => {
+                assert_eq!(sender_partial.id, sender.id());
+                assert_eq!(recipient_partial.id, recipient.id());
+                assert!(sender_partial.balance.is_some());
+                assert!(recipient_partial.balance.is_some());
+            }
+            other => panic!("expected VerifiedBalanceTransfer, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: empty transitions error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_batch_empty_transitions_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Default::default(),
+            transitions: vec![],
+            ..Default::default()
+        }));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
+        let err = result.unwrap_err();
+        match &err {
+            Error::Proof(ProofError::InvalidTransition(msg)) => {
+                assert!(
+                    msg.contains("no transition"),
+                    "expected error about no transition, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidTransition error, got: {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: too many transitions error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_batch_too_many_transitions_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+
+        let base1 = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Default::default(),
+            identity_contract_nonce: 1,
+            document_type_name: "test".to_string(),
+            data_contract_id: Default::default(),
+        });
+        let base2 = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Default::default(),
+            identity_contract_nonce: 2,
+            document_type_name: "test".to_string(),
+            data_contract_id: Default::default(),
+        });
+
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Default::default(),
+            transitions: vec![
+                DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                    DocumentDeleteTransitionV0 { base: base1 },
+                )),
+                DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                    DocumentDeleteTransitionV0 { base: base2 },
+                )),
+            ],
+            ..Default::default()
+        }));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
+        let err = result.unwrap_err();
+        match &err {
+            Error::Proof(ProofError::InvalidTransition(msg)) => {
+                assert!(
+                    msg.contains("does not support more than one document"),
+                    "expected error about too many transitions, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected InvalidTransition error, got: {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: document delete happy path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_batch_document_delete_happy_path() {
+        let (drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        let document = document_type
+            .random_document(Some(99), platform_version)
+            .expect("expected a random document");
+        let doc_id = document.id();
+
+        // Insert the document
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // Delete the document
+        drive
+            .delete_document_for_contract(
+                doc_id,
+                &contract,
+                "preorder",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to delete document");
+
+        // Generate a proof for the now-absent document
+        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+        let single_query = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "preorder".to_string(),
+            document_type_keeps_history: document_type.documents_keep_history(),
+            document_id: doc_id.to_buffer(),
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+        let path_query = single_query
+            .construct_path_query(platform_version)
+            .expect("expected to build path query");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("expected to get proof");
+
+        // Build a document delete batch transition
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: doc_id,
+            identity_contract_nonce: 1,
+            document_type_name: "preorder".to_string(),
+            data_contract_id: contract.id(),
+        });
+
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Default::default(),
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
+            ..Default::default()
+        }));
+
+        let contract_arc = Arc::new(contract.clone());
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedDocuments(docs) => {
+                assert_eq!(docs.len(), 1, "expected exactly one document entry");
+                let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
+                assert_eq!(returned_id, doc_id);
+                assert!(
+                    maybe_doc.is_none(),
+                    "document should be None after deletion"
+                );
+            }
+            other => panic!("expected VerifiedDocuments, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: document create happy path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_batch_document_create_happy_path() {
+        let (drive, contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        let document = document_type
+            .random_document(Some(99), platform_version)
+            .expect("expected a random document");
+        let doc_id = document.id();
+        let owner_id = document.owner_id();
+
+        let block_info = BlockInfo::default();
+
+        // Insert the document
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: Some(owner_id.to_buffer()),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                block_info.clone(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // Generate a proof for the existing document
+        use crate::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
+        let single_query = SingleDocumentDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "preorder".to_string(),
+            document_type_keeps_history: document_type.documents_keep_history(),
+            document_id: doc_id.to_buffer(),
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+        let path_query = single_query
+            .construct_path_query(platform_version)
+            .expect("expected to build path query");
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("expected to get proof");
+
+        // Build a document create batch transition
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: doc_id,
+            identity_contract_nonce: 1,
+            document_type_name: "preorder".to_string(),
+            data_contract_id: contract.id(),
+        });
+
+        // Build the create transition from document properties
+        let create_transition = DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+            base,
+            entropy: [100u8; 32],
+            data: document.properties().clone(),
+            prefunded_voting_balance: None,
+        });
+
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id,
+            transitions: vec![DocumentTransition::Create(create_transition)],
+            ..Default::default()
+        }));
+
+        let contract_arc = Arc::new(contract.clone());
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(Some(contract_arc.clone()));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &block_info,
+            &proof,
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "expected verification to succeed, got: {:?}",
+            result.err()
+        );
+        let (_root_hash, proof_result) = result.unwrap();
+        match proof_result {
+            StateTransitionProofResult::VerifiedDocuments(docs) => {
+                assert_eq!(docs.len(), 1, "expected exactly one document entry");
+                let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
+                assert_eq!(returned_id, doc_id);
+                assert!(maybe_doc.is_some(), "document should exist after creation");
+            }
+            other => panic!("expected VerifiedDocuments, got {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Batch: unknown contract returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_batch_document_unknown_contract_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+        use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+        use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+        use dpp::state_transition::batch_transition::BatchTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV0;
+
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Default::default(),
+            identity_contract_nonce: 1,
+            document_type_name: "test".to_string(),
+            data_contract_id: Default::default(),
+        });
+
+        let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Default::default(),
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
+            ..Default::default()
+        }));
+
+        // Provider returns None for all contracts
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
+        let err = result.unwrap_err();
+        match &err {
+            Error::Proof(ProofError::UnknownContract(msg)) => {
+                assert!(
+                    msg.contains("unknown contract"),
+                    "expected error about unknown contract, got: {}",
+                    msg
+                );
+            }
+            other => panic!("expected UnknownContract error, got: {:?}", other),
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // DataContractCreate: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_data_contract_create_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        // Build a minimal contract create transition
+        let created_contract =
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = created_contract.data_contract();
+        let data_contract_serialized: DataContractInSerializationFormat = contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to serialize contract");
+
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+        use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+        let st = StateTransition::DataContractCreate(DataContractCreateTransition::V0(
+            DataContractCreateTransitionV0 {
+                data_contract: data_contract_serialized,
+                identity_nonce: 0,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        // Empty proof should cause a GroveDB/proof error
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreate: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_create_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+        let st = StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+            IdentityCreateTransitionV0 {
+                identity_id: dpp::prelude::Identifier::random(),
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityTopUp: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_top_up_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+        use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+        let st = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0 {
+                identity_id: dpp::prelude::Identifier::random(),
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreditWithdrawal: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_credit_withdrawal_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::state_transitions::identity::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+        let st = StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+            IdentityCreditWithdrawalTransitionV0 {
+                identity_id: dpp::prelude::Identifier::random(),
+                amount: 100,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityUpdate: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_update_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                identity_id: dpp::prelude::Identifier::random(),
+                revision: 1,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // IdentityCreditTransfer: empty proof returns error
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn verify_identity_credit_transfer_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+
+        use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0 {
+                identity_id: dpp::prelude::Identifier::random(),
+                recipient_id: dpp::prelude::Identifier::random(),
+                amount: 50,
+                nonce: 1,
+                ..Default::default()
+            },
+        ));
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
+            result
+        );
+    }
+}

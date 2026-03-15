@@ -51,6 +51,10 @@ jobs:
             bench-suite
             release
             wasm-sdk
+            platform-wallet
+            swift-example-app
+            kotlin-sdk
+            kotlin-example-app
           requireScope: false
           # Configure additional validation for the subject based on a regex.
           # This example ensures the subject doesn't start with an uppercase character.

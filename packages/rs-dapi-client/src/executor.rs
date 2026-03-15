@@ -228,3 +228,176 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_address() -> Address {
+        "http://127.0.0.1:3000".parse().expect("valid address")
+    }
+
+    fn mock_response() -> ExecutionResponse<i32> {
+        ExecutionResponse {
+            inner: 42,
+            retries: 3,
+            address: mock_address(),
+        }
+    }
+
+    fn mock_error() -> ExecutionError<String> {
+        ExecutionError {
+            inner: "test error".to_string(),
+            retries: 2,
+            address: Some(mock_address()),
+        }
+    }
+
+    #[test]
+    fn test_execution_error_partial_eq() {
+        let err1 = mock_error();
+        let err2 = mock_error();
+        assert_eq!(err1, err2);
+
+        let err3 = ExecutionError {
+            inner: "different".to_string(),
+            retries: 2,
+            address: Some(mock_address()),
+        };
+        assert_ne!(err1, err3);
+
+        let err4 = ExecutionError {
+            inner: "test error".to_string(),
+            retries: 5,
+            address: Some(mock_address()),
+        };
+        assert_ne!(err1, err4);
+    }
+
+    #[test]
+    fn test_execution_result_from_response() {
+        let response = mock_response();
+        let result: ExecutionResult<i32, String> = response.into();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().inner, 42);
+    }
+
+    #[test]
+    fn test_execution_result_from_error() {
+        let error = mock_error();
+        let result: ExecutionResult<i32, String> = error.into();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().inner, "test error");
+    }
+
+    #[test]
+    fn test_execution_result_inner_into_ok() {
+        let response = mock_response();
+        let result: ExecutionResult<i32, String> = Ok(response);
+        let converted: ExecutionResult<i64, String> = result.inner_into();
+        assert!(converted.is_ok());
+        assert_eq!(converted.unwrap().inner, 42i64);
+    }
+
+    #[test]
+    fn test_execution_result_inner_into_err() {
+        let error = mock_error();
+        let result: ExecutionResult<i32, String> = Err(error);
+        let converted: ExecutionResult<i64, String> = result.inner_into();
+        assert!(converted.is_err());
+        assert_eq!(converted.unwrap_err().inner, "test error");
+    }
+
+    #[test]
+    fn test_wrap_to_execution_result_ok() {
+        let context = mock_response();
+        let inner_result: Result<i64, String> = Ok(100);
+        let wrapped: ExecutionResult<i64, String> = inner_result.wrap_to_execution_result(&context);
+
+        let response = wrapped.unwrap();
+        assert_eq!(response.inner, 100);
+        assert_eq!(response.retries, 3);
+        assert_eq!(response.address, mock_address());
+    }
+
+    #[test]
+    fn test_wrap_to_execution_result_err() {
+        let context = mock_response();
+        let inner_result: Result<i64, String> = Err("wrapped error".to_string());
+        let wrapped: ExecutionResult<i64, String> = inner_result.wrap_to_execution_result(&context);
+
+        let error = wrapped.unwrap_err();
+        assert_eq!(error.inner, "wrapped error");
+        assert_eq!(error.retries, 3);
+        assert_eq!(error.address, Some(mock_address()));
+    }
+
+    #[test]
+    fn test_execution_response_into_inner() {
+        let response = mock_response();
+        let inner: i32 = response.into_inner();
+        assert_eq!(inner, 42);
+    }
+
+    #[test]
+    fn test_execution_response_inner_into() {
+        let response = mock_response();
+        let converted: ExecutionResponse<i64> = response.inner_into();
+        assert_eq!(converted.inner, 42i64);
+        assert_eq!(converted.retries, 3);
+    }
+
+    #[test]
+    fn test_execution_error_into_inner() {
+        let error = mock_error();
+        let inner: String = error.into_inner();
+        assert_eq!(inner, "test error");
+    }
+
+    #[test]
+    fn test_execution_error_inner_into() {
+        let error = mock_error();
+        let converted: ExecutionError<String> = error.inner_into();
+        assert_eq!(converted.inner, "test error");
+        assert_eq!(converted.retries, 2);
+    }
+
+    #[test]
+    fn test_execution_result_into_inner_ok() {
+        let result: ExecutionResult<i32, String> = Ok(mock_response());
+        let inner: Result<i32, String> = result.into_inner();
+        assert_eq!(inner.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_execution_result_into_inner_err() {
+        let result: ExecutionResult<i32, String> = Err(mock_error());
+        let inner: Result<i32, String> = result.into_inner();
+        assert_eq!(inner.unwrap_err(), "test error");
+    }
+
+    #[test]
+    fn test_execution_error_can_retry_delegates() {
+        // Test that ExecutionError's CanRetry impl delegates correctly
+        // We need a type that implements CanRetry
+        use crate::DapiClientError;
+
+        let inner = DapiClientError::NoAvailableAddresses;
+        let error = ExecutionError {
+            inner,
+            retries: 0,
+            address: None,
+        };
+
+        assert!(!error.can_retry());
+        assert!(error.is_no_available_addresses());
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_execution_response_default() {
+        let response: ExecutionResponse<i32> = ExecutionResponse::default();
+        assert_eq!(response.inner, 0);
+        assert_eq!(response.retries, 0);
+    }
+}

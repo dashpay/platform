@@ -62,7 +62,9 @@ pub(crate) fn verify_tenderdash_proof(
 
     let state_id_hash = state_id
         .calculate_msg_hash(&chain_id, mtd.height as i64, proof.round as i32)
-        .expect("failed to calculate state id hash");
+        .map_err(|e| Error::ResponseDecodeError {
+            error: format!("failed to calculate state id hash: {}", e),
+        })?;
 
     let commit = CanonicalVote {
         r#type: SignedMsgType::Precommit.into(),
@@ -77,7 +79,11 @@ pub(crate) fn verify_tenderdash_proof(
     let sign_digest = commit
         .calculate_sign_hash(
             &chain_id,
-            quorum_type.try_into().expect("quorum type out of range"),
+            quorum_type
+                .try_into()
+                .map_err(|_| Error::ResponseDecodeError {
+                    error: format!("quorum type out of range: {}", quorum_type),
+                })?,
             &quorum_hash,
             height as i64,
             round as i32,
@@ -138,4 +144,90 @@ pub fn verify_signature_digest(
     );
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+    use std::sync::Arc;
+
+    /// Minimal ContextProvider stub that returns a dummy quorum public key.
+    /// This allows the test to reach the vulnerable `.expect()` on line 80
+    /// without failing earlier in the verification pipeline.
+    struct StubContextProvider;
+
+    impl ContextProvider for StubContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            // Return a dummy 48-byte public key; it does not need to be
+            // cryptographically valid because the panic occurs before the
+            // signature check.
+            Ok([0u8; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// Verify that an out-of-range `quorum_type` from a malicious node
+    /// returns an error instead of panicking.
+    ///
+    /// `verify_tenderdash_proof` receives `quorum_type` as a `u32` from an
+    /// untrusted gRPC response and converts it to `u8`. Any value > 255
+    /// must produce an `Err`, not a panic.
+    #[test]
+    fn test_malicious_quorum_type_returns_error() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32], // valid 32-byte hash so we pass the earlier check
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: u32::MAX, // out-of-range: cannot fit in u8
+        };
+
+        let metadata = ResponseMetadata {
+            height: 100,
+            core_chain_locked_height: 1,
+            epoch: 0,
+            time_ms: 1_000_000,
+            protocol_version: 1,
+            chain_id: "test-chain".to_string(),
+        };
+
+        let provider = StubContextProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for out-of-range quorum_type");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("quorum type out of range"),
+            "error message should mention quorum type out of range, got: {err_msg}"
+        );
+    }
 }
