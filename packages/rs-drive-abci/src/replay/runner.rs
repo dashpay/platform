@@ -550,3 +550,385 @@ fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
         format!(" ({})", parts.join(", "))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tenderdash_abci::proto::abci::{
+        RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
+        RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
+    };
+    use tenderdash_abci::proto::types::{Block, Header};
+
+    // ---- stop_height_reached ----
+
+    #[test]
+    fn stop_height_reached_no_limit() {
+        assert!(!stop_height_reached(None, Some(100)));
+    }
+
+    #[test]
+    fn stop_height_reached_no_known_height() {
+        assert!(!stop_height_reached(Some(100), None));
+    }
+
+    #[test]
+    fn stop_height_reached_both_none() {
+        assert!(!stop_height_reached(None, None));
+    }
+
+    #[test]
+    fn stop_height_reached_below_limit() {
+        assert!(!stop_height_reached(Some(100), Some(99)));
+    }
+
+    #[test]
+    fn stop_height_reached_at_limit() {
+        assert!(stop_height_reached(Some(100), Some(100)));
+    }
+
+    #[test]
+    fn stop_height_reached_above_limit() {
+        assert!(stop_height_reached(Some(100), Some(101)));
+    }
+
+    // ---- format_height_round ----
+
+    #[test]
+    fn format_height_round_both_present() {
+        let result = format_height_round(Some(42), Some(3));
+        assert_eq!(result, " (height=42, round=3)");
+    }
+
+    #[test]
+    fn format_height_round_height_only() {
+        let result = format_height_round(Some(42), None);
+        assert_eq!(result, " (height=42)");
+    }
+
+    #[test]
+    fn format_height_round_round_only() {
+        let result = format_height_round(None, Some(3));
+        assert_eq!(result, " (round=3)");
+    }
+
+    #[test]
+    fn format_height_round_neither() {
+        let result = format_height_round(None, None);
+        assert_eq!(result, "");
+    }
+
+    // ---- extract_expected_app_hash ----
+
+    #[test]
+    fn extract_expected_app_hash_with_block_and_header() {
+        let request = RequestFinalizeBlock {
+            block: Some(Block {
+                header: Some(Header {
+                    app_hash: vec![1, 2, 3, 4],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let hash = extract_expected_app_hash(&request);
+        assert_eq!(hash, Some(vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn extract_expected_app_hash_no_block() {
+        let request = RequestFinalizeBlock {
+            block: None,
+            ..Default::default()
+        };
+        assert_eq!(extract_expected_app_hash(&request), None);
+    }
+
+    #[test]
+    fn extract_expected_app_hash_no_header() {
+        let request = RequestFinalizeBlock {
+            block: Some(Block {
+                header: None,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(extract_expected_app_hash(&request), None);
+    }
+
+    // ---- LoadedRequest::block_height ----
+
+    #[test]
+    fn loaded_request_block_height_init_chain() {
+        let request = LoadedRequest::InitChain(RequestInitChain::default());
+        assert_eq!(request.block_height(), Some(0));
+    }
+
+    #[test]
+    fn loaded_request_block_height_info() {
+        let request = LoadedRequest::Info(RequestInfo::default());
+        assert_eq!(request.block_height(), None);
+    }
+
+    #[test]
+    fn loaded_request_block_height_prepare() {
+        let request = LoadedRequest::Prepare(RequestPrepareProposal {
+            height: 42,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), Some(42));
+    }
+
+    #[test]
+    fn loaded_request_block_height_process() {
+        let request = LoadedRequest::Process(RequestProcessProposal {
+            height: 100,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), Some(100));
+    }
+
+    #[test]
+    fn loaded_request_block_height_finalize() {
+        let request = LoadedRequest::Finalize(RequestFinalizeBlock {
+            height: 200,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), Some(200));
+    }
+
+    #[test]
+    fn loaded_request_block_height_extend_vote() {
+        let request = LoadedRequest::ExtendVote(RequestExtendVote {
+            height: 300,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), Some(300));
+    }
+
+    #[test]
+    fn loaded_request_block_height_verify_vote_extension() {
+        let request = LoadedRequest::VerifyVoteExtension(RequestVerifyVoteExtension {
+            height: 400,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), Some(400));
+    }
+
+    #[test]
+    fn loaded_request_block_height_negative() {
+        let request = LoadedRequest::Prepare(RequestPrepareProposal {
+            height: -1,
+            ..Default::default()
+        });
+        assert_eq!(request.block_height(), None);
+    }
+
+    // ---- ReplaySource::describe ----
+
+    #[test]
+    fn replay_source_describe_minimal() {
+        let source = ReplaySource {
+            path: PathBuf::from("/some/file.log"),
+            line: 42,
+            timestamp: None,
+            endpoint: None,
+        };
+        assert_eq!(source.describe(), "/some/file.log:42");
+    }
+
+    #[test]
+    fn replay_source_describe_with_endpoint() {
+        let source = ReplaySource {
+            path: PathBuf::from("/some/file.log"),
+            line: 42,
+            timestamp: None,
+            endpoint: Some("process_proposal".to_string()),
+        };
+        assert_eq!(source.describe(), "/some/file.log:42 process_proposal");
+    }
+
+    #[test]
+    fn replay_source_describe_with_timestamp() {
+        let source = ReplaySource {
+            path: PathBuf::from("/some/file.log"),
+            line: 42,
+            timestamp: Some("2024-01-01T00:00:00Z".to_string()),
+            endpoint: None,
+        };
+        assert_eq!(source.describe(), "/some/file.log:42 @2024-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn replay_source_describe_with_both() {
+        let source = ReplaySource {
+            path: PathBuf::from("/some/file.log"),
+            line: 42,
+            timestamp: Some("2024-01-01T00:00:00Z".to_string()),
+            endpoint: Some("finalize_block".to_string()),
+        };
+        assert_eq!(
+            source.describe(),
+            "/some/file.log:42 finalize_block @2024-01-01T00:00:00Z"
+        );
+    }
+
+    // ---- ReplayItem::from_log and describe ----
+
+    #[test]
+    fn replay_item_from_log_and_describe() {
+        let item = ReplayItem::from_log(
+            Path::new("/test/path.log"),
+            10,
+            Some("2024-01-01T00:00:00Z".to_string()),
+            Some("info".to_string()),
+            LoadedRequest::Info(RequestInfo::default()),
+        );
+        assert_eq!(
+            item.describe(),
+            "/test/path.log:10 info @2024-01-01T00:00:00Z"
+        );
+        assert_eq!(item.source.line(), 10);
+    }
+
+    // ---- ProgressReporter ----
+
+    #[test]
+    fn progress_reporter_format_rate_some() {
+        let formatted = ProgressReporter::format_rate(Some(12.345));
+        assert_eq!(formatted, "12.35 blk/min");
+    }
+
+    #[test]
+    fn progress_reporter_format_rate_none() {
+        let formatted = ProgressReporter::format_rate(None);
+        assert_eq!(formatted, "n/a");
+    }
+
+    #[test]
+    fn progress_reporter_format_eta_none() {
+        let formatted = ProgressReporter::format_eta(None);
+        assert_eq!(formatted, "n/a");
+    }
+
+    #[test]
+    fn progress_reporter_format_eta_zero() {
+        let formatted = ProgressReporter::format_eta(Some(Duration::from_secs(0)));
+        assert_eq!(formatted, "00s");
+    }
+
+    #[test]
+    fn progress_reporter_format_eta_seconds_only() {
+        let formatted = ProgressReporter::format_eta(Some(Duration::from_secs(45)));
+        assert_eq!(formatted, "45s");
+    }
+
+    #[test]
+    fn progress_reporter_format_eta_minutes_and_seconds() {
+        let formatted = ProgressReporter::format_eta(Some(Duration::from_secs(125)));
+        assert_eq!(formatted, "02m05s");
+    }
+
+    #[test]
+    fn progress_reporter_format_eta_hours() {
+        let formatted = ProgressReporter::format_eta(Some(Duration::from_secs(3723)));
+        assert_eq!(formatted, "01h02m03s");
+    }
+
+    #[test]
+    fn progress_reporter_short_hash_truncates() {
+        let hash = vec![0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xDE, 0xAD];
+        let short = ProgressReporter::short_hash(&hash);
+        assert_eq!(short.len(), 10);
+        assert_eq!(short, "abcdef0123");
+    }
+
+    #[test]
+    fn progress_reporter_short_hash_short_input() {
+        let hash = vec![0xAB, 0xCD];
+        let short = ProgressReporter::short_hash(&hash);
+        assert_eq!(short, "abcd");
+    }
+
+    #[test]
+    fn progress_reporter_eta_no_stop_height() {
+        let reporter = ProgressReporter::new(None);
+        assert_eq!(reporter.eta(Some(10.0), 50), None);
+    }
+
+    #[test]
+    fn progress_reporter_eta_already_reached() {
+        let reporter = ProgressReporter::new(Some(100));
+        assert_eq!(reporter.eta(Some(10.0), 100), Some(Duration::from_secs(0)));
+    }
+
+    #[test]
+    fn progress_reporter_eta_above_target() {
+        let reporter = ProgressReporter::new(Some(100));
+        assert_eq!(reporter.eta(Some(10.0), 200), Some(Duration::from_secs(0)));
+    }
+
+    #[test]
+    fn progress_reporter_eta_no_rate() {
+        let reporter = ProgressReporter::new(Some(100));
+        assert_eq!(reporter.eta(None, 50), None);
+    }
+
+    #[test]
+    fn progress_reporter_eta_zero_rate() {
+        let reporter = ProgressReporter::new(Some(100));
+        assert_eq!(reporter.eta(Some(0.0), 50), None);
+    }
+
+    #[test]
+    fn progress_reporter_eta_negative_rate() {
+        let reporter = ProgressReporter::new(Some(100));
+        assert_eq!(reporter.eta(Some(-5.0), 50), None);
+    }
+
+    #[test]
+    fn progress_reporter_eta_computes_remaining() {
+        let reporter = ProgressReporter::new(Some(100));
+        // 50 blocks remaining at 60 blocks/min = 50s
+        let eta = reporter.eta(Some(60.0), 50);
+        assert_eq!(eta, Some(Duration::from_secs(50)));
+    }
+
+    // ---- ensure_db_directory ----
+
+    #[test]
+    fn ensure_db_directory_creates_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let new_path = dir.path().join("subdir").join("nested");
+        let created = ensure_db_directory(&new_path).unwrap();
+        assert!(created);
+        assert!(new_path.is_dir());
+    }
+
+    #[test]
+    fn ensure_db_directory_existing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let created = ensure_db_directory(dir.path()).unwrap();
+        assert!(!created);
+    }
+
+    #[test]
+    fn ensure_db_directory_existing_file_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("not_a_dir");
+        fs::write(&file_path, "data").unwrap();
+        let result = ensure_db_directory(&file_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a directory"));
+    }
+
+    // ---- ProgressReporter rate_per_minute and trim_history ----
+
+    #[test]
+    fn progress_reporter_rate_per_minute_empty_history() {
+        let reporter = ProgressReporter::new(None);
+        let rate = reporter.rate_per_minute(Instant::now(), Duration::from_secs(60));
+        assert!(rate.is_none());
+    }
+}
