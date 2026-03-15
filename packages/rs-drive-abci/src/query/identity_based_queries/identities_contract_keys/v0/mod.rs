@@ -151,6 +151,75 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use drive::drive::Drive;
 
+    use crate::error::query::QueryError;
+    use drive::error::query::QuerySyntaxError;
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 8]], // invalid: 8 bytes
+            contract_id: vec![1; 32],
+            document_type_name: None,
+            purposes: vec![Purpose::AUTHENTICATION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("id must be a valid identifier (32 bytes long)")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_contract_id() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 32]],
+            contract_id: vec![1; 8], // invalid: 8 bytes
+            document_type_name: None,
+            purposes: vec![Purpose::AUTHENTICATION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier (32 bytes long)")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_purpose() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 32]],
+            contract_id: vec![1; 32],
+            document_type_name: None,
+            purposes: vec![200], // invalid purpose
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidKeyParameter(msg))] if msg.contains("purpose")
+        ));
+    }
+
     #[test]
     fn test_identities_contract_keys_missing_identity() {
         let (platform, state, platform_version) =
