@@ -1,6 +1,10 @@
 codecov:
   require_ci_to_pass: true
 
+flags:
+  rust:
+    carryforward: true
+
 ignore:
   - "**/test_utils.rs"
   - "**/test_utils/**"

@@ -331,12 +331,19 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_current_contests(
                 });
             }
 
+            let count = entries.len();
+            let entries_ptr = if entries.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                let boxed = entries.into_boxed_slice();
+                Box::into_raw(boxed) as *mut DashSDKNameTimestamp
+            };
+
             let list = Box::new(DashSDKNameTimestampList {
-                entries: entries.as_mut_ptr(),
-                count: entries.len(),
+                entries: entries_ptr,
+                count,
             });
 
-            std::mem::forget(entries); // Prevent deallocation
             Box::into_raw(list)
         }
         Err(_) => std::ptr::null_mut(),
@@ -511,16 +518,22 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                     });
                 }
 
+                let contender_count = contenders.len();
+                let contenders_ptr = if contenders.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let boxed = contenders.into_boxed_slice();
+                    Box::into_raw(boxed) as *mut DashSDKContender
+                };
+
                 let contest_info_c = DashSDKContestInfo {
-                    contenders: contenders.as_mut_ptr(),
-                    contender_count: contenders.len(),
+                    contenders: contenders_ptr,
+                    contender_count,
                     abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
                     lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
                     end_time: contest_info.end_time,
                     has_winner: contest_info.contenders.winner.is_some(),
                 };
-
-                std::mem::forget(contenders); // Prevent deallocation
 
                 names.push(DashSDKContestedName {
                     name: c_name,
@@ -528,12 +541,19 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_non_resolved_contests_for_identity(
                 });
             }
 
+            let names_count = names.len();
+            let names_ptr = if names.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                let boxed = names.into_boxed_slice();
+                Box::into_raw(boxed) as *mut DashSDKContestedName
+            };
+
             let list = Box::new(DashSDKContestedNamesList {
-                names: names.as_mut_ptr(),
-                count: names.len(),
+                names: names_ptr,
+                count: names_count,
             });
 
-            std::mem::forget(names); // Prevent deallocation
             Box::into_raw(list)
         }
         Err(_) => std::ptr::null_mut(),
@@ -597,16 +617,22 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                     });
                 }
 
+                let contender_count = contenders.len();
+                let contenders_ptr = if contenders.is_empty() {
+                    std::ptr::null_mut()
+                } else {
+                    let boxed = contenders.into_boxed_slice();
+                    Box::into_raw(boxed) as *mut DashSDKContender
+                };
+
                 let contest_info_c = DashSDKContestInfo {
-                    contenders: contenders.as_mut_ptr(),
-                    contender_count: contenders.len(),
+                    contenders: contenders_ptr,
+                    contender_count,
                     abstain_votes: contest_info.contenders.abstain_vote_tally.unwrap_or(0),
                     lock_votes: contest_info.contenders.lock_vote_tally.unwrap_or(0),
                     end_time: contest_info.end_time,
                     has_winner: contest_info.contenders.winner.is_some(),
                 };
-
-                std::mem::forget(contenders); // Prevent deallocation
 
                 names.push(DashSDKContestedName {
                     name: c_name,
@@ -614,12 +640,19 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_non_resolved_usernames(
                 });
             }
 
+            let names_count = names.len();
+            let names_ptr = if names.is_empty() {
+                std::ptr::null_mut()
+            } else {
+                let boxed = names.into_boxed_slice();
+                Box::into_raw(boxed) as *mut DashSDKContestedName
+            };
+
             let list = Box::new(DashSDKContestedNamesList {
-                names: names.as_mut_ptr(),
-                count: names.len(),
+                names: names_ptr,
+                count: names_count,
             });
 
-            std::mem::forget(names); // Prevent deallocation
             Box::into_raw(list)
         }
         Err(_) => std::ptr::null_mut(),
