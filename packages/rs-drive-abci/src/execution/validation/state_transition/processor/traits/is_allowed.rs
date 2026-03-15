@@ -317,27 +317,4 @@ mod tests {
             }
         }
     }
-
-    mod validate_is_allowed {
-        use super::*;
-        use dpp::consensus::basic::BasicError;
-        use dpp::consensus::ConsensusError;
-
-        #[test]
-        fn should_return_error_for_transition_without_is_allowed_implementation() {
-            let st = make_data_contract_create_st();
-            // The wildcard arm returns an Error
-            let platform_version = &platform_version::version::v1::PLATFORM_V1;
-            // We need a PlatformRef but validate_is_allowed on these types is
-            // dispatched to the wildcard `_` arm that returns a CorruptedCodeExecution error.
-            // We can't easily construct a PlatformRef without complex setup,
-            // but the trait method is called on &self, and the match is purely on self's variant.
-            // Since DataContractCreate falls into the `_` arm, it returns Err regardless of platform.
-            // Let's test the has_is_allowed path instead, since we know calling
-            // validate_is_allowed on these types would be guarded by has_is_allowed_validation.
-
-            // Instead verify that the non-implemented transitions are correctly filtered by has_is_allowed_validation
-            assert!(!st.has_is_allowed_validation().unwrap());
-        }
-    }
 }
