@@ -3,8 +3,6 @@ codecov:
 
 flags:
   rust:
-    carryforward: false
-  rust-shielded:
     carryforward: true
 
 ignore:
