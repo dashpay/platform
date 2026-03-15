@@ -151,7 +151,10 @@ mod tests {
         let response = info::<_, MockCoreRPCLike>(&app, request).expect("info should succeed");
 
         assert_eq!(response.last_block_height, 0);
-        assert!(!response.version.is_empty());
-        assert!(response.app_version > 0);
+        assert_eq!(response.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            response.app_version,
+            DESIRED_PLATFORM_VERSION.protocol_version as u64
+        );
     }
 }

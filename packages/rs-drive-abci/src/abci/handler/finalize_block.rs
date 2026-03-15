@@ -128,13 +128,12 @@ mod tests {
         };
 
         let result = finalize_block::<_, MockCoreRPCLike>(&app, request);
-        assert!(result.is_err());
-        let err_string = result.unwrap_err().to_string();
         assert!(
-            err_string.contains("not in transaction")
-                || err_string.contains("trying to finalize block without"),
-            "Expected 'not in transaction' error, got: {}",
-            err_string
+            matches!(
+                result,
+                Err(Error::Execution(ExecutionError::NotInTransaction(_)))
+            ),
+            "Expected NotInTransaction error, got: {result:?}"
         );
     }
 
@@ -157,12 +156,12 @@ mod tests {
         };
 
         let result = finalize_block::<_, MockCoreRPCLike>(&app, request);
-        assert!(result.is_err());
-        let err_string = result.unwrap_err().to_string();
         assert!(
-            err_string.contains("block execution context must be set"),
-            "Expected 'block execution context must be set' error, got: {}",
-            err_string
+            matches!(
+                result,
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ),
+            "Expected CorruptedCodeExecution error, got: {result:?}"
         );
     }
 }

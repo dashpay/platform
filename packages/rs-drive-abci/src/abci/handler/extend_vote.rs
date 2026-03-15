@@ -186,6 +186,12 @@ mod tests {
 
         let result = extend_vote::<_, MockCoreRPCLike>(&app, request);
         assert!(result.is_err());
+        let err_string = result.unwrap_err().to_string();
+        assert!(
+            err_string.contains("request does not match current block"),
+            "Expected wrong block error, got: {}",
+            err_string
+        );
     }
 
     #[test]
