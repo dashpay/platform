@@ -183,3 +183,265 @@ impl StateTransitionHasIdentityNonceValidationV0 for StateTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_data_contract_create_st() -> StateTransition {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let transition: dpp::state_transition::data_contract_create_transition::DataContractCreateTransition =
+            created_data_contract.try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    fn make_data_contract_update_st() -> StateTransition {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let data_contract = created_data_contract.data_contract().clone();
+        let transition: dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition =
+            (data_contract, 2u64).try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+
+    mod has_identity_nonce_validation {
+        use super::*;
+
+        #[test]
+        fn version_0_should_include_core_transitions_only() {
+            // Version 0 includes: Batch, DataContractCreate, DataContractUpdate,
+            // IdentityUpdate, IdentityCreditTransfer, IdentityCreditWithdrawal
+            let platform_version = &platform_version::version::v1::PLATFORM_V1;
+
+            let with_nonce: Vec<(&str, StateTransition)> = vec![
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                ("DataContractCreate", make_data_contract_create_st()),
+                ("DataContractUpdate", make_data_contract_update_st()),
+                (
+                    "IdentityUpdate",
+                    StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                        IdentityUpdateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransfer",
+                    StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                        IdentityCreditTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditWithdrawal",
+                    StateTransition::IdentityCreditWithdrawal(
+                        IdentityCreditWithdrawalTransition::V0(
+                            IdentityCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+            ];
+            for (name, st) in with_nonce {
+                assert!(
+                    st.has_identity_nonce_validation(platform_version).unwrap(),
+                    "expected has_identity_nonce_validation=true for {} on version 0",
+                    name
+                );
+            }
+
+            let without_nonce: Vec<(&str, StateTransition)> = vec![
+                (
+                    "MasternodeVote",
+                    StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                        MasternodeVoteTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityTopUp",
+                    StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+                        IdentityTopUpTransitionV0::default(),
+                    )),
+                ),
+            ];
+            for (name, st) in without_nonce {
+                assert!(
+                    !st.has_identity_nonce_validation(platform_version).unwrap(),
+                    "expected has_identity_nonce_validation=false for {} on version 0",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn version_1_should_also_include_masternode_vote_and_credit_transfer_to_addresses() {
+            // Version 1 (used from platform v8 onward) adds MasternodeVote and
+            // IdentityCreditTransferToAddresses
+            let platform_version = &platform_version::version::v8::PLATFORM_V8;
+
+            let with_nonce: Vec<(&str, StateTransition)> = vec![
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                ("DataContractCreate", make_data_contract_create_st()),
+                ("DataContractUpdate", make_data_contract_update_st()),
+                (
+                    "IdentityUpdate",
+                    StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                        IdentityUpdateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransfer",
+                    StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                        IdentityCreditTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditWithdrawal",
+                    StateTransition::IdentityCreditWithdrawal(
+                        IdentityCreditWithdrawalTransition::V0(
+                            IdentityCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "MasternodeVote",
+                    StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                        MasternodeVoteTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransferToAddresses",
+                    StateTransition::IdentityCreditTransferToAddresses(
+                        IdentityCreditTransferToAddressesTransition::V0(
+                            IdentityCreditTransferToAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+            ];
+            for (name, st) in with_nonce {
+                assert!(
+                    st.has_identity_nonce_validation(platform_version).unwrap(),
+                    "expected has_identity_nonce_validation=true for {} on version 1",
+                    name
+                );
+            }
+
+            let without_nonce: Vec<(&str, StateTransition)> = vec![
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityTopUp",
+                    StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+                        IdentityTopUpTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreateFromAddresses",
+                    StateTransition::IdentityCreateFromAddresses(
+                        IdentityCreateFromAddressesTransition::V0(
+                            IdentityCreateFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityTopUpFromAddresses",
+                    StateTransition::IdentityTopUpFromAddresses(
+                        IdentityTopUpFromAddressesTransition::V0(
+                            IdentityTopUpFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "AddressFundsTransfer",
+                    StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                        AddressFundsTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "AddressFundingFromAssetLock",
+                    StateTransition::AddressFundingFromAssetLock(
+                        AddressFundingFromAssetLockTransition::V0(
+                            AddressFundingFromAssetLockTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "AddressCreditWithdrawal",
+                    StateTransition::AddressCreditWithdrawal(
+                        AddressCreditWithdrawalTransition::V0(
+                            AddressCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+            ];
+            for (name, st) in without_nonce {
+                assert!(
+                    !st.has_identity_nonce_validation(platform_version).unwrap(),
+                    "expected has_identity_nonce_validation=false for {} on version 1",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_error_for_unknown_version() {
+            // Create a platform version with an invalid has_nonce_validation version
+            let mut platform_version = platform_version::version::v1::PLATFORM_V1.clone();
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .has_nonce_validation = 99;
+            let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
+            let result = st.has_identity_nonce_validation(&platform_version);
+            assert!(result.is_err());
+        }
+    }
+}

@@ -428,3 +428,129 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_data_contract_create_st() -> StateTransition {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let transition: dpp::state_transition::data_contract_create_transition::DataContractCreateTransition =
+            created_data_contract.try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    fn make_data_contract_update_st() -> StateTransition {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let data_contract = created_data_contract.data_contract().clone();
+        let transition: dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition =
+            (data_contract, 2u64).try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+
+    mod has_basic_structure_validation {
+        use super::*;
+
+        #[test]
+        fn should_return_true_for_always_validated_transitions() {
+            let platform_version = &platform_version::version::v1::PLATFORM_V1;
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityTopUp",
+                    StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+                        IdentityTopUpTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditWithdrawal",
+                    StateTransition::IdentityCreditWithdrawal(
+                        IdentityCreditWithdrawalTransition::V0(
+                            IdentityCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityUpdate",
+                    StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                        IdentityUpdateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransfer",
+                    StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                        IdentityCreditTransferTransitionV0::default(),
+                    )),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    st.has_basic_structure_validation(platform_version),
+                    "expected true for {}",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_false_for_masternode_vote() {
+            let platform_version = &platform_version::version::v1::PLATFORM_V1;
+            let st = StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                MasternodeVoteTransitionV0::default(),
+            ));
+            assert!(!st.has_basic_structure_validation(platform_version));
+        }
+
+        #[test]
+        fn data_contract_create_depends_on_platform_version() {
+            // V1 does not have basic_structure for data contract create (it's None)
+            let platform_v1 = &platform_version::version::v1::PLATFORM_V1;
+            let st = make_data_contract_create_st();
+            // The result depends on whether basic_structure is Some or None
+            let _has_validation = st.has_basic_structure_validation(platform_v1);
+            // Just verify it doesn't panic -- the exact value depends on version config
+        }
+
+        #[test]
+        fn data_contract_update_depends_on_platform_version() {
+            let platform_v1 = &platform_version::version::v1::PLATFORM_V1;
+            let st = make_data_contract_update_st();
+            let _has_validation = st.has_basic_structure_validation(platform_v1);
+            // Just verify it doesn't panic
+        }
+    }
+}
