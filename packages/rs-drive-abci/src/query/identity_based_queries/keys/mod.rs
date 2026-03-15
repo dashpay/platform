@@ -55,3 +55,55 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
+    use dapi_grpc::platform::v0::key_request_type::Request;
+    use dapi_grpc::platform::v0::{AllKeys, KeyRequestType};
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_keys_with_none_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityKeysRequest { version: None };
+
+        let result = platform
+            .query_keys(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode identity keys query")
+        ));
+    }
+
+    #[test]
+    fn test_query_keys_with_valid_v0_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityKeysRequest {
+            version: Some(RequestVersion::V0(GetIdentityKeysRequestV0 {
+                identity_id: vec![0; 32],
+                request_type: Some(KeyRequestType {
+                    request: Some(Request::AllKeys(AllKeys {})),
+                }),
+                limit: None,
+                offset: None,
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_keys(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.is_valid());
+
+        let response = result.data.expect("expected response data");
+        assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
+    }
+}
