@@ -72,3 +72,81 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::execution::types::block_state_info::BlockStateInfo;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use std::collections::BTreeMap;
+
+    fn make_block_execution_context(block_platform_state: PlatformState) -> BlockExecutionContext {
+        BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height: 1,
+                round: 0,
+                block_time_ms: 1_000_000,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash: None,
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: BTreeMap::new(),
+            block_platform_state,
+            proposer_results: None,
+        })
+    }
+
+    #[test]
+    fn test_dispatcher_unknown_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut modified_version = platform_version.clone();
+        modified_version
+            .drive_abci
+            .methods
+            .block_end
+            .validator_set_update = 255;
+
+        let platform_state = platform.state.load();
+        let block_platform_state = platform_state.as_ref().clone();
+
+        let mut block_execution_context = make_block_execution_context(block_platform_state);
+
+        let result = platform.validator_set_update(
+            [0u8; 32],
+            &platform_state,
+            &mut block_execution_context,
+            &modified_version,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            })) => {
+                assert_eq!(method, "validator_set_update");
+                assert_eq!(known_versions, vec![0, 1, 2]);
+                assert_eq!(received, 255);
+            }
+            _ => panic!("expected UnknownVersionMismatch error"),
+        }
+    }
+}
