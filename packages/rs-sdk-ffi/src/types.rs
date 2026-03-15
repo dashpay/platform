@@ -1165,3 +1165,112 @@ pub unsafe extern "C" fn dash_sdk_name_timestamp_list_free(list: *mut DashSDKNam
         let _ = Vec::from_raw_parts(list.entries, list.count, list.count);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Proves that `DashSDKResult::success_binary` discards Vec capacity,
+    /// which causes `dash_sdk_binary_data_free` to reconstruct the Vec with
+    /// `len` used as `capacity`. When the original Vec had capacity > len,
+    /// the free function passes the wrong size to the allocator -- this is
+    /// undefined behavior per the `GlobalAlloc::dealloc` contract.
+    ///
+    /// This test does NOT invoke the buggy free path (doing so would be
+    /// actual UB). Instead it demonstrates that the capacity information is
+    /// irrecoverably lost during the `success_binary` roundtrip.
+    #[test]
+    fn test_success_binary_loses_vec_capacity() {
+        // 1. Create a Vec with more capacity than length.
+        let mut vec: Vec<u8> = Vec::with_capacity(100);
+        vec.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+
+        let original_len = vec.len(); // 10
+        let original_capacity = vec.capacity(); // >= 100
+
+        assert_eq!(original_len, 10);
+        assert!(
+            original_capacity >= 100,
+            "Vec::with_capacity(100) should have capacity >= 100, got {}",
+            original_capacity
+        );
+        assert!(
+            original_capacity > original_len,
+            "capacity ({}) must be greater than len ({}) for this test to be meaningful",
+            original_capacity,
+            original_len
+        );
+
+        // 2. Pass through success_binary -- this calls `data.as_ptr()`,
+        //    captures `data.len()`, then `mem::forget(data)`.
+        //    The capacity is never stored anywhere.
+        let result = DashSDKResult::success_binary(vec);
+
+        // 3. The result should contain binary data.
+        assert_eq!(result.data_type, DashSDKResultDataType::BinaryData);
+        assert!(!result.data.is_null());
+
+        // 4. Extract the DashSDKBinaryData to inspect what was stored.
+        let binary_data = unsafe { &*(result.data as *const DashSDKBinaryData) };
+
+        // 5. Prove the mismatch: DashSDKBinaryData only has `len`, which
+        //    equals the original Vec's length -- NOT its capacity.
+        assert_eq!(
+            binary_data.len, original_len,
+            "DashSDKBinaryData.len should equal the original Vec length"
+        );
+
+        // 6. The struct has no capacity field. If dash_sdk_binary_data_free
+        //    were called, it would do:
+        //
+        //      Vec::from_raw_parts(data.data, data.len, data.len)
+        //                                              ^^^^^^^^
+        //                                       capacity = len = 10
+        //
+        //    But the actual allocation was for capacity >= 100. The allocator
+        //    would be asked to deallocate 10 bytes from an allocation that
+        //    was originally 100+ bytes -- undefined behavior.
+        assert!(
+            binary_data.len < original_capacity,
+            "BUG CONFIRMED: DashSDKBinaryData.len ({}) < original capacity ({}). \
+             The free function will reconstruct Vec with capacity={} but the \
+             allocator originally allocated {} bytes. This is UB on dealloc.",
+            binary_data.len,
+            original_capacity,
+            binary_data.len,
+            original_capacity
+        );
+
+        // 7. Clean up safely: we reconstruct the Vec with the CORRECT
+        //    capacity to avoid triggering the very UB we are proving exists.
+        //    This is the key insight -- only we (the test) know the true
+        //    capacity. The FFI consumer would not.
+        unsafe {
+            let binary_data = Box::from_raw(result.data as *mut DashSDKBinaryData);
+            let _ = Vec::from_raw_parts(binary_data.data, binary_data.len, original_capacity);
+        }
+    }
+
+    /// Proves that DashSDKBinaryData has no capacity field, making it
+    /// structurally impossible to perform a correct deallocation when
+    /// the original Vec's capacity differs from its length.
+    #[test]
+    fn test_binary_data_struct_has_no_capacity_field() {
+        // DashSDKBinaryData is repr(C) with two fields: *mut u8 and usize.
+        // On a 64-bit platform, that is exactly 16 bytes (8 + 8).
+        // A correct representation would need a third field for capacity,
+        // making it 24 bytes.
+        let struct_size = std::mem::size_of::<DashSDKBinaryData>();
+
+        // Two pointer-sized fields: data pointer + len
+        let expected_size = std::mem::size_of::<*mut u8>() + std::mem::size_of::<usize>();
+
+        assert_eq!(
+            struct_size, expected_size,
+            "DashSDKBinaryData is {} bytes (only ptr + len). \
+             It would need {} more bytes for a capacity field.",
+            struct_size,
+            std::mem::size_of::<usize>()
+        );
+    }
+}
