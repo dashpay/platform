@@ -508,6 +508,216 @@ mod tests {
     }
 
     // ==========================================
+    // STATE VALIDATION TESTS (post-ZK-proof)
+    // ==========================================
+    //
+    // These tests use valid Orchard ZK proofs but set up wrong state
+    // conditions to exercise error branches that are only reachable after
+    // proof verification passes in the processing pipeline.
+
+    mod state_validation_with_valid_proof {
+        use super::*;
+        use grovedb_commitment_tree::{
+            Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
+            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
+            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::sync::OnceLock;
+
+        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
+        fn get_proving_key() -> &'static ProvingKey {
+            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
+        }
+
+        fn serialize_authorized_bundle(
+            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let actions: Vec<SerializedAction> = bundle
+                .actions()
+                .iter()
+                .map(|action| {
+                    let enc = action.encrypted_note();
+                    let mut encrypted_note = Vec::with_capacity(216);
+                    encrypted_note.extend_from_slice(&enc.epk_bytes);
+                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
+                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
+                    SerializedAction {
+                        nullifier: action.nullifier().to_bytes(),
+                        rk: <[u8; 32]>::from(action.rk()),
+                        cmx: action.cmx().to_bytes(),
+                        encrypted_note,
+                        cv_net: action.cv_net().to_bytes(),
+                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
+                    }
+                })
+                .collect();
+            let value_balance = *bundle.value_balance();
+            let anchor = bundle.anchor().to_bytes();
+            let proof = bundle.authorization().proof().as_ref().to_vec();
+            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
+            (actions, value_balance, anchor, proof, binding_sig)
+        }
+
+        fn build_valid_unshield_bundle(
+            output_address: &PlatformAddress,
+            unshielding_amount: u64,
+        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let mut extra_sighash_data = output_address.to_bytes();
+            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            serialize_authorized_bundle(&bundle)
+        }
+
+        /// Test that insufficient pool balance is caught AFTER ZK proof passes.
+        /// This exercises the `current_total_balance < amount` branch.
+        #[test]
+        fn test_insufficient_pool_balance_with_valid_proof() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+
+            let output_address = create_output_address();
+            let unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_unshield_bundle(&output_address, unshielding_amount);
+            assert_eq!(value_balance, 499_995_000);
+
+            // Insert anchor but set pool balance too low for the unshield amount
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 100); // Way too low
+
+            let transition = create_unshield_transition(
+                output_address,
+                actions,
+                value_balance as u64,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// Test that a missing anchor is caught after ZK proof passes.
+        #[test]
+        fn test_missing_anchor_with_valid_proof() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+
+            let output_address = create_output_address();
+            let unshielding_amount = 499_995_000u64;
+            let (actions, _value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_unshield_bundle(&output_address, unshielding_amount);
+
+            // Set sufficient pool balance but do NOT insert the anchor
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let transition = create_unshield_transition(
+                output_address,
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidAnchorError(_))
+                )]
+            );
+        }
+
+        /// Test that a spent nullifier is caught after ZK proof passes.
+        #[test]
+        fn test_spent_nullifier_with_valid_proof() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+
+            let output_address = create_output_address();
+            let unshielding_amount = 499_995_000u64;
+            let (actions, _value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_unshield_bundle(&output_address, unshielding_amount);
+
+            // Set up all valid state conditions
+            set_pool_total_balance(&platform, 500_000_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            // Mark a nullifier from the bundle as already spent
+            let nullifier = actions[0].nullifier;
+            insert_nullifier_into_state(&platform, &nullifier);
+
+            let transition = create_unshield_transition(
+                output_address,
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
     // SECURITY AUDIT TESTS
     // ==========================================
 
