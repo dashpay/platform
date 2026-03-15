@@ -1,7 +1,7 @@
-: <!-- markdownlint-disable MD033 MD041 -->
+<!-- markdownlint-disable MD033 MD041 -->
 <p align="center">
   <a href="https://dashplatform.readme.io/docs/introduction-what-is-dash-platform/">
-    <img alt="babel" src="https://media.dash.org/wp-content/uploads/dash_digital-cash_logo_2018_rgb_for_screens.png" width="546">
+    <img alt="Dash" src="https://media.dash.org/wp-content/uploads/dash_digital-cash_logo_2018_rgb_for_screens.png" width="546">
   </a>
 </p>
 
@@ -16,11 +16,6 @@
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
 
-Dash Platform is a technology stack for building decentralized applications on
-the Dash network. The two main architectural components, Drive and DAPI, turn
-the Dash P2P network into a cloud that developers can integrate with their
-applications.
-
 <details>
 <summary>Per-Crate Coverage</summary>
 
@@ -30,99 +25,137 @@ applications.
 | drive | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive)](https://codecov.io/gh/dashpay/platform/component/drive) |
 | drive-abci | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-abci)](https://codecov.io/gh/dashpay/platform/component/drive-abci) |
 | sdk | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=sdk)](https://codecov.io/gh/dashpay/platform/component/sdk) |
-| dapi-client | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=dapi-client)](https://codecov.io/gh/dashpay/platform/component/dapi-client) |
-| platform-version | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-version)](https://codecov.io/gh/dashpay/platform/component/platform-version) |
-| platform-value | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-value)](https://codecov.io/gh/dashpay/platform/component/platform-value) |
-| platform-wallet | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=platform-wallet)](https://codecov.io/gh/dashpay/platform/component/platform-wallet) |
-| drive-proof-verifier | [![codecov](https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg?component=drive-proof-verifier)](https://codecov.io/gh/dashpay/platform/component/drive-proof-verifier) |
 
 </details>
 
-If you are looking for how to contribute to the project or need any help with
-building an app on the Dash Platform - message us on the [Dash
-Discord](https://discordapp.com/invite/PXbUxJB)!
+For in-depth architecture, internals, and developer documentation, see
+[The Dash Platform Book](./book/).
 
-## Intro
+## What is Dash Platform
 
-This is a multi-package repository - sometimes also known as monorepository -
-that contains all packages that comprise the Dash platform - for example, Drive,
-which is the storage component of Dash Platform, the JavaScript SDK, wallet-lib,
-DAPI, and others. Every individual package contains its own readme. Packages are
-located in the [packages](./packages) directory.
+Dash Platform is a decentralized data storage and application layer built on top
+of the Dash payment network. It lets developers store, query, and
+cryptographically verify structured data on the Dash masternode network without
+deploying or executing user-written code on-chain.
 
-### Supported networks
+The central problem Dash Platform solves is: how do you let a light client --
+a mobile wallet, a browser app, a third-party service -- query decentralized
+state and **know** the answer is correct, without running a full node and
+without trusting the node that served the response?
 
-Dash Platform is currently undergoing testing and final development necessary to
-support its release on the Dash production network (mainnet). The packages in
-this repository may be used on the following networks:
+Platform's answer combines three pieces. First,
+[Tenderdash](https://github.com/dashpay/tenderdash) runs Stochastic Byzantine
+Fault Tolerant (SBFT) consensus across a rotating quorum of masternodes. Unlike
+classical BFT where every validator signs every block, Tenderdash selects a
+deterministic quorum for each block and recovers a single BLS threshold
+signature from that quorum. One compact signature attests to the entire
+committed state. Second,
+[GroveDB](https://github.com/dashpay/grovedb) stores all platform state in an
+authenticated tree structure (a hierarchy of Merkle trees). Every piece of
+data -- a document, an identity balance, a token supply -- has a Merkle path
+from itself up to a single root hash. Third, **Drive** (this repository's core
+component) ties these together: it commits the GroveDB root hash into
+Tenderdash blocks. The threshold signature on a block therefore signs the state
+root, and the state root cryptographically commits to every individual piece of
+data in the system.
 
-- [x] **Development networks** ([**devnets**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#devnet))
-- [x] [**Testnet**](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#testnet)
-- [x] [Mainnet](https://docs.dash.org/projects/platform/en/stable/docs/reference/glossary.html#mainnet)
+The result is that to verify any single query result, a client needs only three
+things: the data itself, its Merkle proof against the state root, and the
+threshold signature on that root. No full node, no chain of block headers, no
+trust in the serving node. This is what makes Platform distinct from other
+decentralized data systems: the combination of authenticated storage, BFT
+consensus with threshold signatures, and proof-serving APIs gives light clients
+the same security guarantees as full nodes.
 
-## FAQ
+### How it differs from smart contract platforms
 
-### How to build and set up a node from the code in this repo?
+Dash Platform is not a smart contract platform. There is no virtual machine, no
+gas metering for code execution, and no user-deployed programs running on-chain.
+Instead, developers define **data contracts** -- JSON Schema-based specifications
+that describe the structure and validation rules for their application data. The
+network stores, indexes, and enforces these schemas directly. Applications
+interact with the platform through structured data reads and writes (called
+**state transitions**) rather than arbitrary code execution. This eliminates
+entire classes of smart contract vulnerabilities (reentrancy, unchecked external
+calls, gas manipulation) and makes the system deterministic and predictable.
 
-- Clone the repo
-- Install prerequisites:
-  - [node.js](https://nodejs.org/) v20
-  - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.92+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
-  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v32.0+
-    - if needed, set PROTOC environment variable to location of `protoc` binary
-  - [wasm-bindgen toolchain](https://rustwasm.github.io/wasm-bindgen/):
-    - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
-      - `brew install llvm`
-      - LLVM installed from brew is keg only, and path to it must be provided in the profile file,
-        in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
-        You can find your default shell with `echo $SHELL`
-      - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
-    - `cargo install wasm-bindgen-cli@0.2.103`
-      - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
-      - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
-  - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
-  - wasm-pack: `curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
-- Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
-- Run `yarn setup` to install dependencies and configure and build all packages
-- Run `yarn start` to start the local dev environment built from the sources
-- Run `yarn test` to run the whole test suite (note that running tests requires a running node,
- so be sure to call `yarn start` first). Alternatively, you can run tests for a specific
- package by running `yarn workspace <package_name> test`, for example running
- `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see
- all available packages, please see the [packages readme](./packages/README.md)
-- `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
- so it is best to stop the local node when not in use
-- Run `yarn build` to rebuild the project after changes. If you have a local node
- running, you may need to restart it by running `yarn restart`
-- To completely reset all local data and builds, run `yarn reset`
+### Key capabilities
 
-### Looking for support?
+**Identities and naming.** Users register identities on-chain -- first-class
+protocol objects with hierarchical key management, not just addresses. Identities
+can hold multiple authentication and encryption keys with different security
+levels and purposes. The Dash Platform Naming Service (DPNS) maps human-readable
+usernames to identities, resolved directly by the network.
 
-For questions and support, please join our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
+**Credits and fees.** Users convert Dash into credits that pay for storage and
+state transitions. Fees are deterministic and based on the actual storage and
+processing cost of each operation. The platform supports transparent fee payment
+from Dash addresses as well as private fee payment through a shielded pool using
+Orchard-based zero-knowledge proofs (Halo2).
 
-### Where are the docs?
+**Tokens.** The platform supports user-created tokens with protocol-enforced
+rules for minting, burning, transferring, and freezing. Token behavior is
+configured declaratively through data contract definitions. Pre-programmed
+distributions, group-based minting authority, and manual/managed supply models
+are all native protocol features rather than user-written contract logic.
 
-Our docs are hosted on
-[docs.dash.org](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html).
-You can create issues and feature requests in the
-[issues](https://github.com/dashpay/platform/issues) for this repository.
+**Decentralized API.** Clients interact with the network through DAPI, a gRPC
+interface served by every masternode. There is no central API server, gateway, or
+RPC provider. Any masternode can serve any request, and every response can carry
+a proof. DAPI provides endpoints for querying documents, broadcasting state
+transitions, and verifying proofs.
 
-### Want to report a bug or request a feature?
+For a detailed treatment of each of these areas, see
+[The Dash Platform Book](./book/).
 
-Please read through our [CONTRIBUTING.md](CONTRIBUTING.md) and fill out the
-issue template at [platform/issues](https://github.com/dashpay/platform/issues)!
+## Foundation libraries
 
-### Want to contribute to Dash Platform?
+Dash Platform builds on several standalone libraries developed by the Dash
+project:
 
-Check out:
+- [Tenderdash](https://github.com/dashpay/tenderdash) -- SBFT consensus engine
+  (Go), a fork of Tendermint redesigned for Dash's masternode quorum model
+- [rs-tenderdash-abci](https://github.com/dashpay/rs-tenderdash-abci) -- Rust
+  ABCI interface for connecting Drive to Tenderdash
+- [GroveDB](https://github.com/dashpay/grovedb) -- authenticated key-value
+  store built on hierarchical Merkle trees, providing proof generation for
+  arbitrary queries
+- [rust-dashcore](https://github.com/dashpay/rust-dashcore) -- Rust
+  implementation of Dash Core primitives (transactions, blocks, BLS keys,
+  addresses)
 
-- Our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
-- Our [CONTRIBUTING.md](CONTRIBUTING.md) to get started with setting up the
-  repo.
-- Our concise contributor guide: [AGENTS.md](AGENTS.md) (repo structure, commands, style, tests).
-- Our [news](https://www.dash.org/news/) and [blog](https://www.dash.org/blog/) which contains release posts and
-  explanations.
+## Repository structure
+
+This is a monorepo containing all packages that comprise Dash Platform. Packages
+are located in the [packages](./packages) directory. Key packages include:
+
+- **rs-drive** / **rs-drive-abci** -- Drive storage engine and ABCI application
+- **rs-dpp** -- Dash Platform Protocol (data contracts, documents, state
+  transitions, identities)
+- **rs-sdk** -- Rust SDK for building applications on Dash Platform
+- **wasm-sdk** / **wasm-dpp2** -- WebAssembly bindings for browser-based
+  applications
+- **rs-sdk-ffi** / **swift-sdk** -- FFI layer and iOS/Swift SDK
+- **js-dash-sdk** / **js-evo-sdk** -- JavaScript SDKs
+- **dashmate** -- Node management and local development tool
+- **dapi** / **rs-dapi** -- Decentralized API server implementations
+
+## Getting started
+
+For installation, local development setup, and node operation, see the
+[Getting Started](https://docs.dash.org/projects/platform/en/stable/docs/intro/what-is-dash-platform.html)
+guide.
+
+## Contributing
+
+- Join the [Dash Discord](https://discordapp.com/invite/PXbUxJB) for questions
+  and discussion
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues
+  and pull requests
+- See [AGENTS.md](AGENTS.md) for a concise contributor guide covering repo
+  structure, commands, style, and tests
+- File issues and feature requests at
+  [platform/issues](https://github.com/dashpay/platform/issues)
 
 ## License
 
