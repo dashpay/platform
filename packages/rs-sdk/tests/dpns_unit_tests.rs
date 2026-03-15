@@ -4,35 +4,29 @@ use dash_sdk::platform::dpns_usernames::{
 
 #[test]
 fn test_dpns_validation_functions() {
-    println!("Testing DPNS validation functions with values from docs...\n");
-
     // Test username validation
-    println!("1. Testing is_valid_username:");
     let test_names = vec![
-        "alice",
-        "test",
-        "dash",
-        "a",
-        "ab",
-        "123",
-        "test-name",
-        "test--name",
-        "-test",
-        "test-",
+        ("alice", true),
+        ("test", true),
+        ("dash", true),
+        ("a", false),
+        ("ab", false),
+        ("123", true),
+        ("test-name", true),
+        ("test--name", false),
+        ("-test", false),
+        ("test-", false),
     ];
 
-    for name in test_names {
-        let is_valid = is_valid_username(name);
-        println!(
-            "   '{}' is {}",
-            name,
-            if is_valid { "✅ VALID" } else { "❌ INVALID" }
+    for (name, expected_valid) in test_names {
+        assert_eq!(
+            is_valid_username(name),
+            expected_valid,
+            "is_valid_username({name}) should be {expected_valid}"
         );
     }
-    println!();
 
     // Test homograph conversion
-    println!("2. Testing convert_to_homograph_safe_chars:");
     let test_conversions = vec![
         ("alice", "a11ce"),
         ("bob", "b0b"),
@@ -44,21 +38,13 @@ fn test_dpns_validation_functions() {
 
     for (input, expected) in test_conversions {
         let result = convert_to_homograph_safe_chars(input);
-        let matches = result == expected;
-        println!(
-            "   '{}' → '{}' {}",
-            input,
-            result,
-            if matches { "✅" } else { "❌ (expected: {})" }
+        assert_eq!(
+            result, expected,
+            "convert_to_homograph_safe_chars({input}) should be {expected}"
         );
-        if !matches {
-            println!("      Expected: {}", expected);
-        }
     }
-    println!();
 
     // Test contested username check
-    println!("3. Testing is_contested_username:");
     let test_contested = vec![
         ("abc", true),                   // 3 chars
         ("test", true),                  // 4 chars
@@ -72,55 +58,28 @@ fn test_dpns_validation_functions() {
     ];
 
     for (name, expected) in test_contested {
-        let result = is_contested_username(name);
-        let matches = result == expected;
-        println!(
-            "   '{}' is {} contested {}",
+        assert_eq!(
+            is_contested_username(name),
+            expected,
+            "is_contested_username({}) should be {}",
             name,
-            if result { "🔥" } else { "📝" },
-            if matches { "✅" } else { "❌" }
+            expected
         );
     }
 }
 
 #[test]
 fn test_dpns_edge_cases() {
-    println!("\nTesting DPNS edge cases...\n");
-
     // Test minimum and maximum length usernames
     let min_name = "abc";
     let max_name = "a".repeat(63);
     let too_long = "a".repeat(64);
 
-    println!("Length tests:");
-    println!(
-        "   3 chars '{}': {}",
-        min_name,
-        if is_valid_username(min_name) {
-            "✅ VALID"
-        } else {
-            "❌ INVALID"
-        }
-    );
-    println!(
-        "   63 chars: {}",
-        if is_valid_username(&max_name) {
-            "✅ VALID"
-        } else {
-            "❌ INVALID"
-        }
-    );
-    println!(
-        "   64 chars: {}",
-        if is_valid_username(&too_long) {
-            "✅ VALID (should be invalid!)"
-        } else {
-            "❌ INVALID (correct)"
-        }
-    );
+    assert!(is_valid_username(min_name));
+    assert!(is_valid_username(&max_name));
+    assert!(!is_valid_username(&too_long));
 
     // Test special characters
-    println!("\nSpecial character tests:");
     let special_tests = vec![
         "test_name",  // underscore
         "test.name",  // dot
@@ -135,19 +94,13 @@ fn test_dpns_edge_cases() {
     ];
 
     for name in special_tests {
-        println!(
-            "   '{}': {}",
-            name,
-            if is_valid_username(name) {
-                "✅ VALID"
-            } else {
-                "❌ INVALID"
-            }
+        assert!(
+            !is_valid_username(name),
+            "special-character username should be invalid: {name}"
         );
     }
 
     // Test Unicode/international characters
-    println!("\nUnicode character tests:");
     let unicode_tests = vec![
         "café",     // French
         "münchen",  // German
@@ -157,22 +110,15 @@ fn test_dpns_edge_cases() {
     ];
 
     for name in unicode_tests {
-        println!(
-            "   '{}': {}",
-            name,
-            if is_valid_username(name) {
-                "✅ VALID"
-            } else {
-                "❌ INVALID"
-            }
+        assert!(
+            !is_valid_username(name),
+            "unicode username should be invalid: {name}"
         );
     }
 }
 
 #[test]
 fn test_dpns_homograph_safety() {
-    println!("\nTesting DPNS homograph safety conversions...\n");
-
     // Test various homograph attacks
     let homograph_tests = vec![
         ("paypal", "paypa1"),       // lowercase L to 1
@@ -189,27 +135,18 @@ fn test_dpns_homograph_safety() {
 
     for (input, expected) in homograph_tests {
         let result = convert_to_homograph_safe_chars(input);
-        println!("   '{}' → '{}' (expected: {})", input, result, expected);
+        assert_eq!(
+            result, expected,
+            "convert_to_homograph_safe_chars({input}) should be {expected}"
+        );
     }
 
     // Test that the conversion is idempotent
-    println!("\nIdempotency test (converting twice should give same result):");
     let test_names = vec!["alice", "bob", "cool", "test"];
 
     for name in test_names {
         let once = convert_to_homograph_safe_chars(name);
         let twice = convert_to_homograph_safe_chars(&once);
-        let matches = once == twice;
-        println!(
-            "   '{}' → '{}' → '{}' {}",
-            name,
-            once,
-            twice,
-            if matches {
-                "✅ Idempotent"
-            } else {
-                "❌ Not idempotent!"
-            }
-        );
+        assert_eq!(once, twice, "conversion should be idempotent for '{name}'");
     }
 }
