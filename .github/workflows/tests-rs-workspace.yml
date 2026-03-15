@@ -163,21 +163,20 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
-      - name: Reset GPG state (fix stale keyboxd locks on self-hosted runners)
-        if: always()
-        run: |
-          gpgconf --kill all 2>/dev/null || true
-          rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
-          rm -rf ~/.gnupg/.#* 2>/dev/null || true
-
       - name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-          flags: rust-mac
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+        run: |
+          curl -Os https://cli.codecov.io/latest/macos/codecov
+          chmod +x codecov
+          ./codecov do-upload \
+            --token "$CODECOV_TOKEN" \
+            --git-service github \
+            --file lcov.info \
+            --flag rust-mac \
+            --branch "${{ github.ref_name }}" \
+            --sha "${{ github.sha }}" || true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Run doctests
         if: ${{ inputs.doctests-changed }}
