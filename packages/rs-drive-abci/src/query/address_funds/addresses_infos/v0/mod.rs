@@ -13,6 +13,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 use std::collections::BTreeMap;
 
@@ -23,6 +24,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetAddressesInfosResponseV0>, Error> {
+        if addresses.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} addresses infos, maximum is {}",
+                    addresses.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         // Parse all keys of type
         let addresses: Vec<PlatformAddress> = check_validation_result_with_data!(addresses
             .into_iter()
@@ -141,6 +151,55 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("invalid key_of_type")
         ));
+    }
+
+    #[test]
+    fn test_addresses_exceeding_max_limit_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetAddressesInfosRequestV0 {
+            addresses: (0..=max)
+                .map(|i| PlatformAddress::P2pkh([i as u8; 20]).to_bytes())
+                .collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_addresses_at_max_limit_is_accepted() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetAddressesInfosRequestV0 {
+            addresses: (0..max)
+                .map(|i| PlatformAddress::P2pkh([i as u8; 20]).to_bytes())
+                .collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_addresses_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                QueryError::Query(drive::error::query::QuerySyntaxError::InvalidLimit(_))
+            )),
+            "should not be rejected at exactly the max limit"
+        );
     }
 
     #[test]
