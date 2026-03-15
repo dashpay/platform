@@ -3,7 +3,7 @@ codecov:
 
 flags:
   rust:
-    carryforward: false
+    carryforward: true
 
 ignore:
   - "**/test_utils.rs"
