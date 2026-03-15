@@ -91,6 +91,8 @@ interact with the platform through structured data reads and writes (called
 **state transitions**) rather than arbitrary code execution. This eliminates
 entire classes of smart contract vulnerabilities (reentrancy, unchecked external
 calls, gas manipulation) and makes the system deterministic and predictable.
+Smart contract support is planned for Platform v4.0 (targeted for mainnet in
+2027).
 
 ### Key capabilities
 
