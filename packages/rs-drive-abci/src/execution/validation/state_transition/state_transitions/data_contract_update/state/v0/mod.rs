@@ -1418,12 +1418,21 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            // Create owner identity
+            // Create owner identity with proper master key
             let mut rng = StdRng::seed_from_u64(42);
+
+            let (owner_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected key pair");
+
             let owner_id = Identifier::random_with_rng(&mut rng);
             let owner_identity: Identity = IdentityV0 {
                 id: owner_id,
-                public_keys: BTreeMap::new(),
+                public_keys: BTreeMap::from([(0, owner_master_key)]),
                 balance: 1_000_000_000,
                 revision: 0,
             }
@@ -1441,10 +1450,18 @@ mod tests {
                 .expect("expected to add identity");
 
             // Create a second identity (group member + distribution recipient)
+            let (member_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected key pair");
+
             let member_id = Identifier::random_with_rng(&mut rng);
             let member_identity: Identity = IdentityV0 {
                 id: member_id,
-                public_keys: BTreeMap::new(),
+                public_keys: BTreeMap::from([(0, member_master_key)]),
                 balance: 500_000_000,
                 revision: 0,
             }
