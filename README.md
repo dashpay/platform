@@ -29,7 +29,7 @@
 </details>
 
 For in-depth architecture, internals, and developer documentation, see
-[The Dash Platform Book](./book/).
+[The Dash Platform Book](https://dashpay.github.io/platform/).
 
 ## What is Dash Platform
 
@@ -44,7 +44,7 @@ state and **know** the answer is correct, without running a full node and
 without trusting the node that served the response?
 
 Platform's answer combines three pieces. First,
-[Tenderdash](https://github.com/dashpay/tenderdash) runs Stochastic Byzantine
+[Tenderdash](https://github.com/dashpay/tenderdash) runs Scalable Byzantine
 Fault Tolerant (SBFT) consensus across a rotating quorum of masternodes. Unlike
 classical BFT where every validator signs every block, Tenderdash selects a
 deterministic quorum for each block and recovers a single BLS threshold
@@ -106,7 +106,7 @@ a proof. DAPI provides endpoints for querying documents, broadcasting state
 transitions, and verifying proofs.
 
 For a detailed treatment of each of these areas, see
-[The Dash Platform Book](./book/).
+[The Dash Platform Book](https://dashpay.github.io/platform/).
 
 ## Foundation libraries
 
