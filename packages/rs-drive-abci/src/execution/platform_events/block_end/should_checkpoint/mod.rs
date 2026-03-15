@@ -58,13 +58,44 @@ mod tests {
             .block_end
             .should_checkpoint = None;
 
-        // With None, we should always return Ok(None) without needing
-        // a block_execution_context at all
-        // We can't call should_checkpoint without a context, but the dispatcher
-        // short-circuits on None. Let's just verify the routing works.
-        // Actually we do need a context. Let's just verify directly:
-        // For None, the dispatcher returns Ok(None) directly without calling v0.
-        // We'll test this indirectly.
+        use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+        use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+        use crate::execution::types::block_state_info::BlockStateInfo;
+        use crate::platform_types::epoch_info::v0::EpochInfoV0;
+        use crate::platform_types::epoch_info::EpochInfo;
+        use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+        use std::collections::BTreeMap;
+
+        let platform_state = platform.state.load();
+        let block_platform_state = platform_state.as_ref().clone();
+
+        let block_execution_context = BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height: 1,
+                round: 0,
+                block_time_ms: 1_000_000,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash: None,
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: BTreeMap::new(),
+            block_platform_state,
+            proposer_results: None,
+        });
+
+        // When should_checkpoint version is None, the dispatcher returns Ok(None) directly
+        let result = platform
+            .should_checkpoint(&block_execution_context, &modified_version)
+            .expect("expected Ok");
+        assert!(result.is_none(), "expected None when version is None");
     }
 
     #[test]

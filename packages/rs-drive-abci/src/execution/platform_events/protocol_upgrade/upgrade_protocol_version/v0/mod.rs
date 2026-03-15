@@ -245,10 +245,10 @@ mod tests {
         // Use a different (lower) protocol version so previous != current
         // The platform was initialized with latest, now pass an older version
         let older_version = PlatformVersion::first();
-        if older_version.protocol_version == platform_version.protocol_version {
-            // If there's only one version, this test is not applicable
-            return;
-        }
+        assert_ne!(
+            older_version.protocol_version, platform_version.protocol_version,
+            "this test requires at least two protocol versions to exist"
+        );
 
         let result = platform.upgrade_protocol_version_on_epoch_change_v0(
             &block_info,
