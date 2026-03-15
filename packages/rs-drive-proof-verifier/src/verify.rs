@@ -139,3 +139,94 @@ pub fn verify_signature_digest(
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+    use std::sync::Arc;
+
+    /// Minimal ContextProvider stub that returns a dummy quorum public key.
+    /// This allows the test to reach the vulnerable `.expect()` on line 80
+    /// without failing earlier in the verification pipeline.
+    struct StubContextProvider;
+
+    impl ContextProvider for StubContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            // Return a dummy 48-byte public key; it does not need to be
+            // cryptographically valid because the panic occurs before the
+            // signature check.
+            Ok([0u8; 48])
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// Prove that a malicious node can crash an SDK client by returning an
+    /// out-of-range `quorum_type` value in a proof response.
+    ///
+    /// `verify_tenderdash_proof` receives `quorum_type` as a `u32` from an
+    /// untrusted gRPC response and converts it to `u8` via
+    /// `quorum_type.try_into().expect("quorum type out of range")`.
+    /// Any value > 255 causes a panic instead of returning an `Err`.
+    ///
+    /// This test uses `u32::MAX` to demonstrate the issue. The `#[should_panic]`
+    /// attribute proves the panic exists; once the bug is fixed (by replacing
+    /// `expect()` with proper error propagation), this test should be updated
+    /// to assert that an `Err` is returned instead.
+    #[test]
+    #[should_panic(expected = "quorum type out of range")]
+    fn test_malicious_quorum_type_causes_panic() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32], // valid 32-byte hash so we pass the earlier check
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: u32::MAX, // out-of-range: cannot fit in u8
+        };
+
+        let metadata = ResponseMetadata {
+            height: 100,
+            core_chain_locked_height: 1,
+            epoch: 0,
+            time_ms: 1_000_000,
+            protocol_version: 1,
+            chain_id: "test-chain".to_string(),
+        };
+
+        let provider = StubContextProvider;
+
+        // This call should return Err for untrusted input, but instead it
+        // panics due to the .expect() on the u32 -> u8 conversion.
+        let _ = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+    }
+}
