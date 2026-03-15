@@ -123,7 +123,21 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
+      - name: Check if coverage can be reused
+        id: coverage-cache
+        run: |
+          CURRENT_TREE=$(git rev-parse HEAD^{tree})
+          CACHED_TREE=$(cat target/lcov-tree-hash 2>/dev/null || echo "none")
+          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov.info ]; then
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            echo "Tree hash matches ($CURRENT_TREE) — reusing coverage from previous run"
+          else
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
+          fi
+
       - name: Run tests with coverage
+        if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
           cargo llvm-cov nextest \
             --package drive \
@@ -149,6 +163,7 @@ jobs:
             --all-features \
             --locked \
             --lcov --output-path lcov.info
+          git rev-parse HEAD^{tree} > target/lcov-tree-hash
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
