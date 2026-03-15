@@ -1,10 +1,6 @@
 on:
   workflow_call:
     inputs:
-      zk-changed:
-        description: Whether ZK/shielded related code has changed
-        type: boolean
-        default: false
       doctests-changed:
         description: Whether doc comments with code examples have changed
         type: boolean
@@ -129,11 +125,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          FILTER_ARGS=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILTER_ARGS="-E 'not test(/shield/)'"
-          fi
-          eval cargo llvm-cov nextest \
+          cargo llvm-cov nextest \
             --package drive \
             --package dpp \
             --package drive-abci \
@@ -156,7 +148,6 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            $FILTER_ARGS \
             --lcov --output-path lcov.info
         env:
           RUST_MIN_STACK: 4194304
@@ -275,11 +266,7 @@ jobs:
         if: steps.check-mac.outputs.skip == 'false'
         run: |
           ulimit -c unlimited
-          FILTER_ARGS=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILTER_ARGS="-E 'not test(/shield/)'"
-          fi
-          eval cargo nextest run \
+          cargo nextest run \
             --package drive \
             --package dpp \
             --package drive-abci \
@@ -302,7 +289,6 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            $FILTER_ARGS \
             --partition count:${{ matrix.partition }}/4
         env:
           RUST_MIN_STACK: 4194304
@@ -501,76 +487,3 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
-  zk-tests:
-    name: ZK / Shielded tests
-    if: ${{ inputs.zk-changed }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
-          df -h /
-
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
-
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          components: llvm-tools
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Install librocksdb
-        uses: ./.github/actions/librocksdb
-
-      - uses: taiki-e/install-action@cargo-nextest
-      - uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Run ZK / Shielded tests with coverage
-        run: |
-          cargo llvm-cov nextest \
-            --package dpp \
-            --package drive-abci \
-            --package drive \
-            --all-features \
-            --locked \
-            -E 'test(/shield/)' \
-            --lcov --output-path lcov-shielded.info
-        env:
-          RUST_MIN_STACK: 4194304
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Upload shielded coverage
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          files: lcov-shielded.info
-          flags: rust-shielded
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
