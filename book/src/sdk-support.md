@@ -8,7 +8,7 @@ developers can build applications on whatever stack they prefer.
 | SDK | Language | Status | Package | Use case |
 |-----|----------|--------|---------|----------|
 | **Rust SDK** | Rust | Available now | [`rs-sdk`](https://github.com/dashpay/platform/tree/master/packages/rs-sdk) | Server-side applications, full-node tooling, direct protocol access |
-| **JavaScript SDK** | JavaScript / TypeScript | Available now | [`js-dash-sdk`](https://github.com/dashpay/platform/tree/master/packages/js-dash-sdk) | Node.js backends, scripts, CLI tools |
+| **JavaScript SDK** | JavaScript / TypeScript | Available now | [`js-evo-sdk`](https://github.com/dashpay/platform/tree/master/packages/js-evo-sdk) | Node.js backends, scripts, CLI tools |
 | **iOS SDK** | Swift | Coming in v3.1 | [`swift-sdk`](https://github.com/dashpay/platform/tree/master/packages/swift-sdk) | iOS and macOS applications |
 | **Android SDK** | Kotlin | Coming in v3.2 | -- | Android applications |
 

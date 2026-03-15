@@ -165,7 +165,7 @@ are located in the [packages](./packages) directory. Key packages include:
 - **wasm-sdk** / **wasm-dpp2** -- WebAssembly bindings for browser-based
   applications
 - **rs-sdk-ffi** / **swift-sdk** -- FFI layer and iOS/Swift SDK
-- **js-dash-sdk** / **js-evo-sdk** -- JavaScript SDKs
+- **js-evo-sdk** -- JavaScript SDK
 - **dashmate** -- Node management and local development tool
 - **dapi** / **rs-dapi** -- Decentralized API server implementations
 
@@ -174,7 +174,7 @@ are located in the [packages](./packages) directory. Key packages include:
 | SDK | Status | Package |
 |-----|--------|---------|
 | **Rust** | Available now | [`rs-sdk`](./packages/rs-sdk) |
-| **JavaScript** | Available now | [`js-dash-sdk`](./packages/js-dash-sdk) |
+| **JavaScript** | Available now | [`js-evo-sdk`](./packages/js-evo-sdk) |
 | **iOS (Swift)** | Coming in v3.1 | [`swift-sdk`](./packages/swift-sdk) |
 | **Android** | Coming in v3.2 | -- |
 
