@@ -10,6 +10,7 @@ use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
@@ -24,6 +25,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesTokenBalancesResponseV0>, Error> {
+        if identity_ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} identities token balances, maximum is {}",
+                    identity_ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let token_id: Identifier =
             check_validation_result_with_data!(token_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -189,6 +199,53 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    #[test]
+    fn test_identity_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesTokenBalancesRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_balances_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_identity_ids_at_max_limit_is_accepted() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesTokenBalancesRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_balances_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                QueryError::Query(drive::error::query::QuerySyntaxError::InvalidLimit(_))
+            )),
+            "should not be rejected at exactly the max limit"
+        );
     }
 
     #[test]

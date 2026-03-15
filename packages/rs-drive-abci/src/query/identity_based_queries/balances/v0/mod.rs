@@ -12,6 +12,7 @@ use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -21,6 +22,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesBalancesResponseV0>, Error> {
+        if ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} identities balances, maximum is {}",
+                    ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let identifiers = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id| {
@@ -226,6 +236,52 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("id must be a valid identifier (32 bytes long)")
         ));
+    }
+
+    #[test]
+    fn test_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesBalancesRequestV0 {
+            ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_balances_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_ids_at_max_limit_is_accepted() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesBalancesRequestV0 {
+            ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_balances_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // Should not have a limit error -- it should pass validation
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                QueryError::Query(drive::error::query::QuerySyntaxError::InvalidLimit(_))
+            )),
+            "should not be rejected at exactly the max limit"
+        );
     }
 
     #[test]
