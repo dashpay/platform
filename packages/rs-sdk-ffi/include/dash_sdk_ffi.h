@@ -420,6 +420,11 @@ typedef uint8_t *(*IOSSignCallback)(const uint8_t *identity_public_key_bytes, ui
 // Function pointer type for iOS can_sign_with callback
 typedef bool (*IOSCanSignCallback)(const uint8_t *identity_public_key_bytes, uintptr_t identity_public_key_len);
 
+// Optional custom deallocator for sign result buffers.
+// When provided, this function is called to free the buffer returned by the
+// sign callback instead of the default libc free. Pass NULL to use libc free.
+typedef void (*FreeResultCallback)(uint8_t *data, uintptr_t len);
+
 // Signature result structure
 typedef struct DashSDKSignature {
   uint8_t *signature;
@@ -1736,12 +1741,17 @@ extern "C" {
  struct dash_sdk_handle_t *dash_sdk_create_handle_with_mock(const char *dump_dir) ;
 
 // Create a new iOS signer
- struct SignerHandle *dash_sdk_signer_create(IOSSignCallback sign_callback, IOSCanSignCallback can_sign_callback) ;
+// free_result_callback: Optional custom deallocator for sign result buffers (NULL = use libc free).
+//                       Swift/Kotlin callers that allocate with their own allocator MUST supply
+//                       a matching deallocator to avoid undefined behavior.
+ struct SignerHandle *dash_sdk_signer_create(IOSSignCallback sign_callback, IOSCanSignCallback can_sign_callback, void (*destroy_callback)(void *signer), FreeResultCallback free_result_callback) ;
 
 // Destroy an iOS signer
  void dash_sdk_signer_destroy(struct SignerHandle *handle) ;
 
-// Free bytes allocated by iOS callbacks
+// Free bytes allocated with malloc/calloc. This is the default deallocator used
+// when SignerVTable::free_result is NULL. If your callback uses a different
+// allocator, supply a custom free_result in the vtable instead.
  void dash_sdk_bytes_free(uint8_t *bytes) ;
 
 // Create a signer from a private key
