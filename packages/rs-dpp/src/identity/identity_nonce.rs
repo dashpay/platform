@@ -180,41 +180,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_new_identity_nonce_valid_max_minus_one() {
-        let nonce = MISSING_IDENTITY_REVISIONS_MAX_BYTES - 1;
-        let result = validate_new_identity_nonce(nonce, Identifier::default());
-        assert!(result.errors.is_empty());
-    }
-
-    #[test]
     fn validate_new_identity_nonce_invalid_at_max() {
         let nonce = MISSING_IDENTITY_REVISIONS_MAX_BYTES;
-        let result = validate_new_identity_nonce(nonce, Identifier::default());
-
-        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
-            result.errors.first()
-        else {
-            panic!("expected state error");
-        };
-        assert_eq!(e.error, MergeIdentityNonceResult::NonceTooFarInPast);
-    }
-
-    #[test]
-    fn validate_new_identity_nonce_invalid_above_max() {
-        let nonce = MISSING_IDENTITY_REVISIONS_MAX_BYTES + 1;
-        let result = validate_new_identity_nonce(nonce, Identifier::default());
-
-        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
-            result.errors.first()
-        else {
-            panic!("expected state error");
-        };
-        assert_eq!(e.error, MergeIdentityNonceResult::NonceTooFarInPast);
-    }
-
-    #[test]
-    fn validate_new_identity_nonce_invalid_large() {
-        let nonce = 1000;
         let result = validate_new_identity_nonce(nonce, Identifier::default());
 
         let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =

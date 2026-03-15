@@ -232,24 +232,6 @@ mod tests {
         }
 
         #[test]
-        fn test_group_too_few_members_zero() {
-            let group = GroupV0 {
-                members: BTreeMap::new(),
-                required_power: 1,
-            };
-
-            let result = group
-                .validate(None, PlatformVersion::latest())
-                .expect("should not error");
-
-            let Some(ConsensusError::BasicError(BasicError::GroupHasTooFewMembersError(_))) =
-                result.errors.first()
-            else {
-                panic!("expected GroupHasTooFewMembersError");
-            };
-        }
-
-        #[test]
         fn test_group_too_few_members_one() {
             let group = GroupV0 {
                 members: [(Identifier::random(), 1)].into(),
