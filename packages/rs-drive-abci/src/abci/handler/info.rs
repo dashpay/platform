@@ -95,3 +95,63 @@ where
 
     Ok(response)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abci::app::FullAbciApplication;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+
+    #[test]
+    fn info_abci_version_mismatch_returns_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::new(&platform.platform);
+
+        // Use a valid semver but with a much higher minor version to guarantee mismatch.
+        // The check_version function panics on non-semver strings, so we must
+        // provide a valid semver that does not satisfy the compatibility requirement.
+        let request = proto::RequestInfo {
+            version: "test".to_string(),
+            block_version: 0,
+            p2p_version: 0,
+            abci_version: "999.999.999".to_string(),
+        };
+
+        let result = info::<_, MockCoreRPCLike>(&app, request);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("ABCI version mismatch"),
+            "Expected ABCI version mismatch error, got: {}",
+            err_string
+        );
+    }
+
+    #[test]
+    fn info_successful_handshake_returns_response() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::new(&platform.platform);
+
+        let request = proto::RequestInfo {
+            version: "test".to_string(),
+            block_version: 0,
+            p2p_version: 0,
+            abci_version: tenderdash_abci::proto::ABCI_VERSION.to_string(),
+        };
+
+        let response = info::<_, MockCoreRPCLike>(&app, request).expect("info should succeed");
+
+        assert_eq!(response.last_block_height, 0);
+        assert!(!response.version.is_empty());
+        assert!(response.app_version > 0);
+    }
+}
