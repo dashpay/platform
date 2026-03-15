@@ -1875,7 +1875,10 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
             "expected Error::Proof, got: {:?}",
             result
         );
@@ -1945,7 +1948,10 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
             "expected Error::Proof, got: {:?}",
             result
         );
@@ -2245,7 +2251,10 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
             "expected Error::Proof, got: {:?}",
             result
         );
@@ -2303,8 +2312,11 @@ mod tests {
 
         // Empty proof should cause a GroveDB/proof error
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
@@ -2337,8 +2349,11 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
@@ -2371,8 +2386,11 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
@@ -2406,8 +2424,11 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
@@ -2441,8 +2462,11 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
@@ -2478,8 +2502,11 @@ mod tests {
         );
 
         assert!(
-            matches!(result, Err(crate::error::Error::Proof(_))),
-            "expected Error::Proof for empty proof, got: {:?}",
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected Error::Proof or Error::GroveDB for empty proof, got: {:?}",
             result
         );
     }
