@@ -95,3 +95,65 @@ impl StateTransitionFieldTypes for AddressCreditWithdrawalTransition {
         vec![OUTPUT_SCRIPT]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition::{FeatureVersioned, StateTransitionLike, StateTransitionType};
+
+    #[test]
+    fn default_versioned_succeeds_on_latest() {
+        let pv = PlatformVersion::latest();
+        let result = AddressCreditWithdrawalTransition::default_versioned(pv);
+        assert!(result.is_ok());
+        let transition = result.unwrap();
+        assert!(matches!(
+            transition,
+            AddressCreditWithdrawalTransition::V0(_)
+        ));
+    }
+
+    #[test]
+    fn field_types_signature_is_empty() {
+        assert!(AddressCreditWithdrawalTransition::signature_property_paths().is_empty());
+    }
+
+    #[test]
+    fn field_types_identifiers_is_empty() {
+        assert!(AddressCreditWithdrawalTransition::identifiers_property_paths().is_empty());
+    }
+
+    #[test]
+    fn field_types_binary_contains_output_script() {
+        let paths = AddressCreditWithdrawalTransition::binary_property_paths();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], OUTPUT_SCRIPT);
+    }
+
+    #[test]
+    fn feature_version_is_zero() {
+        let pv = PlatformVersion::latest();
+        let t = AddressCreditWithdrawalTransition::default_versioned(pv).unwrap();
+        assert_eq!(t.feature_version(), 0);
+    }
+
+    #[test]
+    fn state_transition_type_through_enum() {
+        let pv = PlatformVersion::latest();
+        let t = AddressCreditWithdrawalTransition::default_versioned(pv).unwrap();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::AddressCreditWithdrawal
+        );
+    }
+
+    #[test]
+    fn min_withdrawal_amount_is_positive() {
+        assert!(MIN_WITHDRAWAL_AMOUNT > 0);
+    }
+
+    #[test]
+    fn min_core_fee_per_byte_is_one() {
+        assert_eq!(MIN_CORE_FEE_PER_BYTE, 1);
+    }
+}

@@ -90,3 +90,87 @@ impl StateTransitionWitnessSigned for AddressCreditWithdrawalTransitionV0 {
         self.input_witnesses = witnesses;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address_funds::PlatformAddress;
+    use std::collections::BTreeMap;
+
+    fn default_v0() -> AddressCreditWithdrawalTransitionV0 {
+        AddressCreditWithdrawalTransitionV0::default()
+    }
+
+    #[test]
+    fn state_transition_protocol_version_is_zero() {
+        let t = default_v0();
+        assert_eq!(t.state_transition_protocol_version(), 0);
+    }
+
+    #[test]
+    fn state_transition_type_is_address_credit_withdrawal() {
+        let t = default_v0();
+        assert_eq!(t.state_transition_type(), AddressCreditWithdrawal);
+    }
+
+    #[test]
+    fn modified_data_ids_is_empty() {
+        let t = default_v0();
+        assert!(t.modified_data_ids().is_empty());
+    }
+
+    #[test]
+    fn unique_identifiers_maps_inputs() {
+        let mut t = default_v0();
+        let addr = PlatformAddress::P2pkh([1u8; 20]);
+        t.inputs.insert(addr, (5, 100));
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0], addr.base64_string_with_nonce(5));
+    }
+
+    #[test]
+    fn unique_identifiers_empty_when_no_inputs() {
+        let t = default_v0();
+        assert!(t.unique_identifiers().is_empty());
+    }
+
+    #[test]
+    fn user_fee_increase_getter_setter() {
+        let mut t = default_v0();
+        assert_eq!(t.user_fee_increase(), 0);
+        t.set_user_fee_increase(99);
+        assert_eq!(t.user_fee_increase(), 99);
+    }
+
+    #[test]
+    fn witness_signed_getters_setters() {
+        let mut t = default_v0();
+        assert!(t.inputs().is_empty());
+        assert!(t.witnesses().is_empty());
+
+        let mut new_inputs = BTreeMap::new();
+        new_inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 100u64));
+        t.set_inputs(new_inputs);
+        assert_eq!(t.inputs().len(), 1);
+
+        let witnesses = vec![AddressWitness::P2pkh {
+            signature: vec![0u8; 65].into(),
+        }];
+        t.set_witnesses(witnesses);
+        assert_eq!(t.witnesses().len(), 1);
+
+        t.inputs_mut().clear();
+        assert!(t.inputs().is_empty());
+    }
+
+    #[test]
+    fn from_v0_into_state_transition() {
+        let t = default_v0();
+        let st: StateTransition = t.into();
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::AddressCreditWithdrawal
+        );
+    }
+}

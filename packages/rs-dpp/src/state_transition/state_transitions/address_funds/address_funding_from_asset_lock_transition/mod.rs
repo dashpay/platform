@@ -91,3 +91,55 @@ impl StateTransitionFieldTypes for AddressFundingFromAssetLockTransition {
         vec![]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition::{FeatureVersioned, StateTransitionLike, StateTransitionType};
+
+    #[test]
+    fn default_versioned_succeeds_on_latest() {
+        let pv = PlatformVersion::latest();
+        let result = AddressFundingFromAssetLockTransition::default_versioned(pv);
+        assert!(result.is_ok());
+        let transition = result.unwrap();
+        assert!(matches!(
+            transition,
+            AddressFundingFromAssetLockTransition::V0(_)
+        ));
+    }
+
+    #[test]
+    fn field_types_signature_property_paths() {
+        let paths = AddressFundingFromAssetLockTransition::signature_property_paths();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0], SIGNATURE);
+    }
+
+    #[test]
+    fn field_types_identifiers_is_empty() {
+        assert!(AddressFundingFromAssetLockTransition::identifiers_property_paths().is_empty());
+    }
+
+    #[test]
+    fn field_types_binary_is_empty() {
+        assert!(AddressFundingFromAssetLockTransition::binary_property_paths().is_empty());
+    }
+
+    #[test]
+    fn feature_version_is_zero() {
+        let pv = PlatformVersion::latest();
+        let t = AddressFundingFromAssetLockTransition::default_versioned(pv).unwrap();
+        assert_eq!(t.feature_version(), 0);
+    }
+
+    #[test]
+    fn state_transition_type_through_enum() {
+        let pv = PlatformVersion::latest();
+        let t = AddressFundingFromAssetLockTransition::default_versioned(pv).unwrap();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::AddressFundingFromAssetLock
+        );
+    }
+}

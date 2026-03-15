@@ -104,3 +104,96 @@ impl StateTransitionWitnessSigned for AddressFundingFromAssetLockTransitionV0 {
         self.input_witnesses = witnesses;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address_funds::PlatformAddress;
+    use std::collections::BTreeMap;
+
+    fn default_v0() -> AddressFundingFromAssetLockTransitionV0 {
+        AddressFundingFromAssetLockTransitionV0::default()
+    }
+
+    #[test]
+    fn state_transition_protocol_version_is_zero() {
+        let t = default_v0();
+        assert_eq!(t.state_transition_protocol_version(), 0);
+    }
+
+    #[test]
+    fn state_transition_type_is_address_funding_from_asset_lock() {
+        let t = default_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::AddressFundingFromAssetLock
+        );
+    }
+
+    #[test]
+    fn modified_data_ids_is_empty() {
+        let t = default_v0();
+        assert!(t.modified_data_ids().is_empty());
+    }
+
+    #[test]
+    fn unique_identifiers_is_empty() {
+        let t = default_v0();
+        assert!(t.unique_identifiers().is_empty());
+    }
+
+    #[test]
+    fn user_fee_increase_getter_setter() {
+        let mut t = default_v0();
+        assert_eq!(t.user_fee_increase(), 0);
+        t.set_user_fee_increase(42);
+        assert_eq!(t.user_fee_increase(), 42);
+    }
+
+    #[test]
+    fn signature_getter_setter() {
+        let mut t = default_v0();
+        assert!(t.signature().is_empty());
+        let sig = BinaryData::new(vec![1, 2, 3]);
+        t.set_signature(sig.clone());
+        assert_eq!(t.signature(), &sig);
+    }
+
+    #[test]
+    fn set_signature_bytes() {
+        let mut t = default_v0();
+        t.set_signature_bytes(vec![4, 5, 6]);
+        assert_eq!(t.signature().as_slice(), &[4, 5, 6]);
+    }
+
+    #[test]
+    fn witness_signed_inputs_and_witnesses() {
+        let mut t = default_v0();
+        assert!(t.inputs().is_empty());
+        assert!(t.witnesses().is_empty());
+
+        let mut new_inputs = BTreeMap::new();
+        new_inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 100u64));
+        t.set_inputs(new_inputs);
+        assert_eq!(t.inputs().len(), 1);
+
+        let witnesses = vec![AddressWitness::P2pkh {
+            signature: vec![0u8; 65].into(),
+        }];
+        t.set_witnesses(witnesses);
+        assert_eq!(t.witnesses().len(), 1);
+
+        t.inputs_mut().clear();
+        assert!(t.inputs().is_empty());
+    }
+
+    #[test]
+    fn from_v0_into_state_transition() {
+        let t = default_v0();
+        let st: StateTransition = t.into();
+        assert_eq!(
+            st.state_transition_type(),
+            StateTransitionType::AddressFundingFromAssetLock
+        );
+    }
+}
