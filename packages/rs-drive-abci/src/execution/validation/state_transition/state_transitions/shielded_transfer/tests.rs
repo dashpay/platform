@@ -1142,8 +1142,14 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
-                )]
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(e))
+                )] => {
+                    assert!(
+                        e.message().contains("insufficient balance"),
+                        "expected insufficient balance error, got: {}",
+                        e.message()
+                    );
+                }
             );
         }
 
