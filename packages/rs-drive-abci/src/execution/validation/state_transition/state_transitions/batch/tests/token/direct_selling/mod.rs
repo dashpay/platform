@@ -152,7 +152,7 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(699_868_130_120)); // 10.0 - 3.0 spent - fees =~ 7 dash left
+        assert_eq!(buyer_credit_balance, Some(699_868_120_900)); // 10.0 - 3.0 spent - fees =~ 7 dash left
     }
 
     #[test]
@@ -733,24 +733,24 @@ mod token_selling_tests {
         );
     }
 
-    /// Security audit: Prove that a direct purchase succeeds even when the token
-    /// is paused. The transfer validation checks `token_status.paused()` and
-    /// rejects with `TokenIsPausedError`, but the direct purchase validation
-    /// does NOT perform this check.
+    /// Security audit finding: Token direct purchase validation was missing a
+    /// pause check that all other token operations (transfer, mint) perform.
+    /// This allowed tokens to be purchased during emergency pauses.
     ///
-    /// This test:
+    /// This test verifies the fix:
     /// 1. Creates a token with direct purchase pricing and emergency action rules
     /// 2. Sets a direct purchase price while the token is active
     /// 3. Pauses the token via emergency action
     /// 4. Confirms the token is paused
-    /// 5. Attempts a direct purchase -- expects it to SUCCEED (proving the bug)
+    /// 5. Attempts a direct purchase -- expects it to be REJECTED with
+    ///    `TokenIsPausedError` (proving the fix works)
     /// 6. As a control, attempts a transfer on the same paused token -- expects
-    ///    it to FAIL with `TokenIsPausedError`
+    ///    it to also FAIL with `TokenIsPausedError`
     #[test]
-    fn test_direct_purchase_succeeds_when_token_is_paused_proving_missing_pause_check() {
+    fn test_direct_purchase_rejected_when_token_is_paused() {
         use dpp::tokens::emergency_action::TokenEmergencyAction;
-        use dpp::tokens::status::TokenStatus;
         use dpp::tokens::status::v0::TokenStatusV0;
+        use dpp::tokens::status::TokenStatus;
 
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -898,19 +898,19 @@ mod token_selling_tests {
             platform_version,
         );
 
-        // This assertion proves the bug: the direct purchase succeeds even
-        // though the token is paused. When the fix is applied, this line
-        // should be changed to expect PaidConsensusError with
-        // TokenIsPausedError.
+        // Fix verified: direct purchase is now correctly rejected when the
+        // token is paused, matching the behavior of transfer and other
+        // token operations.
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
-            "BUG: Direct purchase should have been rejected with TokenIsPausedError, \
-             but it succeeded. The direct purchase state validation does not check \
-             token pause status."
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                ..
+            }],
+            "Direct purchase should be rejected with TokenIsPausedError on a paused token"
         );
 
-        // Verify the buyer actually received tokens despite the pause.
+        // Verify the buyer did NOT receive any tokens.
         let buyer_token_balance = platform
             .drive
             .fetch_identity_token_balance(
@@ -921,9 +921,8 @@ mod token_selling_tests {
             )
             .expect("expected to fetch token balance");
         assert_eq!(
-            buyer_token_balance,
-            Some(3),
-            "BUG: Buyer received tokens on a paused token"
+            buyer_token_balance, None,
+            "Buyer should not have received tokens on a paused token"
         );
 
         // Step 5: Control -- confirm that a transfer on the same paused token
