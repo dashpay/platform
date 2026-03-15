@@ -38,6 +38,35 @@ of the Dash payment network. It lets developers store, query, and
 cryptographically verify structured data on the Dash masternode network without
 deploying or executing user-written code on-chain.
 
+Instead of smart contracts, developers define **data contracts** -- JSON
+Schema-based specifications that describe the structure and validation rules for
+their application data. The network stores, indexes, and enforces these schemas
+directly. Applications interact with the platform through structured data reads
+and writes (called **state transitions**) rather than arbitrary code execution.
+Smart contract support is planned for Platform v4.0 (targeted for mainnet in
+2027).
+
+### How Dash Platform compares
+
+| | Bitcoin | Ethereum | Solana | Cosmos SDK | Celestia | Dash Platform |
+|---|---|---|---|---|---|---|
+| **Primary purpose** | Payments | General-purpose smart contracts | High-throughput smart contracts | App-chain framework | Data availability | Decentralized data storage and querying |
+| **Programmability** | Script (limited) | EVM (Turing-complete) | SVM / eBPF | App-specific (Go) | None (DA only) | Data contracts (JSON Schema); smart contracts in v4.0 |
+| **Consensus** | Nakamoto (PoW) | Gasper (PoS) | Tower BFT (PoS) | CometBFT (PoS) | CometBFT (PoS) | Tenderdash SBFT (masternode quorums, BLS threshold signatures) |
+| **State proofs** | SPV (block headers) | Merkle-Patricia proofs | No native proofs | IAVL proofs | DAS (sampling) | GroveDB Merkle proofs for every query |
+| **Light client trust** | Follows longest chain | Needs sync committee | Trusts RPC provider | Trusts IBC relayer | Samples DA blobs | Cryptographic proof per response -- same security as a full node |
+| **Finality** | Probabilistic (~60 min) | ~13 min (2 epochs) | ~0.4s (optimistic) | Instant (1 block) | Instant (1 block) | Instant (1 block) |
+| **Data model** | UTXOs | Account / key-value | Account / key-value | App-defined | Opaque blobs | Structured documents with secondary indexes |
+
+The standout difference is light client verification. Most chains either offer
+no state proofs (Solana), require trusting intermediaries (Cosmos IBC relayers),
+or give proofs that are expensive to verify (Ethereum's sync committee). Dash
+Platform serves a cryptographic proof with every query response, and a single
+BLS threshold signature is all a client needs to verify it. A mobile wallet gets
+the same security guarantees as a full node.
+
+### Architecture deep dive
+
 The central problem Dash Platform solves is: how do you let a light client --
 a mobile wallet, a browser app, a third-party service -- query decentralized
 state and **know** the answer is correct, without running a full node and
@@ -75,24 +104,7 @@ individual piece of data in the system.
 The result is that to verify any single query result, a client needs only three
 things: the data itself, its Merkle proof against the state root, and the
 threshold signature on that root. No full node, no chain of block headers, no
-trust in the serving node. This is what makes Platform distinct from other
-decentralized data systems: the combination of authenticated storage, BFT
-consensus with threshold signatures, and proof-serving APIs gives light clients
-the same security guarantees as full nodes.
-
-### How it differs from smart contract platforms
-
-Dash Platform is not a smart contract platform. There is no virtual machine, no
-gas metering for code execution, and no user-deployed programs running on-chain.
-Instead, developers define **data contracts** -- JSON Schema-based specifications
-that describe the structure and validation rules for their application data. The
-network stores, indexes, and enforces these schemas directly. Applications
-interact with the platform through structured data reads and writes (called
-**state transitions**) rather than arbitrary code execution. This eliminates
-entire classes of smart contract vulnerabilities (reentrancy, unchecked external
-calls, gas manipulation) and makes the system deterministic and predictable.
-Smart contract support is planned for Platform v4.0 (targeted for mainnet in
-2027).
+trust in the serving node.
 
 ### Key capabilities
 
