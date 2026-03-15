@@ -62,7 +62,9 @@ pub(crate) fn verify_tenderdash_proof(
 
     let state_id_hash = state_id
         .calculate_msg_hash(&chain_id, mtd.height as i64, proof.round as i32)
-        .expect("failed to calculate state id hash");
+        .map_err(|e| Error::ResponseDecodeError {
+            error: format!("failed to calculate state id hash: {}", e),
+        })?;
 
     let commit = CanonicalVote {
         r#type: SignedMsgType::Precommit.into(),
@@ -77,7 +79,9 @@ pub(crate) fn verify_tenderdash_proof(
     let sign_digest = commit
         .calculate_sign_hash(
             &chain_id,
-            quorum_type.try_into().expect("quorum type out of range"),
+            quorum_type.try_into().map_err(|_| Error::ResponseDecodeError {
+                error: format!("quorum type out of range: {}", quorum_type),
+            })?,
             &quorum_hash,
             height as i64,
             round as i32,
@@ -190,21 +194,14 @@ mod tests {
         }
     }
 
-    /// Prove that a malicious node can crash an SDK client by returning an
-    /// out-of-range `quorum_type` value in a proof response.
+    /// Verify that an out-of-range `quorum_type` from a malicious node
+    /// returns an error instead of panicking.
     ///
     /// `verify_tenderdash_proof` receives `quorum_type` as a `u32` from an
-    /// untrusted gRPC response and converts it to `u8` via
-    /// `quorum_type.try_into().expect("quorum type out of range")`.
-    /// Any value > 255 causes a panic instead of returning an `Err`.
-    ///
-    /// This test uses `u32::MAX` to demonstrate the issue. The `#[should_panic]`
-    /// attribute proves the panic exists; once the bug is fixed (by replacing
-    /// `expect()` with proper error propagation), this test should be updated
-    /// to assert that an `Err` is returned instead.
+    /// untrusted gRPC response and converts it to `u8`. Any value > 255
+    /// must produce an `Err`, not a panic.
     #[test]
-    #[should_panic(expected = "quorum type out of range")]
-    fn test_malicious_quorum_type_causes_panic() {
+    fn test_malicious_quorum_type_returns_error() {
         let proof = Proof {
             grovedb_proof: vec![],
             quorum_hash: vec![0u8; 32], // valid 32-byte hash so we pass the earlier check
@@ -225,8 +222,12 @@ mod tests {
 
         let provider = StubContextProvider;
 
-        // This call should return Err for untrusted input, but instead it
-        // panics due to the .expect() on the u32 -> u8 conversion.
-        let _ = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for out-of-range quorum_type");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("quorum type out of range"),
+            "error message should mention quorum type out of range, got: {err_msg}"
+        );
     }
 }
