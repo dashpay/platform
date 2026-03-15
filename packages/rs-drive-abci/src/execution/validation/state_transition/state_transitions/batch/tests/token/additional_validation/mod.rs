@@ -2,7 +2,6 @@ use super::*;
 
 mod additional_validation_tests {
     use super::*;
-    use dpp::tokens::emergency_action::TokenEmergencyAction;
     use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 
     #[test]
