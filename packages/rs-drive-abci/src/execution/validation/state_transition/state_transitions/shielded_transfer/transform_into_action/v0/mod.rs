@@ -4,7 +4,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, validate_anchor_exists, validate_nullifiers,
+    read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
+    validate_nullifiers,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
@@ -57,6 +58,16 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
+
+        // Check minimum notes threshold for outgoing transitions (anonymity set)
+        if let Some(consensus_error) = validate_minimum_pool_notes(
+            drive,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(consensus_error);
+        }
 
         // Verify the pool has sufficient balance for the fee
         if current_total_balance < fee_amount {

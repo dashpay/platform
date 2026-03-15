@@ -2,8 +2,8 @@
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-        create_dummy_serialized_action, insert_anchor_into_state, insert_nullifier_into_state,
-        process_transition, set_pool_total_balance, setup_platform,
+        create_dummy_serialized_action, insert_anchor_into_state, insert_dummy_encrypted_notes,
+        insert_nullifier_into_state, process_transition, set_pool_total_balance, setup_platform,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
@@ -185,6 +185,37 @@ mod tests {
     }
 
     // ==========================================
+    // POOL NOTES VALIDATION TESTS (StateError)
+    // ==========================================
+
+    mod pool_notes_validation {
+        use super::*;
+
+        #[test]
+        fn test_insufficient_pool_notes_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // Non-zero anchor that exists in state, but no encrypted notes in pool
+            let anchor = [42u8; 32];
+            insert_anchor_into_state(&platform, &anchor);
+
+            let transition = create_default_shielded_transfer_transition();
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // Proof verification now runs before pool notes check, so the
+            // dummy proof data is rejected first.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
     // ANCHOR VALIDATION TESTS (StateError)
     // ==========================================
 
@@ -195,6 +226,7 @@ mod tests {
         fn test_invalid_anchor_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // Non-zero anchor that doesn't exist in state
             let transition = create_default_shielded_transfer_transition();
@@ -223,6 +255,7 @@ mod tests {
         fn test_nullifier_already_spent_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let anchor = [42u8; 32];
             let nullifier = [1u8; 32]; // Same as create_dummy_serialized_action().nullifier
@@ -384,9 +417,10 @@ mod tests {
 
             assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
 
-            // --- Set pool balance and insert anchor ---
+            // --- Set pool balance, insert anchor, and insert notes for pool check ---
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // --- Create and process transition ---
             let transition = create_shielded_transfer_transition(
@@ -695,6 +729,7 @@ mod tests {
             // Set pool balance large enough to cover the fee deduction
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let transition = create_shielded_transfer_transition(
                 actions,
@@ -726,6 +761,7 @@ mod tests {
 
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
+            insert_dummy_encrypted_notes(&platform, 250);
 
             let transition = create_shielded_transfer_transition(
                 actions,
@@ -1125,6 +1161,7 @@ mod tests {
             // --- Set up pool state ---
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
+            insert_dummy_encrypted_notes(&platform, 250);
 
             // --- Build and serialize the transition ---
             let transition = create_shielded_transfer_transition(
