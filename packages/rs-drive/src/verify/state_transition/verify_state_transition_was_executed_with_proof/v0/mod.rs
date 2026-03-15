@@ -1874,7 +1874,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         match &err {
             Error::Proof(ProofError::InvalidTransition(msg)) => {
@@ -1940,7 +1944,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         match &err {
             Error::Proof(ProofError::InvalidTransition(msg)) => {
@@ -2236,7 +2244,11 @@ mod tests {
             platform_version,
         );
 
-        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof, got: {:?}",
+            result
+        );
         let err = result.unwrap_err();
         match &err {
             Error::Proof(ProofError::UnknownContract(msg)) => {
@@ -2291,8 +2303,9 @@ mod tests {
 
         // Empty proof should cause a GroveDB/proof error
         assert!(
-            result.is_err(),
-            "expected error with empty proof, but got success"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 
@@ -2324,8 +2337,9 @@ mod tests {
         );
 
         assert!(
-            result.is_err(),
-            "expected error with empty proof for identity create"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 
@@ -2357,8 +2371,9 @@ mod tests {
         );
 
         assert!(
-            result.is_err(),
-            "expected error with empty proof for identity top up"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 
@@ -2391,8 +2406,9 @@ mod tests {
         );
 
         assert!(
-            result.is_err(),
-            "expected error with empty proof for identity credit withdrawal"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 
@@ -2425,8 +2441,9 @@ mod tests {
         );
 
         assert!(
-            result.is_err(),
-            "expected error with empty proof for identity update"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 
@@ -2461,8 +2478,9 @@ mod tests {
         );
 
         assert!(
-            result.is_err(),
-            "expected error with empty proof for identity credit transfer"
+            matches!(result, Err(crate::error::Error::Proof(_))),
+            "expected Error::Proof for empty proof, got: {:?}",
+            result
         );
     }
 }
