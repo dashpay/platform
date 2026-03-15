@@ -733,6 +733,237 @@ mod token_selling_tests {
         );
     }
 
+    /// Security audit: Prove that a direct purchase succeeds even when the token
+    /// is paused. The transfer validation checks `token_status.paused()` and
+    /// rejects with `TokenIsPausedError`, but the direct purchase validation
+    /// does NOT perform this check.
+    ///
+    /// This test:
+    /// 1. Creates a token with direct purchase pricing and emergency action rules
+    /// 2. Sets a direct purchase price while the token is active
+    /// 3. Pauses the token via emergency action
+    /// 4. Confirms the token is paused
+    /// 5. Attempts a direct purchase -- expects it to SUCCEED (proving the bug)
+    /// 6. As a control, attempts a transfer on the same paused token -- expects
+    ///    it to FAIL with `TokenIsPausedError`
+    #[test]
+    fn test_direct_purchase_succeeds_when_token_is_paused_proving_missing_pause_check() {
+        use dpp::tokens::emergency_action::TokenEmergencyAction;
+        use dpp::tokens::status::TokenStatus;
+        use dpp::tokens::status::v0::TokenStatusV0;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(99999);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        // Create token with direct purchase pricing rules AND emergency action
+        // rules so we can pause it after setup.
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                token_configuration.set_emergency_action_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let platform_state = platform.state.load();
+
+        // Step 1: Seller sets direct purchase price while token is active.
+        let set_price_transition =
+            BatchTransition::new_token_change_direct_purchase_price_transition(
+                token_id,
+                seller.id(),
+                contract.id(),
+                0,
+                Some(TokenPricingSchedule::SinglePrice(dash_to_credits!(1))),
+                None,
+                None,
+                &seller_key,
+                2,
+                0,
+                &seller_signer,
+                platform_version,
+                None,
+            )
+            .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            set_price_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // Step 2: Pause the token via emergency action.
+        let pause_transition = BatchTransition::new_token_emergency_action_transition(
+            token_id,
+            seller.id(),
+            contract.id(),
+            0,
+            TokenEmergencyAction::Pause,
+            None,
+            None,
+            &seller_key,
+            3,
+            0,
+            &seller_signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create pause transition");
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            pause_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // Step 3: Verify the token is actually paused.
+        let token_status = platform
+            .drive
+            .fetch_token_status(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch token status");
+        assert_eq!(
+            token_status,
+            Some(TokenStatus::V0(TokenStatusV0 { paused: true })),
+            "Token should be paused"
+        );
+
+        // Step 4: Attempt a direct purchase on the paused token.
+        // BUG: This succeeds because the direct purchase validation does NOT
+        // check token_status.paused(). If the bug were fixed, this would return
+        // a TokenIsPausedError instead.
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            3,                   // Buying 3 tokens
+            dash_to_credits!(3), // Correct total price
+            &buyer_key,
+            2,
+            0,
+            &buyer_signer,
+            platform_version,
+            None,
+        )
+        .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            purchase_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        // This assertion proves the bug: the direct purchase succeeds even
+        // though the token is paused. When the fix is applied, this line
+        // should be changed to expect PaidConsensusError with
+        // TokenIsPausedError.
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+            "BUG: Direct purchase should have been rejected with TokenIsPausedError, \
+             but it succeeded. The direct purchase state validation does not check \
+             token pause status."
+        );
+
+        // Verify the buyer actually received tokens despite the pause.
+        let buyer_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(
+            buyer_token_balance,
+            Some(3),
+            "BUG: Buyer received tokens on a paused token"
+        );
+
+        // Step 5: Control -- confirm that a transfer on the same paused token
+        // is correctly rejected with TokenIsPausedError.
+        let transfer_transition = BatchTransition::new_token_transfer_transition(
+            token_id,
+            seller.id(),
+            contract.id(),
+            0,
+            100,
+            buyer.id(),
+            None,
+            None,
+            None,
+            &seller_key,
+            4,
+            0,
+            &seller_signer,
+            platform_version,
+            None,
+        )
+        .expect("expected to create transfer transition");
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            transfer_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenIsPausedError(_)),
+                ..
+            }],
+            "Control: Transfer correctly rejected with TokenIsPausedError on paused token"
+        );
+    }
+
     // Helper functions
     //
     // /\_/\
