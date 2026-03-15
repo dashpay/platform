@@ -2133,6 +2133,18 @@ extern "C" {
 // Free an identity balance map
  void dash_sdk_identity_balance_map_free(struct DashSDKIdentityBalanceMap *map) ;
 
+// Free a DashSDKResult and all resources it owns.
+// Inspects data_type and dispatches to the correct cleanup for data.
+// Also frees the error field when present.
+// After this call, data and error pointers inside the struct are set to null.
+// The DashSDKResult struct itself is NOT freed (typically stack-allocated by caller).
+//
+// # Safety
+// - result must be a valid, non-null pointer to a DashSDKResult whose data and error
+//   fields were produced by this SDK and have not yet been freed.
+// - If result is null this is a no-op.
+ void dash_sdk_result_free(struct DashSDKResult *result) ;
+
 // Initialize the unified SDK system
 // This initializes both Core SDK (if enabled) and Platform SDK
  int32_t dash_unified_sdk_init(void) ;
