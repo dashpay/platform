@@ -62,3 +62,83 @@ where
 
     deserializer.deserialize_any(BoolOrStringVisitor)
 }
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct BoolConfig {
+        #[serde(deserialize_with = "super::from_str_or_bool")]
+        value: bool,
+    }
+
+    #[derive(Deserialize)]
+    struct NumConfig {
+        #[serde(deserialize_with = "super::from_str_or_number")]
+        value: u16,
+    }
+
+    // -- from_str_or_bool --
+
+    #[test]
+    fn from_str_or_bool_true_values() {
+        for input in &["true", "1", "yes", "on", "TRUE", "Yes", "ON"] {
+            let json = format!(r#"{{"value": "{}"}}"#, input);
+            let c: BoolConfig =
+                serde_json::from_str(&json).unwrap_or_else(|_| panic!("failed for {}", input));
+            assert!(c.value, "expected true for input '{}'", input);
+        }
+    }
+
+    #[test]
+    fn from_str_or_bool_false_values() {
+        for input in &["false", "0", "no", "off", "FALSE", "No", "OFF"] {
+            let json = format!(r#"{{"value": "{}"}}"#, input);
+            let c: BoolConfig =
+                serde_json::from_str(&json).unwrap_or_else(|_| panic!("failed for {}", input));
+            assert!(!c.value, "expected false for input '{}'", input);
+        }
+    }
+
+    #[test]
+    fn from_str_or_bool_native_bool() {
+        let json = r#"{"value": true}"#;
+        let c: BoolConfig = serde_json::from_str(json).unwrap();
+        assert!(c.value);
+
+        let json = r#"{"value": false}"#;
+        let c: BoolConfig = serde_json::from_str(json).unwrap();
+        assert!(!c.value);
+    }
+
+    #[test]
+    fn from_str_or_bool_invalid_string() {
+        let json = r#"{"value": "maybe"}"#;
+        let result: Result<BoolConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    // -- from_str_or_number --
+
+    #[test]
+    fn from_str_or_number_from_string() {
+        let json = r#"{"value": "3005"}"#;
+        let c: NumConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(c.value, 3005);
+    }
+
+    #[test]
+    fn from_str_or_number_from_number() {
+        let json = r#"{"value": 9090}"#;
+        let c: NumConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(c.value, 9090);
+    }
+
+    #[test]
+    fn from_str_or_number_invalid_string() {
+        let json = r#"{"value": "not_a_number"}"#;
+        let result: Result<NumConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+}

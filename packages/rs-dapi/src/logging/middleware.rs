@@ -403,4 +403,160 @@ mod tests {
         assert_eq!(service, "unknown");
         assert_eq!(method, "unknown");
     }
+
+    #[test]
+    fn parse_grpc_path_empty_string() {
+        let (service, method) = parse_grpc_path("");
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "unknown");
+    }
+
+    #[test]
+    fn parse_grpc_path_single_segment() {
+        let (service, method) = parse_grpc_path("/onlyone");
+        // rsplit_once on "onlyone" finds no '/', so goes to else branch
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "onlyone");
+    }
+
+    #[test]
+    fn parse_grpc_path_with_query_string() {
+        let (service, method) = parse_grpc_path("/svc.Foo/Bar?key=val");
+        assert_eq!(service, "svc.Foo");
+        assert_eq!(method, "Bar");
+    }
+
+    #[test]
+    fn parse_grpc_path_empty_method() {
+        let (service, method) = parse_grpc_path("/svc.Foo/");
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "unknown");
+    }
+
+    #[test]
+    fn parse_grpc_path_double_slash_prefix() {
+        // trim_start_matches('/') removes all leading slashes, so "//method" -> "method"
+        // rsplit_once finds no '/', so it returns ("unknown", "method")
+        let (service, method) = parse_grpc_path("//method");
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "method");
+    }
+
+    #[test]
+    fn parse_grpc_path_uri_without_path() {
+        let (service, method) = parse_grpc_path("http://example.com");
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "unknown");
+    }
+
+    // -- detect_protocol_type --
+
+    #[test]
+    fn detect_protocol_type_json_rpc() {
+        let req = Request::builder()
+            .header("content-type", "application/json")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "JSON-RPC");
+    }
+
+    #[test]
+    fn detect_protocol_type_grpc_content_type() {
+        let req = Request::builder()
+            .header("content-type", "application/grpc+proto")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "gRPC");
+    }
+
+    #[test]
+    fn detect_protocol_type_grpc_encoding_header() {
+        let req = Request::builder()
+            .header("grpc-encoding", "gzip")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "gRPC");
+    }
+
+    #[test]
+    fn detect_protocol_type_te_header() {
+        let req = Request::builder()
+            .header("te", "trailers")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "gRPC");
+    }
+
+    #[test]
+    fn detect_protocol_type_http2_with_grpc_path() {
+        let req = Request::builder()
+            .version(Version::HTTP_2)
+            .uri("/org.dash.platform.dapi.v0.Platform/getStatus")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "gRPC");
+    }
+
+    #[test]
+    fn detect_protocol_type_http2_without_grpc_path() {
+        let req = Request::builder()
+            .version(Version::HTTP_2)
+            .uri("/health")
+            .body(())
+            .unwrap();
+        assert_eq!(detect_protocol_type(&req), "HTTP");
+    }
+
+    #[test]
+    fn detect_protocol_type_plain_http() {
+        let req = Request::builder().uri("/metrics").body(()).unwrap();
+        assert_eq!(detect_protocol_type(&req), "HTTP");
+    }
+
+    // -- http_status_to_grpc_status --
+
+    #[test]
+    fn http_status_to_grpc_status_known_codes() {
+        assert_eq!(http_status_to_grpc_status(200), 0);
+        assert_eq!(http_status_to_grpc_status(400), 3);
+        assert_eq!(http_status_to_grpc_status(401), 16);
+        assert_eq!(http_status_to_grpc_status(403), 7);
+        assert_eq!(http_status_to_grpc_status(404), 5);
+        assert_eq!(http_status_to_grpc_status(409), 6);
+        assert_eq!(http_status_to_grpc_status(412), 9);
+        assert_eq!(http_status_to_grpc_status(429), 8);
+        assert_eq!(http_status_to_grpc_status(499), 1);
+        assert_eq!(http_status_to_grpc_status(500), 13);
+        assert_eq!(http_status_to_grpc_status(501), 12);
+        assert_eq!(http_status_to_grpc_status(503), 14);
+        assert_eq!(http_status_to_grpc_status(504), 4);
+    }
+
+    #[test]
+    fn http_status_to_grpc_status_unknown_returns_2() {
+        assert_eq!(http_status_to_grpc_status(418), 2); // I'm a teapot
+        assert_eq!(http_status_to_grpc_status(502), 2);
+    }
+
+    // -- extract_grpc_status additional tests --
+
+    #[test]
+    fn extract_grpc_status_200_without_header_or_extension() {
+        let response: Response<()> = Response::new(());
+        assert_eq!(extract_grpc_status(&response, 200), 0);
+    }
+
+    #[test]
+    fn extract_grpc_status_non_200_without_header_or_extension() {
+        let response: Response<()> = Response::new(());
+        assert_eq!(extract_grpc_status(&response, 404), 5); // maps via http_status_to_grpc_status
+    }
+
+    // -- extract_remote_ip --
+
+    #[test]
+    fn extract_remote_ip_none_when_no_info() {
+        let req: Request<()> = Request::default();
+        assert_eq!(extract_remote_ip(&req), None);
+    }
 }

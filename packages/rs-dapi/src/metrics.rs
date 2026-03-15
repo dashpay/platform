@@ -567,3 +567,189 @@ pub fn workers_active_inc() {
 pub fn workers_active_dec() {
     WORKERS_ACTIVE.dec();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_to_i64_within_range() {
+        assert_eq!(clamp_to_i64(0), 0);
+        assert_eq!(clamp_to_i64(1000), 1000);
+        assert_eq!(clamp_to_i64(i64::MAX as u64), i64::MAX);
+    }
+
+    #[test]
+    fn clamp_to_i64_above_range() {
+        assert_eq!(clamp_to_i64(u64::MAX), i64::MAX);
+        assert_eq!(clamp_to_i64(i64::MAX as u64 + 1), i64::MAX);
+    }
+
+    #[test]
+    fn gather_prometheus_returns_non_empty() {
+        let (buffer, content_type) = gather_prometheus();
+        // Buffer may be empty if no metrics have been touched yet, but should not panic
+        assert!(!content_type.is_empty());
+        let _ = buffer; // just ensure it doesn't panic
+    }
+
+    #[test]
+    fn cache_metrics_functions_do_not_panic() {
+        let label = MethodLabel::from_type_name("test_method");
+        cache_hit("test_cache", &label);
+        cache_miss("test_cache", &label);
+        cache_memory_usage_bytes("test_cache", 1024);
+        cache_memory_capacity_bytes("test_cache", 2048);
+        cache_entries("test_cache", 10);
+    }
+
+    #[test]
+    fn request_metrics_functions_do_not_panic() {
+        requests_inc("gRPC", "test_endpoint", "0");
+        request_duration_observe("gRPC", "test_endpoint", "0", 0.1);
+    }
+
+    #[test]
+    fn platform_events_metrics_do_not_panic() {
+        platform_events_active_sessions_inc();
+        platform_events_active_sessions_dec();
+        platform_events_command("subscribe");
+        platform_events_forwarded_event();
+        platform_events_forwarded_ack();
+        platform_events_forwarded_error();
+        platform_events_upstream_stream_started();
+    }
+
+    #[test]
+    fn workers_active_metrics_do_not_panic() {
+        workers_active_inc();
+        workers_active_dec();
+    }
+
+    // -- MethodLabel tests --
+
+    #[test]
+    fn method_label_from_type_name() {
+        let label = MethodLabel::from_type_name("GetStatusRequest");
+        assert_eq!(label.as_str(), "GetStatusRequest");
+        assert_eq!(format!("{}", label), "GetStatusRequest");
+    }
+
+    #[test]
+    fn method_label_from_owned() {
+        let label = MethodLabel::from_owned("dynamic_method".to_string());
+        assert_eq!(label.as_str(), "dynamic_method");
+    }
+
+    #[test]
+    fn method_label_function() {
+        let value = 42_u32;
+        let label = method_label(&value);
+        assert_eq!(label.as_str(), "u32");
+    }
+
+    #[test]
+    fn attach_method_label_inserts_into_extensions() {
+        let mut extensions = axum::http::Extensions::new();
+        let label = MethodLabel::from_type_name("my_method");
+        attach_method_label(&mut extensions, label);
+        let retrieved = extensions.get::<MethodLabel>().unwrap();
+        assert_eq!(retrieved.as_str(), "my_method");
+    }
+
+    // -- Metric enum tests --
+
+    #[test]
+    fn metric_names_are_prefixed() {
+        assert!(Metric::CacheEvent.name().starts_with("rsdapi_"));
+        assert!(Metric::RequestCount.name().starts_with("rsdapi_"));
+        assert!(Metric::WorkersActive.name().starts_with("rsdapi_"));
+    }
+
+    #[test]
+    fn metric_help_strings_are_nonempty() {
+        assert!(!Metric::CacheEvent.help().is_empty());
+        assert!(!Metric::RequestDuration.help().is_empty());
+        assert!(!Metric::PlatformEventsActiveSessions.help().is_empty());
+    }
+
+    // -- Outcome enum tests --
+
+    #[test]
+    fn outcome_as_str() {
+        assert_eq!(Outcome::Hit.as_str(), "hit");
+        assert_eq!(Outcome::Miss.as_str(), "miss");
+    }
+
+    // -- Label enum tests --
+
+    #[test]
+    fn label_names() {
+        assert_eq!(Label::Cache.name(), "cache");
+        assert_eq!(Label::Method.name(), "method");
+        assert_eq!(Label::Outcome.name(), "outcome");
+        assert_eq!(Label::Protocol.name(), "protocol");
+        assert_eq!(Label::Endpoint.name(), "endpoint");
+        assert_eq!(Label::Status.name(), "status");
+        assert_eq!(Label::Op.name(), "op");
+    }
+
+    // -- Metrics struct tests --
+
+    #[test]
+    fn metrics_struct_cache_events() {
+        let label = MethodLabel::from_type_name("test");
+        Metrics::cache_events_hit("struct_cache", &label);
+        Metrics::cache_events_miss("struct_cache", &label);
+        Metrics::cache_events_inc("struct_cache", &label, Outcome::Hit);
+    }
+
+    // -- endpoint_label tests --
+
+    #[test]
+    fn endpoint_label_grpc_with_hint() {
+        let hint = MethodLabel::from_type_name("GetIdentity");
+        let result = endpoint_label("gRPC", "/org.dash.Platform/GetIdentity", Some(&hint));
+        assert_eq!(result, "GetIdentity");
+    }
+
+    #[test]
+    fn endpoint_label_grpc_without_hint_parses_path() {
+        let result = endpoint_label("gRPC", "/org.dash.platform.v0.Platform/getStatus", None);
+        assert_eq!(result, "org.dash.platform.v0.Platform/getStatus");
+    }
+
+    #[test]
+    fn endpoint_label_grpc_unknown_path_returns_raw() {
+        let result = endpoint_label("gRPC", "/", None);
+        assert_eq!(result, "/");
+    }
+
+    #[test]
+    fn endpoint_label_jsonrpc_with_hint() {
+        let hint = MethodLabel::from_type_name("getStatus");
+        let result = endpoint_label("JSON-RPC", "/", Some(&hint));
+        assert_eq!(result, "getStatus");
+    }
+
+    #[test]
+    fn endpoint_label_jsonrpc_without_hint() {
+        let result = endpoint_label("JSON-RPC", "/rpc", None);
+        assert_eq!(result, "/rpc");
+    }
+
+    #[test]
+    fn endpoint_label_http_returns_path() {
+        let result = endpoint_label("HTTP", "/health", None);
+        assert_eq!(result, "/health");
+    }
+
+    // -- MetricsLayer tests --
+
+    #[test]
+    fn metrics_layer_new() {
+        let layer = MetricsLayer::new();
+        // Just ensure it constructs without panic
+        let _ = layer;
+    }
+}

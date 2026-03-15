@@ -310,3 +310,84 @@ pub(super) fn build_wait_for_state_transition_error_response(
     );
     tenderdash_status.into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_error_response_from_tenderdash_client_error() {
+        let tenderdash_status = TenderdashStatus::new(42, Some("td error".to_string()), None);
+        let error = DapiError::TenderdashClientError(tenderdash_status);
+        let response = build_wait_for_state_transition_error_response(&error);
+        let inner = response.into_inner();
+        match inner.version {
+            Some(
+                dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version::V0(
+                    v0,
+                ),
+            ) => match v0.result {
+                Some(
+                    dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(
+                        st_err,
+                    ),
+                ) => {
+                    assert_eq!(st_err.code, 42);
+                    assert_eq!(st_err.message, "td error");
+                }
+                other => panic!("expected Error result, got {:?}", other),
+            },
+            other => panic!("expected V0, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_error_response_from_generic_dapi_error() {
+        let error = DapiError::Timeout("timed out".to_string());
+        let response = build_wait_for_state_transition_error_response(&error);
+        let inner = response.into_inner();
+        match inner.version {
+            Some(
+                dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version::V0(
+                    v0,
+                ),
+            ) => match v0.result {
+                Some(
+                    dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(
+                        st_err,
+                    ),
+                ) => {
+                    // DapiError::Timeout -> to_status() -> internal with message
+                    assert!(!st_err.message.is_empty());
+                }
+                other => panic!("expected Error result, got {:?}", other),
+            },
+            other => panic!("expected V0, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_error_response_from_error_with_empty_status_message() {
+        // Internal error with a message should produce non-empty message
+        let error = DapiError::Internal("internal failure".to_string());
+        let response = build_wait_for_state_transition_error_response(&error);
+        let inner = response.into_inner();
+        match inner.version {
+            Some(
+                dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version::V0(
+                    v0,
+                ),
+            ) => match v0.result {
+                Some(
+                    dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(
+                        st_err,
+                    ),
+                ) => {
+                    assert!(st_err.message.contains("internal failure"));
+                }
+                other => panic!("expected Error result, got {:?}", other),
+            },
+            other => panic!("expected V0, got {:?}", other),
+        }
+    }
+}

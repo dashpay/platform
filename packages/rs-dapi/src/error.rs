@@ -295,6 +295,452 @@ impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<T, E> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // -- to_status tests --
+
+    #[test]
+    fn to_status_maps_not_found() {
+        let err = DapiError::NotFound("missing item".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+        assert_eq!(status.message(), "missing item");
+    }
+
+    #[test]
+    fn to_status_maps_already_exists() {
+        let err = DapiError::AlreadyExists("dup".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::AlreadyExists);
+        assert_eq!(status.message(), "dup");
+    }
+
+    #[test]
+    fn to_status_maps_invalid_argument() {
+        let err = DapiError::InvalidArgument("bad arg".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(status.message(), "bad arg");
+    }
+
+    #[test]
+    fn to_status_maps_resource_exhausted() {
+        let err = DapiError::ResourceExhausted("too many".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(status.message(), "too many");
+    }
+
+    #[test]
+    fn to_status_maps_aborted() {
+        let err = DapiError::Aborted("cancelled".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::Aborted);
+        assert_eq!(status.message(), "cancelled");
+    }
+
+    #[test]
+    fn to_status_maps_unavailable() {
+        let err = DapiError::Unavailable("down".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+        assert_eq!(status.message(), "down");
+    }
+
+    #[test]
+    fn to_status_maps_service_unavailable() {
+        let err = DapiError::ServiceUnavailable("offline".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+        assert_eq!(status.message(), "offline");
+    }
+
+    #[test]
+    fn to_status_maps_failed_precondition() {
+        let err = DapiError::FailedPrecondition("precond".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+        assert_eq!(status.message(), "precond");
+    }
+
+    #[test]
+    fn to_status_maps_method_not_found() {
+        let err = DapiError::MethodNotFound("no such method".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::Unimplemented);
+        assert_eq!(status.message(), "no such method");
+    }
+
+    #[test]
+    fn to_status_maps_status_passthrough() {
+        let original = tonic::Status::permission_denied("forbidden");
+        let err = DapiError::Status(original);
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::PermissionDenied);
+        assert_eq!(status.message(), "forbidden");
+    }
+
+    #[test]
+    fn to_status_defaults_to_internal_for_other_variants() {
+        let err = DapiError::Configuration("bad config".into());
+        let status = err.to_status();
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert!(status.message().contains("bad config"));
+
+        let err2 = DapiError::ConnectionClosed;
+        let status2 = err2.to_status();
+        assert_eq!(status2.code(), tonic::Code::Internal);
+    }
+
+    // -- From<DapiError> for tonic::Status --
+
+    #[test]
+    fn dapi_error_converts_to_tonic_status() {
+        let err = DapiError::NotFound("gone".into());
+        let status: tonic::Status = err.into();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    // -- From<Box<dyn Error>> --
+
+    #[test]
+    fn boxed_error_converts_to_internal() {
+        let boxed: Box<dyn std::error::Error + Send + Sync> = "dynamic error".into();
+        let err: DapiError = boxed.into();
+        match err {
+            DapiError::Internal(msg) => assert_eq!(msg, "dynamic error"),
+            other => panic!("expected Internal, got {:?}", other),
+        }
+    }
+
+    // -- into_legacy_status tests --
+
+    #[test]
+    fn into_legacy_status_maps_not_found() {
+        let err = DapiError::NotFound("x".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+        assert_eq!(status.message(), "x");
+    }
+
+    #[test]
+    fn into_legacy_status_maps_already_exists() {
+        let err = DapiError::AlreadyExists("dup".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::AlreadyExists);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_invalid_argument() {
+        let err = DapiError::InvalidArgument("bad".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_resource_exhausted() {
+        let err = DapiError::ResourceExhausted("full".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_failed_precondition() {
+        let err = DapiError::FailedPrecondition("precond".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_client_to_invalid_argument() {
+        let err = DapiError::Client("client err".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(status.message(), "client err");
+    }
+
+    #[test]
+    fn into_legacy_status_maps_service_unavailable() {
+        let err = DapiError::ServiceUnavailable("down".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_unavailable() {
+        let err = DapiError::Unavailable("gone".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_method_not_found() {
+        let err = DapiError::MethodNotFound("nope".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::Unimplemented);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_timeout() {
+        let err = DapiError::Timeout("timed out".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::DeadlineExceeded);
+    }
+
+    #[test]
+    fn into_legacy_status_maps_aborted() {
+        let err = DapiError::Aborted("abort".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::Aborted);
+    }
+
+    #[test]
+    fn into_legacy_status_falls_through_to_to_status() {
+        let err = DapiError::Internal("boom".into());
+        let status = err.into_legacy_status();
+        assert_eq!(status.code(), tonic::Code::Internal);
+    }
+
+    // -- no_valid_tx_proof tests --
+
+    #[test]
+    fn no_valid_tx_proof_with_32_bytes_uses_hex_directly() {
+        let hash = [0xab_u8; 32];
+        let err = DapiError::no_valid_tx_proof(&hash);
+        match err {
+            DapiError::NoValidTxProof(hex_str) => {
+                assert_eq!(hex_str, hex::encode(hash));
+            }
+            other => panic!("expected NoValidTxProof, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn no_valid_tx_proof_with_non_32_bytes_hashes_input() {
+        let tx = b"hello tx";
+        let err = DapiError::no_valid_tx_proof(tx);
+        match err {
+            DapiError::NoValidTxProof(hex_str) => {
+                let expected = hex::encode(sha2::Sha256::digest(tx));
+                assert_eq!(hex_str, expected);
+            }
+            other => panic!("expected NoValidTxProof, got {:?}", other),
+        }
+    }
+
+    // -- from_tenderdash_error --
+
+    #[test]
+    fn from_tenderdash_error_creates_tenderdash_client_error() {
+        let value = json!({"code": 42, "message": "test error"});
+        let err = DapiError::from_tenderdash_error(value);
+        match err {
+            DapiError::TenderdashClientError(status) => {
+                assert_eq!(status.code, 42);
+            }
+            other => panic!("expected TenderdashClientError, got {:?}", other),
+        }
+    }
+
+    // -- constructor helpers --
+
+    #[test]
+    fn constructor_helpers_create_correct_variants() {
+        match DapiError::configuration("cfg err") {
+            DapiError::Configuration(msg) => assert_eq!(msg, "cfg err"),
+            other => panic!("expected Configuration, got {:?}", other),
+        }
+        match DapiError::streaming_service("stream err") {
+            DapiError::StreamingService(msg) => assert_eq!(msg, "stream err"),
+            other => panic!("expected StreamingService, got {:?}", other),
+        }
+        match DapiError::client("client err") {
+            DapiError::Client(msg) => assert_eq!(msg, "client err"),
+            other => panic!("expected Client, got {:?}", other),
+        }
+        match DapiError::server("server err") {
+            DapiError::Server(msg) => assert_eq!(msg, "server err"),
+            other => panic!("expected Server, got {:?}", other),
+        }
+        match DapiError::server_unavailable("http://foo", "conn refused") {
+            DapiError::ServerUnavailable(uri, msg) => {
+                assert_eq!(uri, "http://foo");
+                assert_eq!(msg, "conn refused");
+            }
+            other => panic!("expected ServerUnavailable, got {:?}", other),
+        }
+    }
+
+    // -- map_join_result --
+
+    #[tokio::test]
+    async fn map_join_result_ok_ok() {
+        let handle = tokio::spawn(async { Ok::<_, DapiError>(42) });
+        let result = DapiError::map_join_result(handle.await);
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn map_join_result_ok_err() {
+        let handle =
+            tokio::spawn(async { Err::<i32, DapiError>(DapiError::Internal("inner".into())) });
+        let result = DapiError::map_join_result(handle.await);
+        assert!(matches!(result.unwrap_err(), DapiError::Internal(_)));
+    }
+
+    #[tokio::test]
+    async fn map_join_result_join_error() {
+        let handle = tokio::spawn(async {
+            panic!("deliberate panic for test");
+            #[allow(unreachable_code)]
+            Ok::<i32, DapiError>(0)
+        });
+        let result = DapiError::map_join_result(handle.await);
+        assert!(matches!(result.unwrap_err(), DapiError::TaskJoin(_)));
+    }
+
+    // -- MapToDapiResult tests --
+
+    #[tokio::test]
+    async fn map_to_dapi_result_nested_ok() {
+        let handle = tokio::spawn(async { Ok::<_, DapiError>(99) });
+        let result: DAPIResult<i32> = handle.await.to_dapi_result();
+        assert_eq!(result.unwrap(), 99);
+    }
+
+    #[tokio::test]
+    async fn map_to_dapi_result_nested_inner_err() {
+        let handle =
+            tokio::spawn(async { Err::<i32, DapiError>(DapiError::NotFound("nope".into())) });
+        let result: DAPIResult<i32> = handle.await.to_dapi_result();
+        assert!(matches!(result.unwrap_err(), DapiError::NotFound(_)));
+    }
+
+    #[test]
+    fn map_to_dapi_result_flat_ok() {
+        let r: Result<i32, DapiError> = Ok(10);
+        let result: DAPIResult<i32> = r.to_dapi_result();
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    #[test]
+    fn map_to_dapi_result_flat_err() {
+        let r: Result<i32, DapiError> = Err(DapiError::Timeout("too slow".into()));
+        let result: DAPIResult<i32> = r.to_dapi_result();
+        assert!(matches!(result.unwrap_err(), DapiError::Timeout(_)));
+    }
+
+    // -- From<dashcore_rpc::Error> --
+
+    #[test]
+    fn from_dashcore_rpc_not_found_code_minus_5() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -5,
+            message: "not found".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::NotFound(msg) if msg == "not found"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_not_found_code_minus_8() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -8,
+            message: "out of range".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::NotFound(msg) if msg == "out of range"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_invalid_argument_code_minus_1() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -1,
+            message: "invalid param".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::InvalidArgument(msg) if msg == "invalid param"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_already_exists_code_minus_27() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -27,
+            message: "already in chain".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::AlreadyExists(msg) if msg == "already in chain"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_failed_precondition_code_minus_26() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -26,
+            message: "rejected".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::FailedPrecondition(msg) if msg == "rejected"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_invalid_argument_codes_minus_25_and_minus_22() {
+        for code in [-25, -22] {
+            let rpc_err =
+                dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+                    code,
+                    message: "deser err".to_string(),
+                    data: None,
+                }));
+            let err: DapiError = rpc_err.into();
+            assert!(
+                matches!(err, DapiError::InvalidArgument(_)),
+                "code {code} should map to InvalidArgument"
+            );
+        }
+    }
+
+    #[test]
+    fn from_dashcore_rpc_unknown_code_maps_to_unavailable() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -999,
+            message: "unknown".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::Unavailable(msg) if msg.contains("-999")));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_invalid_cookie_file() {
+        let rpc_err = dashcore_rpc::Error::InvalidCookieFile;
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::Unavailable(msg) if msg.contains("cookie")));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_unexpected_structure() {
+        let rpc_err = dashcore_rpc::Error::UnexpectedStructure("bad struct".to_string());
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::InvalidData(msg) if msg == "bad struct"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_io_error() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe broken");
+        let rpc_err = dashcore_rpc::Error::Io(io_err);
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::Io(_)));
+    }
+}
+
 // Provide a conversion from dashcore-rpc Error to our DapiError so callers can
 // use generic helpers like MapToDapiResult without custom closures.
 impl From<dashcore_rpc::Error> for DapiError {

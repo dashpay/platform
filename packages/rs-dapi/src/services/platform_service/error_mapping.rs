@@ -425,4 +425,244 @@ mod tests {
         let decoded = decode_consensus_error(info_base64.to_string()).unwrap();
         ConsensusError::deserialize_from_bytes(&decoded).expect("should deserialize");
     }
+
+    // -- map_tenderdash_message tests --
+
+    #[test]
+    fn map_tenderdash_message_tx_already_exists() {
+        let result = map_tenderdash_message("tx already exists in cache");
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), DapiError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn map_tenderdash_message_tx_too_large() {
+        let result = map_tenderdash_message("tx too large. Max size: 100kb");
+        assert!(result.is_some());
+        match result.unwrap() {
+            DapiError::InvalidArgument(msg) => {
+                assert!(msg.contains("state transition is too large"));
+            }
+            other => panic!("expected InvalidArgument, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_tenderdash_message_mempool_full() {
+        let result = map_tenderdash_message("mempool is full");
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), DapiError::ResourceExhausted(_)));
+    }
+
+    #[test]
+    fn map_tenderdash_message_context_deadline() {
+        let result = map_tenderdash_message("rpc error: context deadline exceeded");
+        assert!(result.is_some());
+        match result.unwrap() {
+            DapiError::Timeout(msg) => {
+                assert!(msg.contains("timed out"));
+            }
+            other => panic!("expected Timeout, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn map_tenderdash_message_too_many_requests() {
+        let result = map_tenderdash_message("too_many_requests");
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), DapiError::ResourceExhausted(_)));
+    }
+
+    #[test]
+    fn map_tenderdash_message_broadcast_confirmation() {
+        let result =
+            map_tenderdash_message("broadcast confirmation not received: timed out waiting");
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), DapiError::Timeout(_)));
+    }
+
+    #[test]
+    fn map_tenderdash_message_unknown_returns_none() {
+        assert!(map_tenderdash_message("some random error").is_none());
+    }
+
+    // -- TenderdashStatus grpc_code tests --
+
+    #[test]
+    fn grpc_code_standard_codes() {
+        // OK = 0
+        let status = TenderdashStatus::new(0, Some("ok".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::Ok);
+
+        // InvalidArgument = 3
+        let status = TenderdashStatus::new(3, Some("bad".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn grpc_code_consensus_ranges() {
+        // 10000..20000 => InvalidArgument
+        let status = TenderdashStatus::new(10001, Some("consensus".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::InvalidArgument);
+
+        // 20000..30000 => Unauthenticated
+        let status = TenderdashStatus::new(25000, Some("auth".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::Unauthenticated);
+
+        // 30000..40000 => FailedPrecondition
+        let status = TenderdashStatus::new(35000, Some("precond".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::FailedPrecondition);
+
+        // 40000..50000 => InvalidArgument
+        let status = TenderdashStatus::new(45000, Some("validation".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn grpc_code_out_of_range_returns_internal() {
+        let status = TenderdashStatus::new(99999, Some("unknown".to_string()), None);
+        assert_eq!(status.to_status().code(), tonic::Code::Internal);
+    }
+
+    // -- TenderdashStatus grpc_message tests --
+
+    #[test]
+    fn grpc_message_prefers_explicit_message() {
+        let status = TenderdashStatus::new(1, Some("explicit msg".to_string()), None);
+        let tonic_status = status.to_status();
+        assert_eq!(tonic_status.message(), "explicit msg");
+    }
+
+    #[test]
+    fn grpc_message_fallback_to_unknown_error() {
+        let status = TenderdashStatus::new(42, None, None);
+        let tonic_status = status.to_status();
+        assert!(tonic_status.message().contains("42"));
+    }
+
+    // -- TenderdashStatus::from(Value) tests --
+
+    #[test]
+    fn from_json_value_with_code_and_message() {
+        let value = serde_json::json!({"code": 10, "message": "test error"});
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 10);
+        assert_eq!(status.message.as_deref(), Some("test error"));
+    }
+
+    #[test]
+    fn from_json_value_missing_code_defaults_to_zero() {
+        let value = serde_json::json!({"message": "no code"});
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 0);
+    }
+
+    #[test]
+    fn from_json_value_empty_message_uses_data() {
+        let value = serde_json::json!({"code": 1, "message": "", "data": "detail from data"});
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some("detail from data"));
+    }
+
+    #[test]
+    fn from_json_value_internal_error_message_uses_data() {
+        let value =
+            serde_json::json!({"code": 1, "message": "Internal error", "data": "real detail"});
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some("real detail"));
+    }
+
+    #[test]
+    fn from_json_value_non_object() {
+        let value = serde_json::json!("not an object");
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, u32::MAX as i64);
+        assert!(
+            status
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("Invalid error object")
+        );
+    }
+
+    // -- TenderdashStatus Debug --
+
+    #[test]
+    fn tenderdash_status_debug_format() {
+        let status = TenderdashStatus::new(42, Some("msg".to_string()), Some(vec![0xab, 0xcd]));
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("42"));
+        assert!(debug_str.contains("msg"));
+        assert!(debug_str.contains("abcd")); // hex encoded consensus error
+    }
+
+    #[test]
+    fn tenderdash_status_debug_no_consensus_error() {
+        let status = TenderdashStatus::new(0, None, None);
+        let debug_str = format!("{:?}", status);
+        assert!(debug_str.contains("None"));
+    }
+
+    // -- base64_decode tests --
+
+    #[test]
+    fn base64_decode_valid() {
+        let decoded = base64_decode("aGVsbG8=");
+        assert_eq!(decoded, Some(b"hello".to_vec()));
+    }
+
+    #[test]
+    fn base64_decode_invalid() {
+        let decoded = base64_decode("!!!not valid base64!!!");
+        assert!(decoded.is_none());
+    }
+
+    #[test]
+    fn base64_decode_unpadded() {
+        // "hello" base64 without padding
+        let decoded = base64_decode("aGVsbG8");
+        assert_eq!(decoded, Some(b"hello".to_vec()));
+    }
+
+    // -- decode_consensus_error with invalid data --
+
+    #[test]
+    fn decode_consensus_error_invalid_base64() {
+        assert!(decode_consensus_error("!!!".to_string()).is_none());
+    }
+
+    #[test]
+    fn decode_consensus_error_not_cbor() {
+        // Valid base64 but not valid CBOR
+        let b64 = base64::prelude::BASE64_STANDARD.encode(b"not cbor data");
+        assert!(decode_consensus_error(b64).is_none());
+    }
+
+    // -- From<TenderdashStatus> for StateTransitionBroadcastError --
+
+    #[test]
+    fn tenderdash_status_to_broadcast_error() {
+        let status = TenderdashStatus::new(42, Some("broadcast err".to_string()), None);
+        let broadcast_err: StateTransitionBroadcastError = status.into();
+        assert_eq!(broadcast_err.code, 42);
+        assert_eq!(broadcast_err.message, "broadcast err");
+    }
+
+    #[test]
+    fn tenderdash_status_to_broadcast_error_clamps_negative_code() {
+        let status = TenderdashStatus::new(-1, Some("neg".to_string()), None);
+        let broadcast_err: StateTransitionBroadcastError = status.into();
+        assert_eq!(broadcast_err.code, 0);
+    }
+
+    // -- to_status with map_tenderdash_message shortcut --
+
+    #[test]
+    fn to_status_maps_known_tenderdash_message() {
+        let status = TenderdashStatus::new(0, Some("tx already exists in cache".to_string()), None);
+        let tonic_status = status.to_status();
+        // "tx already exists in cache" maps to AlreadyExists, which maps to already_exists
+        assert_eq!(tonic_status.code(), tonic::Code::AlreadyExists);
+    }
 }
