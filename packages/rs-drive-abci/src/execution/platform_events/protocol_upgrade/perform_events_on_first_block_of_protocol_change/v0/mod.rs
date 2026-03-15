@@ -804,12 +804,17 @@ mod tests {
         // Verify that the AddressBalances root tree was created
         use drive::drive::RootTree;
         use drive::grovedb::Element;
+        use drive::grovedb_path::SubtreePath;
         let element = platform.drive.grove.get(
-            [].as_ref(),
+            SubtreePath::empty(),
             &[RootTree::AddressBalances as u8],
             Some(&transaction),
+            &platform_version.drive.grove_version,
         );
-        assert!(element.is_ok(), "AddressBalances root tree should exist");
+        assert!(
+            element.value.is_ok(),
+            "AddressBalances root tree should exist"
+        );
     }
 
     #[test]

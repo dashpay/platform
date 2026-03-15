@@ -46,7 +46,7 @@ where
 mod tests {
     use crate::config::PlatformConfig;
     use crate::platform_types::platform::Platform;
-    use crate::rpc::core::MockCoreRPCLike;
+    use crate::rpc::core::{CoreRPCLike, MockCoreRPCLike};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
