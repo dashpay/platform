@@ -38,7 +38,7 @@ security guarantees as a full node.
 | **Smart contracts** | `-` Limited Script opcodes | `+++` Solidity / Vyper on EVM | `+++` Rust / C on SVM | `++` Per-parachain, typically Wasm | `++` Rust / JS / AssemblyScript on Wasm VM | `+` App-specific (Go) | `++` Solidity on EVM, Rust on Wasm | `-` Coming in v4.0 |
 | **VM / execution** | `-` Script interpreter | `+++` EVM | `+++` SVM (eBPF) | `++` Wasm (per parachain) | `++` Wasm VM | `+` No VM (compiled Go) | `++` EVM + Wasm subnets | `-` No VM (data contracts; VM planned for v4.0) |
 | **Developer languages** | `-` Script | `+++` Solidity, Vyper | `++` Rust, C | `++` Rust (Substrate) | `++` Rust, JS, AssemblyScript | `+` Go | `++` Solidity, Rust | `+` JSON Schema (data contracts), Rust/JS/Swift (SDKs) |
-| **Smart contract security** | `+++` No VM attack surface | `+` Reentrancy, gas exploits | `++` No reentrancy, but complexity | `++` Sandboxed per parachain | `++` Wasm sandboxing | `++` No VM attack surface | `+` Inherits EVM risks | `+++` No VM attack surface (data contracts are declarative) |
+| **Smart contract security** | N/A | `+` Reentrancy, gas exploits | `++` No reentrancy, but complexity | `++` Sandboxed per parachain | `++` Wasm sandboxing | N/A | `+` Inherits EVM risks | N/A (data contracts are declarative) |
 
 Dash Platform takes a fundamentally different approach: instead of a VM that
 executes arbitrary code, developers define **data contracts** -- JSON
