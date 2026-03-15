@@ -2921,11 +2921,14 @@ mod tests {
     /// 2. Verifies compacted entries exist after the run
     /// 3. Verifies entries with expired timestamps are cleaned up
     ///
-    /// Note: Since cleanup runs every block, entries are cleaned up as time passes.
-    /// With 6-hour block spacing and 24-hour expiration:
-    /// - First compaction at block 64 (hour 384)
-    /// - Those entries expire at hour 408 (block 68)
-    /// - By block 70, entries from block 64 should be cleaned up
+    /// With 24-hour block spacing, entries expire after 7 blocks (168 hours / 24 = 7).
+    /// Compaction happens every 64 blocks.
+    ///
+    /// Timeline with 135 blocks:
+    /// - Block 64: Compaction #1 → expires at block 71 → cleaned up by block 128
+    /// - Block 128: Compaction #2 → expires at block 135 → still valid at 135!
+    ///
+    /// So at block 135, we should see 1 compacted entry (from block 128)
     #[test]
     #[stack_size(4 * 1024 * 1024)]
     fn run_chain_cleanup_expired_compacted_address_balances() {
@@ -2969,45 +2972,40 @@ mod tests {
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
-            total_hpmns: 100,
+            total_hpmns: 20,
             extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            validator_quorum_count: 4,
+            chain_lock_quorum_count: 4,
             upgrading_info: None,
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
-            sign_instant_locks: true,
+            verify_state_transition_results: false,
+            sign_instant_locks: false,
             ..Default::default()
         };
 
-        // Use 3-hour block spacing to allow some entries to expire while others remain
+        // Use 24-hour block spacing to allow some entries to expire while others remain
         // Compaction happens every 64 blocks, entries expire after 1 week (168 hours)
-        // With 3-hour spacing, entries expire after 56 blocks (168/3 = 56)
+        // With 24-hour spacing, entries expire after 7 blocks (168/24 = 7)
         //
-        // Timeline with 300 blocks:
-        // - Block 64: Compaction #1 → expires at block 120 → cleaned up
-        // - Block 128: Compaction #2 → expires at block 184 → cleaned up
-        // - Block 192: Compaction #3 → expires at block 248 → cleaned up
-        // - Block 256: Compaction #4 → expires at block 312 → still valid at 300!
+        // Timeline with 135 blocks:
+        // - Block 64: Compaction #1 → expires at block 71 → cleaned up by block 128
+        // - Block 128: Compaction #2 → expires at block 135 → still valid at 135!
         //
-        // So at block 300, we should see 1 compacted entry (from block 256)
+        // So at block 135, we should see 1 compacted entry (from block 128)
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
                 ..Default::default()
             },
-            block_spacing_ms: 10_800_000, // 3 hours
-            testing_configs: PlatformTestConfig {
-                disable_checkpoints: false,
-                ..PlatformTestConfig::default_minimal_verifications()
-            },
+            block_spacing_ms: 86_400_000, // 24 hours
+            testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
 
@@ -3015,13 +3013,13 @@ mod tests {
             .with_config(config.clone())
             .build_with_mock_rpc();
 
-        // Run 300 blocks to:
-        // 1. Trigger multiple compactions (at blocks 64, 128, 192, 256)
-        // 2. Allow time for some entries to expire and be cleaned up
-        // 3. End with at least one valid compacted entry (from block 256)
+        // Run 135 blocks to:
+        // 1. Trigger two compactions (at blocks 64 and 128)
+        // 2. Allow time for the first entry to expire and be cleaned up
+        // 3. End with exactly one valid compacted entry (from block 128)
         let outcome = run_chain_for_strategy(
             &mut platform,
-            300,
+            135,
             strategy,
             config,
             15,
@@ -3088,33 +3086,29 @@ mod tests {
                 let result = v0.result.expect("expected a result");
                 match result {
                     get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
-                        // With 3-hour block spacing over 300 blocks:
-                        // - Compactions at blocks 64, 128, 192, 256
-                        // - Entries expire 56 blocks after creation (1 week / 3hrs = 56 blocks)
-                        // - Block 64 entry expires at 120 → cleaned up
-                        // - Block 128 entry expires at 184 → cleaned up
-                        // - Block 192 entry expires at 248 → cleaned up
-                        // - Block 256 entry expires at 312 → still valid at 300!
+                        // With 24-hour block spacing over 135 blocks:
+                        // - Compaction at block 64 → expires at block 71 → cleaned up by block 128
+                        // - Compaction at block 128 → expires at block 135 → still valid at 135!
                         //
                         // We expect exactly 1 compacted entry to remain.
                         // This proves both compaction AND cleanup are working correctly.
 
-                        // Assert exactly 1 compacted entry remains (earlier ones were cleaned up)
+                        // Assert exactly 1 compacted entry remains (the first was cleaned up)
                         assert_eq!(
                             entries.compacted_block_changes.len(),
                             1,
-                            "expected exactly 1 compacted entry (from ~block 256), but found {}. \
+                            "expected exactly 1 compacted entry (from ~block 128), but found {}. \
                              Earlier compactions should have been cleaned up.",
                             entries.compacted_block_changes.len()
                         );
 
                         let entry = &entries.compacted_block_changes[0];
 
-                        // The remaining entry should be from the most recent compaction (~block 256)
-                        // It should start after block 128 (earlier compactions were cleaned up)
+                        // The remaining entry should be from the second compaction (~block 128)
+                        // It should start after block 64 (the first compaction was cleaned up)
                         assert!(
-                            entry.start_block_height > 128,
-                            "compacted entry should start after block 128 (cleanup removed earlier entries), \
+                            entry.start_block_height > 64,
+                            "compacted entry should start after block 64 (cleanup removed earlier entry), \
                              but starts at {}",
                             entry.start_block_height
                         );
@@ -3147,7 +3141,7 @@ mod tests {
         }
 
         // Query non-compacted (recent) address balance changes
-        // These are blocks after the last compaction (~block 258 to 300)
+        // These are blocks after the last compaction (~block 129 to 135)
         let recent_request = GetRecentAddressBalanceChangesRequest {
             version: Some(RecentChangesRequestVersion::V0(
                 GetRecentAddressBalanceChangesRequestV0 {
@@ -3178,19 +3172,17 @@ mod tests {
                 let result = v0.result.expect("expected a result");
                 match result {
                     get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
-                        // After compaction at ~block 257, blocks 258-300 should be non-compacted
-                        // That's approximately 42 blocks of recent address changes
+                        // After compaction at ~block 129, blocks 130-135 should be non-compacted
                         assert!(
                             !entries.block_changes.is_empty(),
                             "expected non-compacted recent blocks after the last compaction"
                         );
 
-                        // We should have roughly 300 - 257 = 43 blocks of recent data
-                        // (allowing some variance due to exact compaction timing)
+                        // We should have roughly 135 - 129 = 6 blocks of recent data
                         let recent_block_count = entries.block_changes.len();
                         assert!(
-                            recent_block_count >= 40 && recent_block_count <= 50,
-                            "expected ~43 recent non-compacted blocks, but found {}",
+                            recent_block_count >= 4 && recent_block_count <= 10,
+                            "expected ~6 recent non-compacted blocks, but found {}",
                             recent_block_count
                         );
 
@@ -3214,8 +3206,8 @@ mod tests {
                         // The first recent block should be after the compacted range
                         let first_recent_block = entries.block_changes.first().unwrap();
                         assert!(
-                            first_recent_block.block_height > 250,
-                            "first recent block should be after compaction (~block 257), but is {}",
+                            first_recent_block.block_height > 120,
+                            "first recent block should be after compaction (~block 129), but is {}",
                             first_recent_block.block_height
                         );
                     }

@@ -89,6 +89,38 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             );
         }
 
+        // Total input amounts must cover the shield amount.
+        // Without this check, an attacker could provide small inputs but a large
+        // shield amount, crediting the pool more than the inputs debited.
+        let input_sum = self
+            .inputs
+            .values()
+            .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
+        match input_sum {
+            Some(sum) if sum >= self.amount => {}
+            Some(sum) => {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::ShieldedInvalidValueBalanceError(
+                        ShieldedInvalidValueBalanceError::new(format!(
+                            "total input amount ({}) is less than shield amount ({})",
+                            sum, self.amount
+                        )),
+                    )
+                    .into(),
+                );
+            }
+            None => {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::ShieldedInvalidValueBalanceError(
+                        ShieldedInvalidValueBalanceError::new(
+                            "total input amounts overflow".to_string(),
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+
         // Proof must not be empty
         let result = validate_proof_not_empty(&self.proof);
         if !result.is_valid() {

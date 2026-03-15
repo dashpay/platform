@@ -167,3 +167,301 @@ impl<C> Platform<C> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_no_epoch_change_same_protocol_version_succeeds() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 0,
+            previous_epoch_index: None,
+            is_epoch_change: false,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 2,
+            core_height: 100,
+            epoch: Epoch::default(),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_not_epoch_change_with_different_protocol_version_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Not an epoch change
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 0,
+            previous_epoch_index: None,
+            is_epoch_change: false,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 2,
+            core_height: 100,
+            epoch: Epoch::default(),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        // Use a different (lower) protocol version so previous != current
+        // The platform was initialized with latest, now pass an older version
+        let older_version = PlatformVersion::first();
+        assert_ne!(
+            older_version.protocol_version, platform_version.protocol_version,
+            "this test requires at least two protocol versions to exist"
+        );
+
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            older_version,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(msg))) => {
+                assert!(msg.contains("unexpected protocol upgrade"));
+            }
+            _ => panic!("expected CorruptedCodeExecution error"),
+        }
+    }
+
+    #[test]
+    fn test_epoch_change_blocks_global_cache() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Simulate epoch change (not genesis)
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 5,
+            previous_epoch_index: Some(4),
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 500,
+            core_height: 100,
+            epoch: Epoch::new(5).expect("expected epoch"),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        // Ensure the global cache starts unblocked
+        {
+            let counter = platform.drive.cache.protocol_versions_counter.read();
+            assert!(counter.get(&platform_version.protocol_version).is_ok());
+        }
+
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+
+        // After epoch change, the global cache should be blocked
+        {
+            let counter = platform.drive.cache.protocol_versions_counter.read();
+            assert!(counter.get(&platform_version.protocol_version).is_err());
+        }
+    }
+
+    #[test]
+    fn test_epoch_change_inserts_fee_version_when_empty() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 1,
+            previous_epoch_index: Some(0),
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        // Clear fee versions to test the "empty" path
+        block_platform_state.previous_fee_versions_mut().clear();
+
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+
+        // Verify that a fee version was inserted for the current epoch
+        let fee_versions = block_platform_state.previous_fee_versions();
+        assert!(
+            fee_versions.get(&1u16).is_some(),
+            "expected fee version to be inserted for epoch 1"
+        );
+    }
+
+    #[test]
+    fn test_epoch_change_with_upgrade_vote_sets_next_version() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Use the current version as the "next" vote target, so it doesn't
+        // exceed the latest supported version (which would trigger a warning
+        // path that requires genesis_time to be stored).
+        let voted_version = platform_version.protocol_version;
+
+        // Insert enough votes for the current version
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(voted_version, 100);
+        }
+
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 2,
+            previous_epoch_index: Some(1),
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 200,
+            core_height: 100,
+            epoch: Epoch::new(2).expect("expected epoch"),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            platform_version,
+        );
+
+        assert!(result.is_ok(), "expected ok, got error: {:?}", result.err());
+
+        // The next epoch protocol version should now be set to the voted version
+        assert_eq!(
+            block_platform_state.next_epoch_protocol_version(),
+            voted_version
+        );
+    }
+
+    #[test]
+    fn test_genesis_epoch_change_does_not_trigger_upgrade_logic() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Genesis epoch change (epoch 0, is_epoch_change = true)
+        // is_epoch_change_but_not_genesis() returns false for epoch 0
+        let epoch_info = EpochInfo::V0(EpochInfoV0 {
+            current_epoch_index: 0,
+            previous_epoch_index: None,
+            is_epoch_change: true,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 1,
+            core_height: 100,
+            epoch: Epoch::default(),
+        };
+
+        let last_committed_state = platform.state.load();
+        let mut block_platform_state = last_committed_state.as_ref().clone();
+
+        // Global cache should still be accessible after genesis epoch (no blocking)
+        let result = platform.upgrade_protocol_version_on_epoch_change_v0(
+            &block_info,
+            &epoch_info,
+            &last_committed_state,
+            &mut block_platform_state,
+            &transaction,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+
+        // The global cache should NOT be blocked (genesis epoch doesn't trigger upgrade)
+        {
+            let counter = platform.drive.cache.protocol_versions_counter.read();
+            assert!(counter.get(&platform_version.protocol_version).is_ok());
+        }
+    }
+}

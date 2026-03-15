@@ -61,3 +61,52 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_identities_contract_keys_request::GetIdentitiesContractKeysRequestV0;
+    use dpp::dashcore::Network;
+    use dpp::identity::Purpose;
+
+    #[test]
+    fn test_query_identities_contract_keys_with_none_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequest { version: None };
+
+        let result = platform
+            .query_identities_contract_keys(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode identities query")
+        ));
+    }
+
+    #[test]
+    fn test_query_identities_contract_keys_with_valid_v0_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequest {
+            version: Some(RequestVersion::V0(GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![vec![0; 32]],
+                contract_id: vec![1; 32],
+                document_type_name: None,
+                purposes: vec![Purpose::AUTHENTICATION as i32],
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_identities_contract_keys(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.is_valid());
+
+        let response = result.data.expect("expected response data");
+        assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
+    }
+}

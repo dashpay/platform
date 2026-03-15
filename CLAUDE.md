@@ -110,7 +110,7 @@ yarn configure:tests:network
 
 **DPP** (`packages/rs-dpp`, `packages/wasm-dpp`): Dash Platform Protocol implementation that defines data structures and validation rules.
 
-**SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform.
+**SDK** (`packages/js-dash-sdk`, `packages/rs-sdk`): Client libraries providing high-level interfaces for building applications on Dash Platform. See [packages/rs-sdk/README.md](packages/rs-sdk/README.md) for the Rust SDK checklist for implementing new `Fetch`/`FetchMany` queries.
 
 **WASM SDK** (`packages/wasm-sdk`): WebAssembly bindings for browser-based applications. See [AI_REFERENCE.md](packages/wasm-sdk/AI_REFERENCE.md) for comprehensive API documentation.
 

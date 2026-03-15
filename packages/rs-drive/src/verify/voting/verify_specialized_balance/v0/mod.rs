@@ -92,3 +92,60 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_specialized_balance_present() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let balance_id = Identifier::random();
+        let amount = 500u64;
+
+        drive
+            .add_prefunded_specialized_balance(balance_id, amount, None, platform_version)
+            .expect("expected to add prefunded specialized balance");
+
+        let proof = drive
+            .prove_prefunded_specialized_balance(balance_id.to_buffer(), None, platform_version)
+            .expect("expected to get proof");
+
+        let (_, balance) = Drive::verify_specialized_balance(
+            proof.as_slice(),
+            balance_id.to_buffer(),
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert_eq!(balance, Some(amount));
+    }
+
+    #[test]
+    fn should_prove_and_verify_absent_specialized_balance() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let non_existent_balance_id = [0u8; 32];
+
+        let proof = drive
+            .prove_prefunded_specialized_balance(non_existent_balance_id, None, platform_version)
+            .expect("expected to get proof");
+
+        let (_, balance) = Drive::verify_specialized_balance(
+            proof.as_slice(),
+            non_existent_balance_id,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert_eq!(balance, None);
+    }
+}
