@@ -382,17 +382,14 @@ mod tests {
             );
         }
 
-        /// Tests the invalid flags byte error path using an empty actions vec.
-        /// Since action parsing happens before flags parsing, we pass empty actions
-        /// and verify the "bundle has no actions" error at the `nonempty::NonEmpty::from_vec`
-        /// check. The invalid flags path (Flags::from_byte returning None) is tested via
-        /// integration tests with valid bundles that have corrupted flags.
+        /// Tests the invalid flags byte error path. With empty actions, the action
+        /// loop is skipped and `Flags::from_byte(0xFF)` returns None, triggering
+        /// the invalid flags error before the `nonempty::NonEmpty::from_vec` check.
         #[test]
-        fn test_invalid_flags_byte_with_empty_actions_returns_no_actions_error() {
-            // Invalid flags, but empty actions is caught first
+        fn test_invalid_flags_byte_returns_error() {
             let result = reconstruct_and_verify_bundle(
-                &[], // No actions
-                0xFF,
+                &[],  // No actions -- skip the action loop, hit flags check
+                0xFF, // Invalid flags byte
                 0,
                 &[42u8; 32],
                 &[0u8; 100],
@@ -403,8 +400,8 @@ mod tests {
             assert!(result.is_err());
             let err = result.unwrap_err();
             assert!(
-                err.message().contains("bundle has no actions"),
-                "expected 'bundle has no actions' error, got: {}",
+                err.message().contains("invalid bundle flags byte"),
+                "expected invalid bundle flags error, got: {}",
                 err.message()
             );
         }
