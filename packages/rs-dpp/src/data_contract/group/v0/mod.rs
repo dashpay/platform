@@ -181,6 +181,8 @@ mod tests {
 
     mod validate {
         use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
 
         #[test]
         fn test_group_with_all_unilateral_members() {
@@ -199,6 +201,205 @@ mod tests {
                 .expect("group should be valid");
 
             assert!(result.is_valid());
+        }
+
+        #[test]
+        fn test_group_exceeds_max_members() {
+            let platform_version = PlatformVersion::latest();
+            let max = platform_version.system_limits.max_contract_group_size as u32;
+
+            let mut members = BTreeMap::new();
+            for i in 0..=max {
+                let mut id_bytes = [0u8; 32];
+                id_bytes[0..4].copy_from_slice(&i.to_le_bytes());
+                members.insert(Identifier::new(id_bytes), 1);
+            }
+
+            let group = GroupV0 {
+                members,
+                required_power: 1,
+            };
+
+            let result = group
+                .validate(None, platform_version)
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupExceedsMaxMembersError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupExceedsMaxMembersError");
+            };
+        }
+
+        #[test]
+        fn test_group_too_few_members_zero() {
+            let group = GroupV0 {
+                members: BTreeMap::new(),
+                required_power: 1,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupHasTooFewMembersError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupHasTooFewMembersError");
+            };
+        }
+
+        #[test]
+        fn test_group_too_few_members_one() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 1)].into(),
+                required_power: 1,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupHasTooFewMembersError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupHasTooFewMembersError");
+            };
+        }
+
+        #[test]
+        fn test_group_member_has_power_of_zero() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 0), (Identifier::random(), 1)].into(),
+                required_power: 1,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOfZeroError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupMemberHasPowerOfZeroError");
+            };
+        }
+
+        #[test]
+        fn test_group_member_power_over_limit() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 65_536), (Identifier::random(), 1)].into(),
+                required_power: 65_536,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupMemberHasPowerOverLimitError");
+            };
+        }
+
+        #[test]
+        fn test_group_member_power_exceeds_required() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 6), (Identifier::random(), 5)].into(),
+                required_power: 5,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupMemberHasPowerOverLimitError");
+            };
+        }
+
+        #[test]
+        fn test_group_total_power_less_than_required() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 2), (Identifier::random(), 2)].into(),
+                required_power: 5,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupTotalPowerLessThanRequiredError(
+                _,
+            ))) = result.errors.first()
+            else {
+                panic!("expected GroupTotalPowerLessThanRequiredError");
+            };
+        }
+
+        #[test]
+        fn test_group_non_unilateral_member_power_less_than_required() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 10), (Identifier::random(), 5)].into(),
+                required_power: 10,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(
+                BasicError::GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError(_),
+            )) = result.errors.first()
+            else {
+                panic!("expected GroupNonUnilateralMemberPowerHasLessThanRequiredPowerError");
+            };
+        }
+
+        #[test]
+        fn test_group_required_power_zero() {
+            let group = GroupV0 {
+                members: [(Identifier::random(), 1), (Identifier::random(), 1)].into(),
+                required_power: 0,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            // Required power of zero is currently intercepted by the per-member `power > required_power`
+            // check before `GroupRequiredPowerIsInvalidError` is evaluated.
+            let Some(ConsensusError::BasicError(BasicError::GroupMemberHasPowerOverLimitError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupMemberHasPowerOverLimitError");
+            };
+        }
+
+        #[test]
+        fn test_group_required_power_over_limit() {
+            let group = GroupV0 {
+                members: [
+                    (Identifier::random(), 65_535),
+                    (Identifier::random(), 65_535),
+                    (Identifier::random(), 65_535),
+                ]
+                .into(),
+                required_power: 65_536,
+            };
+
+            let result = group
+                .validate(None, PlatformVersion::latest())
+                .expect("should not error");
+
+            let Some(ConsensusError::BasicError(BasicError::GroupRequiredPowerIsInvalidError(_))) =
+                result.errors.first()
+            else {
+                panic!("expected GroupRequiredPowerIsInvalidError");
+            };
         }
     }
 }
