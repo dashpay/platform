@@ -90,3 +90,4 @@ book/book/
 grpc-coverage-report.txt
 
 __pycache__/
+.claude/worktrees/
