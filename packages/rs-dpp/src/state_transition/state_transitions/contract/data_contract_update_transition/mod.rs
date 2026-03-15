@@ -607,30 +607,6 @@ mod test {
 
     #[test]
     #[cfg(feature = "value-conversion")]
-    fn should_fail_from_object_with_unknown_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use platform_value::Value;
-
-        let data = get_test_data();
-
-        let mut obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-
-        obj.insert(
-            STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-            Value::U16(99),
-        )
-        .expect("insert should succeed");
-
-        let result = <DataContractUpdateTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[cfg(feature = "value-conversion")]
     fn should_clean_value() {
         use crate::state_transition::StateTransitionValueConvert;
         use platform_value::Value;

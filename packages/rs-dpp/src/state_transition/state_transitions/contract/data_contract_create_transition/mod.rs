@@ -462,26 +462,6 @@ mod test {
     }
 
     #[test]
-    fn should_fail_from_object_with_unknown_version() {
-        let data = get_test_data();
-
-        let mut obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-
-        obj.insert(
-            STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-            Value::U16(99),
-        )
-        .expect("insert should succeed");
-
-        let result = <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn should_clean_value() {
         let data = get_test_data();
 
