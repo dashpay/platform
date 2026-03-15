@@ -90,8 +90,12 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_balances(
         }
 
         let count = entries.len();
-        let entries_ptr = entries.as_mut_ptr();
-        std::mem::forget(entries); // Prevent deallocation
+        let entries_ptr = if entries.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            let boxed = entries.into_boxed_slice();
+            Box::into_raw(boxed) as *mut DashSDKIdentityBalanceEntry
+        };
 
         Ok(DashSDKIdentityBalanceMap {
             entries: entries_ptr,

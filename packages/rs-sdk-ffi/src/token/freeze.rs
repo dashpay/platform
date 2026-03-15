@@ -275,6 +275,7 @@ mod tests {
             sign: mock_sign_callback,
             can_sign_with: mock_can_sign_callback,
             destroy: mock_destroy_callback,
+            free_result: None,
         });
 
         Box::new(crate::signer::VTableSigner {

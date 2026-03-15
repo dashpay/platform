@@ -245,10 +245,9 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
             let entries: Vec<DashSDKAddressInfoEntry> = address_infos
                 .iter()
                 .map(|(address, info_opt)| {
-                    let address_bytes = address.to_bytes();
+                    let address_bytes = address.to_bytes().into_boxed_slice();
                     let address_len = address_bytes.len();
-                    let address_ptr = address_bytes.as_ptr() as *mut u8;
-                    std::mem::forget(address_bytes);
+                    let address_ptr = Box::into_raw(address_bytes) as *mut u8;
 
                     // Handle Option<AddressInfo>
                     let (nonce, balance) = match info_opt {

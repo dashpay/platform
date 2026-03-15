@@ -4,6 +4,7 @@ on:
 jobs:
   doctests:
     name: Doctests backup
+    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
