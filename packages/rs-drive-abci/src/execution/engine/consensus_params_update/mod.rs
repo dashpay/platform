@@ -119,43 +119,34 @@ mod tests {
 
         #[test]
         fn returns_error_for_unknown_version() {
-            // We need a PlatformVersion with an invalid consensus_params_update version.
-            // Since all real versions use 0 or 1, we construct a scenario by using the
-            // dispatch function indirectly. We can craft a test by modifying a clone,
-            // but PlatformVersion isn't easily cloneable in a const way.
-            // Instead we verify the error path by testing the match arm through
-            // a static reference with a known invalid version.
-            //
-            // The simplest way: use PlatformVersion::first() which has version 0,
-            // and test v1, then test the error case via the parent dispatch.
-            // Since we can't easily make a PlatformVersion with version 99,
-            // we test this path by calling the dispatch with a version that
-            // exercises the error arm. We need mock-versions feature or manual test.
-            //
-            // However, we can verify the error type by constructing the expected error
-            // directly. This is covered transitively: the match is exhaustive with
-            // 0 => v0, 1 => v1, _ => error. We've tested 0 and 1 above.
-            // The error arm is a straightforward construction that doesn't need
-            // a live PlatformVersion.
+            // Clone a real PlatformVersion and set consensus_params_update to an
+            // invalid value so we exercise the actual dispatch error path.
+            let mut bad_version = PlatformVersion::first().clone();
+            bad_version
+                .drive_abci
+                .methods
+                .engine
+                .consensus_params_update = 99;
 
-            // We can still test it if we have mock-versions feature, but since we
-            // don't require that, let's verify the error type is correct.
-            let error = Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "consensus_params_update".to_string(),
-                known_versions: vec![0, 1],
-                received: 99,
-            });
-            match error {
-                Error::Execution(ExecutionError::UnknownVersionMismatch {
+            let epoch_info = mid_epoch(5);
+            let result = consensus_params_update(
+                Network::Dash,
+                PlatformVersion::first(),
+                &bad_version,
+                &epoch_info,
+            );
+
+            match result {
+                Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                     method,
                     known_versions,
                     received,
-                }) => {
+                })) => {
                     assert_eq!(method, "consensus_params_update");
                     assert_eq!(known_versions, vec![0, 1]);
                     assert_eq!(received, 99);
                 }
-                _ => panic!("expected UnknownVersionMismatch"),
+                other => panic!("expected UnknownVersionMismatch error, got: {:?}", other),
             }
         }
     }
@@ -586,30 +577,10 @@ mod tests {
         }
 
         #[test]
-        fn v0_dispatch_consensus_version_change_returns_update() {
-            let platform_v2 = PlatformVersion::get(2).unwrap();
-            // v2 has consensus_params_update=1, but we need v0 dispatch.
-            // Use platform_v1 as new_platform_version since it has consensus_params_update=0
+        fn v0_dispatch_same_version_returns_none() {
             let platform_v1 = PlatformVersion::first();
-            let platform_v3 = PlatformVersion::get(3).unwrap();
             let epoch_info = mid_epoch(10);
 
-            // v1 -> v1 won't work since consensus_params_update=0 for v1.
-            // We need original=v1 (consensus ver 0), new=v1 (consensus ver 0) => None
-            // original=v2 (consensus ver 0), new_for_dispatch=v1 which dispatches v0,
-            // but we want to show version difference.
-            // Actually the trick: the dispatch uses new_platform_version's
-            // consensus_params_update field to choose v0 vs v1.
-            // So to test v0 with different consensus versions, we need:
-            //   new_platform_version with consensus_params_update=0 but different consensus version.
-            //   But v1 is the only version with consensus_params_update=0 and it has
-            //   tenderdash_consensus_version=0.
-            // So we can't easily get a v0-dispatched call with different consensus versions
-            // through the top-level function, since there's only one PlatformVersion with
-            // consensus_params_update=0.
-            // That's fine - the v0_tests module already covers that path directly.
-
-            // Instead verify the v0 path returns None for same-version case
             let result =
                 consensus_params_update(Network::Devnet, platform_v1, platform_v1, &epoch_info)
                     .expect("should not error");
