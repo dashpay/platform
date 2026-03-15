@@ -12,7 +12,7 @@ in each dimension.
 | **Primary purpose** | Payments | General-purpose smart contracts | High-throughput smart contracts | Multi-chain shared security | Sharded smart contracts | App-chain framework | Multi-chain smart contracts | Decentralized data storage and querying |
 | **Consensus** | Nakamoto (PoW) | Gasper (PoS) | Tower BFT (PoS) | GRANDPA + BABE (PoS) | Nightshade (PoS) | CometBFT (PoS) | Snowman (PoS) | Tenderdash SBFT (masternode quorums, BLS threshold signatures) |
 | **Finality** | `-` Probabilistic (~60 min) | `+` ~13 min (2 epochs) | `+++` ~0.4s (optimistic) | `+` ~12-60s (2 rounds) | `++` ~1-2s | `+++` Instant (1 block) | `++` ~1-2s | `+++` Instant (1 block) |
-| **Throughput** | `-` ~7 tx/s | `+` ~15-30 tx/s | `+++` ~65,000 tx/s | `++` Scales per parachain | `++` ~100,000 tx/s (sharded) | `++` Per-chain | `++` ~4,500 tx/s per subnet | `+` ~100 state transitions/s |
+| **Throughput** | `-` ~7 tx/s | `+` ~15-30 tx/s | `+++` ~65,000 tx/s | `++` Scales per parachain | `++` ~100,000 tx/s (sharded) | `++` Per-chain | `++` ~4,500 tx/s | `+` ~200 tx/s |
 
 ## Data and Querying
 
