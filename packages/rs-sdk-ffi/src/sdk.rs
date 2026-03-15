@@ -610,7 +610,13 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
     };
 
     // Use the extended creation function
-    dash_sdk_create_extended(&extended_config)
+    let result = dash_sdk_create_extended(&extended_config);
+
+    // Reclaim the context provider wrapper - the SDK has already cloned what it needs
+    // via `provider_wrapper.provider()` inside `dash_sdk_create_extended`.
+    let _ = Box::from_raw(context_provider_handle as *mut ContextProviderWrapper);
+
+    result
 }
 
 /// Get the current network the SDK is connected to
