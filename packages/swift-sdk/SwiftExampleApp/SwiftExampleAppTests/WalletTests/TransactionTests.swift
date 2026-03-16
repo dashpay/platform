@@ -104,7 +104,6 @@ struct MockAddress: AddressProtocol {
   let address: String
   let derivationPath: String = "m/44'/5'/0'/0/0"
   let index: UInt32 = 0
-  let type: AddressType = .external
 }
 
 // MARK: - Fee Calculator
@@ -141,11 +140,7 @@ protocol AddressProtocol {
   var address: String { get }
   var derivationPath: String { get }
   var index: UInt32 { get }
-  var type: AddressType { get }
 }
-
-extension HDUTXO: UTXOProtocol {}
-extension HDAddress: AddressProtocol {}
 
 // MARK: - Mock coin selection for testing (UTXOManager extension removed; type not in SDK)
 struct MockCoinSelection {

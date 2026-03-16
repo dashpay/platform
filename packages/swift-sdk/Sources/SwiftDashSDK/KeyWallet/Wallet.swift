@@ -378,23 +378,7 @@ public class Wallet {
 
         return count
     }
-
-    // MARK: - Balance
-
-    /// Get the wallet's total balance
-    public func getBalance() throws -> Balance {
-        // TODO: wallet_get_balance function no longer exists in FFI
-        throw KeyWalletError.notSupported("wallet_get_balance is not available in current FFI")
-    }
-
-    /// Get balance for a specific account
-    /// - Parameter accountIndex: The account index
-    /// - Returns: The account balance
-    public func getAccountBalance(accountIndex: UInt32) throws -> Balance {
-        // TODO: wallet_get_account_balance function no longer exists in FFI
-        throw KeyWalletError.notSupported("wallet_get_account_balance is not available in current FFI")
-    }
-
+    
     // MARK: - Key Derivation
 
     /// Get the extended public key for an account

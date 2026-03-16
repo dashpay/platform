@@ -126,7 +126,7 @@ struct AccountDetailView: View {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.dashNetwork.rawValue.capitalized)
+                    Text(wallet.network.rawValue.capitalized)
                         .fontWeight(.medium)
                 }
             }
@@ -604,10 +604,7 @@ struct AccountDetailView: View {
     private func derivePrivateKeyWithPIN(for detail: AddressDetail, pin: String) async {
         do {
             // Gate with PIN but derive via account-based FFI (no seed passage required)
-            guard let walletManager = walletService.walletManager else {
-                throw WalletError.walletError("Wallet manager not available")
-            }
-            let wifPrivateKey = try await walletManager.derivePrivateKeyAsWIF(
+            let wifPrivateKey = try await walletService.walletManager.derivePrivateKeyAsWIF(
                 for: wallet,
                 accountInfo: account,
                 addressIndex: detail.index
@@ -630,12 +627,8 @@ struct AccountDetailView: View {
         errorMessage = nil
 
         do {
-            guard let walletManager = walletService.walletManager else {
-                throw WalletError.walletError("Wallet manager not available")
-            }
-
             // Get extended public key and other details
-            let details = try await walletManager.getAccountDetails(
+            let details = try await walletService.walletManager.getAccountDetails(
                 for: wallet,
                 accountInfo: account
             )
