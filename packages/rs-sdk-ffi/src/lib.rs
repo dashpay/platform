@@ -195,8 +195,9 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
     // was previously stored in RUST_LOG, but constructed in-process so there
     // is no data-race with concurrent `env::var` reads on other threads.
     let filter_string = format!(
-        "dash_sdk={log_level},rs_sdk={log_level},dapi_grpc={log_level},\
-         h2={log_level},tower={log_level},hyper={log_level},tonic={log_level}"
+        "dash_sdk={log_level},rs_sdk={log_level},rs_sdk_ffi={log_level},\
+         dapi_grpc={log_level},h2={log_level},tower={log_level},\
+         hyper={log_level},tonic={log_level}"
     );
 
     // Create an EnvFilter directly from the string -- this never reads
@@ -206,11 +207,13 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
     // Initialize the global tracing subscriber.  `try_init` returns Err if a
     // subscriber is already installed; we intentionally ignore that so that
     // calling this function more than once is harmless.
-    let _ = tracing_subscriber::fmt::fmt()
+    if tracing_subscriber::fmt::fmt()
         .with_env_filter(filter)
-        .try_init();
-
-    tracing::info!(level = log_level, "logging enabled");
+        .try_init()
+        .is_ok()
+    {
+        tracing::info!(level = log_level, "logging enabled");
+    }
 }
 
 /// Get the version of the Dash SDK FFI library
@@ -229,13 +232,10 @@ mod tests {
     /// function safe to call from a multi-threaded context.
     #[test]
     fn enable_logging_does_not_set_env_var() {
-        // Remove RUST_LOG if it happens to be set by the test harness so
-        // we can detect whether our function re-introduces it.
-        //
-        // Safety: this test binary is single-threaded at this point (the
-        // Tokio runtime has not been started yet), so the remove is safe.
-        unsafe {
-            std::env::remove_var("RUST_LOG");
+        // If RUST_LOG is already set by the test harness or environment,
+        // we cannot reliably detect whether our function sets it, so skip.
+        if std::env::var_os("RUST_LOG").is_some() {
+            return;
         }
 
         // Call the function under test with each supported level.
