@@ -422,7 +422,8 @@ mod tests {
     )]
     fn test_info_fixture(info_base64: &str) {
         setup_tracing();
-        let decoded = decode_consensus_error(info_base64.to_string()).expect("decode consensus error from fixture");
+        let decoded = decode_consensus_error(info_base64.to_string())
+            .expect("decode consensus error from fixture");
         ConsensusError::deserialize_from_bytes(&decoded).expect("should deserialize");
     }
 
@@ -432,7 +433,10 @@ mod tests {
     fn map_tenderdash_message_tx_already_exists() {
         let result = map_tenderdash_message("tx already exists in cache");
         assert!(result.is_some());
-        assert!(matches!(result.expect("should map to AlreadyExists"), DapiError::AlreadyExists(_)));
+        assert!(matches!(
+            result.expect("should map to AlreadyExists"),
+            DapiError::AlreadyExists(_)
+        ));
     }
 
     #[test]
@@ -451,7 +455,10 @@ mod tests {
     fn map_tenderdash_message_mempool_full() {
         let result = map_tenderdash_message("mempool is full");
         assert!(result.is_some());
-        assert!(matches!(result.expect("should map to ResourceExhausted"), DapiError::ResourceExhausted(_)));
+        assert!(matches!(
+            result.expect("should map to ResourceExhausted"),
+            DapiError::ResourceExhausted(_)
+        ));
     }
 
     #[test]
@@ -470,7 +477,10 @@ mod tests {
     fn map_tenderdash_message_too_many_requests() {
         let result = map_tenderdash_message("too_many_requests");
         assert!(result.is_some());
-        assert!(matches!(result.expect("should map to ResourceExhausted"), DapiError::ResourceExhausted(_)));
+        assert!(matches!(
+            result.expect("should map to ResourceExhausted"),
+            DapiError::ResourceExhausted(_)
+        ));
     }
 
     #[test]
@@ -478,7 +488,10 @@ mod tests {
         let result =
             map_tenderdash_message("broadcast confirmation not received: timed out waiting");
         assert!(result.is_some());
-        assert!(matches!(result.expect("should map to Timeout"), DapiError::Timeout(_)));
+        assert!(matches!(
+            result.expect("should map to Timeout"),
+            DapiError::Timeout(_)
+        ));
     }
 
     #[test]

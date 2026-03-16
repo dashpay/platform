@@ -509,7 +509,10 @@ mod tests {
 
     #[test]
     fn detect_protocol_type_plain_http() {
-        let req = Request::builder().uri("/metrics").body(()).expect("build plain HTTP request");
+        let req = Request::builder()
+            .uri("/metrics")
+            .body(())
+            .expect("build plain HTTP request");
         assert_eq!(detect_protocol_type(&req), "HTTP");
     }
 

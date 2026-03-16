@@ -666,7 +666,9 @@ mod tests {
         let mut extensions = axum::http::Extensions::new();
         let label = MethodLabel::from_type_name("my_method");
         attach_method_label(&mut extensions, label);
-        let retrieved = extensions.get::<MethodLabel>().expect("MethodLabel should be in extensions");
+        let retrieved = extensions
+            .get::<MethodLabel>()
+            .expect("MethodLabel should be in extensions");
         assert_eq!(retrieved.as_str(), "my_method");
     }
 
