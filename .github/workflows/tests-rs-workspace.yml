@@ -172,7 +172,7 @@ jobs:
       - name: Run shielded tests with cargo test (shared process for VK reuse)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
-          cargo llvm-cov test --no-report --no-clean \
+          cargo llvm-cov test --no-report \
             --package dpp \
             --package drive-abci \
             --all-features \
