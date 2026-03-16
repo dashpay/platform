@@ -14,7 +14,8 @@ use std::os::raw::c_void;
 
 use dash_sdk::dpp::identity::core_script::CoreScript;
 use dash_sdk::dpp::shielded::builder::{serialize_authorized_bundle, OrchardProver};
-use dash_sdk::dpp::shielded::compute_platform_sighash;
+use dash_sdk::dpp::shielded::{compute_minimum_shielded_fee, compute_platform_sighash};
+use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::grovedb_commitment_tree::{
     Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey, Hashable,
     MerkleHashOrchard, MerklePath, Note, NoteValue, PaymentAddress, RandomSeed, Rho, Scope,
@@ -266,14 +267,23 @@ fn build_output_only_bundle_local(
     Ok(serialize_authorized_bundle(&bundle))
 }
 
+/// An optional change output to add to the bundle.
+struct ChangeOutput {
+    address: PaymentAddress,
+    amount: u64,
+}
+
 /// Build a spend+output Orchard bundle. Replicates the logic from
 /// `dpp::shielded::builder::build_spend_bundle` which is `pub(crate)`.
+///
+/// If `change` is `Some`, a second output is added returning change to the sender.
 #[allow(clippy::too_many_arguments)]
 fn build_spend_bundle_local(
     spends: Vec<ParsedSpendableNote>,
     output_address: &PaymentAddress,
     output_amount: u64,
     memo: [u8; 36],
+    change: Option<ChangeOutput>,
     fvk: &FullViewingKey,
     ask: &SpendAuthorizingKey,
     anchor: Anchor,
@@ -288,6 +298,7 @@ fn build_spend_bundle_local(
             .map_err(|e| format!("failed to add spend: {:?}", e))?;
     }
 
+    // Primary output
     builder
         .add_output(
             None,
@@ -296,6 +307,20 @@ fn build_spend_bundle_local(
             memo,
         )
         .map_err(|e| format!("failed to add output: {:?}", e))?;
+
+    // Change output (if any)
+    if let Some(ch) = change {
+        if ch.amount > 0 {
+            builder
+                .add_output(
+                    None,
+                    ch.address,
+                    NoteValue::from_raw(ch.amount),
+                    [0u8; 36], // change memo is always empty
+                )
+                .map_err(|e| format!("failed to add change output: {:?}", e))?;
+        }
+    }
 
     let bundle = prove_and_sign_bundle_local(
         builder,
@@ -370,6 +395,13 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield_bundle(
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             "spending_key_bytes is null".to_string(),
+        ));
+    }
+
+    if amount == 0 {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "shield amount must be greater than zero".to_string(),
         ));
     }
 
@@ -498,26 +530,62 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
     };
 
     let prover = CachedProver;
+    let platform_version = PlatformVersion::latest();
 
-    // Compute total spent value
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if transfer_amount > total_spent {
+    // Compute total spent value with overflow check
+    let total_spent: u64 = match spends
+        .iter()
+        .try_fold(0u64, |acc, s| acc.checked_add(s.note.value().inner()))
+    {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "total note values overflow u64".to_string(),
+            ))
+        }
+    };
+
+    // Compute minimum fee (conservative: at least max(spends, 2) actions for recipient + change)
+    let num_actions = spends.len().max(2);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+
+    // Validate sufficient funds for transfer + fee
+    let required = match transfer_amount.checked_add(min_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "transfer amount + fee overflows u64".to_string(),
+            ))
+        }
+    };
+    if required > total_spent {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             format!(
-                "transfer amount {} exceeds total spendable value {}",
-                transfer_amount, total_spent
+                "transfer amount {} + fee {} = {} exceeds total spendable value {}",
+                transfer_amount, min_fee, required, total_spent
             ),
         ));
     }
 
-    // ShieldedTransfer: output goes to recipient, value_balance = total_spent - transfer_amount
-    // (which leaves the shielded pool as fee). No extra sighash data.
+    let change_amount = total_spent - required;
+
+    // Change goes back to sender's address (derived at index 0)
+    let change_address = fvk.address_at(0u32, Scope::External);
+
+    // ShieldedTransfer: recipient gets transfer_amount, sender gets change, fee leaves pool.
+    // No extra sighash data for transfers.
     let sb = match build_spend_bundle_local(
         spends,
         &recipient_payment,
         transfer_amount,
         memo,
+        Some(ChangeOutput {
+            address: change_address,
+            amount: change_amount,
+        }),
         &fvk,
         &ask,
         anchor,
@@ -625,20 +693,60 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
         }
     };
 
-    let change_payment = fvk.address_at(0u32, Scope::External);
-    let prover = CachedProver;
-
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if unshield_amount > total_spent {
+    if unshield_amount > i64::MAX as u64 {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             format!(
-                "unshield amount {} exceeds total spendable value {}",
-                unshield_amount, total_spent
+                "unshield amount {} exceeds maximum allowed value {}",
+                unshield_amount,
+                i64::MAX as u64
             ),
         ));
     }
-    let change_amount = total_spent - unshield_amount;
+
+    let change_payment = fvk.address_at(0u32, Scope::External);
+    let prover = CachedProver;
+    let platform_version = PlatformVersion::latest();
+
+    // Compute total spent value with overflow check
+    let total_spent: u64 = match spends
+        .iter()
+        .try_fold(0u64, |acc, s| acc.checked_add(s.note.value().inner()))
+    {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "total note values overflow u64".to_string(),
+            ))
+        }
+    };
+
+    // Compute minimum fee
+    let num_actions = spends.len().max(1);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+
+    // Validate sufficient funds for unshield + fee
+    let required = match unshield_amount.checked_add(min_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "unshield amount + fee overflows u64".to_string(),
+            ))
+        }
+    };
+    if required > total_spent {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "unshield amount {} + fee {} = {} exceeds total spendable value {}",
+                unshield_amount, min_fee, required, total_spent
+            ),
+        ));
+    }
+
+    let change_amount = total_spent - required;
 
     // Unshield extra_data = output_address.to_bytes()
     let extra_sighash_data = output_address.to_bytes();
@@ -648,6 +756,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
         &change_payment,
         change_amount,
         memo,
+        None, // no second output — the unshield amount goes via transparent field
         &fvk,
         &ask,
         anchor,
@@ -751,20 +860,60 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
         }
     };
 
-    let change_payment = fvk.address_at(0u32, Scope::External);
-    let prover = CachedProver;
-
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
-    if withdrawal_amount > total_spent {
+    if withdrawal_amount > i64::MAX as u64 {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             format!(
-                "withdrawal amount {} exceeds total spendable value {}",
-                withdrawal_amount, total_spent
+                "withdrawal amount {} exceeds maximum allowed value {}",
+                withdrawal_amount,
+                i64::MAX as u64
             ),
         ));
     }
-    let change_amount = total_spent - withdrawal_amount;
+
+    let change_payment = fvk.address_at(0u32, Scope::External);
+    let prover = CachedProver;
+    let platform_version = PlatformVersion::latest();
+
+    // Compute total spent value with overflow check
+    let total_spent: u64 = match spends
+        .iter()
+        .try_fold(0u64, |acc, s| acc.checked_add(s.note.value().inner()))
+    {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "total note values overflow u64".to_string(),
+            ))
+        }
+    };
+
+    // Compute minimum fee
+    let num_actions = spends.len().max(1);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+
+    // Validate sufficient funds for withdrawal + fee
+    let required = match withdrawal_amount.checked_add(min_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "withdrawal amount + fee overflows u64".to_string(),
+            ))
+        }
+    };
+    if required > total_spent {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "withdrawal amount {} + fee {} = {} exceeds total spendable value {}",
+                withdrawal_amount, min_fee, required, total_spent
+            ),
+        ));
+    }
+
+    let change_amount = total_spent - required;
 
     // ShieldedWithdrawal extra_data = output_script.as_bytes()
     let extra_sighash_data = core_script.as_bytes().to_vec();
@@ -774,6 +923,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
         &change_payment,
         change_amount,
         memo,
+        None, // no second output — withdrawal goes via transparent field
         &fvk,
         &ask,
         anchor,

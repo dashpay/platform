@@ -45,17 +45,6 @@ extension SDK {
         }
     }
 
-    /// Build an FFIOrchardBundleParams struct from a high-level OrchardBundle.
-    ///
-    /// The caller MUST keep the returned `BundleFFIStorage` alive for the duration
-    /// of the FFI call, because the FFIOrchardBundleParams contains pointers into it.
-    private func buildFFIBundleParams(
-        from bundle: OrchardBundle
-    ) -> (FFIOrchardBundleParams, BundleFFIStorage) {
-        let storage = BundleFFIStorage(bundle: bundle)
-        let params = storage.makeParams()
-        return (params, storage)
-    }
 
     // MARK: - Query Methods
 
@@ -1017,6 +1006,9 @@ extension SDK {
         _ bundle: OrchardBundle,
         body: (UnsafePointer<FFIOrchardBundleParams>) -> R
     ) -> R {
+        // Guard against stack overflow from recursive withUnsafeBytes nesting
+        precondition(bundle.actions.count <= 2048, "Bundle has too many actions (\(bundle.actions.count) > 2048)")
+
         // Build FFI action structs. The encrypted note data must live long enough.
         var ffiActions: [FFISerializedAction] = []
         let encryptedNoteStorage = bundle.actions.map { $0.encryptedNote }
@@ -1134,34 +1126,3 @@ extension SDK {
     }
 }
 
-// MARK: - Bundle FFI Storage
-
-/// Holds the backing memory for an FFIOrchardBundleParams.
-/// Keep this alive for the duration of any FFI call using the params.
-private final class BundleFFIStorage {
-    let actions: [OrchardAction]
-    let anchor: Data
-    let proof: Data
-    let bindingSignature: Data
-
-    init(bundle: OrchardBundle) {
-        self.actions = bundle.actions
-        self.anchor = bundle.anchor
-        self.proof = bundle.proof
-        self.bindingSignature = bundle.bindingSignature
-    }
-
-    func makeParams() -> FFIOrchardBundleParams {
-        // Note: This creates a params struct whose pointers are only valid
-        // while self and its Data properties are alive. The caller must use
-        // withFFIBundle instead for safe pointer management.
-        FFIOrchardBundleParams(
-            actions: nil,
-            actions_count: UInt32(actions.count),
-            anchor: dataToBytes32(anchor),
-            proof: nil,
-            proof_len: proof.count,
-            binding_signature: dataToBytes64(bindingSignature)
-        )
-    }
-}

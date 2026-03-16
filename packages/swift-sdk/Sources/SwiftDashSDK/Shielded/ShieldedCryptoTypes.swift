@@ -200,6 +200,23 @@ func parseBundleJSON(_ jsonString: String) throws -> OrchardBundle {
             throw SDKError.serializationError("Action[\(i)] contains invalid hex")
         }
 
+        // Validate field sizes to prevent silent zero-padding
+        guard nullifier.count == 32 else {
+            throw SDKError.serializationError("Action[\(i)] nullifier must be 32 bytes, got \(nullifier.count)")
+        }
+        guard rk.count == 32 else {
+            throw SDKError.serializationError("Action[\(i)] rk must be 32 bytes, got \(rk.count)")
+        }
+        guard cmx.count == 32 else {
+            throw SDKError.serializationError("Action[\(i)] cmx must be 32 bytes, got \(cmx.count)")
+        }
+        guard cvNet.count == 32 else {
+            throw SDKError.serializationError("Action[\(i)] cvNet must be 32 bytes, got \(cvNet.count)")
+        }
+        guard sig.count == 64 else {
+            throw SDKError.serializationError("Action[\(i)] spendAuthSig must be 64 bytes, got \(sig.count)")
+        }
+
         actions.append(OrchardAction(
             nullifier: nullifier,
             rk: rk,
@@ -216,6 +233,9 @@ func parseBundleJSON(_ jsonString: String) throws -> OrchardBundle {
     else {
         throw SDKError.serializationError("Bundle JSON missing or invalid 'anchor'")
     }
+    guard anchor.count == 32 else {
+        throw SDKError.serializationError("anchor must be 32 bytes, got \(anchor.count)")
+    }
 
     // Parse proof
     guard let proofHex = json["proof"] as? String,
@@ -229,6 +249,9 @@ func parseBundleJSON(_ jsonString: String) throws -> OrchardBundle {
           let bindingSig = hexToData(bindingSigHex)
     else {
         throw SDKError.serializationError("Bundle JSON missing or invalid 'bindingSignature'")
+    }
+    guard bindingSig.count == 64 else {
+        throw SDKError.serializationError("bindingSignature must be 64 bytes, got \(bindingSig.count)")
     }
 
     return OrchardBundle(
