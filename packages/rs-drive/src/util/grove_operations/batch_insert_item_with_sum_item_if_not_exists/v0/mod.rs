@@ -255,7 +255,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((
@@ -273,7 +273,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(inserted);
     }
@@ -295,7 +295,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((
@@ -333,7 +333,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyElement((
@@ -351,7 +351,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(inserted);
     }
@@ -373,7 +373,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let path: [&[u8]; 1] = [b"root"];
@@ -392,7 +392,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(inserted);
     }
@@ -422,7 +422,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(inserted);
         assert_eq!(ops.len(), 2);
@@ -497,7 +497,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Pre-insert an ItemWithSumItem element
         drive
@@ -511,7 +511,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyElement((
@@ -529,7 +529,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         // Should return false indicating element was not inserted (already exists)
         assert!(!result);
@@ -555,7 +555,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Pre-insert an ItemWithSumItem element
         drive
@@ -569,7 +569,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let path: [&[u8]; 1] = [b"root"];

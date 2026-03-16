@@ -70,7 +70,7 @@ mod tests {
                 None,
                 &mut ops,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 
@@ -86,7 +86,7 @@ mod tests {
                 None,
                 &mut ops,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 
@@ -102,7 +102,7 @@ mod tests {
                 None,
                 &mut ops,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 }

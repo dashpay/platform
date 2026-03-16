@@ -52,7 +52,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let result = drive
@@ -64,7 +64,7 @@ mod tests {
                 Some(&mut ops),
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         // Element did not exist, so None returned and it was inserted
         assert!(result.is_none());
@@ -86,7 +86,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -99,7 +99,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let result = drive
@@ -111,7 +111,7 @@ mod tests {
                 Some(&mut ops),
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         // Existing element should be returned
         assert_eq!(result, Some(Element::new_item(b"existing".to_vec())));

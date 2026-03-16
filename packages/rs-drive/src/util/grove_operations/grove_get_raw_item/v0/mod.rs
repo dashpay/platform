@@ -106,7 +106,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -119,7 +119,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let result = drive
@@ -131,7 +131,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to get element");
 
         assert_eq!(result, b"value".to_vec());
     }
@@ -152,7 +152,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Insert a tree, not an item
         drive
@@ -165,7 +165,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let result = drive.grove_get_raw_item_v0(
@@ -198,7 +198,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_empty());
     }

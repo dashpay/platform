@@ -33,6 +33,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::operations::QueryItemOrSumReturnType;
     use grovedb::{Element, PathQuery, Query, SizedQuery, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
@@ -53,7 +54,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let path_query = PathQuery::new(
             vec![b"root".to_vec()],
@@ -68,7 +69,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(results.is_empty());
         assert_eq!(count, 0);
@@ -90,7 +91,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -103,7 +104,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut query = Query::new();
         query.insert_all();
@@ -118,8 +119,15 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert_eq!(results.len(), 1);
+        // Verify the result contains the expected serialized value
+        match &results[0] {
+            QueryItemOrSumReturnType::ItemData(data) => {
+                assert_eq!(data, &b"val_a".to_vec());
+            }
+            other => panic!("expected ItemData, got {:?}", other),
+        }
     }
 }

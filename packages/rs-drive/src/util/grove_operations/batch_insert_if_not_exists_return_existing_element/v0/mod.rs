@@ -14,8 +14,21 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, GroveDb, TransactionArg};
 
 impl Drive {
-    /// Version 0 implementation of the "insert element if the path key does not yet exist" operation.
-    /// If the element already exists, it returns the existing element.
+    /// Inserts an element at the given path/key if it does not already exist,
+    /// returning any pre-existing element.
+    ///
+    /// If the element already exists, the new element is NOT inserted and the
+    /// existing element is returned as `Ok(Some(existing))`. If no element
+    /// exists, the new element is inserted and `Ok(None)` is returned.
+    ///
+    /// Supports `PathKeyRefElement`, `PathKeyElement`, `PathFixedSizeKeyRefElement`,
+    /// and `PathKeyElementSize` (stateless estimation) variants.
+    ///
+    /// # Errors
+    ///
+    /// - `NotSupportedPrivate`: if `PathKeyUnknownElementSize` is used.
+    /// - `CorruptedCodeExecution`: if the stateless estimated cost variant
+    ///   encounters an unexpected key info type.
     pub(super) fn batch_insert_if_not_exists_return_existing_element_v0<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,
@@ -157,7 +170,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((
@@ -174,7 +187,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
     }
@@ -196,7 +209,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -209,7 +222,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((
@@ -226,7 +239,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert_eq!(result, Some(Element::new_item(b"existing".to_vec())));
     }
@@ -248,7 +261,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let info = PathKeyElementInfo::<0>::PathKeyElement((
@@ -265,7 +278,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
     }
@@ -287,7 +300,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let path: [&[u8]; 1] = [b"root"];
@@ -305,7 +318,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
     }
@@ -334,7 +347,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
         assert_eq!(ops.len(), 2); // cost + insert

@@ -91,7 +91,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -104,7 +104,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let result = drive
@@ -116,7 +116,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to get element");
 
         assert_eq!(result, Some(Element::new_item(b"value".to_vec())));
         assert!(!ops.is_empty()); // cost op pushed
@@ -141,7 +141,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
         assert!(!ops.is_empty()); // cost op pushed
@@ -166,7 +166,7 @@ mod tests {
                 &mut ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(result.is_none());
     }

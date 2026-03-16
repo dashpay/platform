@@ -163,7 +163,7 @@ mod tests {
                 &mut vec![],
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let path = vec![b"root".to_vec()];
@@ -178,7 +178,7 @@ mod tests {
                 &mut ops,
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(needs_insert);
         assert!(previous.is_none());
@@ -203,7 +203,7 @@ mod tests {
                 &mut vec![],
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Insert the item first
         drive
@@ -217,7 +217,7 @@ mod tests {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let path = vec![b"root".to_vec()];
@@ -232,7 +232,7 @@ mod tests {
                 &mut ops,
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(!needs_insert);
         assert!(previous.is_some());
@@ -255,7 +255,7 @@ mod tests {
                 &mut vec![],
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         drive
             .grove
@@ -268,7 +268,7 @@ mod tests {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         let mut ops = vec![];
         let path = vec![b"root".to_vec()];
@@ -283,7 +283,7 @@ mod tests {
                 &mut ops,
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(needs_insert);
         assert_eq!(previous, Some(Element::new_item(b"old_value".to_vec())));
@@ -306,7 +306,7 @@ mod tests {
                 &mut vec![],
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut ops = vec![];
         let path: [&[u8]; 1] = [b"root"];
@@ -321,7 +321,7 @@ mod tests {
                 &mut ops,
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(needs_insert);
         assert!(previous.is_none());
@@ -350,7 +350,7 @@ mod tests {
                 &mut ops,
                 &platform_version.drive,
             )
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(needs_insert);
         assert!(previous.is_none());

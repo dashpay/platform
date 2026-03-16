@@ -71,7 +71,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Verify the tree exists by querying for it
         let mut query_ops = vec![];
@@ -84,7 +84,7 @@ mod tests {
                 &mut query_ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to get element");
         assert!(
             matches!(element, Some(Element::Tree(..))),
             "Expected a tree element after insert"
@@ -107,7 +107,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut query_ops = vec![];
         let element = drive
@@ -119,7 +119,7 @@ mod tests {
                 &mut query_ops,
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to get element");
         assert!(
             matches!(element, Some(Element::SumTree(..))),
             "Expected a sum tree element after insert"
@@ -142,7 +142,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut query_ops = vec![];
         let element = drive
@@ -154,8 +154,11 @@ mod tests {
                 &mut query_ops,
                 &pv.drive,
             )
-            .unwrap();
-        assert!(element.is_some(), "Expected tree to exist after insert");
+            .expect("expected to get element");
+        assert!(
+            matches!(element, Some(Element::BigSumTree(..))),
+            "Expected a big sum tree element after insert"
+        );
     }
 
     #[test]
@@ -174,7 +177,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut query_ops = vec![];
         let element = drive
@@ -186,8 +189,11 @@ mod tests {
                 &mut query_ops,
                 &pv.drive,
             )
-            .unwrap();
-        assert!(element.is_some(), "Expected tree to exist after insert");
+            .expect("expected to get element");
+        assert!(
+            matches!(element, Some(Element::CountTree(..))),
+            "Expected a count tree element after insert"
+        );
     }
 
     #[test]
@@ -206,7 +212,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         let mut query_ops = vec![];
         let element = drive
@@ -218,7 +224,10 @@ mod tests {
                 &mut query_ops,
                 &pv.drive,
             )
-            .unwrap();
-        assert!(element.is_some(), "Expected tree to exist after insert");
+            .expect("expected to get element");
+        assert!(
+            matches!(element, Some(Element::CountSumTree(..))),
+            "Expected a count sum tree element after insert"
+        );
     }
 }

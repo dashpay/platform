@@ -47,9 +47,9 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
-        drive.grove.commit_transaction(tx).unwrap().unwrap();
+        drive.grove.commit_transaction(tx).unwrap().expect("expected to commit transaction");
 
         let path_query = PathQuery::new(
             vec![b"root".to_vec()],
@@ -59,7 +59,7 @@ mod tests {
         let mut ops = vec![];
         let proof = drive
             .grove_get_proved_path_query_v1_v0(&path_query, &mut ops, &pv.drive)
-            .unwrap();
+            .expect("expected operation to succeed");
 
         assert!(!proof.is_empty());
         assert!(!ops.is_empty());

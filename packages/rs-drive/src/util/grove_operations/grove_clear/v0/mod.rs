@@ -95,12 +95,12 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Clear empty subtree should succeed
         drive
             .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
-            .unwrap();
+            .expect("expected operation to succeed");
     }
 
     #[test]
@@ -119,7 +119,7 @@ mod tests {
                 &mut vec![],
                 &pv.drive,
             )
-            .unwrap();
+            .expect("expected to insert root tree");
 
         // Insert some items
         drive
@@ -133,7 +133,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         drive
             .grove
@@ -146,12 +146,12 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to insert element");
 
         // Clear subtree with items should succeed
         drive
             .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
-            .unwrap();
+            .expect("expected operation to succeed");
 
         // Verify the items are actually gone
         let result1 = drive
@@ -163,7 +163,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to query element");
         assert!(result1.is_none(), "key1 should be gone after clear");
 
         let result2 = drive
@@ -175,7 +175,7 @@ mod tests {
                 &pv.drive.grove_version,
             )
             .unwrap()
-            .unwrap();
+            .expect("expected to query element");
         assert!(result2.is_none(), "key2 should be gone after clear");
     }
 }
