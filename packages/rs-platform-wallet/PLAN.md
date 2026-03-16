@@ -20,7 +20,7 @@ date: 2026-03-13
 
 **PR sequence** (each PR = library feature + evo-tool integration + old code deleted):
 
-1. **PR-1**: Project scaffold + `CoreWallet` (UTXO, addresses, SPV, asset lock proof) → replace evo-tool's `src/model/wallet/`
+1. **PR-1**: Project scaffold + `PlatformWallet` (standalone, sub-wallets as stored fields sharing `Arc<RwLock<MWI>>`) + `PlatformWalletManager` (multi-wallet + SPV, impls `WalletInterface` directly using `key-wallet` types, no `WalletManager<T>`) + `WalletHandle` (holds cloned sub-wallets, sync access) + `CoreWallet` (UTXO, addresses, asset lock proof) → replace evo-tool's `src/model/wallet/` and `SpvManager`
 2. **PR-2**: `IdentityWallet` (register, discover, top-up, withdraw, transfer) → replace identity backend tasks
 3. **PR-3**: `DashPayWallet` (DIP-14, DIP-15, contact requests, payments, sync) → replace dashpay backend tasks
 4. **PR-4**: `PlatformAddressWallet` (DIP-17 sync, send, withdraw) → replace platform address backend task
@@ -61,69 +61,94 @@ date: 2026-03-13
 ## Architecture
 
 ```
-key-wallet (rust-dashcore)
-├── Wallet — private key store, BIP32 derivation
-└── ManagedWalletInfo
-    └── accounts: ManagedAccountCollection
-        ├── standard_bip44_accounts      [BIP44 UTXOs]
-        ├── dashpay_receival_accounts     [DIP-15 receive from contact, keyed by DashpayAccountKey]
-        ├── dashpay_external_accounts     [DIP-15 send to contact, keyed by DashpayAccountKey]
-        └── platform_payment_accounts    [DIP-17 P2PKH credits, keyed by PlatformPaymentAccountKey]
+key-wallet (rust-dashcore) — reused types, NO WalletManager
+├── Wallet                       ← immutable key store (mnemonic, xprv, accounts)
+├── ManagedWalletInfo            ← mutable UTXO state, accounts, balance
+├── ManagedAccountCollection     ← BIP44 + DashPay + PlatformPayment accounts
+├── TransactionRouter            ← transaction classification + checking
+└── WalletTransactionChecker     ← trait for tx matching (impl on ManagedWalletInfo)
 
 rs-platform-wallet (target)
-└── PlatformWallet                             ← thin coordinator, owns Sdk + Arc<Wallet>
-    ├── sdk:      Sdk                          ← cheaply cloneable (internally ref-counted)
-    ├── wallet:   Arc<Wallet>                  ← immutable key store; no lock needed (read-only)
-    ├── core:     CoreWallet                   ← Arc<ManagedWalletInfo> inside; impls WalletInterface
-    ├── identity: IdentityWallet               ← shares Arc<ManagedWalletInfo> + Arc<RwLock<IndexMap>>
-    ├── dashpay:  DashPayWallet                ← shares same Arcs; DIP-14/15 lives here
-    └── platform: PlatformAddressWallet        ← shares Arc<ManagedWalletInfo>; impls AddressProvider
+├── PlatformWallet               ← standalone wallet, sub-wallets as stored fields
+│   ├── sdk:      Sdk
+│   ├── wallet:   Arc<Wallet>                    ← immutable key store
+│   ├── core:     CoreWallet                     ← Arc<RwLock<ManagedWalletInfo>> inside
+│   ├── identity: IdentityWallet                 ← shares wallet_info Arc + IdentityManager
+│   ├── dashpay:  DashPayWallet                  ← shares wallet_info Arc + IdentityManager
+│   └── platform: PlatformAddressWallet          ← shares wallet_info Arc
+│
+├── PlatformWalletManager        ← multi-wallet + SPV coordinator
+│   ├── sdk:        Sdk
+│   ├── network:    Network
+│   ├── wallets:    RwLock<BTreeMap<WalletId, PlatformWallet>>  ← lock only for add/remove wallet
+│   ├── spv_client: Option<DashSpvClient<...>>
+│   └── implements WalletInterface for SPV using key-wallet functions directly
+│       .create_wallet_from_mnemonic() / .import_wallet_from_xprv() / ... → WalletHandle
+│
+└── WalletHandle                 ← cheap cloneable token, holds sub-wallet clones
+    ├── wallet_id:  WalletId
+    ├── core:       CoreWallet            ← cloned at creation (Arc fields — cheap)
+    ├── identity:   IdentityWallet        ← cloned at creation
+    ├── dashpay:    DashPayWallet         ← cloned at creation
+    └── platform:   PlatformAddressWallet ← cloned at creation
+        .identity() / .dashpay() / .platform() / .core()  ← sync access, no lock needed
 
 rs-sdk (Dash Platform SDK)
-├── Identity::fetch() / topup / withdraw / transfer / register (trait methods on Identity, not on Sdk)
+├── Identity::fetch() / topup / withdraw / transfer / register
 ├── Sdk::send_contact_request() / fetch_all_contact_requests_for_identity()
 ├── sync_address_balances() → DIP-17 address sync
 └── WithdrawAddressFunds / TransferAddressFunds / TopUpAddress
 ```
 
+**Key design decisions:**
+- **No WalletManager<T>**: `PlatformWalletManager` implements `WalletInterface` directly using
+  `key-wallet` types (`TransactionRouter`, `WalletTransactionChecker`, `ManagedWalletInfo`).
+- **Sub-wallets share state via Arc**: All sub-wallets hold `Arc<RwLock<ManagedWalletInfo>>` and
+  `Arc<Wallet>`. SPV writes to `ManagedWalletInfo` through the Arc — visible to `WalletHandle`'s
+  cloned sub-wallets immediately. No outer per-wallet lock needed.
+- **Single map lock**: `RwLock<BTreeMap<WalletId, PlatformWallet>>` is locked only for wallet
+  add/remove. Sub-wallets handle their own concurrency via inner `Arc<RwLock<MWI>>`.
+- **WalletHandle holds sub-wallet clones**: Cloned at creation (all Arc fields — cheap).
+  Sync access, no await needed: `handle.identity().register_identity(...).await?`
+- **Standalone + managed**: Same `PlatformWallet` type for both. Standalone uses `&self`/`&mut self`
+  directly. Managed clones sub-wallets into `WalletHandle`.
+- **No dashcore changes**: Only `key-wallet` crate types are used directly. `key-wallet-manager`
+  (`WalletManager<T>`) is not a dependency.
+
 ---
 
 ## Implementation Plan
 
-`PlatformWallet` is the single public interface for all wallet operations.
-It owns the `Sdk` reference, delegates UTXO mechanics to `ManagedWalletInfo`/`Wallet`,
-and routes all Platform state transitions through `dash-sdk`.
+`PlatformWallet` is a standalone wallet type (usable without SPV/manager).
+`PlatformWalletManager` is the multi-wallet + SPV coordinator (no `WalletManager<T>` dependency).
+`WalletHandle` is a cheap per-wallet token returned by the manager.
 
 ### Struct Definitions
 
-Sub-structs are stored as fields in `PlatformWallet`. All sub-structs share the same
-`Arc<ManagedWalletInfo>` — mutations are visible across sub-structs without locking the
-parent. `CoreWallet` is a concrete stored type that can implement `WalletInterface` for SPV
-registration. `PlatformAddressWallet` can implement `AddressProvider` and be passed to the SDK
-without a self-borrow conflict.
-
 ```rust
-// All fields private — construction only via builder
+// Standalone wallet — owns all state, sub-wallets as stored fields
+// Usable directly for Platform-only operations (scripts, tests, no SPV needed)
+// Same type is wrapped in per-wallet RwLock when managed by PlatformWalletManager
 pub struct PlatformWallet {
-    sdk:      Sdk,          // cheaply cloneable (internally ref-counted) — no Arc wrapper needed
-    wallet:   Arc<Wallet>,  // immutable key store — no lock needed (read-only)
+    sdk:      Sdk,          // cheaply cloneable (ref-counted)
+    wallet:   Arc<Wallet>,  // immutable key store
     core:     CoreWallet,
     identity: IdentityWallet,
     dashpay:  DashPayWallet,
     platform: PlatformAddressWallet,
 }
 
-// Sub-structs hold Arc clones — cheap to clone, no outer lock needed
+// Sub-wallets — stored fields, share wallet_info via Arc<RwLock<ManagedWalletInfo>>
 pub struct CoreWallet {
     sdk:         Sdk,
     wallet:      Arc<Wallet>,
-    wallet_info: Arc<RwLock<ManagedWalletInfo>>,   // shared with all sub-structs
+    wallet_info: Arc<RwLock<ManagedWalletInfo>>,
 }
 
 pub struct IdentityWallet {
     sdk:              Sdk,
     wallet:           Arc<Wallet>,
-    wallet_info:      Arc<RwLock<ManagedWalletInfo>>,  // shared — asset lock proof creation
+    wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
     identity_manager: IdentityManager,
 }
 
@@ -131,7 +156,7 @@ pub struct DashPayWallet {
     sdk:              Sdk,
     wallet:           Arc<Wallet>,
     wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
-    identity_manager: IdentityManager,  // Arc<RwLock<_>> inside — same instance as IdentityWallet
+    identity_manager: IdentityManager,  // same instance as IdentityWallet (Arc clone)
 }
 
 pub struct PlatformAddressWallet {
@@ -140,17 +165,49 @@ pub struct PlatformAddressWallet {
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
 }
 
-// Arc<RwLock<_>> fields inside — Clone is a cheap Arc clone, no outer lock needed
+// Multi-wallet + SPV coordinator — no WalletManager<T> dependency
+// Implements WalletInterface for SPV using key-wallet functions directly
+pub struct PlatformWalletManager {
+    sdk:        Sdk,
+    network:    Network,
+    wallets:    RwLock<BTreeMap<WalletId, PlatformWallet>>,  // lock only for add/remove
+    spv_client: Option<DashSpvClient<...>>,  // None until start_spv()
+    event_tx:   broadcast::Sender<PlatformWalletEvent>,
+    synced_height: AtomicU32,
+}
+
+// Cheap cloneable token per loaded wallet — holds sub-wallet clones (all Arc fields)
+// Created by PlatformWalletManager, lives independently — no lock needed for access
+pub struct WalletHandle {
+    wallet_id: WalletId,
+    core:      CoreWallet,
+    identity:  IdentityWallet,
+    dashpay:   DashPayWallet,
+    platform:  PlatformAddressWallet,
+}
+
 // NOTE: The current IdentityManager has plain (non-Arc-wrapped) fields — this is the target
 pub struct IdentityManager {
-    identities:          Arc<RwLock<IndexMap<Identifier, ManagedIdentity>>>,
-    primary_identity_id: Arc<RwLock<Option<Identifier>>>,
-    last_scanned_index:  Arc<RwLock<u32>>,  // NEW — not yet present; persisted gap scan state
-    // REMOVED: sdk: Option<Arc<Sdk>> — SDK moves to sub-struct fields
+    identities:          IndexMap<Identifier, ManagedIdentity>,
+    primary_identity_id: Option<Identifier>,
+    last_scanned_index:  u32,  // NEW — not yet present; persisted gap scan state
+    // REMOVED: sdk: Option<Arc<Sdk>> — SDK moves to PlatformWallet
 }
 ```
 
-`PlatformWallet` exposes sub-structs via accessor methods:
+**No dashcore changes required.** Only `key-wallet` crate types are used directly (`Wallet`,
+`ManagedWalletInfo`, `ManagedAccountCollection`, `TransactionRouter`, `WalletTransactionChecker`).
+The `key-wallet-manager` crate (`WalletManager<T>`) is not a dependency.
+
+**Concurrency model**: Sub-wallets share `Arc<RwLock<ManagedWalletInfo>>` — this is the synchronization
+point between SPV (writes UTXO state) and wallet operations (reads balance, builds transactions).
+No outer per-wallet lock needed. The manager's `RwLock<BTreeMap>` is only for wallet add/remove.
+
+**`WalletHandle` lifecycle**: Holds cloned sub-wallets (Arc fields). After creation, it's independent
+of the manager. Removing a wallet from the manager doesn't invalidate outstanding handles — they
+continue to work (same Arcs). SPV updates to `ManagedWalletInfo` are visible through the shared Arc.
+
+**Sub-wallets are stored fields** on `PlatformWallet`:
 
 ```rust
 impl PlatformWallet {
@@ -159,25 +216,102 @@ impl PlatformWallet {
     pub fn identity(&self) -> &IdentityWallet        { &self.identity }
     pub fn dashpay(&self)  -> &DashPayWallet         { &self.dashpay }
     pub fn platform(&self) -> &PlatformAddressWallet { &self.platform }
+    pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError>
 }
 ```
 
-Call sites:
+`PlatformWalletManager` API — mirrors dashcore wallet creation methods, uses `key-wallet` types directly:
 
 ```rust
-wallet.core().send_transaction(outputs).await?
-wallet.identity().register_identity(amount, keys).await?
-wallet.dashpay().send_contact_request(sender, recipient).await?
-wallet.platform().sync_balances().await?
+impl PlatformWalletManager {
+    // Construction
+    pub fn new(sdk: Sdk, spv_config: ClientConfig, network: Network) -> Self;
+
+    // Wallet creation — uses key-wallet's Wallet + ManagedWalletInfo directly
+    pub async fn create_wallet_from_mnemonic(
+        &self, mnemonic: &str, passphrase: &str,
+        birth_height: CoreBlockHeight,
+        account_options: WalletAccountCreationOptions,
+    ) -> Result<WalletHandle>;
+
+    pub async fn create_wallet_with_random_mnemonic(
+        &self,
+        account_options: WalletAccountCreationOptions,
+    ) -> Result<(WalletHandle, Mnemonic)>;
+
+    pub async fn import_wallet_from_xprv(
+        &self, xprv: &str,
+        account_options: WalletAccountCreationOptions,
+    ) -> Result<WalletHandle>;
+
+    pub async fn import_wallet_from_xpub(
+        &self, xpub: &str, can_sign_externally: bool,
+    ) -> Result<WalletHandle>;
+
+    // Wallet restoration
+    pub async fn import_wallet_from_bytes(
+        &self, wallet_bytes: &[u8],
+    ) -> Result<WalletHandle>;
+
+    // Wallet lifecycle
+    pub async fn remove_wallet(&self, wallet_id: &WalletId) -> Result<PlatformWallet>;
+
+    // Wallet access
+    pub async fn get_wallet_handle(&self, wallet_id: &WalletId) -> Option<WalletHandle>;
+    pub async fn list_wallets(&self) -> Vec<WalletId>;
+
+    // SPV lifecycle
+    pub async fn start_spv(&mut self) -> Result<()>;
+    pub async fn stop_spv(&mut self) -> Result<()>;
+
+    // Events — unified stream, grouped by source channel
+    pub fn subscribe_events(&self) -> broadcast::Receiver<PlatformWalletEvent>;
+}
+
+// Unified event enum — variants per source channel
+pub enum PlatformWalletEvent {
+    Wallet(WalletEvent),       // from block processing (TransactionReceived, BalanceUpdated)
+    Spv(SpvEvent),             // from DashSpvClient (SyncProgress, PeerConnected, PeerDisconnected)
+    Finality(FinalityEvent),   // InstantLock / ChainLock
+}
 ```
 
-`sync()` on `PlatformWallet` orchestrates sub-struct syncs:
+`WalletHandle` holds sub-wallet clones — sync access, no locks:
+
+```rust
+impl WalletHandle {
+    pub fn core(&self)     -> &CoreWallet            { &self.core }
+    pub fn identity(&self) -> &IdentityWallet        { &self.identity }
+    pub fn dashpay(&self)  -> &DashPayWallet         { &self.dashpay }
+    pub fn platform(&self) -> &PlatformAddressWallet { &self.platform }
+}
+```
+
+Call sites — standalone `PlatformWallet`:
+
+```rust
+let wallet = PlatformWallet::from_mnemonic(sdk, network, "word1 ...", "", 1_500_000, options)?;
+wallet.identity().register_identity(amount, keys).await?;
+wallet.dashpay().send_contact_request(sender, recipient).await?;
+wallet.core().balance();
+```
+
+Call sites — managed via `WalletHandle` (same API, no awaits on accessors):
+
+```rust
+let handle = mgr.create_wallet_from_mnemonic("...", "", height, options).await?;
+handle.identity().register_identity(amount, keys).await?;
+handle.dashpay().sync().await?;
+handle.core().balance();
+```
+
+`sync()` on `WalletHandle` orchestrates Platform-side syncs (SPV runs independently in background):
 
 ```rust
 pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError> {
-    self.identity.sync().await?;
-    self.dashpay.sync().await?;
-    self.platform.sync_platform_address_balances(None).await?;
+    self.identity().sync().await?;
+    self.dashpay().sync().await?;
+    self.platform().sync_platform_address_balances(None).await?;
     Ok(SyncResult::default())
 }
 ```
@@ -186,73 +320,83 @@ pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError> {
 
 ### 1.1 Wallet Construction
 
-> How a `PlatformWallet` is created from a seed, mnemonic, xprv, xpub, or randomly.
+> How a `PlatformWallet` is created from key material + Sdk.
 
-`PlatformWallet` wraps `key-wallet`'s `Wallet` + `ManagedWalletInfo` and adds `Sdk`.
-There are two independent axes of configuration:
+`PlatformWallet` is SPV-free. It needs only key material and an `Sdk`. No SPV config here — SPV
+lives in `PlatformWalletManager`.
 
-1. **Key material** — mnemonic, seed, xprv, xpub, or random
-2. **Network connection** — `NetworkOptions` (builds `Sdk` internally) or pre-built `Sdk`
-
-A **builder pattern** avoids a combinatorial explosion of constructors. Two axes are
-each **mutually exclusive**:
-
-1. **Key material** — `with_mnemonic`, `with_xprv`, `with_xpub`, `with_seed` — only one
-   allowed; `WalletType` is an enum in key-wallet, enforced at `build()`.
-2. **SDK source** — `with_sdk` (pre-built) vs `with_network_options` (builder creates it
-   internally) — using both is a `build()` error; `with_sdk` also fixes the network.
+Creation methods mirror `key-wallet`'s `Wallet` constructors, plus `sdk` parameter:
 
 ```rust
-// Most common — developer provides mnemonic and network config
-let wallet = PlatformWallet::builder()
-    .with_mnemonic("word1 word2 ...", None)  // passphrase optional
-    .with_network_options(opts)              // builds Sdk internally
-    .with_name("My Wallet")
-    .with_birth_height(1_500_000)            // skip blocks before wallet was created
-    .build()?;
+impl PlatformWallet {
+    // Mirrors key-wallet Wallet creation methods + sdk
+    pub fn from_mnemonic(
+        sdk: Sdk, network: Network, mnemonic: &str, passphrase: &str,
+        birth_height: CoreBlockHeight, options: WalletAccountCreationOptions,
+    ) -> Result<Self>;
 
-// Import from xprv
-let wallet = PlatformWallet::builder()
-    .with_xprv("xprv...")
-    .with_network_options(opts)
-    .build()?;
+    pub fn from_xprv(
+        sdk: Sdk, network: Network, xprv: &str,
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self>;
 
-// Watch-only / hardware wallet
-let wallet = PlatformWallet::builder()
-    .with_xpub("xpub...", ExternalSigning::Supported)
-    .with_network_options(opts)
-    .build()?;
+    pub fn from_seed(
+        sdk: Sdk, network: Network, seed: Seed,
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self>;
 
-// For callers that already own an Sdk (e.g. evo-tool with ArcSwap<Sdk>)
-let wallet = PlatformWallet::builder()
-    .with_mnemonic("word1 word2 ...", None)
-    .with_sdk(existing_sdk)                  // network derived from sdk.network
-    .build()?;
+    pub fn from_seed_bytes(
+        sdk: Sdk, network: Network, seed_bytes: &[u8; 64],
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self>;
 
-// Generate a new random wallet (returns mnemonic for user to write down)
-let (wallet, mnemonic) = PlatformWallet::generate(opts)?;
+    pub fn from_xpub(
+        sdk: Sdk, network: Network, xpub: &str, can_sign_externally: bool,
+    ) -> Result<Self>;
+
+    pub fn from_external_signable(
+        sdk: Sdk, network: Network, xpub: &str,
+    ) -> Result<Self>;
+
+    pub fn random(
+        sdk: Sdk, network: Network,
+        options: WalletAccountCreationOptions,
+    ) -> Result<(Self, Mnemonic)>;
+
+    pub fn from_bytes(sdk: Sdk, wallet_bytes: &[u8]) -> Result<Self>;
+}
+
+// Standalone usage
+let mut wallet = PlatformWallet::from_mnemonic(
+    sdk, Network::Testnet, "word1 word2 ...", "",
+    1_500_000, WalletAccountCreationOptions::Default,
+)?;
+wallet.identity().register_identity(amount, keys).await?;
+
+// Multi-wallet with SPV — use PlatformWalletManager (same creation signatures)
+let mgr = PlatformWalletManager::new(sdk, spv_config, network);
+let handle = mgr.create_wallet_from_mnemonic(
+    "word1 word2 ...", "", 1_500_000,
+    WalletAccountCreationOptions::Default,
+).await?;
+mgr.start_spv().await?;
 ```
 
-**Key material variants** — all mutually exclusive, delegate to `key-wallet`'s `Wallet`:
+**Internally**: each creation method calls `key-wallet`'s `Wallet::from_mnemonic()` (etc.) to create the
+immutable key store, then `ManagedWalletInfo::from_wallet()` for UTXO state, then wraps both with
+`IdentityManager::new()` into a `PlatformWallet`.
 
-| Builder method                        | key-wallet equivalent                                     | Notes                               |
-| ------------------------------------- | --------------------------------------------------------- | ----------------------------------- |
-| `.with_mnemonic(phrase, passphrase?)` | `Wallet::from_mnemonic` / `from_mnemonic_with_passphrase` | passphrase NOT stored               |
-| `.with_seed(bytes: [u8; 64])`         | `Wallet::from_seed_bytes`                                 | raw BIP39 seed                      |
-| `.with_xprv(base58)`                  | `Wallet::from_extended_key`                               | full signing capability             |
-| `.with_xpub(base58, signing)`         | `Wallet::from_xpub`                                       | watch-only or hardware wallet       |
-| `generate()` fn                       | `Wallet::new_random`                                      | returns `(PlatformWallet, Mnemonic)`|
+**`WalletAccountCreationOptions`**: always required (matches dashcore). Callers pass
+`WalletAccountCreationOptions::Default` for standard BIP-44 account 0 + identity + DIP-17 accounts.
 
-**`WalletAccountCreationOptions`**: builder uses `Default` (standard BIP-44 account 0 +
-identity + DIP-17 accounts). Advanced callers can override via `.account_options(...)`.
-
-**Birth height**: passed through to `ManagedWalletInfo::with_birth_height()` — SPV sync
-starts from this block, skipping earlier history. Defaults to 0 (full sync).
+**Birth height**: passed through to `ManagedWalletInfo::with_birth_height()` — used by SPV
+to skip earlier blocks when loaded into `PlatformWalletManager`. Defaults to 0 (full sync).
 
 #### Files
 
 - `packages/rs-platform-wallet/src/platform_wallet/builder.rs` (new)
 - `packages/rs-platform-wallet/src/platform_wallet/mod.rs` (new — replaces `platform_wallet_info/mod.rs`)
+- `packages/rs-platform-wallet/src/platform_wallet_manager/mod.rs` (new)
 
 #### Migration
 
@@ -263,18 +407,19 @@ The old `platform_wallet_info/` module (currently staged as deleted in git) must
 
 ### 1.2 Platform SDK Integration
 
-> Make `PlatformWallet` the SDK access point for all callers.
+> Sdk lives in `PlatformWallet` and `WalletHandle` — never in `IdentityManager`.
 
 **Current state**: SDK is stashed inside `IdentityManager.sdk: Option<Arc<Sdk>>` — accessed only by identity
 discovery. Every async method that submits state transitions requires the caller to pass `&Sdk` separately.
 
-**Goal**: Each stored sub-struct holds `sdk: Sdk` as a field. All methods call `self.sdk` without requiring callers to manage
-SDK lifecycle separately. `Sdk` implements `Clone` (confirmed at `rs-sdk/src/sdk.rs:134`) — it is cheaply cloneable via internal ref-counting; no `Arc` wrapper needed.
+**Goal**: `PlatformWallet` holds `sdk: Sdk` as a plain field (cheaply cloneable via internal ref-counting —
+confirmed at `rs-sdk/src/sdk.rs:134`). `WalletHandle` clones it at load time. All async methods on
+sub-structs call `self.sdk` internally.
 
 #### Tasks
 
-- **1.2.1** Add `sdk: Sdk` to each sub-struct. Clone from `PlatformWallet`'s sdk at construction.
-- **1.2.2** Remove `sdk: Option<Arc<Sdk>>` from `IdentityManager`; all SDK access flows through the sub-struct `sdk` fields.
+- **1.2.1** Add `sdk: Sdk` to `PlatformWallet`. All sub-structs (built on-the-fly from `WalletHandle`) receive it via the handle's `sdk` field.
+- **1.2.2** Remove `sdk: Option<Arc<Sdk>>` from `IdentityManager` — SDK access flows through the caller struct.
 
 #### Files
 
@@ -391,34 +536,55 @@ The SPV client (`DashSpvClient`) is the P2P layer for Core transactions.
 #### 1.3.5 — SPV Sync Integration
 
 `dash-spv` (`DashSpvClient<W, N, S>`) is the P2P sync layer. It uses **BIP157/158 compact
-block filters** (not Bloom filters). It takes a `WalletInterface` generic parameter — the
-wallet registers itself so `dash-spv` can deliver relevant transactions.
+block filters** (not Bloom filters). It accepts `Arc<RwLock<W: WalletInterface>>`.
 
-`CoreWallet` implements `WalletInterface` from `key-wallet-manager` — it is the natural
-boundary, wrapping `Arc<RwLock<ManagedWalletInfo>>`. `PlatformWallet` passes `wallet.core.clone()`
-to `DashSpvClient` at startup; the client holds it and calls back into `CoreWallet` as blocks arrive.
-Because `CoreWallet` holds an `Arc` clone, SPV and `PlatformWallet` share the same `ManagedWalletInfo`
-without any additional locking at the `PlatformWallet` level.
+**`WalletInterface` is implemented by `PlatformWalletManager` directly** — no `WalletManager<T>`
+dependency. `PlatformWalletManager` uses `key-wallet` types (`TransactionRouter`,
+`WalletTransactionChecker` trait on `ManagedWalletInfo`) to process blocks.
 
-Note: `key-wallet-manager` is an optional dependency in `Cargo.toml` gated on `feature = "manager"`.
-Ensure `CoreWallet`'s `WalletInterface` impl enables this feature.
+SPV lives in `PlatformWalletManager`, not in `PlatformWallet`. `PlatformWallet` is SPV-free.
+
+**Wiring** (`PlatformWalletManager::start_spv()`):
 
 ```rust
-impl WalletInterface for CoreWallet {
-    fn monitored_addresses(&self) -> Vec<Address>
-    // dash-spv uses these to match compact filters — must return ALL account types
-
-    fn process_transaction(&mut self, tx: &Transaction, height: u32, block_time: u64) -> bool
-    // called by dash-spv when a matching tx is found — delegates to wallet_info
-
-    fn synced_height(&self) -> u32
-    fn set_synced_height(&mut self, height: u32)
-}
+// PlatformWalletManager implements WalletInterface — pass Arc<RwLock<Self>> to SPV client
+let spv = DashSpvClient::new(spv_config, net_manager, storage, self_arc).await?;
 ```
 
-`ManagedWalletInfo` does NOT directly implement `WalletTransactionChecker` — it must be
-delegated through a wrapper struct, matching the pattern in the old `wallet_transaction_checker.rs`.
-Preserve this delegation in `CoreWallet`.
+**Block processing call chain**:
+
+```
+DashSpvClient
+  → PlatformWalletManager::process_block()       // WalletInterface impl
+  → wallets.read() → iterate wallets
+  → for each wallet:
+    → wallet.core.wallet_info.write()             // Arc<RwLock<MWI>> — inner lock
+    → check_core_transaction(tx, ...)             // WalletTransactionChecker (key-wallet)
+    → ManagedWalletInfo state mutated
+    → PlatformWalletEvent::Wallet(...) emitted
+```
+
+**`PlatformWalletEvent`** (unified enum):
+- `Wallet(WalletEvent)` — `TransactionReceived`, `BalanceUpdated`
+- `Spv(SpvEvent)` — sync progress, peer connections
+- `Finality(FinalityEvent)` — InstantLock, ChainLock
+
+**Event subscription**:
+```rust
+let rx: broadcast::Receiver<PlatformWalletEvent> = mgr.subscribe_events();
+```
+
+**`WalletInterface` methods** (implemented on `PlatformWalletManager`):
+- `process_block` — iterates wallets, locks each, calls `check_core_transaction` per tx
+- `monitored_addresses` — collects from all wallets' `ManagedWalletInfo`
+- `synced_height` / `update_synced_height` — tracks via `AtomicU32`, updates each wallet
+- `subscribe_events` — returns `broadcast::Receiver<WalletEvent>` (SPV expects this type)
+
+**No reorg notification**: `WalletInterface` has no `process_reorg` method — reorgs are handled
+only at the `ChainTipManager` level in dash-spv; the wallet is never notified.
+
+Note: `key-wallet-manager` will be merged into `key-wallet` — this is a packaging change only,
+no API impact. Feature gate `feature = "manager"` in `Cargo.toml` may change accordingly.
 
 Transaction broadcasting goes through `DashSpvClient::broadcast_transaction(tx)` — P2P
 to connected peers (see §1.3.4). `dash-spv` also delivers InstantLock and ChainLock events
@@ -1174,26 +1340,32 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 
 ---
 
-### PR-1: Project Scaffold + CoreWallet
+### PR-1: Project Scaffold + PlatformWallet + PlatformWalletManager + CoreWallet
 
 **Library** (`rs-platform-wallet`):
 
 - Clean up `lib.rs`: replace `pub mod platform_wallet_info` with `pub mod platform_wallet`
-- `PlatformWallet` struct skeleton with builder (§1.1, §Struct Definitions)
-- `CoreWallet` with `ManagedWalletInfo` Arc, `WalletInterface` impl (§1.3)
+- `PlatformWallet` struct with stored sub-wallets sharing `Arc<RwLock<ManagedWalletInfo>>` (§Struct Definitions)
+- `PlatformWallet` creation methods mirroring `key-wallet`'s `Wallet` constructors + `sdk` param (§1.1)
+- `CoreWallet` with `Arc<RwLock<ManagedWalletInfo>>`, balance, UTXOs, address generation (§1.3)
+- `PlatformWalletManager`: multi-wallet coordinator, `RwLock<BTreeMap>` for wallet add/remove
+- `PlatformWalletManager` implements `WalletInterface` directly using `key-wallet` types (`TransactionRouter`, `WalletTransactionChecker`) — no `WalletManager<T>` dependency (§1.3.5)
+- `WalletHandle`: holds cloned sub-wallets (all Arc fields), sync access, no locks needed
+- `PlatformWalletEvent` unified enum: `Wallet(WalletEvent)`, `Spv(SpvEvent)`, `Finality(FinalityEvent)`
 - `monitored_addresses()` returns ALL account types including `dashpay_receival_accounts`
 - `send_transaction`, `broadcast_transaction`, asset lock proof creation (§1.3.4–1.3.6)
 - Asset lock timeout/fallback: 60s InstantLock wait, then ChainLock polling
 - `IdentitySigner` stub (§1.7) — needed for identity registration in PR-2
 - `static_assertions::assert_impl_all!(PlatformWallet: Send, Sync)`
-- `IdentityManager` refactor: wrap fields in `Arc<RwLock<_>>`, add `last_scanned_index`, remove `sdk` field
+- `IdentityManager` refactor: add `last_scanned_index`, remove `sdk` field
 
 **evo-tool integration**:
 
 - Add `platform-wallet = { path = "../../platform/packages/rs-platform-wallet" }` to `Cargo.toml`
-- Replace `AppContext.wallets`: `RwLock<BTreeMap<WalletSeedHash, Arc<RwLock<Wallet>>>>` → `RwLock<BTreeMap<WalletSeedHash, Arc<RwLock<PlatformWallet>>>>`
-- `wallet_lifecycle.rs`: construct via builder on import/creation, wire `sdk` from `AppContext.sdk`
-- `backend_task/core/refresh_wallet_info.rs`: feed through `CoreWallet::process_transaction()`
+- Replace `AppContext.wallets` + `SpvManager` with `PlatformWalletManager`
+- `wallet_lifecycle.rs`: construct via `PlatformWallet::from_mnemonic()` / `from_xprv()`, wire `sdk` from `AppContext.sdk`
+- SPV: `PlatformWalletManager::start_spv()` replaces manual `SpvManager` setup
+- `WalletHandle` replaces `WalletSeedHash` as wallet accessor
 - Delete `src/model/wallet/` (old custom wallet struct)
 
 **Database migration** (in this PR):
@@ -1202,7 +1374,7 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 - If old format: deserialize as old `Wallet`, convert to `PlatformWallet`, re-save
 - On first run after migration: `IdentityManager` starts empty — identities re-discovered in PR-2
 
-**Done when**: evo-tool builds with `PlatformWallet` as wallet type; SPV sync works; `send_transaction` works.
+**Done when**: evo-tool builds with `PlatformWalletManager`; SPV sync works via `WalletInterface` impl; `send_transaction` works; `WalletHandle` provides sync access to sub-wallets.
 
 ---
 
