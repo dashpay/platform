@@ -127,6 +127,7 @@ mod test {
     use crate::identity::{IdentityPublicKey, KeyType};
     use crate::prelude::UserFeeIncrease;
     use crate::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+    use crate::state_transition::traits::state_transition_has_user_fee_increase::StateTransitionHasUserFeeIncrease;
     use crate::state_transition::{
         StateTransition, StateTransitionFieldTypes, StateTransitionSigningOptions,
         StateTransitionType,
@@ -181,20 +182,22 @@ mod test {
             StateTransitionType::Batch
         }
 
-        fn user_fee_increase(&self) -> UserFeeIncrease {
-            self.user_fee_increase
-        }
-
-        fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-            self.user_fee_increase = user_fee_increase;
-        }
-
         fn modified_data_ids(&self) -> Vec<Identifier> {
             vec![]
         }
 
         fn unique_identifiers(&self) -> Vec<String> {
             vec![]
+        }
+    }
+
+    impl StateTransitionHasUserFeeIncrease for MockSignedTransition {
+        fn user_fee_increase(&self) -> UserFeeIncrease {
+            self.user_fee_increase
+        }
+
+        fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+            self.user_fee_increase = user_fee_increase;
         }
     }
 
