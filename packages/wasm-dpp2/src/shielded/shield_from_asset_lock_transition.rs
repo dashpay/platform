@@ -37,7 +37,7 @@ export interface SerializedOrchardActionJSON {
  * ShieldFromAssetLockTransition serialized as a plain object.
  */
 export interface ShieldFromAssetLockTransitionObject {
-    $formatVersion: string;
+    $version: string;
     assetLockProof: AssetLockProofObject;
     actions: SerializedOrchardAction[];
     valueBalance: bigint;
@@ -51,7 +51,7 @@ export interface ShieldFromAssetLockTransitionObject {
  * ShieldFromAssetLockTransition serialized as JSON (human-readable).
  */
 export interface ShieldFromAssetLockTransitionJSON {
-    $formatVersion: string;
+    $version: string;
     assetLockProof: AssetLockProofJSON;
     actions: SerializedOrchardActionJSON[];
     valueBalance: number | string;

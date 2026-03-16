@@ -13,7 +13,7 @@ const TS_TYPES: &str = r#"
  * UnshieldTransition serialized as a plain object.
  */
 export interface UnshieldTransitionObject {
-    $formatVersion: string;
+    $version: string;
     outputAddress: object;
     actions: SerializedOrchardAction[];
     unshieldingAmount: bigint;
@@ -26,7 +26,7 @@ export interface UnshieldTransitionObject {
  * UnshieldTransition serialized as JSON (human-readable).
  */
 export interface UnshieldTransitionJSON {
-    $formatVersion: string;
+    $version: string;
     outputAddress: object;
     actions: SerializedOrchardActionJSON[];
     unshieldingAmount: number | string;

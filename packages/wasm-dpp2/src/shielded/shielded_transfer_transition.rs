@@ -13,7 +13,7 @@ const TS_TYPES: &str = r#"
  * ShieldedTransferTransition serialized as a plain object.
  */
 export interface ShieldedTransferTransitionObject {
-    $formatVersion: string;
+    $version: string;
     actions: SerializedOrchardAction[];
     valueBalance: bigint;
     anchor: Uint8Array;
@@ -25,7 +25,7 @@ export interface ShieldedTransferTransitionObject {
  * ShieldedTransferTransition serialized as JSON (human-readable).
  */
 export interface ShieldedTransferTransitionJSON {
-    $formatVersion: string;
+    $version: string;
     actions: SerializedOrchardActionJSON[];
     valueBalance: number | string;
     anchor: string;

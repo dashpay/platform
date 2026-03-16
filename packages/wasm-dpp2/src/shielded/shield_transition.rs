@@ -11,11 +11,11 @@ use wasm_bindgen::prelude::*;
 const TS_TYPES: &str = r#"
 /**
  * Fee strategy step: defines how fees are paid from inputs or outputs.
+ * Externally-tagged enum: exactly one key present per object.
  */
-export interface FeeStrategyStepObject {
-    type: string;
-    index: number;
-}
+export type FeeStrategyStepObject =
+    | { deductFromInput: number }
+    | { reduceOutput: number };
 
 /**
  * Address witness for P2PKH spending.
@@ -65,8 +65,8 @@ export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSO
  * ShieldTransition serialized as a plain object.
  */
 export interface ShieldTransitionObject {
-    $formatVersion: string;
-    inputs: Map<object, [number, bigint]>;
+    $version: string;
+    inputs: Record<string, [number, bigint]>;
     actions: SerializedOrchardAction[];
     amount: bigint;
     anchor: Uint8Array;
@@ -81,7 +81,7 @@ export interface ShieldTransitionObject {
  * ShieldTransition serialized as JSON (human-readable).
  */
 export interface ShieldTransitionJSON {
-    $formatVersion: string;
+    $version: string;
     inputs: Record<string, [number, number]>;
     actions: SerializedOrchardActionJSON[];
     amount: number | string;
