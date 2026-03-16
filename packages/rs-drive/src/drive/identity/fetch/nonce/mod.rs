@@ -89,9 +89,10 @@ mod tests {
                 .expect("should not error")
                 .expect("should have nonce");
 
-            // After merging nonce 1, the nonce value should contain 1
-            // The nonce encoding includes missing revision bits, so just check it's nonzero
-            assert!(nonce > 0);
+            // After merging nonce 1, the stored value should be exactly 1.
+            // When merging nonce 1 from an initial value of 0, there are no missing
+            // revisions in between, so no missing-revision bits are set.
+            assert_eq!(nonce, 1);
         }
 
         #[test]

@@ -492,27 +492,49 @@ mod tests {
         }
 
         #[test]
-        fn should_convert_to_u8() {
+        fn should_convert_all_variants_to_u8() {
             let val: u8 = IdentityRootStructure::IdentityTreeRevision.into();
             assert_eq!(val, 192);
             let val: u8 = IdentityRootStructure::IdentityTreeNonce.into();
             assert_eq!(val, 64);
             let val: u8 = IdentityRootStructure::IdentityTreeKeys.into();
             assert_eq!(val, 128);
+            let val: u8 = IdentityRootStructure::IdentityTreeKeyReferences.into();
+            assert_eq!(val, 160);
+            let val: u8 = IdentityRootStructure::IdentityTreeNegativeCredit.into();
+            assert_eq!(val, 96);
+            let val: u8 = IdentityRootStructure::IdentityContractInfo.into();
+            assert_eq!(val, 32);
         }
 
         #[test]
-        fn should_convert_to_u8_array() {
+        fn should_convert_all_variants_to_u8_array() {
             let val: [u8; 1] = IdentityRootStructure::IdentityTreeRevision.into();
             assert_eq!(val, [192]);
             let val: [u8; 1] = IdentityRootStructure::IdentityTreeNonce.into();
             assert_eq!(val, [64]);
+            let val: [u8; 1] = IdentityRootStructure::IdentityTreeKeys.into();
+            assert_eq!(val, [128]);
+            let val: [u8; 1] = IdentityRootStructure::IdentityTreeKeyReferences.into();
+            assert_eq!(val, [160]);
+            let val: [u8; 1] = IdentityRootStructure::IdentityTreeNegativeCredit.into();
+            assert_eq!(val, [96]);
+            let val: [u8; 1] = IdentityRootStructure::IdentityContractInfo.into();
+            assert_eq!(val, [32]);
         }
 
         #[test]
-        fn should_convert_to_static_u8_array_ref() {
+        fn should_convert_all_variants_to_static_u8_array_ref() {
             let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeRevision.into();
             assert_eq!(val, &[192]);
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeNonce.into();
+            assert_eq!(val, &[64]);
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeKeys.into();
+            assert_eq!(val, &[128]);
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeKeyReferences.into();
+            assert_eq!(val, &[160]);
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeNegativeCredit.into();
+            assert_eq!(val, &[96]);
             let val: &'static [u8; 1] = IdentityRootStructure::IdentityContractInfo.into();
             assert_eq!(val, &[32]);
         }
@@ -526,6 +548,11 @@ mod tests {
             let id = [1u8; 32];
             let path = identity_path(&id);
             assert_eq!(path.len(), 2);
+            assert_eq!(
+                path[0],
+                Into::<&[u8; 1]>::into(RootTree::Identities) as &[u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], &id);
         }
 
@@ -534,6 +561,11 @@ mod tests {
             let id = [2u8; 32];
             let path = identity_path_vec(&id);
             assert_eq!(path.len(), 2);
+            assert_eq!(
+                path[0],
+                vec![RootTree::Identities as u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], id.to_vec());
         }
 
@@ -542,6 +574,11 @@ mod tests {
             let id = [3u8; 32];
             let path = identity_key_tree_path(&id);
             assert_eq!(path.len(), 3);
+            assert_eq!(
+                path[0],
+                Into::<&[u8; 1]>::into(RootTree::Identities) as &[u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], &id);
             assert_eq!(path[2], &[IdentityRootStructure::IdentityTreeKeys as u8]);
         }
@@ -551,6 +588,11 @@ mod tests {
             let id = [4u8; 32];
             let path = identity_key_tree_path_vec(&id);
             assert_eq!(path.len(), 3);
+            assert_eq!(
+                path[0],
+                vec![RootTree::Identities as u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], id.to_vec());
             assert_eq!(path[2], vec![IdentityRootStructure::IdentityTreeKeys as u8]);
         }
@@ -561,6 +603,11 @@ mod tests {
             let id = [5u8; 32];
             let path = identity_contract_info_root_path(&id);
             assert_eq!(path.len(), 3);
+            assert_eq!(
+                path[0],
+                Into::<&[u8; 1]>::into(RootTree::Identities) as &[u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], &id);
         }
 
@@ -570,6 +617,11 @@ mod tests {
             let group_id = [7u8; 32];
             let path = identity_contract_info_group_path(&id, &group_id);
             assert_eq!(path.len(), 4);
+            assert_eq!(
+                path[0],
+                Into::<&[u8; 1]>::into(RootTree::Identities) as &[u8],
+                "first path component should be RootTree::Identities"
+            );
             assert_eq!(path[1], &id);
             assert_eq!(path[3], &group_id);
         }

@@ -188,18 +188,86 @@ mod tests {
         }
     }
 
-    mod fetch_identity_negative_balance {
+    mod fetch_identity_balance_include_debt_combined {
         use super::*;
+        use crate::fees::op::LowLevelDriveOperation;
 
         #[test]
-        fn should_error_for_non_existent_identity() {
+        fn should_return_positive_balance_ignoring_negative_credit_when_balance_nonzero() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity = create_test_identity(&drive, [0; 32], Some(1), None, platform_version)
+                .expect("expected an identity");
+
+            let added_balance: u64 = 2000;
+
+            // Add positive balance
+            drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    added_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should add balance");
+
+            let negative_amount: u64 = 500;
+
+            // Set negative credit (debt)
+            let batch = vec![drive
+                .update_identity_negative_credit_operation(
+                    identity.id().to_buffer(),
+                    negative_amount,
+                    platform_version,
+                )
+                .expect("expected operation")];
+
+            let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    None,
+                    batch,
+                    &mut drive_operations,
+                    &platform_version.drive,
+                )
+                .expect("should apply batch");
+
+            // When the balance is nonzero, fetch_identity_balance_include_debt
+            // returns just the positive balance. The negative credit is only
+            // consulted when the balance itself is zero.
+            let balance = drive
+                .fetch_identity_balance_include_debt(
+                    identity.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("should not error")
+                .expect("should have balance");
+
+            assert_eq!(
+                balance, added_balance as i64,
+                "should return positive balance when balance > 0, regardless of negative credit"
+            );
+        }
+    }
+
+    mod fetch_identity_negative_balance {
+        use super::*;
+        use crate::error::Error;
+
+        #[test]
+        fn should_error_with_grovedb_error_for_non_existent_identity() {
             let drive = setup_drive_with_initial_state_structure(None);
             let platform_version = PlatformVersion::latest();
 
             let mut drive_operations = vec![];
             // For a non-existent identity, the path doesn't exist, so grove_get_raw
-            // returns an error (PathParentLayerNotFound) since the identity subtree
-            // doesn't exist at all.
+            // returns a GroveDB error (PathParentLayerNotFound) since the identity
+            // subtree doesn't exist at all.
             let result = drive.fetch_identity_negative_balance_operations(
                 [0; 32],
                 true,
@@ -208,7 +276,11 @@ mod tests {
                 platform_version,
             );
 
-            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(Error::GroveDB(_))),
+                "expected GroveDB error for non-existent identity path, got: {:?}",
+                result
+            );
         }
 
         #[test]

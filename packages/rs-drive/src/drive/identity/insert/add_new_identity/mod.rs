@@ -272,7 +272,9 @@ mod tests {
     }
 
     #[test]
-    fn should_succeed_reinserting_masternode_identity() {
+    fn should_succeed_reinserting_masternode_identity_and_reenable_keys() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive(None);
 
@@ -297,7 +299,37 @@ mod tests {
             )
             .expect("expected to insert identity");
 
-        // Reinserting the same masternode identity should succeed (re-enable keys)
+        // Disable all keys to simulate a masternode being removed
+        let key_ids: Vec<dpp::identity::KeyID> = identity.public_keys().keys().copied().collect();
+        drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                key_ids.clone(),
+                1000, // disable_at timestamp
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to disable keys");
+
+        // Verify keys are disabled before re-insertion
+        let fetched_keys_before = drive
+            .fetch_all_identity_keys(
+                identity.id().to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch keys");
+        for key in fetched_keys_before.values() {
+            assert!(
+                key.is_disabled(),
+                "key {} should be disabled before re-insertion",
+                key.id()
+            );
+        }
+
+        // Reinserting the same masternode identity should succeed and re-enable keys
         let result = drive.add_new_identity(
             identity.clone(),
             true,
@@ -309,8 +341,8 @@ mod tests {
 
         assert!(result.is_ok());
 
-        // Verify keys are still present after reinsertion
-        let fetched_keys = drive
+        // Verify keys are re-enabled after reinsertion
+        let fetched_keys_after = drive
             .fetch_all_identity_keys(
                 identity.id().to_buffer(),
                 Some(&transaction),
@@ -318,6 +350,13 @@ mod tests {
             )
             .expect("expected to fetch keys");
 
-        assert_eq!(fetched_keys.len(), 5);
+        assert_eq!(fetched_keys_after.len(), 5);
+        for key in fetched_keys_after.values() {
+            assert!(
+                !key.is_disabled(),
+                "key {} should be re-enabled after masternode re-insertion",
+                key.id()
+            );
+        }
     }
 }
