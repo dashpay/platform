@@ -1187,7 +1187,7 @@ pub unsafe extern "C" fn dash_sdk_name_timestamp_list_free(list: *mut DashSDKNam
 ///
 /// # Safety
 /// Caller must ensure the map's entries pointer and count are valid.
-unsafe fn free_address_info_map_entries(map: &DashSDKAddressInfoMap) {
+pub(crate) unsafe fn free_address_info_map_entries(map: &DashSDKAddressInfoMap) {
     if !map.entries.is_null() && map.count > 0 {
         let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
         for entry in entries_slice.iter() {
