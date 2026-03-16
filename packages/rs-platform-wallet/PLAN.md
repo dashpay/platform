@@ -171,7 +171,7 @@ pub struct PlatformWalletManager {
     sdk:        Sdk,
     network:    Network,
     wallets:    RwLock<BTreeMap<WalletId, PlatformWallet>>,  // lock only for add/remove
-    spv_client: Option<DashSpvClient<...>>,  // None until start_spv()
+    spv_client: Option<DashSpvClient<Self, N, S>>,  // None until start_spv(); N=NetworkManager, S=Storage — concrete types TBD
     event_tx:   broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
 }
@@ -186,13 +186,21 @@ pub struct WalletHandle {
     platform:  PlatformAddressWallet,
 }
 
-// NOTE: The current IdentityManager has plain (non-Arc-wrapped) fields — this is the target
+// IdentityManager is shared between IdentityWallet and DashPayWallet.
+// Implements Clone — all fields are cheap to clone (IndexMap is cloned by value,
+// but since both sub-wallets hold their own copy via Arc<IdentityManager> or by
+// wrapping the mutable fields, sharing is handled at the sub-wallet level).
+// For concurrent access: IdentityWallet and DashPayWallet share the same IdentityManager
+// instance because PlatformWallet constructs them from the same source at build time.
+// WalletHandle clones sub-wallets which clone the IdentityManager (same Arc references inside).
 pub struct IdentityManager {
-    identities:          IndexMap<Identifier, ManagedIdentity>,
-    primary_identity_id: Option<Identifier>,
-    last_scanned_index:  u32,  // NEW — not yet present; persisted gap scan state
+    identities:          Arc<RwLock<IndexMap<Identifier, ManagedIdentity>>>,
+    primary_identity_id: Arc<RwLock<Option<Identifier>>>,
+    last_scanned_index:  Arc<RwLock<u32>>,  // NEW — not yet present; persisted gap scan state
     // REMOVED: sdk: Option<Arc<Sdk>> — SDK moves to PlatformWallet
 }
+// Clone is cheap — just Arc clones. IdentityWallet and DashPayWallet hold
+// the same Arc pointers — mutations visible to both.
 ```
 
 **No dashcore changes required.** Only `key-wallet` crate types are used directly (`Wallet`,
@@ -394,9 +402,9 @@ to skip earlier blocks when loaded into `PlatformWalletManager`. Defaults to 0 (
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/builder.rs` (new)
 - `packages/rs-platform-wallet/src/platform_wallet/mod.rs` (new — replaces `platform_wallet_info/mod.rs`)
 - `packages/rs-platform-wallet/src/platform_wallet_manager/mod.rs` (new)
+- `packages/rs-platform-wallet/src/wallet_handle/mod.rs` (new)
 
 #### Migration
 
@@ -439,8 +447,8 @@ sub-structs call `self.sdk` internally.
 `dash-spv` handles SPV header sync and BIP157/158 compact filter transaction delivery.
 
 `CoreWallet` is a stored sub-struct that holds `Arc<RwLock<ManagedWalletInfo>>` and exposes
-these capabilities without leaking key-wallet internals. It implements `WalletInterface`
-as a concrete stored type, so SPV registration is straightforward.
+these capabilities without leaking key-wallet internals. (`WalletInterface` is implemented
+by `PlatformWalletManager`, not `CoreWallet` — see §1.3.5.)
 
 **Note on `ManagedAccountCollection` field names** (confirmed from key-wallet source):
 - Standard accounts: `standard_bip44_accounts: BTreeMap<u32, ManagedCoreAccount>` (NOT a single `core_accounts` field)
@@ -575,10 +583,15 @@ let rx: broadcast::Receiver<PlatformWalletEvent> = mgr.subscribe_events();
 ```
 
 **`WalletInterface` methods** (implemented on `PlatformWalletManager`):
-- `process_block` — iterates wallets, locks each, calls `check_core_transaction` per tx
+- `process_block` — iterates wallets, locks each `wallet_info`, calls `check_core_transaction` per tx
 - `monitored_addresses` — collects from all wallets' `ManagedWalletInfo`
 - `synced_height` / `update_synced_height` — tracks via `AtomicU32`, updates each wallet
-- `subscribe_events` — returns `broadcast::Receiver<WalletEvent>` (SPV expects this type)
+- `subscribe_events` — returns `broadcast::Receiver<WalletEvent>` (trait requirement for SPV)
+
+**Two event channels**: `WalletInterface::subscribe_events()` returns `WalletEvent` (for SPV).
+`PlatformWalletManager::subscribe_events()` (public API) returns `PlatformWalletEvent` which
+wraps `WalletEvent` + `SpvEvent` + `FinalityEvent`. Internally, the manager forwards `WalletEvent`s
+into the `PlatformWalletEvent` channel as `PlatformWalletEvent::Wallet(event)`.
 
 **No reorg notification**: `WalletInterface` has no `process_reorg` method — reorgs are handled
 only at the `ChainTipManager` level in dash-spv; the wallet is never notified.
@@ -1262,7 +1275,7 @@ pub fn restore(data: &[u8]) -> Result<Self, PlatformWalletError>
 ```
 
 `Sdk` is excluded from the blob (it's a live connection) — caller re-provides it via
-`PlatformWalletBuilder::with_sdk(sdk).restore(blob)` or `with_network_options(opts).restore(blob)`.
+`PlatformWallet::from_bytes(sdk, blob)`.
 
 `ManagedWalletInfo` and `ManagedAccountCollection` already have `#[cfg(feature="bincode")]`
 encode/decode. `ManagedPlatformAccount` and `PlatformP2PKHAddress` already have bincode.
@@ -1474,7 +1487,7 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 **evo-tool integration**:
 
 - Replace SQLite wallet blob serialization with `PlatformWallet::backup()`/`restore()`
-- Wire `PlatformWalletBuilder::with_sdk(sdk).restore(blob)` on wallet load
+- Wire `PlatformWallet::from_bytes(sdk, blob)` on wallet load
 - Remove any remaining evo-tool wallet shim code
 
 **Done when**: Wallet persists and restores correctly across restarts; no old wallet code remains in evo-tool.
