@@ -51,13 +51,17 @@ mod tests {
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
+    use crate::config::DriveConfig;
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::query::DriveDocumentQuery;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::{Document, DocumentV0Getters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
@@ -1005,6 +1009,33 @@ mod tests {
 
         assert!(fee_result.storage_fee > 0);
         assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify content matches
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(results.len(), 1);
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected profile document type");
+        let fetched_doc = Document::from_bytes(&results[0], document_type, platform_version)
+            .expect("expected to deserialize document");
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "sam",
+            "displayName should match the original value from profile0.json"
+        );
     }
 
     #[test]
@@ -1097,6 +1128,43 @@ mod tests {
             .commit_transaction(db_transaction)
             .unwrap()
             .expect("unable to commit transaction");
+
+        // Fetch both documents back and verify they exist with correct content
+        let sql_string = "select * from person order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected both history-keeping documents to be present"
+        );
+
+        let doc0 = Document::from_bytes(&results[0], document_type, platform_version)
+            .expect("expected to deserialize first document");
+        let doc1 = Document::from_bytes(&results[1], document_type, platform_version)
+            .expect("expected to deserialize second document");
+
+        // Results are ordered by firstName ascending: Samuel, Tom
+        assert_eq!(
+            doc0.get("firstName")
+                .expect("firstName should exist")
+                .as_text()
+                .expect("firstName should be text"),
+            "Samuel"
+        );
+        assert_eq!(
+            doc1.get("firstName")
+                .expect("firstName should exist")
+                .as_text()
+                .expect("firstName should be text"),
+            "Tom"
+        );
     }
 
     #[test]
@@ -1247,5 +1315,21 @@ mod tests {
                 platform_version,
             )
             .expect("expected second document insertion to succeed");
+
+        // Verify both documents were inserted by fetching them
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected both documents to be present after batch insertion"
+        );
     }
 }
