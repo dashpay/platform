@@ -1,6 +1,4 @@
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
-use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -63,18 +61,18 @@ impl TokenFreezeTransitionV0Methods for TokenFreezeTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenFreezeTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         let TokenFreezeTransitionV0 {
             base,
             identity_to_freeze_id: frozen_identity_id,
             ..
         } = self;
 
-        Ok(TokenFreezeTransition::calculate_action_id_with_fields_v0(
+        TokenFreezeTransition::calculate_action_id_with_fields_v0(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),
             frozen_identity_id.as_bytes(),
-        ))
+        )
     }
 }

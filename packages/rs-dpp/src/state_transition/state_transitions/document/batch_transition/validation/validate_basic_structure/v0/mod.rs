@@ -191,7 +191,7 @@ impl BatchTransition {
             if let Some(group_state_transition_info) = transition.base().using_group_info() {
                 if group_state_transition_info.action_is_proposer {
                     if let Some(calculated_action_id) =
-                        transition.calculate_action_id(self.owner_id(), platform_version).transpose()?
+                        transition.calculate_action_id_with_platform_version(self.owner_id(), platform_version).transpose()?
                     {
                         if group_state_transition_info.action_id != calculated_action_id {
                             result.add_error(BasicError::InvalidActionIdError(

@@ -53,6 +53,8 @@ use crate::state_transition::batch_transition::token_claim_transition::TokenClai
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_destroy_frozen_funds_transition::TokenDestroyFrozenFundsTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::batch_transition::token_direct_purchase_transition::TokenDirectPurchaseTransitionV0;
@@ -113,7 +115,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = mint_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = mint_transition.calculate_action_id(owner_id);
                     mint_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -188,7 +190,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = burn_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = burn_transition.calculate_action_id(owner_id);
                     burn_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -329,7 +331,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = freeze_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = freeze_transition.calculate_action_id(owner_id);
                     freeze_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -406,7 +408,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = unfreeze_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = unfreeze_transition.calculate_action_id(owner_id);
                     unfreeze_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -484,7 +486,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = destroy_frozen_funds_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = destroy_frozen_funds_transition.calculate_action_id(owner_id);
                     destroy_frozen_funds_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -563,7 +565,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = emergency_action_transition.calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = emergency_action_transition.calculate_action_id(owner_id);
                     emergency_action_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -640,8 +642,34 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = config_update_transition
-                        .calculate_action_id(owner_id, _platform_version)?;
+                    let action_id = match _platform_version
+                        .dpp
+                        .token_versions
+                        .token_config_update_action_id_version
+                    {
+                        0 => Ok(config_update_transition.calculate_action_id(owner_id)),
+                        1 => {
+                            let base = config_update_transition.base();
+                            let item = config_update_transition.update_token_configuration_item();
+                            let serialized =
+                                bincode::encode_to_vec(item, bincode::config::standard())
+                                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+                            Ok(
+                                TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+                                    base.token_id().as_bytes(),
+                                    owner_id.as_bytes(),
+                                    base.identity_contract_nonce(),
+                                    item.u8_item_index(),
+                                    Some(&serialized),
+                                ),
+                            )
+                        }
+                        version => Err(ProtocolError::UnknownVersionMismatch {
+                            method: "token_config_update_action_id".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        }),
+                    }?;
                     config_update_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -774,7 +802,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                     group_contract_position,
                 ) => {
                     let action_id =
-                        change_direct_purchase_price_transition.calculate_action_id(owner_id, _platform_version)?;
+                        change_direct_purchase_price_transition.calculate_action_id(owner_id);
                     change_direct_purchase_price_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {

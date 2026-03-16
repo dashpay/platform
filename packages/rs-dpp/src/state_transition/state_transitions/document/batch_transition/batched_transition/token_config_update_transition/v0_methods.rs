@@ -1,8 +1,6 @@
 use platform_value::Identifier;
-use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::prelude::IdentityNonce;
-use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -68,9 +66,9 @@ impl TokenConfigUpdateTransitionV0Methods for TokenConfigUpdateTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenConfigUpdateTransition {
-    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         match self {
-            TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
+            TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
     }
 }
@@ -93,23 +91,24 @@ impl TokenConfigUpdateTransition {
         hash_double(bytes).into()
     }
 
-    /// v1: action_id includes the full serialized config change item, binding
-    /// the voted-on value into the hash and preventing vote-swap attacks.
+    /// v1: action_id includes the u8 discriminant and the full serialized
+    /// config change item payload, binding the voted-on value into the hash
+    /// and preventing vote-swap attacks.
     pub fn calculate_action_id_with_fields_v1(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
-        update_token_configuration_item: &TokenConfigurationChangeItem,
+        update_token_config_item: u8,
+        payload: Option<&[u8]>,
     ) -> Identifier {
-        let serialized_item =
-            bincode::encode_to_vec(update_token_configuration_item, bincode::config::standard())
-                .expect("expected to encode token configuration change item");
-
         let mut bytes = b"action_token_config_update".to_vec();
         bytes.extend_from_slice(token_id);
         bytes.extend_from_slice(owner_id);
         bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
-        bytes.extend_from_slice(&serialized_item);
+        bytes.push(update_token_config_item);
+        if let Some(payload) = payload {
+            bytes.extend_from_slice(payload);
+        }
 
         hash_double(bytes).into()
     }
@@ -119,7 +118,6 @@ impl TokenConfigUpdateTransition {
 mod tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
-    use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 
@@ -137,6 +135,11 @@ mod tests {
         })
     }
 
+    fn serialize_item(item: &TokenConfigurationChangeItem) -> Vec<u8> {
+        bincode::encode_to_vec(item, bincode::config::standard())
+            .expect("expected to encode token configuration change item")
+    }
+
     #[test]
     fn v0_action_id_same_discriminant_different_values_produces_same_id_vulnerability() {
         // This test documents the v0 vulnerability: two different MaxSupply
@@ -149,9 +152,8 @@ mod tests {
             999_999_999_999,
         )));
 
-        let platform_version = PlatformVersion::first();
-        let id_small = t_small.calculate_action_id(owner_id, platform_version).expect("expected action id");
-        let id_large = t_large.calculate_action_id(owner_id, platform_version).expect("expected action id");
+        let id_small = t_small.calculate_action_id(owner_id);
+        let id_large = t_large.calculate_action_id(owner_id);
 
         // v0: these are EQUAL -- the vulnerability
         assert_eq!(
@@ -171,17 +173,22 @@ mod tests {
         let item_small = TokenConfigurationChangeItem::MaxSupply(Some(100));
         let item_large = TokenConfigurationChangeItem::MaxSupply(Some(999_999_999_999));
 
+        let payload_small = serialize_item(&item_small);
+        let payload_large = serialize_item(&item_large);
+
         let id_small = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_small,
+            item_small.u8_item_index(),
+            Some(&payload_small),
         );
         let id_large = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_large,
+            item_large.u8_item_index(),
+            Some(&payload_large),
         );
 
         // v1: these must be DIFFERENT -- the fix
@@ -200,17 +207,22 @@ mod tests {
         let item_max_supply = TokenConfigurationChangeItem::MaxSupply(Some(100));
         let item_allow_dest = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
 
+        let payload_max = serialize_item(&item_max_supply);
+        let payload_dest = serialize_item(&item_allow_dest);
+
         let id_max = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_max_supply,
+            item_max_supply.u8_item_index(),
+            Some(&payload_max),
         );
         let id_dest = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_allow_dest,
+            item_allow_dest.u8_item_index(),
+            Some(&payload_dest),
         );
 
         assert_ne!(
@@ -227,6 +239,7 @@ mod tests {
         let owner_id = [3u8; 32];
         let nonce = 1u64;
         let item = TokenConfigurationChangeItem::MaxSupply(Some(100));
+        let payload = serialize_item(&item);
 
         let id_v0 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
             &token_id,
@@ -235,45 +248,16 @@ mod tests {
             item.u8_item_index(),
         );
         let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item,
+            &token_id,
+            &owner_id,
+            nonce,
+            item.u8_item_index(),
+            Some(&payload),
         );
 
         assert_ne!(
             id_v0, id_v1,
             "v0 and v1 should produce different action_ids for the same config item"
-        );
-    }
-
-    #[test]
-    fn versioned_dispatch_uses_v1_on_current_platform_version() {
-        // On the current platform version (v12), token_config_update_action_id_version
-        // is 1, so the versioned method should produce the v1 result (which includes
-        // the full config item payload), NOT the v0 result (discriminant only).
-        let owner_id = Identifier::new([3u8; 32]);
-        let t = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
-
-        let platform_version = PlatformVersion::latest();
-
-        let id_plain_v0 = t.calculate_action_id(owner_id, PlatformVersion::first()).expect("expected action id");
-        let id_versioned = t.calculate_action_id(owner_id, platform_version).expect("expected action id");
-
-        // v1 produces a different id from v0 because it hashes the full payload
-        assert_ne!(
-            id_plain_v0, id_versioned,
-            "on current platform version (v1), versioned should differ from plain (v0)"
-        );
-
-        // Verify the versioned result matches v1 directly
-        let base = t.base();
-        let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            base.token_id().as_bytes(),
-            owner_id.as_bytes(),
-            base.identity_contract_nonce(),
-            t.update_token_configuration_item(),
-        );
-        assert_eq!(
-            id_versioned, id_v1,
-            "versioned dispatch should use v1 on current platform version"
         );
     }
 
@@ -288,11 +272,22 @@ mod tests {
         let item1 = TokenConfigurationChangeItem::MaxSupply(Some(42));
         let item2 = TokenConfigurationChangeItem::MaxSupply(Some(42));
 
+        let payload1 = serialize_item(&item1);
+        let payload2 = serialize_item(&item2);
+
         let id1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item1,
+            &token_id,
+            &owner_id,
+            nonce,
+            item1.u8_item_index(),
+            Some(&payload1),
         );
         let id2 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item2,
+            &token_id,
+            &owner_id,
+            nonce,
+            item2.u8_item_index(),
+            Some(&payload2),
         );
 
         assert_eq!(
