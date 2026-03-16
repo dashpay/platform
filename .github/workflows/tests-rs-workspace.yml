@@ -137,10 +137,24 @@ jobs:
             echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
           fi
 
-      - name: Run tests with coverage
+      - name: Run shielded tests with cargo test (shared process for VK reuse)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
-          cargo llvm-cov nextest \
+          cargo llvm-cov test --no-report \
+            --package dpp \
+            --package drive-abci \
+            --all-features \
+            --locked \
+            -- shield
+        env:
+          RUST_MIN_STACK: 4194304
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Run remaining tests with nextest (parallel)
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          cargo llvm-cov nextest --no-report \
             --package drive \
             --package dpp \
             --package drive-abci \
@@ -163,12 +177,17 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            --lcov --output-path lcov.info
-          git rev-parse HEAD^{tree} > target/lcov-tree-hash
+            -E 'not test(~shield)'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Generate combined coverage report
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          cargo llvm-cov report --lcov --output-path lcov.info
+          git rev-parse HEAD^{tree} > target/lcov-tree-hash
 
       - name: Reset GPG state (fix stale keyboxd locks on self-hosted runners)
         if: always()
