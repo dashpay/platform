@@ -640,7 +640,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = config_update_transition.calculate_action_id(owner_id);
+                    let action_id = config_update_transition
+                        .calculate_action_id_versioned(owner_id, _platform_version);
                     config_update_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {

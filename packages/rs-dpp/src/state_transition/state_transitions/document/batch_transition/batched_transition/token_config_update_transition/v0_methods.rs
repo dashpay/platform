@@ -1,4 +1,5 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
@@ -71,9 +72,23 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransition {
             TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id),
         }
     }
+
+    fn calculate_action_id_versioned(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Identifier {
+        match self {
+            TokenConfigUpdateTransition::V0(v0) => {
+                v0.calculate_action_id_versioned(owner_id, platform_version)
+            }
+        }
+    }
 }
 
 impl TokenConfigUpdateTransition {
+    /// v0: action_id uses only the u8 discriminant of the config change item.
+    /// This is kept for backward compatibility with existing production data.
     pub fn calculate_action_id_with_fields(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
@@ -87,5 +102,196 @@ impl TokenConfigUpdateTransition {
         bytes.extend_from_slice(&[update_token_config_item]);
 
         hash_double(bytes).into()
+    }
+
+    /// v1: action_id includes the full serialized config change item, binding
+    /// the voted-on value into the hash and preventing vote-swap attacks.
+    pub fn calculate_action_id_with_fields_v1(
+        token_id: &[u8; 32],
+        owner_id: &[u8; 32],
+        identity_contract_nonce: IdentityNonce,
+        update_token_configuration_item: &TokenConfigurationChangeItem,
+    ) -> Identifier {
+        let serialized_item =
+            bincode::encode_to_vec(update_token_configuration_item, bincode::config::standard())
+                .expect("expected to encode token configuration change item");
+
+        let mut bytes = b"action_token_config_update".to_vec();
+        bytes.extend_from_slice(token_id);
+        bytes.extend_from_slice(owner_id);
+        bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        bytes.extend_from_slice(&serialized_item);
+
+        hash_double(bytes).into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+
+    fn make_transition(item: TokenConfigurationChangeItem) -> TokenConfigUpdateTransition {
+        TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: Identifier::new([1u8; 32]),
+                token_id: Identifier::new([2u8; 32]),
+                using_group_info: None,
+            }),
+            update_token_configuration_item: item,
+            public_note: None,
+        })
+    }
+
+    #[test]
+    fn v0_action_id_same_discriminant_different_values_produces_same_id_vulnerability() {
+        // This test documents the v0 vulnerability: two different MaxSupply
+        // values produce the same action_id because only the u8 discriminant
+        // is hashed, not the actual value.
+        let owner_id = Identifier::new([3u8; 32]);
+
+        let t_small = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
+        let t_large = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(
+            999_999_999_999,
+        )));
+
+        let id_small = t_small.calculate_action_id(owner_id);
+        let id_large = t_large.calculate_action_id(owner_id);
+
+        // v0: these are EQUAL -- the vulnerability
+        assert_eq!(
+            id_small, id_large,
+            "v0 should produce the same action_id for different MaxSupply values (vulnerability)"
+        );
+    }
+
+    #[test]
+    fn v1_action_id_same_discriminant_different_values_produces_different_ids() {
+        // After the fix, the full serialized config item is included in the
+        // hash, so different values produce different action_ids.
+        let token_id = [2u8; 32];
+        let owner_id = [3u8; 32];
+        let nonce = 1u64;
+
+        let item_small = TokenConfigurationChangeItem::MaxSupply(Some(100));
+        let item_large = TokenConfigurationChangeItem::MaxSupply(Some(999_999_999_999));
+
+        let id_small = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id,
+            &owner_id,
+            nonce,
+            &item_small,
+        );
+        let id_large = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id,
+            &owner_id,
+            nonce,
+            &item_large,
+        );
+
+        // v1: these must be DIFFERENT -- the fix
+        assert_ne!(
+            id_small, id_large,
+            "v1 should produce different action_ids for different MaxSupply values"
+        );
+    }
+
+    #[test]
+    fn v1_action_id_different_item_types_produces_different_ids() {
+        let token_id = [2u8; 32];
+        let owner_id = [3u8; 32];
+        let nonce = 1u64;
+
+        let item_max_supply = TokenConfigurationChangeItem::MaxSupply(Some(100));
+        let item_allow_dest = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
+
+        let id_max = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id,
+            &owner_id,
+            nonce,
+            &item_max_supply,
+        );
+        let id_dest = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id,
+            &owner_id,
+            nonce,
+            &item_allow_dest,
+        );
+
+        assert_ne!(
+            id_max, id_dest,
+            "v1 should produce different action_ids for different config item types"
+        );
+    }
+
+    #[test]
+    fn v0_and_v1_produce_different_ids_for_same_input() {
+        // Verify v0 and v1 are not accidentally identical (they hash
+        // different payloads).
+        let token_id = [2u8; 32];
+        let owner_id = [3u8; 32];
+        let nonce = 1u64;
+        let item = TokenConfigurationChangeItem::MaxSupply(Some(100));
+
+        let id_v0 = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            &token_id,
+            &owner_id,
+            nonce,
+            item.u8_item_index(),
+        );
+        let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id, &owner_id, nonce, &item,
+        );
+
+        assert_ne!(
+            id_v0, id_v1,
+            "v0 and v1 should produce different action_ids for the same config item"
+        );
+    }
+
+    #[test]
+    fn versioned_dispatch_uses_v0_on_current_platform_version() {
+        // On the current platform version (v12), the versioned method should
+        // produce the same result as the v0 method.
+        let owner_id = Identifier::new([3u8; 32]);
+        let t = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
+
+        let platform_version = PlatformVersion::latest();
+
+        let id_plain = t.calculate_action_id(owner_id);
+        let id_versioned = t.calculate_action_id_versioned(owner_id, platform_version);
+
+        assert_eq!(
+            id_plain, id_versioned,
+            "on current platform version, versioned and plain should produce the same id"
+        );
+    }
+
+    #[test]
+    fn v1_action_id_identical_items_produces_same_id() {
+        // Sanity check: identical config items should produce the same
+        // action_id under v1.
+        let token_id = [2u8; 32];
+        let owner_id = [3u8; 32];
+        let nonce = 1u64;
+
+        let item1 = TokenConfigurationChangeItem::MaxSupply(Some(42));
+        let item2 = TokenConfigurationChangeItem::MaxSupply(Some(42));
+
+        let id1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id, &owner_id, nonce, &item1,
+        );
+        let id2 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            &token_id, &owner_id, nonce, &item2,
+        );
+
+        assert_eq!(
+            id1, id2,
+            "v1 should produce the same action_id for identical config items"
+        );
     }
 }

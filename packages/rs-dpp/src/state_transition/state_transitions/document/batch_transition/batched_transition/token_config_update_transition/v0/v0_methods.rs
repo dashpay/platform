@@ -1,4 +1,5 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -69,6 +70,7 @@ impl TokenConfigUpdateTransitionV0Methods for TokenConfigUpdateTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
+    /// v0 action_id: uses only the u8 discriminant (kept for backward compat).
     fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
         let TokenConfigUpdateTransitionV0 {
             base,
@@ -82,5 +84,40 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
             base.identity_contract_nonce(),
             update_token_configuration_item.u8_item_index(),
         )
+    }
+
+    /// Version-aware action_id calculation.
+    /// v0: uses only the u8 discriminant (existing production behavior).
+    /// v1: includes the full serialized config change item to prevent vote swap.
+    fn calculate_action_id_versioned(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Identifier {
+        let TokenConfigUpdateTransitionV0 {
+            base,
+            update_token_configuration_item,
+            ..
+        } = self;
+
+        match platform_version
+            .dpp
+            .token_versions
+            .token_config_update_action_id_version
+        {
+            0 => TokenConfigUpdateTransition::calculate_action_id_with_fields(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                update_token_configuration_item.u8_item_index(),
+            ),
+            1 => TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                update_token_configuration_item,
+            ),
+            version => panic!("unsupported token_config_update_action_id_version {version}"),
+        }
     }
 }
