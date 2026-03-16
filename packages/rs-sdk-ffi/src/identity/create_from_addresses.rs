@@ -57,7 +57,11 @@ pub unsafe extern "C" fn dash_sdk_identity_create_from_addresses(
     identity_signer_handle: *const crate::types::SignerHandle,
     put_settings: *const DashSDKPutSettings,
 ) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_identity_create_from_addresses_inner(
             sdk_handle,
