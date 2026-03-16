@@ -4,8 +4,8 @@
 // High-level Swift API for shielded cryptographic operations.
 // Provides key derivation, bundle building, and note decryption as extensions on SDK.
 //
-// These operations are pure cryptography -- they do NOT require an SDK handle or
-// network connection. They are exposed as SDK extensions for API consistency.
+// Bundle building functions return `ShieldedBundleHandle` — an opaque handle to a
+// heap-allocated Orchard bundle that can be passed directly to transition functions.
 
 import Foundation
 import DashSDKFFI
@@ -89,13 +89,13 @@ extension SDK {
     ///   - spendingKey: 32-byte spending key.
     ///   - amount: Amount in credits to shield.
     ///   - memo: Optional 36-byte memo. If nil, uses zero bytes.
-    /// - Returns: `OrchardBundle` ready to pass to `shieldFunds()`.
+    /// - Returns: `ShieldedBundleHandle` to pass to `shieldFunds(bundle:)`.
     /// - Throws: `SDKError` on failure.
     public func buildShieldBundle(
         spendingKey: Data,
         amount: UInt64,
         memo: Data? = nil
-    ) async throws -> OrchardBundle {
+    ) async throws -> ShieldedBundleHandle {
         guard spendingKey.count == 32 else {
             throw SDKError.invalidParameter("Spending key must be exactly 32 bytes, got \(spendingKey.count)")
         }
@@ -122,9 +122,8 @@ extension SDK {
                 }
 
                 do {
-                    let jsonString = try self.cryptoExtractString(result)
-                    let bundle = try parseBundleJSON(jsonString)
-                    continuation.resume(returning: bundle)
+                    let handle = try self.cryptoExtractBundleHandle(result)
+                    continuation.resume(returning: handle)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -136,6 +135,7 @@ extension SDK {
     ///
     /// Spends existing notes and creates a new note for the recipient. Change
     /// is returned to the sender's own address (derived at index 0).
+    /// Fee is computed automatically.
     ///
     /// - Parameters:
     ///   - spendingKey: 32-byte spending key of the sender.
@@ -144,7 +144,7 @@ extension SDK {
     ///   - recipientAddress: 43-byte raw Orchard address of the recipient.
     ///   - amount: Amount in credits to transfer.
     ///   - memo: Optional 36-byte memo. If nil, uses zero bytes.
-    /// - Returns: `OrchardBundle` ready to pass to `shieldedTransfer()`.
+    /// - Returns: `ShieldedBundleHandle` to pass to `shieldedTransfer(bundle:)`.
     /// - Throws: `SDKError` on failure.
     public func buildTransferBundle(
         spendingKey: Data,
@@ -153,7 +153,7 @@ extension SDK {
         recipientAddress: Data,
         amount: UInt64,
         memo: Data? = nil
-    ) async throws -> OrchardBundle {
+    ) async throws -> ShieldedBundleHandle {
         guard spendingKey.count == 32 else {
             throw SDKError.invalidParameter("Spending key must be exactly 32 bytes, got \(spendingKey.count)")
         }
@@ -206,9 +206,8 @@ extension SDK {
                 }
 
                 do {
-                    let jsonString = try self.cryptoExtractString(result)
-                    let bundle = try parseBundleJSON(jsonString)
-                    continuation.resume(returning: bundle)
+                    let handle = try self.cryptoExtractBundleHandle(result)
+                    continuation.resume(returning: handle)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -220,6 +219,7 @@ extension SDK {
     ///
     /// Spends existing notes and creates a change output back to the sender.
     /// The platform address receives funds via the state transition's transparent field.
+    /// Fee is computed automatically.
     ///
     /// - Parameters:
     ///   - spendingKey: 32-byte spending key.
@@ -228,7 +228,7 @@ extension SDK {
     ///   - outputAddress: Platform address bytes for the unshield recipient.
     ///   - amount: Amount in credits to unshield.
     ///   - memo: Optional 36-byte memo. If nil, uses zero bytes.
-    /// - Returns: `OrchardBundle` ready to pass to `unshieldFunds()`.
+    /// - Returns: `ShieldedBundleHandle` to pass to `unshieldFunds(bundle:)`.
     /// - Throws: `SDKError` on failure.
     public func buildUnshieldBundle(
         spendingKey: Data,
@@ -237,7 +237,7 @@ extension SDK {
         outputAddress: Data,
         amount: UInt64,
         memo: Data? = nil
-    ) async throws -> OrchardBundle {
+    ) async throws -> ShieldedBundleHandle {
         guard spendingKey.count == 32 else {
             throw SDKError.invalidParameter("Spending key must be exactly 32 bytes, got \(spendingKey.count)")
         }
@@ -290,9 +290,8 @@ extension SDK {
                 }
 
                 do {
-                    let jsonString = try self.cryptoExtractString(result)
-                    let bundle = try parseBundleJSON(jsonString)
-                    continuation.resume(returning: bundle)
+                    let handle = try self.cryptoExtractBundleHandle(result)
+                    continuation.resume(returning: handle)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -304,6 +303,7 @@ extension SDK {
     ///
     /// Spends existing notes and creates a change output back to the sender.
     /// The output script receives funds via the state transition's withdrawal mechanism.
+    /// Fee is computed automatically.
     ///
     /// - Parameters:
     ///   - spendingKey: 32-byte spending key.
@@ -314,7 +314,7 @@ extension SDK {
     ///   - memo: Optional 36-byte memo. If nil, uses zero bytes.
     ///   - coreFeePerByte: Core chain fee rate.
     ///   - pooling: Withdrawal pooling strategy.
-    /// - Returns: `OrchardBundle` ready to pass to `shieldedWithdraw()`.
+    /// - Returns: `ShieldedBundleHandle` to pass to `shieldedWithdraw(bundle:)`.
     /// - Throws: `SDKError` on failure.
     public func buildWithdrawalBundle(
         spendingKey: Data,
@@ -325,7 +325,7 @@ extension SDK {
         memo: Data? = nil,
         coreFeePerByte: UInt32,
         pooling: WithdrawalPooling
-    ) async throws -> OrchardBundle {
+    ) async throws -> ShieldedBundleHandle {
         guard spendingKey.count == 32 else {
             throw SDKError.invalidParameter("Spending key must be exactly 32 bytes, got \(spendingKey.count)")
         }
@@ -380,9 +380,8 @@ extension SDK {
                 }
 
                 do {
-                    let jsonString = try self.cryptoExtractString(result)
-                    let bundle = try parseBundleJSON(jsonString)
-                    continuation.resume(returning: bundle)
+                    let handle = try self.cryptoExtractBundleHandle(result)
+                    continuation.resume(returning: handle)
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -439,12 +438,144 @@ extension SDK {
     }
 }
 
+// MARK: - Transition Overloads for ShieldedBundleHandle
+
+@MainActor
+extension SDK {
+
+    /// Shield funds using a pre-built bundle handle.
+    ///
+    /// - Parameters:
+    ///   - inputs: Platform address inputs with amounts and private keys.
+    ///   - bundle: Bundle handle from `buildShieldBundle`.
+    ///   - amount: Total amount being shielded.
+    ///   - feeFromInputIndex: Which input to deduct fees from.
+    /// - Throws: `SDKError` on failure.
+    public func shieldFunds(
+        inputs: [ShieldFundsInput],
+        bundle: ShieldedBundleHandle,
+        amount: UInt64,
+        feeFromInputIndex: UInt16
+    ) async throws {
+        guard let sdkHandle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !inputs.isEmpty else {
+            throw SDKError.invalidParameter("Inputs array must not be empty")
+        }
+
+        let sdkPtr = SendableSdkPtr(sdkHandle)
+        let inputCount = UInt32(inputs.count)
+        let bundlePtr = bundle.ptr
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async {
+                let result = self.withFFIShieldInputs(inputs) { inputsPtr in
+                    dash_sdk_shielded_shield_funds(
+                        UnsafePointer(sdkPtr.ptr),
+                        inputsPtr,
+                        inputCount,
+                        UnsafePointer(bundlePtr),
+                        amount,
+                        feeFromInputIndex
+                    )
+                }
+
+                do {
+                    try self.shieldedExtractVoid(result)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Shielded transfer using a pre-built bundle handle.
+    ///
+    /// - Parameters:
+    ///   - bundle: Bundle handle from `buildTransferBundle`.
+    ///   - valueBalance: Net value flowing out of the shielded pool (fee amount).
+    /// - Throws: `SDKError` on failure.
+    public func shieldedTransfer(
+        bundle: ShieldedBundleHandle,
+        valueBalance: UInt64
+    ) async throws {
+        guard let sdkHandle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let sdkPtr = SendableSdkPtr(sdkHandle)
+        let bundlePtr = bundle.ptr
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async {
+                let result = dash_sdk_shielded_transfer(
+                    UnsafePointer(sdkPtr.ptr),
+                    UnsafePointer(bundlePtr),
+                    valueBalance
+                )
+
+                do {
+                    try self.shieldedExtractVoid(result)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Unshield funds using a pre-built bundle handle.
+    ///
+    /// - Parameters:
+    ///   - outputAddress: Platform address to receive unshielded funds.
+    ///   - amount: Amount to unshield.
+    ///   - bundle: Bundle handle from `buildUnshieldBundle`.
+    /// - Throws: `SDKError` on failure.
+    public func unshieldFunds(
+        outputAddress: Data,
+        amount: UInt64,
+        bundle: ShieldedBundleHandle
+    ) async throws {
+        guard let sdkHandle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let sdkPtr = SendableSdkPtr(sdkHandle)
+        let bundlePtr = bundle.ptr
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async {
+                let result = outputAddress.withUnsafeBytes { addrPtr -> DashSDKResult in
+                    guard let addrBase = addrPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                        return DashSDKResult()
+                    }
+                    return dash_sdk_shielded_unshield_funds(
+                        UnsafePointer(sdkPtr.ptr),
+                        addrBase,
+                        outputAddress.count,
+                        amount,
+                        UnsafePointer(bundlePtr)
+                    )
+                }
+
+                do {
+                    try self.shieldedExtractVoid(result)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Private Helpers
 
 extension SDK {
 
     /// Extract a string from a DashSDKResult. Thread-safe (no @MainActor).
-    /// Used by crypto service methods that do not require an SDK handle.
     nonisolated func cryptoExtractString(_ result: DashSDKResult) throws -> String {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
@@ -464,7 +595,6 @@ extension SDK {
     }
 
     /// Extract void (success/error) from a DashSDKResult. Thread-safe.
-    /// Used by crypto service methods that do not require an SDK handle.
     nonisolated func cryptoExtractVoid(_ result: DashSDKResult) throws {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
@@ -473,5 +603,24 @@ extension SDK {
             dash_sdk_error_free(error)
             throw SDKError.internalError(errorMessage)
         }
+    }
+
+    /// Extract a ShieldedBundleHandle from a DashSDKResult. Thread-safe.
+    /// The result.data must be a *mut DashSDKOrchardBundleParams allocated by Rust.
+    nonisolated func cryptoExtractBundleHandle(_ result: DashSDKResult) throws -> ShieldedBundleHandle {
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+
+        guard let dataPtr = result.data else {
+            throw SDKError.internalError("No bundle data returned")
+        }
+
+        let typedPtr = dataPtr.assumingMemoryBound(to: FFIOrchardBundleParams.self)
+        return ShieldedBundleHandle(typedPtr)
     }
 }

@@ -9,7 +9,6 @@
 //! `grovedb_commitment_tree` Builder API and `dpp::shielded` public functions
 //! (`serialize_authorized_bundle`, `compute_platform_sighash`).
 
-use std::ffi::CString;
 use std::os::raw::c_void;
 
 use dash_sdk::dpp::identity::core_script::CoreScript;
@@ -55,73 +54,114 @@ struct ParsedSpendableNote {
     merkle_path: MerklePath,
 }
 
-/// Serialized bundle action for JSON output.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ActionJson {
-    nullifier: String,
-    rk: String,
-    cmx: String,
-    encrypted_note: String,
-    cv_net: String,
-    spend_auth_sig: String,
-}
-
-/// Serialized bundle for JSON output.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BundleJson {
-    actions: Vec<ActionJson>,
-    anchor: String,
-    proof: String,
-    binding_signature: String,
-    value_balance: i64,
-}
-
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Convert a `SerializedBundle` into a JSON string.
-fn bundle_to_json(
+/// Convert a `SerializedBundle` into a heap-allocated `DashSDKOrchardBundleParams`.
+///
+/// The returned pointer owns all its inner allocations (actions array, each
+/// action's encrypted_note, and proof bytes). Free with
+/// `dash_sdk_shielded_bundle_params_free`.
+fn bundle_to_ffi_params(
     sb: &dash_sdk::dpp::shielded::builder::SerializedBundle,
-) -> Result<String, String> {
-    let actions: Vec<ActionJson> = sb
+) -> *mut crate::shielded::types::DashSDKOrchardBundleParams {
+    use crate::shielded::types::{DashSDKOrchardBundleParams, DashSDKSerializedAction};
+
+    // Build heap-allocated actions with heap-allocated encrypted_note blobs.
+    let ffi_actions: Vec<DashSDKSerializedAction> = sb
         .actions
         .iter()
-        .map(|a| ActionJson {
-            nullifier: hex::encode(a.nullifier),
-            rk: hex::encode(a.rk),
-            cmx: hex::encode(a.cmx),
-            encrypted_note: hex::encode(&a.encrypted_note),
-            cv_net: hex::encode(a.cv_net),
-            spend_auth_sig: hex::encode(a.spend_auth_sig),
+        .map(|a| {
+            let enc_note = a.encrypted_note.clone().into_boxed_slice();
+            let enc_note_len = enc_note.len();
+            let enc_note_ptr = Box::into_raw(enc_note) as *const u8;
+            DashSDKSerializedAction {
+                nullifier: a.nullifier,
+                rk: a.rk,
+                cmx: a.cmx,
+                encrypted_note: enc_note_ptr,
+                encrypted_note_len: enc_note_len,
+                cv_net: a.cv_net,
+                spend_auth_sig: a.spend_auth_sig,
+            }
         })
         .collect();
 
-    let bundle = BundleJson {
-        actions,
-        anchor: hex::encode(sb.anchor),
-        proof: hex::encode(&sb.proof),
-        binding_signature: hex::encode(sb.binding_signature),
-        value_balance: sb.value_balance,
+    let actions_count = ffi_actions.len() as u32;
+    let actions_box = ffi_actions.into_boxed_slice();
+    let actions_ptr = Box::into_raw(actions_box) as *const DashSDKSerializedAction;
+
+    let proof = sb.proof.clone().into_boxed_slice();
+    let proof_len = proof.len();
+    let proof_ptr = Box::into_raw(proof) as *const u8;
+
+    let params = DashSDKOrchardBundleParams {
+        actions: actions_ptr,
+        actions_count,
+        anchor: sb.anchor,
+        proof: proof_ptr,
+        proof_len,
+        binding_signature: sb.binding_signature,
     };
 
-    serde_json::to_string(&bundle).map_err(|e| format!("JSON serialization failed: {}", e))
+    Box::into_raw(Box::new(params))
 }
 
-/// Return a DashSDKResult containing a JSON string.
-fn json_result(json: String) -> DashSDKResult {
-    match CString::new(json) {
-        Ok(c_str) => DashSDKResult {
-            data_type: DashSDKResultDataType::String,
-            data: c_str.into_raw() as *mut c_void,
-            error: std::ptr::null_mut(),
-        },
-        Err(e) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::InternalError,
-            format!("Failed to create CString: {}", e),
-        )),
+/// Return a DashSDKResult containing a heap-allocated `DashSDKOrchardBundleParams`.
+fn bundle_result(sb: &dash_sdk::dpp::shielded::builder::SerializedBundle) -> DashSDKResult {
+    let ptr = bundle_to_ffi_params(sb);
+    DashSDKResult {
+        data_type: DashSDKResultDataType::BinaryData,
+        data: ptr as *mut c_void,
+        error: std::ptr::null_mut(),
+    }
+}
+
+/// Free a heap-allocated `DashSDKOrchardBundleParams` and all its inner allocations.
+///
+/// # Safety
+/// - `bundle` must be a pointer returned by one of the `dash_sdk_shielded_build_*_bundle`
+///   functions and not previously freed.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_shielded_bundle_params_free(
+    bundle: *mut crate::shielded::types::DashSDKOrchardBundleParams,
+) {
+    use crate::shielded::types::DashSDKSerializedAction;
+
+    if bundle.is_null() {
+        return;
+    }
+
+    let params = Box::from_raw(bundle);
+
+    // Free each action's encrypted_note allocation.
+    if !params.actions.is_null() && params.actions_count > 0 {
+        let actions_slice = std::slice::from_raw_parts_mut(
+            params.actions as *mut DashSDKSerializedAction,
+            params.actions_count as usize,
+        );
+        for action in actions_slice.iter() {
+            if !action.encrypted_note.is_null() && action.encrypted_note_len > 0 {
+                let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+                    action.encrypted_note as *mut u8,
+                    action.encrypted_note_len,
+                ));
+            }
+        }
+        // Free the actions array itself.
+        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+            params.actions as *mut DashSDKSerializedAction,
+            params.actions_count as usize,
+        ));
+    }
+
+    // Free the proof allocation.
+    if !params.proof.is_null() && params.proof_len > 0 {
+        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+            params.proof as *mut u8,
+            params.proof_len,
+        ));
     }
 }
 
@@ -428,10 +468,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield_bundle(
         }
     };
 
-    match bundle_to_json(&sb) {
-        Ok(json) => json_result(json),
-        Err(e) => DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InternalError, e)),
-    }
+    bundle_result(&sb)
 }
 
 /// Build a shielded transfer bundle (shielded-to-shielded).
@@ -601,10 +638,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
         }
     };
 
-    match bundle_to_json(&sb) {
-        Ok(json) => json_result(json),
-        Err(e) => DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InternalError, e)),
-    }
+    bundle_result(&sb)
 }
 
 /// Build an unshield bundle (shielded pool -> platform address).
@@ -772,10 +806,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
         }
     };
 
-    match bundle_to_json(&sb) {
-        Ok(json) => json_result(json),
-        Err(e) => DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InternalError, e)),
-    }
+    bundle_result(&sb)
 }
 
 /// Build a withdrawal bundle (shielded pool -> core L1 address).
@@ -939,8 +970,5 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
         }
     };
 
-    match bundle_to_json(&sb) {
-        Ok(json) => json_result(json),
-        Err(e) => DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InternalError, e)),
-    }
+    bundle_result(&sb)
 }

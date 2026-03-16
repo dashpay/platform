@@ -149,117 +149,26 @@ func spendableNotesToJSON(_ notes: [SpendableNoteInfo]) -> String {
     return string
 }
 
-// MARK: - Bundle JSON Parsing
+// MARK: - Shielded Bundle Handle
 
-/// Parse a JSON string returned by the bundle building FFI functions into an OrchardBundle.
+/// Opaque handle to a heap-allocated Orchard bundle (DashSDKOrchardBundleParams).
 ///
-/// The JSON format matches the `BundleJson` struct in Rust:
-/// ```json
-/// {
-///   "actions": [{ "nullifier": "hex", "rk": "hex", "cmx": "hex",
-///                  "encryptedNote": "hex", "cvNet": "hex", "spendAuthSig": "hex" }],
-///   "anchor": "hex32",
-///   "proof": "hexVariable",
-///   "bindingSignature": "hex64",
-///   "valueBalance": i64
-/// }
-/// ```
-func parseBundleJSON(_ jsonString: String) throws -> OrchardBundle {
-    guard let jsonData = jsonString.data(using: .utf8) else {
-        throw SDKError.serializationError("Bundle JSON is not valid UTF-8")
+/// Returned by the `buildShieldBundle`, `buildTransferBundle`, etc. functions.
+/// Pass directly to transition functions (`shieldFunds`, `shieldedTransfer`, etc.)
+/// via the overloads that accept `ShieldedBundleHandle`.
+///
+/// Automatically freed when deallocated — do NOT call `dash_sdk_shielded_bundle_params_free`
+/// manually on a handle that is managed by this class.
+public final class ShieldedBundleHandle: @unchecked Sendable {
+    let ptr: UnsafeMutablePointer<FFIOrchardBundleParams>
+
+    init(_ ptr: UnsafeMutablePointer<FFIOrchardBundleParams>) {
+        self.ptr = ptr
     }
 
-    guard let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-        throw SDKError.serializationError("Bundle JSON root is not an object")
+    deinit {
+        dash_sdk_shielded_bundle_params_free(ptr)
     }
-
-    // Parse actions array
-    guard let actionsJSON = json["actions"] as? [[String: Any]] else {
-        throw SDKError.serializationError("Bundle JSON missing 'actions' array")
-    }
-
-    var actions: [OrchardAction] = []
-    for (i, actionObj) in actionsJSON.enumerated() {
-        guard let nullifierHex = actionObj["nullifier"] as? String,
-              let rkHex = actionObj["rk"] as? String,
-              let cmxHex = actionObj["cmx"] as? String,
-              let encNoteHex = actionObj["encryptedNote"] as? String,
-              let cvNetHex = actionObj["cvNet"] as? String,
-              let sigHex = actionObj["spendAuthSig"] as? String
-        else {
-            throw SDKError.serializationError("Action[\(i)] is missing required hex fields")
-        }
-
-        guard let nullifier = hexToData(nullifierHex),
-              let rk = hexToData(rkHex),
-              let cmx = hexToData(cmxHex),
-              let encNote = hexToData(encNoteHex),
-              let cvNet = hexToData(cvNetHex),
-              let sig = hexToData(sigHex)
-        else {
-            throw SDKError.serializationError("Action[\(i)] contains invalid hex")
-        }
-
-        // Validate field sizes to prevent silent zero-padding
-        guard nullifier.count == 32 else {
-            throw SDKError.serializationError("Action[\(i)] nullifier must be 32 bytes, got \(nullifier.count)")
-        }
-        guard rk.count == 32 else {
-            throw SDKError.serializationError("Action[\(i)] rk must be 32 bytes, got \(rk.count)")
-        }
-        guard cmx.count == 32 else {
-            throw SDKError.serializationError("Action[\(i)] cmx must be 32 bytes, got \(cmx.count)")
-        }
-        guard cvNet.count == 32 else {
-            throw SDKError.serializationError("Action[\(i)] cvNet must be 32 bytes, got \(cvNet.count)")
-        }
-        guard sig.count == 64 else {
-            throw SDKError.serializationError("Action[\(i)] spendAuthSig must be 64 bytes, got \(sig.count)")
-        }
-
-        actions.append(OrchardAction(
-            nullifier: nullifier,
-            rk: rk,
-            cmx: cmx,
-            encryptedNote: encNote,
-            cvNet: cvNet,
-            spendAuthSig: sig
-        ))
-    }
-
-    // Parse anchor
-    guard let anchorHex = json["anchor"] as? String,
-          let anchor = hexToData(anchorHex)
-    else {
-        throw SDKError.serializationError("Bundle JSON missing or invalid 'anchor'")
-    }
-    guard anchor.count == 32 else {
-        throw SDKError.serializationError("anchor must be 32 bytes, got \(anchor.count)")
-    }
-
-    // Parse proof
-    guard let proofHex = json["proof"] as? String,
-          let proof = hexToData(proofHex)
-    else {
-        throw SDKError.serializationError("Bundle JSON missing or invalid 'proof'")
-    }
-
-    // Parse binding signature
-    guard let bindingSigHex = json["bindingSignature"] as? String,
-          let bindingSig = hexToData(bindingSigHex)
-    else {
-        throw SDKError.serializationError("Bundle JSON missing or invalid 'bindingSignature'")
-    }
-    guard bindingSig.count == 64 else {
-        throw SDKError.serializationError("bindingSignature must be 64 bytes, got \(bindingSig.count)")
-    }
-
-    return OrchardBundle(
-        actions: actions,
-        anchor: anchor,
-        proof: proof,
-        bindingSignature: bindingSig
-    )
 }
 
 /// Parse a JSON string returned by the decrypt_notes FFI function into DecryptedNote models.

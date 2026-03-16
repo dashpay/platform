@@ -29,7 +29,8 @@ func dash_sdk_shielded_derive_address(
 // MARK: - Bundle Building
 
 /// Build an output-only (shield) Orchard bundle.
-/// Returns DashSDKResult with a JSON string describing the bundle.
+/// Returns DashSDKResult with data = *mut DashSDKOrchardBundleParams (heap-allocated).
+/// Free with dash_sdk_shielded_bundle_params_free.
 @_silgen_name("dash_sdk_shielded_build_shield_bundle")
 func dash_sdk_shielded_build_shield_bundle(
     _ spending_key_bytes: UnsafePointer<Bytes32Tuple>?,
@@ -38,7 +39,7 @@ func dash_sdk_shielded_build_shield_bundle(
 ) -> DashSDKResult
 
 /// Build a shielded transfer bundle (shielded-to-shielded).
-/// Returns DashSDKResult with a JSON string describing the bundle.
+/// Returns DashSDKResult with data = *mut DashSDKOrchardBundleParams.
 @_silgen_name("dash_sdk_shielded_build_transfer_bundle")
 func dash_sdk_shielded_build_transfer_bundle(
     _ spending_key_bytes: UnsafePointer<Bytes32Tuple>?,
@@ -51,7 +52,7 @@ func dash_sdk_shielded_build_transfer_bundle(
 ) -> DashSDKResult
 
 /// Build an unshield bundle (shielded pool -> platform address).
-/// Returns DashSDKResult with a JSON string describing the bundle.
+/// Returns DashSDKResult with data = *mut DashSDKOrchardBundleParams.
 @_silgen_name("dash_sdk_shielded_build_unshield_bundle")
 func dash_sdk_shielded_build_unshield_bundle(
     _ spending_key_bytes: UnsafePointer<Bytes32Tuple>?,
@@ -64,7 +65,7 @@ func dash_sdk_shielded_build_unshield_bundle(
 ) -> DashSDKResult
 
 /// Build a withdrawal bundle (shielded pool -> core L1 address).
-/// Returns DashSDKResult with a JSON string describing the bundle.
+/// Returns DashSDKResult with data = *mut DashSDKOrchardBundleParams.
 @_silgen_name("dash_sdk_shielded_build_withdrawal_bundle")
 func dash_sdk_shielded_build_withdrawal_bundle(
     _ spending_key_bytes: UnsafePointer<Bytes32Tuple>?,
@@ -77,6 +78,13 @@ func dash_sdk_shielded_build_withdrawal_bundle(
     _ core_fee_per_byte: UInt32,
     _ pooling: UInt8
 ) -> DashSDKResult
+
+/// Free a heap-allocated DashSDKOrchardBundleParams returned by build functions.
+/// Safe to call with nil.
+@_silgen_name("dash_sdk_shielded_bundle_params_free")
+func dash_sdk_shielded_bundle_params_free(
+    _ bundle: UnsafeMutablePointer<FFIOrchardBundleParams>?
+)
 
 // MARK: - Note Decryption
 
