@@ -422,7 +422,7 @@ mod tests {
     )]
     fn test_info_fixture(info_base64: &str) {
         setup_tracing();
-        let decoded = decode_consensus_error(info_base64.to_string()).unwrap();
+        let decoded = decode_consensus_error(info_base64.to_string()).expect("decode consensus error from fixture");
         ConsensusError::deserialize_from_bytes(&decoded).expect("should deserialize");
     }
 
@@ -432,14 +432,14 @@ mod tests {
     fn map_tenderdash_message_tx_already_exists() {
         let result = map_tenderdash_message("tx already exists in cache");
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), DapiError::AlreadyExists(_)));
+        assert!(matches!(result.expect("should map to AlreadyExists"), DapiError::AlreadyExists(_)));
     }
 
     #[test]
     fn map_tenderdash_message_tx_too_large() {
         let result = map_tenderdash_message("tx too large. Max size: 100kb");
         assert!(result.is_some());
-        match result.unwrap() {
+        match result.expect("should map to InvalidArgument") {
             DapiError::InvalidArgument(msg) => {
                 assert!(msg.contains("state transition is too large"));
             }
@@ -451,14 +451,14 @@ mod tests {
     fn map_tenderdash_message_mempool_full() {
         let result = map_tenderdash_message("mempool is full");
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), DapiError::ResourceExhausted(_)));
+        assert!(matches!(result.expect("should map to ResourceExhausted"), DapiError::ResourceExhausted(_)));
     }
 
     #[test]
     fn map_tenderdash_message_context_deadline() {
         let result = map_tenderdash_message("rpc error: context deadline exceeded");
         assert!(result.is_some());
-        match result.unwrap() {
+        match result.expect("should map to Timeout") {
             DapiError::Timeout(msg) => {
                 assert!(msg.contains("timed out"));
             }
@@ -470,7 +470,7 @@ mod tests {
     fn map_tenderdash_message_too_many_requests() {
         let result = map_tenderdash_message("too_many_requests");
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), DapiError::ResourceExhausted(_)));
+        assert!(matches!(result.expect("should map to ResourceExhausted"), DapiError::ResourceExhausted(_)));
     }
 
     #[test]
@@ -478,7 +478,7 @@ mod tests {
         let result =
             map_tenderdash_message("broadcast confirmation not received: timed out waiting");
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), DapiError::Timeout(_)));
+        assert!(matches!(result.expect("should map to Timeout"), DapiError::Timeout(_)));
     }
 
     #[test]
@@ -581,7 +581,7 @@ mod tests {
             status
                 .message
                 .as_deref()
-                .unwrap()
+                .expect("message should be present for non-object input")
                 .contains("Invalid error object")
         );
     }

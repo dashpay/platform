@@ -242,62 +242,79 @@ mod tests {
         assert!(data.is_some());
     }
 
+    #[test]
+    fn map_status_unimplemented() {
+        let status = tonic::Status::new(Code::Unimplemented, "not implemented");
+        let (code, msg, data) = map_status(&status);
+        assert_eq!(code, -32603);
+        assert_eq!(msg, "Internal error");
+        assert!(data.is_some(), "fallthrough codes should include data");
+    }
+
     // -- map_status with empty messages uses defaults --
 
     #[test]
     fn map_status_empty_message_invalid_argument() {
         let status = tonic::Status::new(Code::InvalidArgument, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Invalid params");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_failed_precondition() {
         let status = tonic::Status::new(Code::FailedPrecondition, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Failed precondition");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_already_exists() {
         let status = tonic::Status::new(Code::AlreadyExists, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Already exists");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_not_found() {
         let status = tonic::Status::new(Code::NotFound, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Not found");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_aborted() {
         let status = tonic::Status::new(Code::Aborted, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Aborted");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_resource_exhausted() {
         let status = tonic::Status::new(Code::ResourceExhausted, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Resource exhausted");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_unavailable() {
         let status = tonic::Status::new(Code::Unavailable, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         assert_eq!(msg, "Service unavailable");
+        assert!(data.is_none(), "matched codes should not include data");
     }
 
     #[test]
     fn map_status_empty_message_other_code() {
         let status = tonic::Status::new(Code::PermissionDenied, "");
-        let (_, msg, _) = map_status(&status);
+        let (_, msg, data) = map_status(&status);
         // Other codes with empty message get "Internal error" as the normalized message
         assert_eq!(msg, "Internal error");
+        assert!(data.is_some(), "fallthrough codes should include data");
     }
 }

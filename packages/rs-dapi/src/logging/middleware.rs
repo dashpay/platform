@@ -456,7 +456,7 @@ mod tests {
         let req = Request::builder()
             .header("content-type", "application/json")
             .body(())
-            .unwrap();
+            .expect("build JSON-RPC request");
         assert_eq!(detect_protocol_type(&req), "JSON-RPC");
     }
 
@@ -465,7 +465,7 @@ mod tests {
         let req = Request::builder()
             .header("content-type", "application/grpc+proto")
             .body(())
-            .unwrap();
+            .expect("build gRPC content-type request");
         assert_eq!(detect_protocol_type(&req), "gRPC");
     }
 
@@ -474,7 +474,7 @@ mod tests {
         let req = Request::builder()
             .header("grpc-encoding", "gzip")
             .body(())
-            .unwrap();
+            .expect("build gRPC encoding request");
         assert_eq!(detect_protocol_type(&req), "gRPC");
     }
 
@@ -483,7 +483,7 @@ mod tests {
         let req = Request::builder()
             .header("te", "trailers")
             .body(())
-            .unwrap();
+            .expect("build te-header request");
         assert_eq!(detect_protocol_type(&req), "gRPC");
     }
 
@@ -493,7 +493,7 @@ mod tests {
             .version(Version::HTTP_2)
             .uri("/org.dash.platform.dapi.v0.Platform/getStatus")
             .body(())
-            .unwrap();
+            .expect("build HTTP/2 gRPC request");
         assert_eq!(detect_protocol_type(&req), "gRPC");
     }
 
@@ -503,13 +503,13 @@ mod tests {
             .version(Version::HTTP_2)
             .uri("/health")
             .body(())
-            .unwrap();
+            .expect("build HTTP/2 non-gRPC request");
         assert_eq!(detect_protocol_type(&req), "HTTP");
     }
 
     #[test]
     fn detect_protocol_type_plain_http() {
-        let req = Request::builder().uri("/metrics").body(()).unwrap();
+        let req = Request::builder().uri("/metrics").body(()).expect("build plain HTTP request");
         assert_eq!(detect_protocol_type(&req), "HTTP");
     }
 

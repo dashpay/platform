@@ -548,23 +548,39 @@ mod tests {
     // -- constructor helpers --
 
     #[test]
-    fn constructor_helpers_create_correct_variants() {
+    fn constructor_configuration() {
         match DapiError::configuration("cfg err") {
             DapiError::Configuration(msg) => assert_eq!(msg, "cfg err"),
             other => panic!("expected Configuration, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn constructor_streaming_service() {
         match DapiError::streaming_service("stream err") {
             DapiError::StreamingService(msg) => assert_eq!(msg, "stream err"),
             other => panic!("expected StreamingService, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn constructor_client() {
         match DapiError::client("client err") {
             DapiError::Client(msg) => assert_eq!(msg, "client err"),
             other => panic!("expected Client, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn constructor_server() {
         match DapiError::server("server err") {
             DapiError::Server(msg) => assert_eq!(msg, "server err"),
             other => panic!("expected Server, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn constructor_server_unavailable() {
         match DapiError::server_unavailable("http://foo", "conn refused") {
             DapiError::ServerUnavailable(uri, msg) => {
                 assert_eq!(uri, "http://foo");
@@ -580,7 +596,7 @@ mod tests {
     async fn map_join_result_ok_ok() {
         let handle = tokio::spawn(async { Ok::<_, DapiError>(42) });
         let result = DapiError::map_join_result(handle.await);
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("map_join_result should succeed"), 42);
     }
 
     #[tokio::test]
@@ -608,7 +624,7 @@ mod tests {
     async fn map_to_dapi_result_nested_ok() {
         let handle = tokio::spawn(async { Ok::<_, DapiError>(99) });
         let result: DAPIResult<i32> = handle.await.to_dapi_result();
-        assert_eq!(result.unwrap(), 99);
+        assert_eq!(result.expect("nested ok should unwrap"), 99);
     }
 
     #[tokio::test]
@@ -623,7 +639,7 @@ mod tests {
     fn map_to_dapi_result_flat_ok() {
         let r: Result<i32, DapiError> = Ok(10);
         let result: DAPIResult<i32> = r.to_dapi_result();
-        assert_eq!(result.unwrap(), 10);
+        assert_eq!(result.expect("flat ok should unwrap"), 10);
     }
 
     #[test]
@@ -647,25 +663,58 @@ mod tests {
     }
 
     #[test]
-    fn from_dashcore_rpc_not_found_code_minus_8() {
+    fn from_dashcore_rpc_invalid_argument_code_minus_8() {
         let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
             code: -8,
             message: "out of range".to_string(),
             data: None,
         }));
         let err: DapiError = rpc_err.into();
-        assert!(matches!(err, DapiError::NotFound(msg) if msg == "out of range"));
+        assert!(matches!(err, DapiError::InvalidArgument(msg) if msg == "out of range"));
     }
 
     #[test]
-    fn from_dashcore_rpc_invalid_argument_code_minus_1() {
+    fn from_dashcore_rpc_internal_code_minus_1() {
         let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
             code: -1,
-            message: "invalid param".to_string(),
+            message: "misc error".to_string(),
             data: None,
         }));
         let err: DapiError = rpc_err.into();
-        assert!(matches!(err, DapiError::InvalidArgument(msg) if msg == "invalid param"));
+        assert!(matches!(err, DapiError::Internal(msg) if msg == "misc error"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_invalid_argument_code_minus_3() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -3,
+            message: "type error".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::InvalidArgument(msg) if msg == "type error"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_not_found_code_minus_18() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -18,
+            message: "wallet not found".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::NotFound(msg) if msg == "wallet not found"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_unavailable_code_minus_28() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -28,
+            message: "still warming up".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::Unavailable(msg) if msg == "still warming up"));
     }
 
     #[test]
@@ -691,20 +740,25 @@ mod tests {
     }
 
     #[test]
-    fn from_dashcore_rpc_invalid_argument_codes_minus_25_and_minus_22() {
-        for code in [-25, -22] {
-            let rpc_err =
-                dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
-                    code,
-                    message: "deser err".to_string(),
-                    data: None,
-                }));
-            let err: DapiError = rpc_err.into();
-            assert!(
-                matches!(err, DapiError::InvalidArgument(_)),
-                "code {code} should map to InvalidArgument"
-            );
-        }
+    fn from_dashcore_rpc_failed_precondition_code_minus_25() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -25,
+            message: "verify error".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::FailedPrecondition(msg) if msg == "verify error"));
+    }
+
+    #[test]
+    fn from_dashcore_rpc_invalid_argument_code_minus_22() {
+        let rpc_err = dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(jsonrpc::error::RpcError {
+            code: -22,
+            message: "deser err".to_string(),
+            data: None,
+        }));
+        let err: DapiError = rpc_err.into();
+        assert!(matches!(err, DapiError::InvalidArgument(msg) if msg == "deser err"));
     }
 
     #[test]

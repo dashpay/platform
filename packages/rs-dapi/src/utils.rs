@@ -202,14 +202,14 @@ mod tests {
     #[test]
     fn deserialize_string_or_number_from_string() {
         let json = r#"{"value": "42"}"#;
-        let s: TestStruct = serde_json::from_str(json).unwrap();
+        let s: TestStruct = serde_json::from_str(json).expect("deserialize string as u64");
         assert_eq!(s.value, 42);
     }
 
     #[test]
     fn deserialize_string_or_number_from_u64() {
         let json = r#"{"value": 100}"#;
-        let s: TestStruct = serde_json::from_str(json).unwrap();
+        let s: TestStruct = serde_json::from_str(json).expect("deserialize u64");
         assert_eq!(s.value, 100);
     }
 
@@ -221,7 +221,7 @@ mod tests {
             value: f64,
         }
         let json = r#"{"value": 7.25}"#;
-        let s: FloatTest = serde_json::from_str(json).unwrap();
+        let s: FloatTest = serde_json::from_str(json).expect("deserialize f64");
         assert_eq!(s.value, 7.25);
     }
 
@@ -234,7 +234,7 @@ mod tests {
             value: bool,
         }
         let json = r#"{"value": true}"#;
-        let s: BoolTest = serde_json::from_str(json).unwrap();
+        let s: BoolTest = serde_json::from_str(json).expect("deserialize bool");
         assert!(s.value);
     }
 
@@ -246,7 +246,7 @@ mod tests {
             value: i64,
         }
         let json = r#"{"value": -42}"#;
-        let s: I64Test = serde_json::from_str(json).unwrap();
+        let s: I64Test = serde_json::from_str(json).expect("deserialize negative i64");
         assert_eq!(s.value, -42);
     }
 
@@ -261,35 +261,35 @@ mod tests {
     #[test]
     fn deserialize_to_string_from_string() {
         let json = r#"{"value": "hello"}"#;
-        let s: ToStringTest = serde_json::from_str(json).unwrap();
+        let s: ToStringTest = serde_json::from_str(json).expect("deserialize string to string");
         assert_eq!(s.value, "hello");
     }
 
     #[test]
     fn deserialize_to_string_from_u64() {
         let json = r#"{"value": 999}"#;
-        let s: ToStringTest = serde_json::from_str(json).unwrap();
+        let s: ToStringTest = serde_json::from_str(json).expect("deserialize u64 to string");
         assert_eq!(s.value, "999");
     }
 
     #[test]
     fn deserialize_to_string_from_i64() {
         let json = r#"{"value": -50}"#;
-        let s: ToStringTest = serde_json::from_str(json).unwrap();
+        let s: ToStringTest = serde_json::from_str(json).expect("deserialize i64 to string");
         assert_eq!(s.value, "-50");
     }
 
     #[test]
     fn deserialize_to_string_from_f64() {
         let json = r#"{"value": 3.14}"#;
-        let s: ToStringTest = serde_json::from_str(json).unwrap();
+        let s: ToStringTest = serde_json::from_str(json).expect("deserialize f64 to string");
         assert!(s.value.starts_with("3.14"));
     }
 
     #[test]
     fn deserialize_to_string_from_bool() {
         let json = r#"{"value": false}"#;
-        let s: ToStringTest = serde_json::from_str(json).unwrap();
+        let s: ToStringTest = serde_json::from_str(json).expect("deserialize bool to string");
         assert_eq!(s.value, "false");
     }
 
@@ -304,28 +304,28 @@ mod tests {
     #[test]
     fn deserialize_string_number_or_null_from_null() {
         let json = r#"{"value": null}"#;
-        let s: NullableTest = serde_json::from_str(json).unwrap();
+        let s: NullableTest = serde_json::from_str(json).expect("deserialize null");
         assert_eq!(s.value, "");
     }
 
     #[test]
     fn deserialize_string_number_or_null_from_string() {
         let json = r#"{"value": "test"}"#;
-        let s: NullableTest = serde_json::from_str(json).unwrap();
+        let s: NullableTest = serde_json::from_str(json).expect("deserialize string as nullable");
         assert_eq!(s.value, "test");
     }
 
     #[test]
     fn deserialize_string_number_or_null_from_number() {
         let json = r#"{"value": 42}"#;
-        let s: NullableTest = serde_json::from_str(json).unwrap();
+        let s: NullableTest = serde_json::from_str(json).expect("deserialize number as nullable");
         assert_eq!(s.value, "42");
     }
 
     #[test]
     fn deserialize_string_number_or_null_from_bool() {
         let json = r#"{"value": true}"#;
-        let s: NullableTest = serde_json::from_str(json).unwrap();
+        let s: NullableTest = serde_json::from_str(json).expect("deserialize bool as nullable");
         assert_eq!(s.value, "true");
     }
 

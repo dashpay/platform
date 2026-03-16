@@ -104,11 +104,11 @@ mod tests {
     #[test]
     fn from_str_or_bool_native_bool() {
         let json = r#"{"value": true}"#;
-        let c: BoolConfig = serde_json::from_str(json).unwrap();
+        let c: BoolConfig = serde_json::from_str(json).expect("deserialize native true");
         assert!(c.value);
 
         let json = r#"{"value": false}"#;
-        let c: BoolConfig = serde_json::from_str(json).unwrap();
+        let c: BoolConfig = serde_json::from_str(json).expect("deserialize native false");
         assert!(!c.value);
     }
 
@@ -124,14 +124,14 @@ mod tests {
     #[test]
     fn from_str_or_number_from_string() {
         let json = r#"{"value": "3005"}"#;
-        let c: NumConfig = serde_json::from_str(json).unwrap();
+        let c: NumConfig = serde_json::from_str(json).expect("deserialize string as number");
         assert_eq!(c.value, 3005);
     }
 
     #[test]
     fn from_str_or_number_from_number() {
         let json = r#"{"value": 9090}"#;
-        let c: NumConfig = serde_json::from_str(json).unwrap();
+        let c: NumConfig = serde_json::from_str(json).expect("deserialize native number");
         assert_eq!(c.value, 9090);
     }
 
