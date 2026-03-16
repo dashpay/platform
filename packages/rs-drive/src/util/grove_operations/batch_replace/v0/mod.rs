@@ -58,11 +58,27 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::object_size_info::PathKeyElementInfo;
     use crate::util::test_helpers::setup::setup_drive;
     use grovedb::batch::key_info::KeyInfo;
-    use grovedb::batch::KeyInfoPath;
+    use grovedb::batch::{GroveOp, KeyInfoPath};
     use grovedb::Element;
+
+    /// Verify that the operation produced is a GroveOp::Replace (not InsertOrReplace).
+    fn assert_is_replace_op(ops: &[LowLevelDriveOperation]) {
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            LowLevelDriveOperation::GroveOperation(grove_op) => {
+                assert!(
+                    matches!(grove_op.op, GroveOp::Replace { .. }),
+                    "Expected GroveOp::Replace, got {:?}",
+                    grove_op.op
+                );
+            }
+            other => panic!("Expected GroveOperation, got {:?}", other),
+        }
+    }
 
     #[test]
     fn test_batch_replace_path_key_ref_element() {
@@ -72,7 +88,7 @@ mod tests {
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((path, b"key", element));
         drive.batch_replace_v0(info, &mut ops).unwrap();
-        assert_eq!(ops.len(), 1);
+        assert_is_replace_op(&ops);
     }
 
     #[test]
@@ -83,7 +99,7 @@ mod tests {
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyElement((path, b"key".to_vec(), element));
         drive.batch_replace_v0(info, &mut ops).unwrap();
-        assert_eq!(ops.len(), 1);
+        assert_is_replace_op(&ops);
     }
 
     #[test]
@@ -95,7 +111,7 @@ mod tests {
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyElementSize((key_info_path, key_info, element));
         drive.batch_replace_v0(info, &mut ops).unwrap();
-        assert_eq!(ops.len(), 1);
+        assert_is_replace_op(&ops);
     }
 
     #[test]
@@ -117,6 +133,6 @@ mod tests {
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((path, b"key", element));
         drive.batch_replace_v0(info, &mut ops).unwrap();
-        assert_eq!(ops.len(), 1);
+        assert_is_replace_op(&ops);
     }
 }

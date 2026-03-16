@@ -221,11 +221,12 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
     use crate::util::object_size_info::PathKeyElementInfo;
     use crate::util::test_helpers::setup::setup_drive;
     use grovedb::batch::key_info::KeyInfo;
-    use grovedb::batch::KeyInfoPath;
+    use grovedb::batch::{GroveOp, KeyInfoPath};
     use grovedb::{Element, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
@@ -266,8 +267,8 @@ mod tests {
             )
             .unwrap();
 
-        // Should have cost op + insert op
-        assert!(ops.len() >= 2);
+        // One cost op from grove_get_raw_optional + one insert op
+        assert_eq!(ops.len(), 2);
     }
 
     /// Add to existing sum item via PathKeyRefElement.
@@ -320,7 +321,24 @@ mod tests {
             )
             .unwrap();
 
-        assert!(ops.len() >= 2);
+        // One cost op from grove_get_raw_optional + one insert op with updated sum
+        assert_eq!(ops.len(), 2);
+
+        // Verify the insert operation contains the correct summed value (10 + 5 = 15)
+        let insert_op = &ops[1];
+        match insert_op {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match &grove_op.op {
+                GroveOp::InsertOrReplace { element } => {
+                    assert_eq!(
+                        *element,
+                        Element::new_sum_item(15),
+                        "Expected sum item with value 15 (10 + 5)"
+                    );
+                }
+                other => panic!("Expected InsertOrReplace op, got {:?}", other),
+            },
+            other => panic!("Expected GroveOperation, got {:?}", other),
+        }
     }
 
     /// Error when existing element is not a sum item via PathKeyRefElement.

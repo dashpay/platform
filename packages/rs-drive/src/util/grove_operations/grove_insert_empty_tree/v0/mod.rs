@@ -49,8 +49,9 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::util::grove_operations::DirectQueryType;
     use crate::util::test_helpers::setup::setup_drive;
-    use grovedb::TreeType;
+    use grovedb::{Element, TreeType};
     use grovedb_path::SubtreePath;
     use platform_version::version::PlatformVersion;
 
@@ -71,6 +72,23 @@ mod tests {
                 &pv.drive,
             )
             .unwrap();
+
+        // Verify the tree exists by querying for it
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"normal",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .unwrap();
+        assert!(
+            matches!(element, Some(Element::Tree(..))),
+            "Expected a tree element after insert"
+        );
     }
 
     #[test]
@@ -90,6 +108,22 @@ mod tests {
                 &pv.drive,
             )
             .unwrap();
+
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"sum",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .unwrap();
+        assert!(
+            matches!(element, Some(Element::SumTree(..))),
+            "Expected a sum tree element after insert"
+        );
     }
 
     #[test]
@@ -109,6 +143,19 @@ mod tests {
                 &pv.drive,
             )
             .unwrap();
+
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"big_sum",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .unwrap();
+        assert!(element.is_some(), "Expected tree to exist after insert");
     }
 
     #[test]
@@ -128,6 +175,19 @@ mod tests {
                 &pv.drive,
             )
             .unwrap();
+
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"count",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .unwrap();
+        assert!(element.is_some(), "Expected tree to exist after insert");
     }
 
     #[test]
@@ -147,5 +207,18 @@ mod tests {
                 &pv.drive,
             )
             .unwrap();
+
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"count_sum",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .unwrap();
+        assert!(element.is_some(), "Expected tree to exist after insert");
     }
 }

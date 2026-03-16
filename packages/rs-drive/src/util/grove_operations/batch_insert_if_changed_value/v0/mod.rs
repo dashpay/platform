@@ -183,7 +183,7 @@ mod tests {
         assert!(needs_insert);
         assert!(previous.is_none());
         // One cost op from grove_get_raw_optional + one insert op
-        assert!(ops.len() >= 2);
+        assert_eq!(ops.len(), 2);
     }
 
     /// Test that inserting the same element value does not push an insert op.

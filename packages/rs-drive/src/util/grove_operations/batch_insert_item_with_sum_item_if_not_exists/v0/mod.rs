@@ -111,7 +111,7 @@ impl Drive {
                         drive_version,
                     )?;
 
-                    if let Some(Element::SumItem(..)) = existing_element {
+                    if let Some(Element::ItemWithSumItem(..)) = existing_element {
                         return if error_if_exists {
                             Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
@@ -151,7 +151,7 @@ impl Drive {
                         drive_version,
                     )?;
 
-                    if let Some(Element::SumItem(..)) = existing_element {
+                    if let Some(Element::ItemWithSumItem(..)) = existing_element {
                         return if error_if_exists {
                             Err(Error::Drive(DriveError::CorruptedDriveState(
                                 "expected no sum item".to_string(),
@@ -476,5 +476,125 @@ mod tests {
         );
 
         assert!(result.is_err());
+    }
+
+    /// Regression test: pre-existing ItemWithSumItem with PathKeyElement and error_if_exists=false
+    /// returns Ok(false) without error. This validates the production bug fix where the match
+    /// arm previously checked for Element::SumItem instead of Element::ItemWithSumItem.
+    #[test]
+    fn test_item_with_sum_item_already_exists_no_error_path_key_element() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::SumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Pre-insert an ItemWithSumItem element
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item_with_sum_item(b"data".to_vec(), 42),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElement((
+            vec![b"root".to_vec()],
+            b"key".to_vec(),
+            Element::new_item_with_sum_item(b"data2".to_vec(), 99),
+        ));
+
+        let result = drive
+            .batch_insert_item_with_sum_item_if_not_exists_v0(
+                info,
+                false,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Should return false indicating element was not inserted (already exists)
+        assert!(!result);
+    }
+
+    /// Regression test: pre-existing ItemWithSumItem with PathFixedSizeKeyRefElement and
+    /// error_if_exists=true returns CorruptedDriveState error. This validates the production
+    /// bug fix where the match arm previously checked for Element::SumItem instead of
+    /// Element::ItemWithSumItem.
+    #[test]
+    fn test_item_with_sum_item_already_exists_error_fixed_key() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::SumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Pre-insert an ItemWithSumItem element
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item_with_sum_item(b"data".to_vec(), 42),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((
+            path,
+            b"key",
+            Element::new_item_with_sum_item(b"data2".to_vec(), 99),
+        ));
+
+        let result = drive.batch_insert_item_with_sum_item_if_not_exists_v0(
+            info,
+            true,
+            BatchInsertApplyType::StatefulBatchInsert,
+            Some(&tx),
+            &mut ops,
+            &pv.drive,
+        );
+
+        // Should return CorruptedDriveState error
+        assert!(result.is_err());
+        let err_string = format!("{:?}", result.unwrap_err());
+        assert!(
+            err_string.contains("CorruptedDriveState"),
+            "Expected CorruptedDriveState error, got: {}",
+            err_string
+        );
     }
 }

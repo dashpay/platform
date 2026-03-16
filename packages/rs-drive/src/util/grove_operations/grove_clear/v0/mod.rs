@@ -152,5 +152,30 @@ mod tests {
         drive
             .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
             .unwrap();
+
+        // Verify the items are actually gone
+        let result1 = drive
+            .grove
+            .get_raw_optional(
+                [b"root".as_slice()].as_slice().into(),
+                b"key1",
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(result1.is_none(), "key1 should be gone after clear");
+
+        let result2 = drive
+            .grove
+            .get_raw_optional(
+                [b"root".as_slice()].as_slice().into(),
+                b"key2",
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert!(result2.is_none(), "key2 should be gone after clear");
     }
 }
