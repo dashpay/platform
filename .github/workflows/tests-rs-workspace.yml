@@ -137,21 +137,7 @@ jobs:
             echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
           fi
 
-      - name: Run shielded tests with cargo test (shared process for VK reuse)
-        if: steps.coverage-cache.outputs.reuse == 'false'
-        run: |
-          cargo llvm-cov test --no-report \
-            --package dpp \
-            --package drive-abci \
-            --all-features \
-            --locked \
-            -- shield
-        env:
-          RUST_MIN_STACK: 4194304
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-
-      - name: Run remaining tests with nextest (parallel)
+      - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
           cargo llvm-cov nextest --no-report \
@@ -178,6 +164,20 @@ jobs:
             --all-features \
             --locked \
             -E 'not test(~shield)'
+        env:
+          RUST_MIN_STACK: 4194304
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Run shielded tests with cargo test (shared process for VK reuse)
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          cargo llvm-cov test --no-report --no-clean \
+            --package dpp \
+            --package drive-abci \
+            --all-features \
+            --locked \
+            -- shield
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
