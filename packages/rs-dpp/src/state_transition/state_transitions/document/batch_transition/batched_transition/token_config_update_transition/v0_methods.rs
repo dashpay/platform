@@ -2,6 +2,7 @@ use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use crate::prelude::IdentityNonce;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -67,21 +68,9 @@ impl TokenConfigUpdateTransitionV0Methods for TokenConfigUpdateTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenConfigUpdateTransition {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
         match self {
-            TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id),
-        }
-    }
-
-    fn calculate_action_id_versioned(
-        &self,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Identifier {
-        match self {
-            TokenConfigUpdateTransition::V0(v0) => {
-                v0.calculate_action_id_versioned(owner_id, platform_version)
-            }
+            TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
         }
     }
 }
@@ -89,7 +78,7 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransition {
 impl TokenConfigUpdateTransition {
     /// v0: action_id uses only the u8 discriminant of the config change item.
     /// This is kept for backward compatibility with existing production data.
-    pub fn calculate_action_id_with_fields(
+    pub fn calculate_action_id_with_fields_v0(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
@@ -160,8 +149,9 @@ mod tests {
             999_999_999_999,
         )));
 
-        let id_small = t_small.calculate_action_id(owner_id);
-        let id_large = t_large.calculate_action_id(owner_id);
+        let platform_version = PlatformVersion::first();
+        let id_small = t_small.calculate_action_id(owner_id, platform_version).expect("expected action id");
+        let id_large = t_large.calculate_action_id(owner_id, platform_version).expect("expected action id");
 
         // v0: these are EQUAL -- the vulnerability
         assert_eq!(
@@ -238,7 +228,7 @@ mod tests {
         let nonce = 1u64;
         let item = TokenConfigurationChangeItem::MaxSupply(Some(100));
 
-        let id_v0 = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+        let id_v0 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
             &token_id,
             &owner_id,
             nonce,
@@ -264,8 +254,8 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let id_plain_v0 = t.calculate_action_id(owner_id);
-        let id_versioned = t.calculate_action_id_versioned(owner_id, platform_version);
+        let id_plain_v0 = t.calculate_action_id(owner_id, PlatformVersion::first()).expect("expected action id");
+        let id_versioned = t.calculate_action_id(owner_id, platform_version).expect("expected action id");
 
         // v1 produces a different id from v0 because it hashes the full payload
         assert_ne!(

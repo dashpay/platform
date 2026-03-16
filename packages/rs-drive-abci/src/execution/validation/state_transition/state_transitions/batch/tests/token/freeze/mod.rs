@@ -1431,7 +1431,7 @@ mod token_freeze_tests {
             }
 
             // second signer
-            let action_id = TokenFreezeTransition::calculate_action_id_with_fields(
+            let action_id = TokenFreezeTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 id1.id().as_bytes(),
                 2,
@@ -1775,7 +1775,7 @@ mod token_freeze_tests {
                 .expect("expected to commit transaction");
 
             // second signer
-            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 id1.id().as_bytes(),
                 4,
@@ -2223,7 +2223,7 @@ mod token_freeze_tests {
                 .expect("expected to commit transaction");
 
             // second signer
-            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+            let action_id = TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 id1.id().as_bytes(),
                 4,

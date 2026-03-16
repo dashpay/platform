@@ -1,6 +1,8 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::prelude::IdentityNonce;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -61,15 +63,15 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenBurnTransition {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
         match self {
-            TokenBurnTransition::V0(v0) => v0.calculate_action_id(owner_id),
+            TokenBurnTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
         }
     }
 }
 
 impl TokenBurnTransition {
-    pub fn calculate_action_id_with_fields(
+    pub fn calculate_action_id_with_fields_v0(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,

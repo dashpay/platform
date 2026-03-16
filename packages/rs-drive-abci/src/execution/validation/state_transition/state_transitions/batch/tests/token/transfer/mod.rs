@@ -1080,7 +1080,7 @@ mod token_transfer_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        let action_id = TokenMintTransition::calculate_action_id_with_fields(
+        let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
             token_id.as_bytes(),
             identity.id().as_bytes(),
             2,

@@ -456,7 +456,7 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(expected_amount));
 
         // Step 4: Confirm burn by second group member
-        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields_v0(
             token_id.as_bytes(),
             identity1.id().as_bytes(),
             2,
@@ -715,7 +715,7 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(expected_amount));
 
         // Step 3: Confirm burn by second group member
-        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields_v0(
             token_id.as_bytes(),
             identity1.id().as_bytes(),
             2,

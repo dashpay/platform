@@ -1078,7 +1078,7 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -1293,7 +1293,7 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -1461,7 +1461,7 @@ mod token_config_update_tests {
 
             // now that we are group 0 as the group that can make the change, let's make the change to allow minting to choose the destination
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
@@ -1684,7 +1684,7 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -1909,7 +1909,7 @@ mod token_config_update_tests {
 
             // Let's try doing this action with group 1
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
@@ -2146,7 +2146,7 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
@@ -2433,7 +2433,7 @@ mod token_config_update_tests {
             // Now let's have Group 0 change the control of the conventions to identity 2 only
 
             let action_id_change_control =
-                TokenConfigUpdateTransition::calculate_action_id_with_fields(
+                TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                     token_id.as_bytes(),
                     identity.id().as_bytes(),
                     2,
@@ -2577,7 +2577,7 @@ mod token_config_update_tests {
 
             // Now let's have Group 0 hand it back to Group 1
 
-            let action_id_return = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+            let action_id_return = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
