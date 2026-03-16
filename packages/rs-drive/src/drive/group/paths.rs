@@ -236,3 +236,171 @@ pub fn group_closed_action_signers_path_vec(
         ACTION_SIGNERS_KEY.to_vec(),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FAKE_CONTRACT_ID: [u8; 32] = [0xAA; 32];
+    const FAKE_ACTION_ID: [u8; 32] = [0xBB; 32];
+    const GROUP_POS: GroupContractPosition = 5u16;
+
+    fn root_byte() -> u8 {
+        RootTree::GroupActions as u8
+    }
+
+    #[test]
+    fn group_root_path_returns_single_element() {
+        let path = group_root_path();
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0], &[root_byte()]);
+    }
+
+    #[test]
+    fn group_root_path_vec_returns_single_element() {
+        let path = group_root_path_vec();
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0], vec![root_byte()]);
+    }
+
+    #[test]
+    fn group_contract_path_includes_contract_id() {
+        let path = group_contract_path(&FAKE_CONTRACT_ID);
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0], &[root_byte()]);
+        assert_eq!(path[1], &FAKE_CONTRACT_ID);
+    }
+
+    #[test]
+    fn group_contract_path_vec_includes_contract_id() {
+        let path = group_contract_path_vec(&FAKE_CONTRACT_ID);
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0], vec![root_byte()]);
+        assert_eq!(path[1], FAKE_CONTRACT_ID.to_vec());
+    }
+
+    #[test]
+    fn group_path_includes_position_bytes() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_path(&FAKE_CONTRACT_ID, &pos_bytes);
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[2], &pos_bytes);
+    }
+
+    #[test]
+    fn group_path_vec_includes_position_bytes() {
+        let path = group_path_vec(&FAKE_CONTRACT_ID, GROUP_POS);
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[2], GROUP_POS.to_be_bytes().to_vec());
+    }
+
+    #[test]
+    fn group_active_action_root_path_has_active_key() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_active_action_root_path(&FAKE_CONTRACT_ID, &pos_bytes);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[3], GROUP_ACTIVE_ACTIONS_KEY);
+    }
+
+    #[test]
+    fn group_active_action_root_path_vec_has_active_key() {
+        let path = group_active_action_root_path_vec(&FAKE_CONTRACT_ID, GROUP_POS);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[3], GROUP_ACTIVE_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn group_active_action_path_has_action_id() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_active_action_path(&FAKE_CONTRACT_ID, &pos_bytes, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 5);
+        assert_eq!(path[3], GROUP_ACTIVE_ACTIONS_KEY);
+        assert_eq!(path[4], &FAKE_ACTION_ID);
+    }
+
+    #[test]
+    fn group_active_action_path_vec_has_action_id() {
+        let path = group_active_action_path_vec(&FAKE_CONTRACT_ID, GROUP_POS, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 5);
+        assert_eq!(path[4], FAKE_ACTION_ID.to_vec());
+    }
+
+    #[test]
+    fn group_action_signers_path_has_signers_key() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_action_signers_path(&FAKE_CONTRACT_ID, &pos_bytes, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[5], ACTION_SIGNERS_KEY);
+    }
+
+    #[test]
+    fn group_action_signers_path_vec_has_signers_key() {
+        let path = group_action_signers_path_vec(&FAKE_CONTRACT_ID, GROUP_POS, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[5], ACTION_SIGNERS_KEY.to_vec());
+    }
+
+    #[test]
+    fn group_closed_action_root_path_has_closed_key() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_closed_action_root_path(&FAKE_CONTRACT_ID, &pos_bytes);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[3], GROUP_CLOSED_ACTIONS_KEY);
+    }
+
+    #[test]
+    fn group_closed_action_root_path_vec_has_closed_key() {
+        let path = group_closed_action_root_path_vec(&FAKE_CONTRACT_ID, GROUP_POS);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn group_closed_action_path_has_action_id() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_closed_action_path(&FAKE_CONTRACT_ID, &pos_bytes, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 5);
+        assert_eq!(path[3], GROUP_CLOSED_ACTIONS_KEY);
+        assert_eq!(path[4], &FAKE_ACTION_ID);
+    }
+
+    #[test]
+    fn group_closed_action_path_vec_has_action_id() {
+        let path = group_closed_action_path_vec(&FAKE_CONTRACT_ID, GROUP_POS, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 5);
+        assert_eq!(path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+        assert_eq!(path[4], FAKE_ACTION_ID.to_vec());
+    }
+
+    #[test]
+    fn group_closed_action_signers_path_has_signers_key() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let path = group_closed_action_signers_path(&FAKE_CONTRACT_ID, &pos_bytes, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[4], &FAKE_ACTION_ID);
+        assert_eq!(path[5], ACTION_SIGNERS_KEY);
+    }
+
+    #[test]
+    fn group_closed_action_signers_path_vec_has_signers_key() {
+        let path =
+            group_closed_action_signers_path_vec(&FAKE_CONTRACT_ID, GROUP_POS, &FAKE_ACTION_ID);
+        assert_eq!(path.len(), 6);
+        assert_eq!(path[4], FAKE_ACTION_ID.to_vec());
+        assert_eq!(path[5], ACTION_SIGNERS_KEY.to_vec());
+    }
+
+    #[test]
+    fn active_and_closed_paths_differ_only_by_key() {
+        let pos_bytes = GROUP_POS.to_be_bytes();
+        let active = group_active_action_root_path(&FAKE_CONTRACT_ID, &pos_bytes);
+        let closed = group_closed_action_root_path(&FAKE_CONTRACT_ID, &pos_bytes);
+
+        // First 3 components are the same
+        assert_eq!(active[..3], closed[..3]);
+        // 4th differs
+        assert_ne!(active[3], closed[3]);
+        assert_eq!(active[3], GROUP_ACTIVE_ACTIONS_KEY);
+        assert_eq!(closed[3], GROUP_CLOSED_ACTIONS_KEY);
+    }
+}
