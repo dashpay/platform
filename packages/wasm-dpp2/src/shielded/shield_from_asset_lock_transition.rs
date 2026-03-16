@@ -25,11 +25,11 @@ export interface SerializedOrchardAction {
  * A serialized Orchard action (spend-output pair) in JSON form.
  */
 export interface SerializedOrchardActionJSON {
-    nullifier: number[];
-    rk: number[];
-    cmx: number[];
-    encryptedNote: number[];
-    cvNet: number[];
+    nullifier: string;
+    rk: string;
+    cmx: string;
+    encryptedNote: string;
+    cvNet: string;
     spendAuthSig: string;
 }
 
