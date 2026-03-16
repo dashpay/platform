@@ -384,6 +384,49 @@ mod tests {
                 assert_eq!(*balance, identity.balance());
             }
         }
+
+        #[test]
+        fn should_return_only_existing_identities_when_some_are_missing() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identities: Vec<Identity> =
+                Identity::random_identities(2, 3, Some(42), platform_version)
+                    .expect("expected random identities");
+
+            // Only insert the first identity
+            drive
+                .add_new_identity(
+                    identities[0].clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            // Query for both the existing identity and a non-existent one
+            let ids = vec![
+                identities[0].id().to_buffer(),
+                identities[1].id().to_buffer(),
+            ];
+
+            let balances = drive
+                .fetch_identities_balances(&ids, None, platform_version)
+                .expect("should fetch balances");
+
+            // Only the inserted identity should be returned
+            assert_eq!(balances.len(), 1);
+            let balance = balances
+                .get(&identities[0].id().to_buffer())
+                .expect("should have balance for existing identity");
+            assert_eq!(*balance, identities[0].balance());
+            assert!(
+                balances.get(&identities[1].id().to_buffer()).is_none(),
+                "non-existent identity should not appear in results"
+            );
+        }
     }
 
     mod fetch_optional_identities_balances {
@@ -416,10 +459,17 @@ mod tests {
 
             assert_eq!(balances.len(), 2);
             assert_eq!(
-                *balances.get(&identity.id().to_buffer()).unwrap(),
+                *balances
+                    .get(&identity.id().to_buffer())
+                    .expect("existing identity should have an entry in results"),
                 Some(identity.balance())
             );
-            assert_eq!(*balances.get(&[0xff; 32]).unwrap(), None);
+            assert_eq!(
+                *balances
+                    .get(&[0xff; 32])
+                    .expect("non-existent identity should still have an entry in results"),
+                None
+            );
         }
     }
 
@@ -461,9 +511,13 @@ mod tests {
 
             assert_eq!(balances.len(), 5);
 
-            // BTreeMap keys are always sorted, confirming ascending order
-            let keys: Vec<[u8; 32]> = balances.keys().copied().collect();
-            assert!(keys.windows(2).all(|w| w[0] <= w[1]));
+            // Verify that every inserted identity appears with its correct balance
+            for identity in &identities {
+                let balance = balances
+                    .get(&identity.id().to_buffer())
+                    .expect("should contain balance for inserted identity");
+                assert_eq!(*balance, identity.balance());
+            }
         }
 
         #[test]
