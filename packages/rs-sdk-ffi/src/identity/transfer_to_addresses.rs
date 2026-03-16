@@ -11,9 +11,8 @@ use std::panic::{self, AssertUnwindSafe};
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    DashSDKAddressInfoEntry, DashSDKAddressInfoMap,
-    DashSDKAddressTransferOutput, DashSDKPutSettings, DashSDKResultDataType, IdentityHandle,
-    SDKHandle,
+    DashSDKAddressInfoEntry, DashSDKAddressInfoMap, DashSDKAddressTransferOutput,
+    DashSDKPutSettings, DashSDKResultDataType, IdentityHandle, SDKHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 

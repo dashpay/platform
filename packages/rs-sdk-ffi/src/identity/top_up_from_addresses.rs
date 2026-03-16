@@ -14,9 +14,8 @@ use crate::address::transitions::AddressSigner;
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    DashSDKAddressInfoEntry, DashSDKAddressInfoMap,
-    DashSDKAddressTransferInput, DashSDKPutSettings, DashSDKResultDataType, IdentityHandle,
-    SDKHandle,
+    DashSDKAddressInfoEntry, DashSDKAddressInfoMap, DashSDKAddressTransferInput,
+    DashSDKPutSettings, DashSDKResultDataType, IdentityHandle, SDKHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
