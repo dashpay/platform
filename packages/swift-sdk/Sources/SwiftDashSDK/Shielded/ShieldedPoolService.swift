@@ -962,7 +962,7 @@ extension SDK {
     }
 
     /// Extract a string from a DashSDKResult. Thread-safe (no @MainActor).
-    nonisolated private func shieldedExtractString(_ result: DashSDKResult) throws -> String {
+    nonisolated func shieldedExtractString(_ result: DashSDKResult) throws -> String {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
@@ -981,7 +981,7 @@ extension SDK {
     }
 
     /// Extract void (success/error) from a DashSDKResult. Thread-safe.
-    nonisolated private func shieldedExtractVoid(_ result: DashSDKResult) throws {
+    nonisolated func shieldedExtractVoid(_ result: DashSDKResult) throws {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
