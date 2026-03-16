@@ -213,16 +213,7 @@ pub trait TokenTransitionV0Methods {
     /// sets identity contract nonce
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
-
-    /// Version-aware action_id calculation. For most variants this delegates to
-    /// `calculate_action_id`. For `ConfigUpdate` it uses `platform_version` to
-    /// choose between v0 (discriminant only) and v1 (discriminant + payload).
-    fn calculate_action_id_with_platform_version(
-        &self,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Option<Result<Identifier, ProtocolError>>;
+    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Option<Result<Identifier, ProtocolError>>;
 
     fn can_calculate_action_id(&self) -> bool;
     /// Historical document type name for the token history contract
@@ -288,54 +279,19 @@ impl TokenTransitionV0Methods for TokenTransition {
         self.base().data_contract_id()
     }
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier> {
+    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Option<Result<Identifier, ProtocolError>> {
         match self {
-            TokenTransition::Burn(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Mint(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Freeze(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Unfreeze(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::Burn(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Mint(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Freeze(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Unfreeze(t) => Some(t.calculate_action_id(owner_id, platform_version)),
             TokenTransition::Transfer(_) => None,
-            TokenTransition::DestroyFrozenFunds(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::DestroyFrozenFunds(t) => Some(t.calculate_action_id(owner_id, platform_version)),
             TokenTransition::Claim(_) => None,
-            TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id, platform_version)),
             TokenTransition::DirectPurchase(_) => None,
-            TokenTransition::SetPriceForDirectPurchase(t) => Some(t.calculate_action_id(owner_id)),
-        }
-    }
-
-    fn calculate_action_id_with_platform_version(
-        &self,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Option<Result<Identifier, ProtocolError>> {
-        match self {
-            TokenTransition::ConfigUpdate(t) => {
-                let base = t.base();
-                let item = t.update_token_configuration_item();
-                Some(match platform_version.dpp.token_versions.token_config_update_action_id_version {
-                    0 => Ok(t.calculate_action_id(owner_id)),
-                    1 => {
-                        match bincode::encode_to_vec(item, bincode::config::standard()) {
-                            Ok(serialized) => Ok(TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-                                base.token_id().as_bytes(),
-                                owner_id.as_bytes(),
-                                base.identity_contract_nonce(),
-                                item.u8_item_index(),
-                                Some(&serialized),
-                            )),
-                            Err(e) => Err(ProtocolError::EncodingError(e.to_string())),
-                        }
-                    }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "token_config_update_action_id".to_string(),
-                        known_versions: vec![0, 1],
-                        received: version,
-                    }),
-                })
-            }
-            // For all other variants, delegate to the simple trait method
-            other => other.calculate_action_id(owner_id).map(Ok),
+            TokenTransition::SetPriceForDirectPurchase(t) => Some(t.calculate_action_id(owner_id, platform_version)),
         }
     }
 

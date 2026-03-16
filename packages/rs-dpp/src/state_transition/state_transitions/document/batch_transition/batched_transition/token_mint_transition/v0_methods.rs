@@ -1,4 +1,5 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::prelude::IdentityNonce;
@@ -84,9 +85,9 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenMintTransition {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
         match self {
-            TokenMintTransition::V0(v0) => v0.calculate_action_id(owner_id),
+            TokenMintTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
         }
     }
 }
