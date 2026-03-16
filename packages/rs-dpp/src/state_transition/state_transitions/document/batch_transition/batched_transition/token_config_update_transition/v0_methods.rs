@@ -130,6 +130,7 @@ impl TokenConfigUpdateTransition {
 mod tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 
@@ -254,20 +255,35 @@ mod tests {
     }
 
     #[test]
-    fn versioned_dispatch_uses_v0_on_current_platform_version() {
-        // On the current platform version (v12), the versioned method should
-        // produce the same result as the v0 method.
+    fn versioned_dispatch_uses_v1_on_current_platform_version() {
+        // On the current platform version (v12), token_config_update_action_id_version
+        // is 1, so the versioned method should produce the v1 result (which includes
+        // the full config item payload), NOT the v0 result (discriminant only).
         let owner_id = Identifier::new([3u8; 32]);
         let t = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
 
         let platform_version = PlatformVersion::latest();
 
-        let id_plain = t.calculate_action_id(owner_id);
+        let id_plain_v0 = t.calculate_action_id(owner_id);
         let id_versioned = t.calculate_action_id_versioned(owner_id, platform_version);
 
+        // v1 produces a different id from v0 because it hashes the full payload
+        assert_ne!(
+            id_plain_v0, id_versioned,
+            "on current platform version (v1), versioned should differ from plain (v0)"
+        );
+
+        // Verify the versioned result matches v1 directly
+        let base = t.base();
+        let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+            base.token_id().as_bytes(),
+            owner_id.as_bytes(),
+            base.identity_contract_nonce(),
+            t.update_token_configuration_item(),
+        );
         assert_eq!(
-            id_plain, id_versioned,
-            "on current platform version, versioned and plain should produce the same id"
+            id_versioned, id_v1,
+            "versioned dispatch should use v1 on current platform version"
         );
     }
 
