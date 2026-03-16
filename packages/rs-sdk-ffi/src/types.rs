@@ -800,7 +800,8 @@ pub unsafe extern "C" fn dash_sdk_address_info_map_free(map: *mut DashSDKAddress
             }
         }
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            map.entries, map.count,
+            map.entries,
+            map.count,
         )));
     }
 }
@@ -1230,7 +1231,8 @@ unsafe fn free_address_info_map_entries(map: &DashSDKAddressInfoMap) {
             }
         }
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            map.entries, map.count,
+            map.entries,
+            map.count,
         )));
     }
 }
