@@ -188,8 +188,7 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
             // Allocate address bytes
             let address_bytes_vec = address_bytes.clone();
             let address_len = address_bytes_vec.len();
-            let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-            std::mem::forget(address_bytes_vec); // Prevent deallocation
+            let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
             entries.push(DashSDKAddressInfoEntry {
                 address: address_ptr,
@@ -200,8 +199,7 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
         }
 
         let count = entries.len();
-        let entries_ptr = entries.as_mut_ptr();
-        std::mem::forget(entries); // Prevent deallocation
+        let entries_ptr = Box::into_raw(entries.into_boxed_slice()) as *mut DashSDKAddressInfoEntry;
 
         Ok(DashSDKAddressInfoMap {
             entries: entries_ptr,

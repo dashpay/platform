@@ -95,8 +95,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
                 // Convert address to bytes
                 let address_bytes_vec = info.address.to_bytes();
                 let address_len = address_bytes_vec.len();
-                let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes_vec); // Prevent deallocation
+                let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
                 Ok(DashSDKAddressInfo {
                     address: address_ptr,
@@ -109,8 +108,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
                 // Address not found - return with max values to indicate not found
                 let address_bytes_vec = address.to_bytes();
                 let address_len = address_bytes_vec.len();
-                let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes_vec);
+                let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
                 Ok(DashSDKAddressInfo {
                     address: address_ptr,
