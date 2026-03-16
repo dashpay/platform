@@ -264,9 +264,7 @@ mod tests {
             assert!(
                 !matches!(
                     &inv.error,
-                    ConsensusError::BasicError(
-                        BasicError::StateTransitionMaxSizeExceededError(_)
-                    )
+                    ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(_))
                 ),
                 "buffer at exactly max size should not be rejected by the size check"
             );
