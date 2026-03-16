@@ -281,6 +281,11 @@ extension SDK {
         guard !inputs.isEmpty else {
             throw SDKError.invalidParameter("Inputs array must not be empty")
         }
+        for (i, input) in inputs.enumerated() {
+            guard input.privateKey.count == 32 else {
+                throw SDKError.invalidParameter("Input[\(i)] privateKey must be 32 bytes, got \(input.privateKey.count)")
+            }
+        }
 
         let sdkPtr = SendableSdkPtr(sdkHandle)
         let inputCount = UInt32(inputs.count)

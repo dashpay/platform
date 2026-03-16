@@ -36,7 +36,10 @@ fn select_notes_for_amount(
         return Err("No unspent shielded notes available".to_string());
     }
 
-    let total_available: u64 = unspent.iter().map(|n| n.value).sum();
+    let total_available: u64 = unspent
+        .iter()
+        .try_fold(0u64, |acc, n| acc.checked_add(n.value))
+        .unwrap_or(u64::MAX);
     if total_available < amount {
         return Err(format!(
             "Insufficient shielded balance: have {}, need {}",

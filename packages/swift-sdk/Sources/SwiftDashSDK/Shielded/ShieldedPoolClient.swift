@@ -48,6 +48,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
         }
 
         var skTuple = dataToBytes32(spendingKey)
+        defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
 
         let result = dbPath.withCString { pathCStr in
             withUnsafePointer(to: &skTuple) { skPtr in
