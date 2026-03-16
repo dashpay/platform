@@ -273,6 +273,21 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     Some(serialized_error)
 }
 
+/// Try to decode a Tenderdash `data` field as base64 → CBOR and extract the
+/// human-readable `message` text.  Returns `None` if the string is not
+/// base64-encoded CBOR or does not contain a `message` key, allowing the
+/// caller to fall back to the raw string.
+fn decode_data_message(data: &str) -> Option<String> {
+    let decoded_bytes = base64_decode(data)?;
+    let raw_value: ciborium::Value = ciborium::de::from_reader(decoded_bytes.as_slice())
+        .inspect_err(|e| {
+            tracing::trace!("data field is not CBOR: {}", e);
+        })
+        .ok()?;
+
+    walk_cbor_for_key(&raw_value, &["message"]).and_then(|v| v.as_text().map(|s| s.to_string()))
+}
+
 impl From<serde_json::Value> for TenderdashStatus {
     // Convert from a JSON error object returned by Tenderdash RPC, typically in the `error` field of a JSON-RPC response.
     fn from(value: serde_json::Value) -> Self {
@@ -296,10 +311,10 @@ impl From<serde_json::Value> for TenderdashStatus {
                     .get("data")
                     .and_then(|d| d.as_str())
                     .filter(|s| s.is_ascii())
+                    .map(|s| decode_data_message(s).unwrap_or_else(|| s.to_string()))
             } else {
-                raw_message
-            }
-            .map(|s| s.to_string());
+                raw_message.map(|s| s.to_string())
+            };
 
             // info contains additional error details, possibly including consensus error
             let consensus_error = object
@@ -677,5 +692,151 @@ mod tests {
         let tonic_status = status.to_status();
         // "tx already exists in cache" maps to AlreadyExists, which maps to already_exists
         assert_eq!(tonic_status.code(), tonic::Code::AlreadyExists);
+    }
+
+    // -- decode_data_message tests --
+
+    #[test]
+    fn decode_data_message_plain_text_passthrough() {
+        // Plain ASCII text that is not base64 CBOR should be returned as-is
+        assert!(super::decode_data_message("just plain text").is_none());
+    }
+
+    #[test]
+    fn decode_data_message_base64_cbor_with_message() {
+        // CBOR: {"message": "hello world"}
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("message".to_string()),
+                    ciborium::Value::Text("hello world".to_string()),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert_eq!(
+            super::decode_data_message(&b64),
+            Some("hello world".to_string())
+        );
+    }
+
+    #[test]
+    fn decode_data_message_base64_cbor_without_message_key() {
+        // CBOR: {"data": {"serializedError": [1, 2, 3]}} — no "message" key
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("data".to_string()),
+                    ciborium::Value::Map(vec![(
+                        ciborium::Value::Text("serializedError".to_string()),
+                        ciborium::Value::Array(vec![
+                            ciborium::Value::Integer(1.into()),
+                            ciborium::Value::Integer(2.into()),
+                            ciborium::Value::Integer(3.into()),
+                        ]),
+                    )]),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert!(super::decode_data_message(&b64).is_none());
+    }
+
+    // -- Real-world DET log fixture tests --
+
+    #[test]
+    fn from_json_value_decodes_cbor_data_field_non_unique_key() {
+        setup_tracing();
+        // Real fixture from DET logs: code 13 Internal, data is base64 CBOR
+        // containing {"message": "storage: identity: a unique key ... non unique set [...]"}
+        let data_b64 = concat!(
+            "oWdtZXNzYWdleMVzdG9yYWdlOiBpZGVudGl0eTogYSB1bmlxdWUga2V5IHdpdGggdGhh",
+            "dCBoYXNoIGFscmVhZHkgZXhpc3RzOiB0aGUga2V5IGFscmVhZHkgZXhpc3RzIGluIHRo",
+            "ZSBub24gdW5pcXVlIHNldCBbMTM1LCAyMDIsIDE3MiwgNTMsIDE3NiwgNDUsIDE5MSwg",
+            "MjcsIDUwLCAxMiwgNTAsIDIxNSwgNjUsIDEyNCwgMTQ3LCAzLCAyMDgsIDYsIDIyNiwg",
+            "MTUxXQ==",
+        );
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": data_b64,
+            "info": ""
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 13);
+        assert!(
+            status
+                .message
+                .as_deref()
+                .expect("message should be decoded")
+                .starts_with("storage: identity: a unique key with that hash already exists"),
+            "expected decoded message, got: {:?}",
+            status.message
+        );
+        assert!(
+            status
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("non unique set"),
+        );
+        assert!(status.consensus_error.is_none());
+    }
+
+    #[test]
+    fn from_json_value_decodes_cbor_data_field_unique_key() {
+        setup_tracing();
+        // Real fixture from DET logs: code 13 Internal, "unique set" variant
+        let data_b64 = concat!(
+            "oWdtZXNzYWdleMdzdG9yYWdlOiBpZGVudGl0eTogYSB1bmlxdWUga2V5IHdpdGggdGhh",
+            "dCBoYXNoIGFscmVhZHkgZXhpc3RzOiB0aGUga2V5IGFscmVhZHkgZXhpc3RzIGluIHRo",
+            "ZSB1bmlxdWUgc2V0IFsyMzIsIDQ4LCAxMTksIDEzNywgMTYxLCAxNDMsIDE1LCAxNzks",
+            "IDIzNSwgOTgsIDEwMSwgMjUxLCAyNTEsIDExMCwgMTMyLCAzNSwgMTE5LCA4NCwgMTQ3",
+            "LCAxMjRd",
+        );
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": data_b64,
+            "info": ""
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 13);
+        assert!(
+            status
+                .message
+                .as_deref()
+                .expect("message should be decoded")
+                .starts_with("storage: identity: a unique key with that hash already exists"),
+            "expected decoded message, got: {:?}",
+            status.message
+        );
+        assert!(status.message.as_deref().unwrap().contains("unique set"),);
+        assert!(status.consensus_error.is_none());
+    }
+
+    #[test]
+    fn from_json_value_preserves_plain_text_data() {
+        // When data is plain text (not base64 CBOR), preserve it as-is
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": "plain text error detail"
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some("plain text error detail"));
     }
 }
