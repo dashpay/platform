@@ -5887,6 +5887,7 @@ dependencies = [
  "log",
  "once_cell",
  "platform-wallet-ffi",
+ "rand 0.8.5",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
  "serde",
