@@ -50,20 +50,31 @@ impl Drive {
         self.grove_get_raw_path_query(
             &path_query,
             transaction,
-            QueryResultType::QueryKeyElementPairResultType,
+            QueryResultType::QueryPathKeyElementTrioResultType,
             drive_operations,
             &platform_version.drive,
         )?
         .0
-        .to_key_elements_btree_map()
+        .to_path_key_elements()
         .into_iter()
-        .map(|(key, element)| {
+        .map(|(path, _key, element)| {
+            // The query uses a subquery key (GROUP_INFO_KEY), so the returned key is the
+            // subquery key, not the group contract position. The group contract position is
+            // the last component of the path (the parent key that matched the range query).
+            let Some(group_position_bytes) = path.last() else {
+                return Err(Error::Drive(DriveError::CorruptedDriveState(
+                    "expected path to not be empty when fetching group infos".to_string(),
+                )));
+            };
             let group_contract_position: GroupContractPosition =
-                GroupContractPosition::from_be_bytes(key.try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedDriveState(
-                        "group contract position not encoded on 2 bytes as expected".to_string(),
-                    ))
-                })?);
+                GroupContractPosition::from_be_bytes(
+                    group_position_bytes.clone().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "group contract position not encoded on 2 bytes as expected"
+                                .to_string(),
+                        ))
+                    })?,
+                );
             match element {
                 Item(value, ..) => Ok((
                     group_contract_position,

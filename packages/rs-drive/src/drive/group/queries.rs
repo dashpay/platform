@@ -274,3 +274,216 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONTRACT_ID: [u8; 32] = [1u8; 32];
+    const ACTION_ID: [u8; 32] = [2u8; 32];
+    const IDENTITY_ID: [u8; 32] = [3u8; 32];
+    const GROUP_POS: GroupContractPosition = 0;
+
+    #[test]
+    fn group_info_query_has_limit_of_one() {
+        let pq = Drive::group_info_for_contract_id_and_group_contract_position_query(
+            CONTRACT_ID,
+            GROUP_POS,
+        );
+        assert_eq!(pq.query.limit, Some(1));
+        assert_eq!(pq.path, group_path_vec(&CONTRACT_ID, GROUP_POS));
+    }
+
+    #[test]
+    fn group_infos_query_with_no_start_returns_range_full() {
+        let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, None, Some(10));
+        assert_eq!(pq.query.limit, Some(10));
+        assert_eq!(pq.path, group_contract_path_vec(&CONTRACT_ID));
+    }
+
+    #[test]
+    fn group_infos_query_with_start_included() {
+        let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, Some((5, true)), Some(10));
+        assert_eq!(pq.query.limit, Some(10));
+    }
+
+    #[test]
+    fn group_infos_query_with_start_excluded() {
+        let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, Some((5, false)), Some(10));
+        assert_eq!(pq.query.limit, Some(10));
+    }
+
+    #[test]
+    fn action_infos_query_active_status() {
+        let pq = Drive::group_action_infos_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionActive,
+            None,
+            Some(5),
+        );
+        assert_eq!(pq.query.limit, Some(5));
+        // Path should end with the active actions key
+        assert_eq!(pq.path.last().unwrap(), &GROUP_ACTIVE_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn action_infos_query_closed_status() {
+        let pq = Drive::group_action_infos_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionClosed,
+            None,
+            Some(5),
+        );
+        assert_eq!(pq.path.last().unwrap(), &GROUP_CLOSED_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn action_infos_query_with_start_at_included() {
+        let pq = Drive::group_action_infos_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionActive,
+            Some((ACTION_ID, true)),
+            Some(5),
+        );
+        assert_eq!(pq.query.limit, Some(5));
+    }
+
+    #[test]
+    fn action_infos_query_with_start_at_excluded() {
+        let pq = Drive::group_action_infos_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionActive,
+            Some((ACTION_ID, false)),
+            Some(5),
+        );
+        assert_eq!(pq.query.limit, Some(5));
+    }
+
+    #[test]
+    fn group_action_query_active() {
+        let pq = Drive::group_action_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionActive,
+            ACTION_ID,
+        );
+        assert!(pq.query.limit.is_none());
+        // Path includes the action_id
+        assert_eq!(pq.path.last().unwrap(), &ACTION_ID.to_vec());
+    }
+
+    #[test]
+    fn group_action_query_closed() {
+        let pq = Drive::group_action_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionClosed,
+            ACTION_ID,
+        );
+        // The 4th element should be the closed actions key
+        assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn group_action_signers_query_active() {
+        let pq = Drive::group_action_signers_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionActive,
+            ACTION_ID,
+        );
+        assert!(pq.query.limit.is_none());
+        assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+    }
+
+    #[test]
+    fn group_action_signers_query_closed() {
+        let pq = Drive::group_action_signers_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            GroupActionStatus::ActionClosed,
+            ACTION_ID,
+        );
+        assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+        assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+    }
+
+    #[test]
+    fn active_action_single_signer_query_path() {
+        let pq = Drive::group_active_action_single_signer_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            ACTION_ID,
+            IDENTITY_ID,
+        );
+        assert!(pq.query.limit.is_none());
+        // Path should be the active signers path
+        assert_eq!(
+            pq.path,
+            group_action_signers_path_vec(&CONTRACT_ID, GROUP_POS, &ACTION_ID)
+        );
+    }
+
+    #[test]
+    fn closed_action_single_signer_query_path() {
+        let pq = Drive::group_closed_action_single_signer_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            ACTION_ID,
+            IDENTITY_ID,
+        );
+        assert!(pq.query.limit.is_none());
+        assert_eq!(
+            pq.path,
+            group_closed_action_signers_path_vec(&CONTRACT_ID, GROUP_POS, &ACTION_ID)
+        );
+    }
+
+    #[test]
+    fn active_or_closed_single_signer_query_active() {
+        let pq = Drive::group_active_or_closed_action_single_signer_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            ACTION_ID,
+            GroupActionStatus::ActionActive,
+            IDENTITY_ID,
+        );
+        assert_eq!(pq.path[3], GROUP_ACTIVE_ACTIONS_KEY.to_vec());
+        assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+    }
+
+    #[test]
+    fn active_or_closed_single_signer_query_closed() {
+        let pq = Drive::group_active_or_closed_action_single_signer_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            ACTION_ID,
+            GroupActionStatus::ActionClosed,
+            IDENTITY_ID,
+        );
+        assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+    }
+
+    #[test]
+    fn active_or_closed_action_query_has_both_keys() {
+        let pq = Drive::group_active_or_closed_action_query(CONTRACT_ID, GROUP_POS);
+        assert!(pq.query.limit.is_none());
+        assert_eq!(pq.path, group_path_vec(&CONTRACT_ID, GROUP_POS));
+    }
+
+    #[test]
+    fn active_and_closed_single_signer_query_has_subquery_path() {
+        let pq = Drive::group_active_and_closed_action_single_signer_query(
+            CONTRACT_ID,
+            GROUP_POS,
+            ACTION_ID,
+            IDENTITY_ID,
+        );
+        assert!(pq.query.limit.is_none());
+        assert_eq!(pq.path, group_path_vec(&CONTRACT_ID, GROUP_POS));
+    }
+}
