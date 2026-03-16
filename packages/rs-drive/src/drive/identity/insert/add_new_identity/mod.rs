@@ -299,7 +299,7 @@ mod tests {
 
         // Reinserting the same masternode identity should succeed (re-enable keys)
         let result = drive.add_new_identity(
-            identity,
+            identity.clone(),
             true,
             &BlockInfo::default(),
             true,
@@ -308,5 +308,16 @@ mod tests {
         );
 
         assert!(result.is_ok());
+
+        // Verify keys are still present after reinsertion
+        let fetched_keys = drive
+            .fetch_all_identity_keys(
+                identity.id().to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch keys");
+
+        assert_eq!(fetched_keys.len(), 5);
     }
 }

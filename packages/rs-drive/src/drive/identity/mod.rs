@@ -418,7 +418,7 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "server", feature = "verify")))]
 mod tests {
     use super::*;
 
@@ -555,6 +555,7 @@ mod tests {
             assert_eq!(path[2], vec![IdentityRootStructure::IdentityTreeKeys as u8]);
         }
 
+        #[cfg(feature = "server")]
         #[test]
         fn should_create_correct_contract_info_root_path() {
             let id = [5u8; 32];

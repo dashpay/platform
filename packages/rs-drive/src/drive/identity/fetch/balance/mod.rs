@@ -88,11 +88,11 @@ mod tests {
                 )
                 .expect("should return balance with costs");
 
-            // In estimated mode we get Some(0) for a nonexistent balance
-            // but we should still get a fee result
+            // In estimated (stateless) mode, the balance query does not read
+            // from the database. It returns Some(0) as a placeholder value
+            // while computing estimated costs.
             assert!(fee_result.processing_fee > 0);
-            // balance might be Some(0) in estimated mode or Some(actual) in apply mode
-            assert!(balance.is_some());
+            assert_eq!(balance, Some(0));
         }
     }
 

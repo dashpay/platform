@@ -460,6 +460,10 @@ mod tests {
                 .expect("should fetch balances by range");
 
             assert_eq!(balances.len(), 5);
+
+            // BTreeMap keys are always sorted, confirming ascending order
+            let keys: Vec<[u8; 32]> = balances.keys().copied().collect();
+            assert!(keys.windows(2).all(|w| w[0] <= w[1]));
         }
 
         #[test]
