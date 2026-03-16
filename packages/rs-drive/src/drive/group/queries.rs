@@ -306,15 +306,17 @@ mod tests {
             "expected RangeFull query item"
         );
         // Should have the subquery key set to GROUP_INFO_KEY
-        let subquery = pq
+        let subquery_path = pq
             .query
             .query
             .default_subquery_branch
             .subquery_path
-            .as_ref();
-        assert!(
-            subquery.is_some(),
-            "expected a subquery path for GROUP_INFO_KEY"
+            .as_ref()
+            .expect("expected a subquery path for GROUP_INFO_KEY");
+        assert_eq!(
+            *subquery_path,
+            vec![GROUP_INFO_KEY.to_vec()],
+            "subquery path should contain GROUP_INFO_KEY"
         );
     }
 
@@ -356,13 +358,17 @@ mod tests {
         assert_eq!(pq.query.query.items.len(), 1);
         assert!(matches!(pq.query.query.items[0], QueryItem::RangeFull(..)));
         // Should have subquery key for ACTION_INFO_KEY
-        assert!(
-            pq.query
-                .query
-                .default_subquery_branch
-                .subquery_path
-                .is_some(),
-            "expected a subquery path for ACTION_INFO_KEY"
+        let subquery_path = pq
+            .query
+            .query
+            .default_subquery_branch
+            .subquery_path
+            .as_ref()
+            .expect("expected a subquery path for ACTION_INFO_KEY");
+        assert_eq!(
+            *subquery_path,
+            vec![ACTION_INFO_KEY.to_vec()],
+            "subquery path should contain ACTION_INFO_KEY"
         );
     }
 

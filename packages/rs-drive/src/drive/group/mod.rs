@@ -32,6 +32,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::serialization::PlatformDeserializable;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
@@ -165,8 +166,7 @@ mod tests {
             .fetch_group_info(contract_id, 0, None, platform_version)
             .expect("expected to fetch group info");
 
-        assert!(group.is_some(), "group should exist");
-        let group = group.unwrap();
+        let group = group.expect("group should exist");
         assert_eq!(
             group,
             Group::V0(GroupV0 {
@@ -514,16 +514,27 @@ mod tests {
 
     #[test]
     fn should_fetch_serialized_action_info() {
-        let (drive, contract_id, _, _, action_id) = setup_drive_with_contract_and_action();
+        let (drive, contract_id, identity_1_id, _, action_id) =
+            setup_drive_with_contract_and_action();
         let platform_version = PlatformVersion::latest();
 
         let serialized = drive
             .fetch_action_id_info_keep_serialized(contract_id, 0, action_id, None, platform_version)
             .expect("expected to fetch serialized action info");
 
-        assert!(
-            !serialized.is_empty(),
-            "serialized data should not be empty"
+        let deserialized = GroupAction::deserialize_from_bytes(&serialized)
+            .expect("expected to deserialize action info");
+
+        let expected = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: identity_1_id,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
+        });
+
+        assert_eq!(
+            deserialized, expected,
+            "deserialized action info should match the originally inserted action"
         );
     }
 
@@ -635,6 +646,35 @@ mod tests {
         assert!(
             !active_signers.contains_key(&identity_2_id),
             "identity_2 should not remain in active signers after closing"
+        );
+
+        // Verify action info was moved to the closed subtree
+        let closed_actions = drive
+            .fetch_action_infos(
+                contract_id,
+                0,
+                GroupActionStatus::ActionClosed,
+                None,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch closed action infos");
+
+        let closed_action = closed_actions
+            .get(&action_id)
+            .expect("action info should exist in closed subtree");
+
+        let expected_action = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: identity_1_id,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
+        });
+
+        assert_eq!(
+            *closed_action, expected_action,
+            "closed action info should match the originally inserted action"
         );
     }
 
@@ -983,7 +1023,15 @@ mod tests {
                 .expect("expected proof verification to succeed");
 
         assert!(!root_hash.is_empty());
-        assert!(group.is_some());
+        let group = group.expect("group should exist in proof");
+        assert_eq!(
+            group,
+            Group::V0(GroupV0 {
+                members: [(identity_1.id(), 1), (identity_2.id(), 2)].into(),
+                required_power: 3,
+            }),
+            "proved group should match the inserted group"
+        );
     }
 
     #[test]

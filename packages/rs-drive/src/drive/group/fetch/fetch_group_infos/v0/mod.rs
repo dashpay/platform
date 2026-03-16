@@ -68,7 +68,7 @@ impl Drive {
             };
             let group_contract_position: GroupContractPosition =
                 GroupContractPosition::from_be_bytes(
-                    group_position_bytes.clone().try_into().map_err(|_| {
+                    group_position_bytes.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedDriveState(
                             "group contract position not encoded on 2 bytes as expected"
                                 .to_string(),
