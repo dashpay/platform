@@ -22,6 +22,8 @@ jobs:
   claudius-review:
     name: Claudius PR Review
     runs-on: ubuntu-24.04
+    env:
+      CLAUDE_CODE_EFFORT_LEVEL: max
     if: |
       (github.event_name == 'pull_request_target' && contains(github.event.pull_request.labels.*.name, 'claudius-review') && github.event.pull_request.draft == false) ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '/review') && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
