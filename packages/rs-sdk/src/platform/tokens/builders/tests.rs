@@ -9,148 +9,26 @@ use super::purchase::TokenDirectPurchaseTransitionBuilder;
 use super::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 use super::transfer::TokenTransferTransitionBuilder;
 use super::unfreeze::TokenUnfreezeTransitionBuilder;
-use crate::{Error, Sdk, SdkBuilder};
-use dpp::address_funds::AddressWitness;
+use crate::platform::test_helpers::{
+    new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key,
+    validate_transition_like_builder, TestSigner, INVALID_NONCE, TEST_DOCUMENT_TYPE_NAME,
+};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
-use dpp::data_contract::config::DataContractConfig;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DataContractFactory;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::{platform_value, BinaryData, Value};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransition;
 use dpp::tokens::calculate_token_id;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use dpp::ProtocolError;
-use drive_proof_verifier::types::IdentityContractNonceFetcher;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-#[derive(Debug)]
-struct TestSigner;
-
-impl Signer<IdentityPublicKey> for TestSigner {
-    fn sign(&self, _key: &IdentityPublicKey, _data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        Ok(BinaryData::from(vec![1; 65]))
-    }
-
-    fn sign_create_witness(
-        &self,
-        _key: &IdentityPublicKey,
-        _data: &[u8],
-    ) -> Result<AddressWitness, ProtocolError> {
-        Err(ProtocolError::CorruptedCodeExecution(
-            "sign_create_witness is not used in these tests".to_string(),
-        ))
-    }
-
-    fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
-        true
-    }
-}
-
-fn test_identity_public_key() -> IdentityPublicKey {
-    IdentityPublicKey::V0(IdentityPublicKeyV0 {
-        id: 1,
-        purpose: Purpose::AUTHENTICATION,
-        security_level: SecurityLevel::CRITICAL,
-        contract_bounds: None,
-        key_type: KeyType::ECDSA_SECP256K1,
-        read_only: false,
-        data: BinaryData::from(vec![2; 33]),
-        disabled_at: None,
-    })
-}
-
-fn test_data_contract(document_type_name: &str) -> Arc<dpp::data_contract::DataContract> {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let config =
-        DataContractConfig::default_for_version(platform_version).expect("create contract config");
-
-    let schema = platform_value!({
-        "type": "object",
-        "properties": {
-            "a": {
-                "type": "string",
-                "maxLength": 10,
-                "position": 0
-            }
-        },
-        "additionalProperties": false,
-    });
-
-    let document_type = DocumentType::try_from_schema(
-        Identifier::random(),
-        1,
-        config.version(),
-        document_type_name,
-        schema,
-        None,
-        &BTreeMap::new(),
-        &config,
-        true,
-        &mut vec![],
-        platform_version,
-    )
-    .expect("create test document type");
-
-    let mut document_types: BTreeMap<String, Value> = BTreeMap::new();
-    document_types.insert(
-        document_type.name().to_string(),
-        document_type.schema().clone(),
-    );
-
-    let contract = DataContractFactory::new(platform_version.protocol_version)
-        .expect("create data contract factory")
-        .create(
-            Identifier::random(),
-            0,
-            platform_value!(document_types),
-            None,
-            None,
-        )
-        .expect("create test data contract")
-        .data_contract_owned();
-
-    Arc::new(contract)
-}
-
-const TEST_DOCUMENT_TYPE_NAME: &str = "testDoc";
 const TEST_TOKEN_POSITION: u16 = 0;
-const INVALID_NONCE: u64 = 1_u64 << 50;
-
-fn validate_transition_like_builder(state_transition: &StateTransition) -> Result<(), Error> {
-    let platform_version = dpp::version::PlatformVersion::latest();
-    let validation_result = match state_transition {
-        StateTransition::Batch(batch_transition) => {
-            batch_transition.validate_base_structure(platform_version)?
-        }
-        _ => {
-            return Err(Error::Protocol(
-                dpp::ProtocolError::InvalidStateTransitionType(
-                    "expected Batch transition".to_string(),
-                ),
-            ))
-        }
-    };
-    if let Some(first_error) = validation_result.errors.into_iter().next() {
-        return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(
-            Box::new(first_error),
-        )));
-    }
-    Ok(())
-}
 
 fn token_setup() -> (
     Arc<dpp::data_contract::DataContract>,
@@ -431,24 +309,6 @@ pub(super) fn assert_token_unfreeze_validate_base_structure_error() {
     assert!(result.is_err(), "expected validation error, got {result:?}");
 }
 
-async fn new_mock_sdk_with_contract_nonce(
-    identity_id: Identifier,
-    contract_id: Identifier,
-    fetched_nonce: u64,
-) -> Sdk {
-    let mut sdk = SdkBuilder::new_mock().build().expect("build mock sdk");
-
-    sdk.mock()
-        .expect_fetch::<IdentityContractNonceFetcher, _>(
-            (identity_id, contract_id),
-            Some(IdentityContractNonceFetcher(fetched_nonce)),
-        )
-        .await
-        .expect("set nonce fetch expectation");
-
-    sdk
-}
-
 #[tokio::test]
 async fn token_mint_sign_returns_invalid_token_amount_error_when_amount_is_zero() {
     let issuer_id = Identifier::random();
@@ -468,7 +328,7 @@ async fn token_mint_sign_returns_invalid_token_amount_error_when_amount_is_zero(
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_)))
         ),
         "unexpected result: {:?}",
@@ -504,7 +364,7 @@ async fn token_mint_sign_returns_invalid_action_id_error_for_mismatched_group_ac
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidActionIdError(_)))
         ),
         "unexpected result: {:?}",
@@ -530,7 +390,7 @@ async fn token_burn_sign_returns_invalid_token_amount_error_when_amount_is_zero(
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_)))
         ),
         "unexpected result: {:?}",
@@ -557,7 +417,7 @@ async fn token_burn_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -590,7 +450,7 @@ async fn token_transfer_sign_returns_invalid_token_amount_error_when_amount_is_z
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_)))
         ),
         "unexpected result: {:?}",
@@ -617,7 +477,7 @@ async fn token_transfer_sign_returns_transfer_to_ourself_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::TokenTransferToOurselfError(_)))
         ),
         "unexpected result: {:?}",
@@ -651,7 +511,7 @@ async fn token_transfer_sign_returns_note_too_big_error_for_public_note() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -684,7 +544,7 @@ async fn token_freeze_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -717,7 +577,7 @@ async fn token_unfreeze_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -750,7 +610,7 @@ async fn token_destroy_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -778,7 +638,7 @@ async fn token_emergency_action_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -809,7 +669,7 @@ async fn token_config_update_sign_returns_no_change_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenConfigUpdateNoChangeError(_)))
         ),
         "unexpected result: {:?}",
@@ -841,7 +701,7 @@ async fn token_config_update_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -873,7 +733,7 @@ async fn token_claim_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",
@@ -900,7 +760,7 @@ async fn token_purchase_sign_returns_invalid_token_amount_error_when_amount_is_z
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_)))
         ),
         "unexpected result: {:?}",
@@ -931,7 +791,7 @@ async fn token_set_price_sign_returns_note_too_big_error() {
     assert!(
         matches!(
             result,
-            Err(Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
+            Err(crate::Error::Protocol(ProtocolError::ConsensusError(ref consensus_error)))
                 if matches!(**consensus_error, ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_)))
         ),
         "unexpected result: {:?}",

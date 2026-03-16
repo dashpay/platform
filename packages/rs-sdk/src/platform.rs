@@ -20,6 +20,8 @@ pub mod identities_contract_keys_query;
 pub mod query;
 #[cfg(feature = "shielded")]
 pub mod shielded;
+#[cfg(test)]
+pub(crate) mod test_helpers;
 pub mod tokens;
 pub mod transition;
 pub mod trunk_branch_sync;
