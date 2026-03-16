@@ -60,6 +60,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 let result = withUnsafePointer(to: &skTuple) { skPtr in
                     dash_sdk_shielded_derive_address(skPtr, diversifierIndex)
                 }
@@ -68,6 +69,11 @@ extension SDK {
                     let hexString = try self.cryptoExtractString(result)
                     guard let addressData = hexToData(hexString) else {
                         continuation.resume(throwing: SDKError.serializationError("Invalid hex address returned"))
+                        return
+                    }
+                    guard addressData.count == 43 else {
+                        continuation.resume(throwing: SDKError.serializationError(
+                            "Derived address must be 43 bytes, got \(addressData.count)"))
                         return
                     }
                     continuation.resume(returning: addressData)
@@ -109,6 +115,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
                 let result = withUnsafePointer(to: &skTuple) { skPtr in
@@ -174,11 +181,12 @@ extension SDK {
         let anchorCopy = anchor
         let addrCopy = recipientAddress
         let memoCopy = memo
-        let notesJSON = spendableNotesToJSON(notes)
+        let notesJSON = try spendableNotesToJSON(notes)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -258,11 +266,12 @@ extension SDK {
         let anchorCopy = anchor
         let addrCopy = outputAddress
         let memoCopy = memo
-        let notesJSON = spendableNotesToJSON(notes)
+        let notesJSON = try spendableNotesToJSON(notes)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -346,11 +355,12 @@ extension SDK {
         let anchorCopy = anchor
         let scriptCopy = outputScript
         let memoCopy = memo
-        let notesJSON = spendableNotesToJSON(notes)
+        let notesJSON = try spendableNotesToJSON(notes)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -419,6 +429,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
+                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
 
                 let result = notesJSON.withCString { notesCStr in
                     withUnsafePointer(to: &skTuple) { skPtr in
@@ -466,16 +477,16 @@ extension SDK {
 
         let sdkPtr = SendableSdkPtr(sdkHandle)
         let inputCount = UInt32(inputs.count)
-        let bundlePtr = bundle.ptr
+        let retainedBundle = bundle // retain handle so deinit doesn't free ptr during FFI call
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global().async {
+            DispatchQueue.global().async { [self, retainedBundle] in
                 let result = self.withFFIShieldInputs(inputs) { inputsPtr in
                     dash_sdk_shielded_shield_funds(
                         UnsafePointer(sdkPtr.ptr),
                         inputsPtr,
                         inputCount,
-                        UnsafePointer(bundlePtr),
+                        UnsafePointer(retainedBundle.ptr),
                         amount,
                         feeFromInputIndex
                     )
@@ -506,13 +517,13 @@ extension SDK {
         }
 
         let sdkPtr = SendableSdkPtr(sdkHandle)
-        let bundlePtr = bundle.ptr
+        let retainedBundle = bundle
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global().async {
+            DispatchQueue.global().async { [self, retainedBundle] in
                 let result = dash_sdk_shielded_transfer(
                     UnsafePointer(sdkPtr.ptr),
-                    UnsafePointer(bundlePtr),
+                    UnsafePointer(retainedBundle.ptr),
                     valueBalance
                 )
 
@@ -543,10 +554,10 @@ extension SDK {
         }
 
         let sdkPtr = SendableSdkPtr(sdkHandle)
-        let bundlePtr = bundle.ptr
+        let retainedBundle = bundle
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global().async {
+            DispatchQueue.global().async { [self, retainedBundle] in
                 let result = outputAddress.withUnsafeBytes { addrPtr -> DashSDKResult in
                     guard let addrBase = addrPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                         return DashSDKResult()
@@ -556,7 +567,7 @@ extension SDK {
                         addrBase,
                         outputAddress.count,
                         amount,
-                        UnsafePointer(bundlePtr)
+                        UnsafePointer(retainedBundle.ptr)
                     )
                 }
 

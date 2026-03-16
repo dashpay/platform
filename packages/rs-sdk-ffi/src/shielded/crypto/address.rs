@@ -16,7 +16,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType
 ///
 /// # Returns
 /// `DashSDKResult` with a hex-encoded 43-byte Orchard raw address string on success.
-/// The caller must free the returned string with `dash_sdk_string_free`.
+/// The string is returned inside `DashSDKResult.data` and freed when the result is consumed.
 ///
 /// # Safety
 /// - `spending_key_bytes` must point to exactly 32 valid bytes.

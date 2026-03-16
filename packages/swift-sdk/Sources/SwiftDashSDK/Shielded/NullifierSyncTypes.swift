@@ -108,8 +108,13 @@ public struct NullifierSyncConfig {
     }
 
     /// Convert to FFI struct.
-    /// - Throws: If `poolIdentifier` is set but not exactly 32 bytes.
+    /// - Throws: If `poolType` is invalid, or if `poolType == 2` without a valid `poolIdentifier`.
     func toFFI() throws -> FFINullifierSyncConfig {
+        // Validate poolType: 0=credit, 1=main token, 2=individual token
+        guard poolType <= 2 else {
+            throw SDKError.invalidParameter("poolType must be 0, 1, or 2, got \(poolType)")
+        }
+
         let hasPoolId: Bool
         let poolIdTuple: Bytes32Tuple
         if let pid = poolIdentifier {
@@ -121,6 +126,12 @@ public struct NullifierSyncConfig {
             hasPoolId = true
             poolIdTuple = dataToBytes32(pid)
         } else {
+            // poolType 2 (individual token) requires a poolIdentifier
+            if poolType == 2 {
+                throw SDKError.invalidParameter(
+                    "poolType 2 (individual token) requires a poolIdentifier"
+                )
+            }
             hasPoolId = false
             poolIdTuple = dataToBytes32(Data(count: 32))
         }

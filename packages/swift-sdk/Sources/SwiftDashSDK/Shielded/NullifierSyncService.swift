@@ -65,7 +65,7 @@ extension SDK {
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
+            DispatchQueue.global().async { [self] in
                 // Use the _with_result variant for better error handling via DashSDKResult.
                 let result: DashSDKResult
 
@@ -179,7 +179,7 @@ extension SDK {
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
+            DispatchQueue.global().async { [self] in
                 let resultPtr: UnsafeMutablePointer<FFINullifierSyncResult>?
 
                 if var cfg = ffiConfig {

@@ -94,6 +94,27 @@ public struct SpendableNoteInfo {
     ///   "merklePath": ["hex32bytes", ...]
     /// }
     /// ```
+    /// Validate field sizes before serialization.
+    public func validate() throws {
+        guard address.count == 43 else {
+            throw SDKError.invalidParameter("SpendableNoteInfo address must be 43 bytes, got \(address.count)")
+        }
+        guard rho.count == 32 else {
+            throw SDKError.invalidParameter("SpendableNoteInfo rho must be 32 bytes, got \(rho.count)")
+        }
+        guard rseed.count == 32 else {
+            throw SDKError.invalidParameter("SpendableNoteInfo rseed must be 32 bytes, got \(rseed.count)")
+        }
+        guard merklePath.count == 32 else {
+            throw SDKError.invalidParameter("SpendableNoteInfo merklePath must have 32 entries, got \(merklePath.count)")
+        }
+        for (i, node) in merklePath.enumerated() {
+            guard node.count == 32 else {
+                throw SDKError.invalidParameter("SpendableNoteInfo merklePath[\(i)] must be 32 bytes, got \(node.count)")
+            }
+        }
+    }
+
     public func toJSON() -> [String: Any] {
         return [
             "address": address.toHexString(),
@@ -138,7 +159,14 @@ func encryptedNotesToJSON(_ notes: [EncryptedNote]) -> String {
 /// [{ "address": "hex43", "value": u64, "rho": "hex32", "rseed": "hex32",
 ///    "position": u32, "merklePath": ["hex32", ...32 entries] }]
 /// ```
-func spendableNotesToJSON(_ notes: [SpendableNoteInfo]) -> String {
+func spendableNotesToJSON(_ notes: [SpendableNoteInfo]) throws -> String {
+    for (i, note) in notes.enumerated() {
+        do {
+            try note.validate()
+        } catch {
+            throw SDKError.invalidParameter("SpendableNoteInfo[\(i)]: \(error.localizedDescription)")
+        }
+    }
     let jsonArray: [[String: Any]] = notes.map { $0.toJSON() }
 
     guard let data = try? JSONSerialization.data(withJSONObject: jsonArray, options: []),

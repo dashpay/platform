@@ -1,8 +1,8 @@
 //! Orchard bundle building FFI functions.
 //!
 //! These functions construct authorized Orchard bundles internally (proof + signatures)
-//! and return the serialized bundle as JSON. The iOS side parses this JSON into its
-//! existing `OrchardBundle` model.
+//! and return a heap-allocated `DashSDKOrchardBundleParams` pointer via `DashSDKResult`.
+//! Free the returned bundle with `dash_sdk_shielded_bundle_params_free`.
 //!
 //! Since the DPP builder helpers (`build_output_only_bundle`, `build_spend_bundle`) are
 //! `pub(crate)`, we replicate the bundle construction logic here using the public
