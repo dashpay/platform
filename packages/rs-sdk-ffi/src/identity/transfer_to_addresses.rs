@@ -11,7 +11,7 @@ use std::panic::{self, AssertUnwindSafe};
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    dash_sdk_address_info_map_free, DashSDKAddressInfoEntry, DashSDKAddressInfoMap,
+    DashSDKAddressInfoEntry, DashSDKAddressInfoMap,
     DashSDKAddressTransferOutput, DashSDKPutSettings, DashSDKResultDataType, IdentityHandle,
     SDKHandle,
 };
@@ -254,7 +254,10 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_to_addresses_result_free(
 ) {
     if !result.is_null() {
         let result = Box::from_raw(result);
-        // Free the address info map using the function from types.rs
-        dash_sdk_address_info_map_free(&result.address_info_map as *const _ as *mut _);
+        // Free the address info map entries inline — do NOT call
+        // dash_sdk_address_info_map_free here because that calls Box::from_raw
+        // on the map pointer, but the map is an embedded field (not a separate
+        // heap allocation), which would cause a double-free / heap corruption.
+        crate::types::free_address_info_map_entries(&result.address_info_map);
     }
 }
