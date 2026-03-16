@@ -221,3 +221,33 @@ async fn document_builder_sign_masks_nonce_so_out_of_bounds_is_unreachable() {
         result.err()
     );
 }
+
+#[tokio::test]
+async fn document_delete_builder_sign_succeeds_for_valid_input() {
+    let document_type_name = "testDoc";
+    let data_contract = test_data_contract(document_type_name);
+    let owner_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentDeleteTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        document_type_name.to_string(),
+        Identifier::random(),
+        owner_id,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
