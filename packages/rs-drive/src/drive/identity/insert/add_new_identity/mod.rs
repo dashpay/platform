@@ -225,4 +225,143 @@ mod tests {
         }
         assert_eq!(fee_result, expected_fee_result);
     }
+
+    #[test]
+    fn should_fail_to_insert_duplicate_non_masternode_identity() {
+        use crate::error::identity::IdentityError;
+        use crate::error::Error;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
+
+        // Insert the identity the first time
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        // Inserting the same non-masternode identity again should fail
+        let result = drive.add_new_identity(
+            identity,
+            false,
+            &BlockInfo::default(),
+            true,
+            Some(&transaction),
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Identity(IdentityError::IdentityAlreadyExists(_)))
+        ));
+    }
+
+    #[test]
+    fn should_succeed_reinserting_masternode_identity_and_reenable_keys() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive(None);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(12345), platform_version)
+            .expect("expected a random identity");
+
+        // Insert as masternode identity
+        drive
+            .add_new_identity(
+                identity.clone(),
+                true,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        // Disable all keys on the masternode identity
+        let key_ids: Vec<_> = identity.public_keys().keys().copied().collect();
+
+        drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                key_ids.clone(),
+                1000, // disabled_at timestamp
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to disable keys");
+
+        // Confirm keys are disabled after disabling
+        let disabled_keys = drive
+            .fetch_all_identity_keys(
+                identity.id().to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch keys");
+
+        for (_, key) in &disabled_keys {
+            assert!(
+                key.is_disabled(),
+                "key {} should be disabled before reinsertion",
+                key.id()
+            );
+        }
+
+        // Reinserting the same masternode identity should succeed and re-enable keys
+        let result = drive.add_new_identity(
+            identity.clone(),
+            true,
+            &BlockInfo::default(),
+            true,
+            Some(&transaction),
+            platform_version,
+        );
+
+        assert!(
+            result.is_ok(),
+            "reinserting masternode identity should succeed"
+        );
+
+        // Verify keys are re-enabled after reinsertion
+        let fetched_keys = drive
+            .fetch_all_identity_keys(
+                identity.id().to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch keys");
+
+        assert_eq!(fetched_keys.len(), 5);
+        for (_, key) in &fetched_keys {
+            assert!(
+                !key.is_disabled(),
+                "key {} should be re-enabled after masternode reinsertion",
+                key.id()
+            );
+        }
+    }
 }
