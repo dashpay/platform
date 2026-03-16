@@ -495,3 +495,337 @@ impl Drive {
     //     Ok((items, skipped, cost))
     // }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+    use std::option::Option::None;
+
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use rand::random;
+
+    use crate::config::DriveConfig;
+    use crate::drive::document::query::{
+        QueryDocumentsOutcomeV0Methods, QueryDocumentsWithFlagsOutcomeV0Methods,
+    };
+    use crate::drive::document::tests::setup_dashpay;
+    use crate::query::DriveDocumentQuery;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup_contract;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
+    use dpp::tests::json_document::json_document_to_document;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_query_documents_dry_run() {
+        let (drive, contract) = setup_dashpay("query-dry-run", true);
+
+        let _platform_version = PlatformVersion::latest();
+
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        // Dry run should return empty results without touching storage
+        let outcome = drive
+            .query_documents(query, None, true, None, None)
+            .expect("expected dry run query to succeed");
+
+        assert_eq!(outcome.documents().len(), 0);
+        assert_eq!(outcome.skipped(), 0);
+        assert_eq!(outcome.cost(), 0);
+    }
+
+    #[test]
+    fn test_query_documents_with_epoch_fee() {
+        let (drive, contract) = setup_dashpay("query-epoch", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        // Query with epoch to exercise the fee calculation path
+        let epoch = Epoch::new(0).unwrap();
+        let outcome = drive
+            .query_documents(query, Some(&epoch), false, None, None)
+            .expect("expected query with epoch to succeed");
+
+        assert_eq!(outcome.documents().len(), 1);
+        assert!(outcome.cost() > 0, "cost should be non-zero with epoch");
+    }
+
+    #[test]
+    fn test_query_documents_without_epoch_zero_cost() {
+        let (drive, contract) = setup_dashpay("query-no-epoch", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        // Query without epoch, cost should be 0
+        let outcome = drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected query without epoch to succeed");
+
+        assert_eq!(outcome.documents().len(), 1);
+        assert_eq!(outcome.cost(), 0, "cost should be zero without epoch");
+    }
+
+    #[test]
+    fn test_query_documents_with_flags() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        // Query documents with flags to cover the query_documents_with_flags path
+        let outcome = drive
+            .query_documents_with_flags(query, None, false, None, None)
+            .expect("expected query_documents_with_flags to succeed");
+
+        assert_eq!(outcome.documents().len(), 1);
+        assert_eq!(outcome.cost(), 0);
+        // Verify storage flags are returned
+        let (_, flags) = &outcome.documents()[0];
+        assert!(flags.is_some(), "storage flags should be present");
+    }
+
+    #[test]
+    fn test_query_documents_with_flags_dry_run() {
+        let (drive, contract) = setup_dashpay("query-flags-dry", true);
+
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        // Dry run should return empty defaults
+        let outcome = drive
+            .query_documents_with_flags(query, None, true, None, None)
+            .expect("expected dry run query_documents_with_flags to succeed");
+
+        assert_eq!(outcome.documents().len(), 0);
+        assert_eq!(outcome.skipped(), 0);
+        assert_eq!(outcome.cost(), 0);
+    }
+
+    #[test]
+    fn test_query_documents_with_flags_with_epoch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let epoch = Epoch::new(0).unwrap();
+        let outcome = drive
+            .query_documents_with_flags(query, Some(&epoch), false, None, None)
+            .expect("expected query_documents_with_flags with epoch to succeed");
+
+        assert_eq!(outcome.documents().len(), 1);
+        assert!(
+            outcome.cost() > 0,
+            "cost should be non-zero when epoch is provided"
+        );
+    }
+}
