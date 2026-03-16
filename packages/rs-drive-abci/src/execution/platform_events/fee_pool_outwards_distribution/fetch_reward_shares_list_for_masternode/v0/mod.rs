@@ -59,7 +59,7 @@ impl<C> Platform<C> {
                 )]),
             },
             offset: None,
-            limit: Some(1),
+            limit: Some(100),
             order_by: Default::default(),
             start_at: None,
             start_at_included: false,
