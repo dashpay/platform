@@ -65,3 +65,120 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::{DirectQueryType, QueryTarget};
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::TreeType;
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_get_big_sum_tree_total_value_stateful() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"big_sum",
+                TreeType::BigSumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let value = drive
+            .grove_get_big_sum_tree_total_value_v0(
+                SubtreePath::empty(),
+                b"big_sum",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected to get element");
+
+        assert_eq!(value, 0);
+    }
+
+    #[test]
+    fn test_grove_get_big_sum_tree_total_value_stateful_wrong_type() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"normal",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let result = drive.grove_get_big_sum_tree_total_value_v0(
+            SubtreePath::empty(),
+            b"normal",
+            DirectQueryType::StatefulDirectQuery,
+            Some(&tx),
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grove_get_big_sum_tree_total_value_stateless() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let value = drive
+            .grove_get_big_sum_tree_total_value_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTarget::QueryTargetTree(0, TreeType::BigSumTree),
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert_eq!(value, 0);
+    }
+
+    #[test]
+    fn test_grove_get_big_sum_tree_total_value_stateless_non_tree_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let result = drive.grove_get_big_sum_tree_total_value_v0(
+            [b"root".as_slice()].as_slice().into(),
+            b"key",
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::NormalTree,
+                query_target: QueryTarget::QueryTargetValue(100),
+            },
+            None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+}
