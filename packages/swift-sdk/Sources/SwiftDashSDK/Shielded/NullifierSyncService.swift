@@ -175,17 +175,19 @@ extension SDK {
         let sdkPtr = NullifierSendableSdkPtr(sdkHandle)
         let count = UInt32(nullifiers.count)
 
-        var ffiConfig: FFINullifierSyncConfig?
-        if let cfg = config {
-            ffiConfig = try cfg.toFFI()
+        let ffiConfig: FFINullifierSyncConfig? = if let cfg = config {
+            try cfg.toFFI()
+        } else {
+            nil
         }
+        let nullifierData = concatenated
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let resultPtr: UnsafeMutablePointer<FFINullifierSyncResult>?
 
                 if var cfg = ffiConfig {
-                    resultPtr = concatenated.withUnsafeBytes { bytesPtr -> UnsafeMutablePointer<FFINullifierSyncResult>? in
+                    resultPtr = nullifierData.withUnsafeBytes { bytesPtr -> UnsafeMutablePointer<FFINullifierSyncResult>? in
                         guard let base = bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                             return nil
                         }
@@ -201,7 +203,7 @@ extension SDK {
                         }
                     }
                 } else {
-                    resultPtr = concatenated.withUnsafeBytes { bytesPtr -> UnsafeMutablePointer<FFINullifierSyncResult>? in
+                    resultPtr = nullifierData.withUnsafeBytes { bytesPtr -> UnsafeMutablePointer<FFINullifierSyncResult>? in
                         guard let base = bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                             return nil
                         }
