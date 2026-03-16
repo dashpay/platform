@@ -32,17 +32,29 @@ date: 2026-03-13
 
 **`dash-evo-tool`** maintains its own self-written wallet and duplicates DashPay crypto inline:
 
-- `src/model/wallet/` — custom wallet struct
+- `src/model/wallet/` — custom wallet struct with `identities`, `utxos`, `platform_address_info` fields
 - `backend_task/dashpay/dip14_derivation.rs` — DIP-14 256-bit key derivation
-- `backend_task/dashpay/encryption.rs` — DIP-15 ECDH + AES-CBC
+- `backend_task/dashpay/hd_derivation.rs` — DashPay contact xpub path wrapper
+- `backend_task/dashpay/encryption.rs` — DIP-15 ECDH + AES-CBC (duplicates `rs-platform-encryption`)
 
 **`rs-platform-wallet`** is the intended canonical library but is incomplete:
 
+- No `PlatformWallet` struct — only `PlatformWalletInfo` (the old pattern, being deleted)
 - No identity registration, top-up, withdrawal, or credit transfer
-- No DIP-14 CKDpriv256/CKDpub256 or DIP-15 encryption
+- No DIP-14 CKDpriv256/CKDpub256
 - No DashPay payment address derivation or payment sending
 - No DIP-17 `AddressProvider` implementation
 - No signing facade for state transition submission
+- No bincode serialization for `IdentityManager`, `ManagedIdentity`, `ContactRequest`, `EstablishedContact`
+
+**What already exists and can be reused** (confirmed in codebase):
+
+- `rs-platform-encryption` crate — `derive_shared_key_ecdh`, `encrypt_extended_public_key`, `decrypt_extended_public_key`, `encrypt_account_label` — already a dependency of `rs-platform-wallet`
+- `ContactRequest` and `EstablishedContact` structs — fully implemented
+- `ManagedIdentity` with contact request management — fully implemented
+- `IdentityManager` — implemented (needs `Arc<RwLock<_>>` wrapping + `last_scanned_index` field + removal of `sdk` field)
+- `platform_wallet_info/contact_requests.rs` — `send_contact_request`, `add_incoming_contact_request`, `add_sent_contact_request` — consolidate into `DashPayWallet`
+- `platform_wallet_info/identity_discovery.rs` — `discover_identities` — consolidate into `IdentityWallet::sync()`
 
 ---
 
@@ -53,25 +65,24 @@ key-wallet (rust-dashcore)
 ├── Wallet — private key store, BIP32 derivation
 └── ManagedWalletInfo
     └── accounts: ManagedAccountCollection
-        ├── core_accounts              [BIP44 UTXOs, SECP/BLS/EdDSA]
-        ├── dashpay_receival_accounts  [DIP-15 receive from contact, keyed by (account, selfId, friendId)]
-        ├── dashpay_external_accounts  [DIP-15 send to contact]
-        └── platform_payment_accounts  [DIP-17 P2PKH credits, keyed by (account, key_class)]
+        ├── standard_bip44_accounts      [BIP44 UTXOs]
+        ├── dashpay_receival_accounts     [DIP-15 receive from contact, keyed by DashpayAccountKey]
+        ├── dashpay_external_accounts     [DIP-15 send to contact, keyed by DashpayAccountKey]
+        └── platform_payment_accounts    [DIP-17 P2PKH credits, keyed by PlatformPaymentAccountKey]
 
 rs-platform-wallet (target)
 └── PlatformWallet                             ← thin coordinator, owns Sdk + Arc<Wallet>
     ├── sdk:      Sdk                          ← cheaply cloneable (internally ref-counted)
     ├── wallet:   Arc<Wallet>                  ← immutable key store; no lock needed (read-only)
-    ├── core:     CoreWallet                      ← Arc<ManagedWalletInfo> inside; impls WalletInterface
-    ├── identity: IdentityWallet                  ← shares Arc<ManagedWalletInfo> + Arc<RwLock<IndexMap>>
-    ├── dashpay:  DashPayWallet                   ← shares same Arcs; DIP-14/15 lives here
-    └── platform: PlatformAddressWallet           ← shares Arc<ManagedWalletInfo>; impls AddressProvider
+    ├── core:     CoreWallet                   ← Arc<ManagedWalletInfo> inside; impls WalletInterface
+    ├── identity: IdentityWallet               ← shares Arc<ManagedWalletInfo> + Arc<RwLock<IndexMap>>
+    ├── dashpay:  DashPayWallet                ← shares same Arcs; DIP-14/15 lives here
+    └── platform: PlatformAddressWallet        ← shares Arc<ManagedWalletInfo>; impls AddressProvider
 
 rs-sdk (Dash Platform SDK)
-├── Identity::fetch() / topup / withdraw / transfer / register
-├── Document CRUD (put/transfer/purchase)
+├── Identity::fetch() / topup / withdraw / transfer / register (trait methods on Identity, not on Sdk)
+├── Sdk::send_contact_request() / fetch_all_contact_requests_for_identity()
 ├── sync_address_balances() → DIP-17 address sync
-├── send_contact_request() → DashPay contact request submission
 └── WithdrawAddressFunds / TransferAddressFunds / TopUpAddress
 ```
 
@@ -94,7 +105,7 @@ without a self-borrow conflict.
 ```rust
 // All fields private — construction only via builder
 pub struct PlatformWallet {
-    sdk:      Sdk,          // cheaply cloneable (internally ref-counted)
+    sdk:      Sdk,          // cheaply cloneable (internally ref-counted) — no Arc wrapper needed
     wallet:   Arc<Wallet>,  // immutable key store — no lock needed (read-only)
     core:     CoreWallet,
     identity: IdentityWallet,
@@ -130,14 +141,16 @@ pub struct PlatformAddressWallet {
 }
 
 // Arc<RwLock<_>> fields inside — Clone is a cheap Arc clone, no outer lock needed
+// NOTE: The current IdentityManager has plain (non-Arc-wrapped) fields — this is the target
 pub struct IdentityManager {
     identities:          Arc<RwLock<IndexMap<Identifier, ManagedIdentity>>>,
     primary_identity_id: Arc<RwLock<Option<Identifier>>>,
-    last_scanned_index:  Arc<RwLock<u32>>,
+    last_scanned_index:  Arc<RwLock<u32>>,  // NEW — not yet present; persisted gap scan state
+    // REMOVED: sdk: Option<Arc<Sdk>> — SDK moves to sub-struct fields
 }
 ```
 
-`PlatformWallet` exposes sub-structs via accessor methods (or direct field delegation):
+`PlatformWallet` exposes sub-structs via accessor methods:
 
 ```rust
 impl PlatformWallet {
@@ -238,8 +251,13 @@ starts from this block, skipping earlier history. Defaults to 0 (full sync).
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/builder.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/mod.rs`
+- `packages/rs-platform-wallet/src/platform_wallet/builder.rs` (new)
+- `packages/rs-platform-wallet/src/platform_wallet/mod.rs` (new — replaces `platform_wallet_info/mod.rs`)
+
+#### Migration
+
+The old `platform_wallet_info/` module (currently staged as deleted in git) must be fully removed.
+`lib.rs` currently still imports `pub mod platform_wallet_info` — update to `pub mod platform_wallet`.
 
 ---
 
@@ -247,27 +265,25 @@ starts from this block, skipping earlier history. Defaults to 0 (full sync).
 
 > Make `PlatformWallet` the SDK access point for all callers.
 
-**Current state**: SDK is stashed inside `IdentityManager.sdk` — accessed only by identity
-discovery. Every async method that submits state transitions requires the caller to pass `&Sdk`
-separately.
+**Current state**: SDK is stashed inside `IdentityManager.sdk: Option<Arc<Sdk>>` — accessed only by identity
+discovery. Every async method that submits state transitions requires the caller to pass `&Sdk` separately.
 
-**Goal**: Each stored sub-struct (`CoreWallet`, `IdentityWallet`, `DashPayWallet`, `PlatformAddressWallet`)
-holds `sdk: Sdk` as a field. All methods call `self.sdk` without requiring callers to manage
-SDK lifecycle separately. `Sdk` is cheaply cloneable (internally ref-counted); no `Arc` wrapper.
+**Goal**: Each stored sub-struct holds `sdk: Sdk` as a field. All methods call `self.sdk` without requiring callers to manage
+SDK lifecycle separately. `Sdk` implements `Clone` (confirmed at `rs-sdk/src/sdk.rs:134`) — it is cheaply cloneable via internal ref-counting; no `Arc` wrapper needed.
 
 #### Tasks
 
-- **1.2.1** ✅ Add `sdk: Sdk` to each sub-struct. Clone from `PlatformWallet`'s sdk at construction.
-- **1.2.2** Remove `sdk` from `IdentityManager`; all SDK access flows through the sub-struct `sdk` fields.
+- **1.2.1** Add `sdk: Sdk` to each sub-struct. Clone from `PlatformWallet`'s sdk at construction.
+- **1.2.2** Remove `sdk: Option<Arc<Sdk>>` from `IdentityManager`; all SDK access flows through the sub-struct `sdk` fields.
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/mod.rs`
+- `packages/rs-platform-wallet/src/platform_wallet/mod.rs`
 - `packages/rs-platform-wallet/src/identity_manager/mod.rs`
 
 ---
 
-### 1.2 Core Wallet Capabilities
+### 1.3 Core Wallet Capabilities
 
 > Expose UTXO wallet: accounts, addresses, balances, send Dash, SPV sync, asset lock proofs.
 
@@ -281,7 +297,13 @@ SDK lifecycle separately. `Sdk` is cheaply cloneable (internally ref-counted); n
 these capabilities without leaking key-wallet internals. It implements `WalletInterface`
 as a concrete stored type, so SPV registration is straightforward.
 
-#### 1.2.1 — Wallet Initialization
+**Note on `ManagedAccountCollection` field names** (confirmed from key-wallet source):
+- Standard accounts: `standard_bip44_accounts: BTreeMap<u32, ManagedCoreAccount>` (NOT a single `core_accounts` field)
+- DashPay receive: `dashpay_receival_accounts: BTreeMap<DashpayAccountKey, ManagedCoreAccount>`
+- DashPay send: `dashpay_external_accounts: BTreeMap<DashpayAccountKey, ManagedCoreAccount>`
+- Platform payments: `platform_payment_accounts: BTreeMap<PlatformPaymentAccountKey, ManagedPlatformAccount>`
+
+#### 1.3.1 — Wallet Initialization
 
 Accounts are created automatically at wallet construction — callers never call
 `add_account` explicitly. `PlatformWallet::new()` passes
@@ -292,7 +314,7 @@ wallets via `import_wallet_from_extended_priv_key`.
 DashPay and DIP-17 platform payment accounts are added lazily on first use
 (contact establishment / first platform address request).
 
-#### 1.2.2 — Address Generation
+#### 1.3.2 — Address Generation
 
 ```rust
 pub fn next_receive_address(&mut self) -> Result<Address, CoreWalletError>
@@ -309,12 +331,12 @@ Derives next unused BIP-44 external/change address respecting gap limit (20).
 `WalletInterface` to match BIP157/158 compact filters against wallet addresses.
 
 **Critical**: `monitored_addresses()` must include addresses from **all** account types in
-`ManagedAccountCollection`, not just `core_accounts`. This is how DashPay receiving addresses
+`ManagedAccountCollection`, not just `standard_bip44_accounts`. This is how DashPay receiving addresses
 get watched for incoming payments — no separate registration step, no manual bloom filter
 management. When `DashPayWallet::sync()` adds a new `DashpayReceivingFunds` account (on contact
 accepted), those addresses automatically appear in the next `monitored_addresses()` call.
 
-#### 1.2.3 — Balance & UTXO Access
+#### 1.3.3 — Balance & UTXO Access
 
 ```rust
 // Methods on CoreWallet:
@@ -332,7 +354,7 @@ pub fn immature_transactions(&self) -> Vec<TransactionRecord>
 
 All delegate to `WalletInfoInterface` on `wallet_info`.
 
-#### 1.2.4 — Transaction Send
+#### 1.3.4 — Transaction Send
 
 key-wallet only **builds** transactions — it has no send method. Broadcasting is a
 separate concern (RPC or SPV). `CoreWallet` exposes `TransactionBuilder` directly
@@ -357,24 +379,6 @@ Common case:
 let txid = wallet.core.send_transaction(vec![(addr, amount_duffs)]).await?;
 ```
 
-Custom flow (e.g. specific fee rate, coin selection strategy):
-
-```rust
-let (utxos, key_fn) = wallet.core.spendable_utxos_with_keys();
-let tx = wallet.core
-    .transaction_builder()
-    .add_output(&addr, amount_duffs)?
-    .set_fee_rate(FeeRate::from_sat_per_byte(5))
-    .select_inputs(&utxos, SelectionStrategy::LargestFirst, current_height, key_fn)?
-    .build()?;
-let txid = wallet.core.broadcast_transaction(tx).await?;
-```
-
-`subtract_fee_from_amount` and fee-override-on-retry are UI-level concerns — callers
-handle them before calling `.add_output()`. No `WalletPaymentRequest` wrapper needed.
-Dash P2PKH transactions have no memo field in the protocol; `memo` in evo-tool's
-existing `WalletPaymentRequest` is dead code and is not carried forward.
-
 `send_transaction` handles coin selection, signing, and broadcast internally — two broadcast paths:
 
 - **SPV mode**: `DashSpvClient::broadcast_transaction(tx)` → P2P to connected peers
@@ -384,7 +388,7 @@ existing `WalletPaymentRequest` is dead code and is not carried forward.
 `rs-sdk` (DAPI/Platform SDK) has no Core transaction broadcast — it's Platform-only.
 The SPV client (`DashSpvClient`) is the P2P layer for Core transactions.
 
-#### 1.2.5 — SPV Sync Integration
+#### 1.3.5 — SPV Sync Integration
 
 `dash-spv` (`DashSpvClient<W, N, S>`) is the P2P sync layer. It uses **BIP157/158 compact
 block filters** (not Bloom filters). It takes a `WalletInterface` generic parameter — the
@@ -396,10 +400,13 @@ to `DashSpvClient` at startup; the client holds it and calls back into `CoreWall
 Because `CoreWallet` holds an `Arc` clone, SPV and `PlatformWallet` share the same `ManagedWalletInfo`
 without any additional locking at the `PlatformWallet` level.
 
+Note: `key-wallet-manager` is an optional dependency in `Cargo.toml` gated on `feature = "manager"`.
+Ensure `CoreWallet`'s `WalletInterface` impl enables this feature.
+
 ```rust
 impl WalletInterface for CoreWallet {
     fn monitored_addresses(&self) -> Vec<Address>
-    // dash-spv uses these to match compact filters
+    // dash-spv uses these to match compact filters — must return ALL account types
 
     fn process_transaction(&mut self, tx: &Transaction, height: u32, block_time: u64) -> bool
     // called by dash-spv when a matching tx is found — delegates to wallet_info
@@ -409,13 +416,17 @@ impl WalletInterface for CoreWallet {
 }
 ```
 
+`ManagedWalletInfo` does NOT directly implement `WalletTransactionChecker` — it must be
+delegated through a wrapper struct, matching the pattern in the old `wallet_transaction_checker.rs`.
+Preserve this delegation in `CoreWallet`.
+
 Transaction broadcasting goes through `DashSpvClient::broadcast_transaction(tx)` — P2P
-to connected peers (see §1.2.4). `dash-spv` also delivers InstantLock and ChainLock events
-needed for asset lock proof creation (§1.2.6).
+to connected peers (see §1.3.4). `dash-spv` also delivers InstantLock and ChainLock events
+needed for asset lock proof creation (§1.3.6).
 
-#### 1.2.6 — Asset Lock Proof Creation
+#### 1.3.6 — Asset Lock Proof Creation
 
-Required for identity **registration** and **top-up** (§1.3).
+Required for identity **registration** and **top-up** (§1.4).
 
 ```rust
 pub async fn create_asset_lock_proof(
@@ -428,13 +439,26 @@ pub async fn create_asset_lock_proof(
 from `wallet_info`, builds an `AssetLock` special transaction via `TransactionBuilder`,
 broadcasts it, waits for the InstantLock via SPV, returns `(AssetLockProof, funding_private_key)`.
 
-DIP-13 funding key paths:
+**Two proof types** (both fully implemented in rs-dpp):
+- `AssetLockProof::Instant` — wraps InstantLock + full transaction + output index. Primary path.
+- `AssetLockProof::Chain` — wraps `core_chain_locked_height` + outpoint. Fallback if InstantLock
+  is not received within timeout (suggest 60s, matching DashSync iOS behaviour).
 
-- Registration: `m/9'/coin'/5'/1'/identity_index` (one-time, non-reusable)
-- Top-up (unbound): `m/9'/coin'/5'/2'/topup_index`
+**Important**: The fallback to `AssetLockProof::Chain` requires the referenced block height to be
+ChainLocked from Platform's perspective. The wallet must poll block confirmation before using
+a Chain proof.
+
+DIP-13 funding key paths:
+- Registration: `m/9'/coin'/5'/1'/identity_index` (non-hardened terminal index)
+- Top-up (unbound): `m/9'/coin'/5'/2'/topup_index` (non-hardened terminal)
 - Top-up (bound): `m/9'/coin'/5'/2'/registration_index'/topup_index`
 
-#### 1.2.7 — Asset Lock Recovery
+**Note**: `ManagedAccountCollection` has dedicated fields for these:
+`identity_registration: Option<ManagedCoreAccount>`,
+`identity_topup: BTreeMap<u32, ManagedCoreAccount>`,
+`identity_topup_not_bound: Option<ManagedCoreAccount>`.
+
+#### 1.3.7 — Asset Lock Recovery
 
 ```rust
 pub async fn recover_asset_locks(&self) -> Result<Vec<RecoveredAssetLock>, CoreWalletError>
@@ -446,21 +470,28 @@ and attempts to recover or rebroadcast them. Mirrors evo-tool's
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/core_wallet.rs` (new)
+- `packages/rs-platform-wallet/src/platform_wallet/core_wallet.rs` (new)
 - Depends on: `key-wallet` (`ManagedWalletInfo`, `TransactionBuilder`, `WalletInfoInterface`,
   `ManagedAccountOperations`, `FeeRate`, `SelectionStrategy`)
-- Depends on: `dash-spv` (`WalletInterface` impl, `broadcast_transaction`, InstantLock/ChainLock events)
+- Depends on: `key-wallet-manager` (feature = "manager") — `WalletInterface` trait
+- Depends on: `dash-spv` (`broadcast_transaction`, InstantLock/ChainLock events)
 
 ---
 
-### 1.3 Identity Management
+### 1.4 Identity Management
 
 > Register, discover, refresh, top-up, withdraw, transfer, update identities. Register DPNS names.
 
 All methods are on `IdentityWallet` which holds `sdk`, `wallet: Arc<Wallet>`, and `identity_manager`.
 No `wallet: &Wallet` parameter anywhere — key derivation and signing use `self.wallet` directly.
 
-#### 1.3.1 — Register New Identity
+**SDK method surface** (confirmed from `rs-sdk` source — these are trait methods on `Identity`, not on `Sdk`):
+- `Identity::put_to_platform_and_wait_for_response(sdk, asset_lock_proof, private_key, signer, settings)` — `PutIdentity` trait
+- `identity.top_up_identity(sdk, asset_lock_proof, private_key, user_fee_increase, settings) -> Result<u64>` — `TopUpIdentity` trait
+- `identity.withdraw(sdk, address, amount, core_fee_per_byte, signing_key, signer, settings) -> Result<u64>` — `WithdrawFromIdentity` trait
+- `identity.transfer_credits(sdk, to_identity_id, amount, signing_key, signer, settings) -> Result<(u64, u64)>` — `TransferToIdentity` trait
+
+#### 1.4.1 — Register New Identity
 
 ```rust
 pub async fn register_identity(
@@ -474,35 +505,41 @@ Steps:
 
 1. `self.core.create_asset_lock_proof(amount_duffs)` → `(AssetLockProof, funding_private_key)`
    (next identity index tracked internally, derives `m/9'/coin'/5'/1'/identity_index`)
-2. Derive auth keys from `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'` via `self.core`
-3. Build and sign `IdentityCreateTransition` via `self.sdk`
+2. Derive auth keys from `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'` via `self.wallet`
+3. Build and sign `IdentityCreateTransition` via `PutIdentity::put_to_platform_and_wait_for_response()`
 4. Broadcast, wait for proof, add to `identity_manager`
 
-#### 1.3.2 — Identity Discovery (DIP-13 gap-limit scan)
+**DIP-13 key path note**: The full path is `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`
+where `key_type` is: `0'` = ECDSA, `1'` = BLS. The existing `key_derivation.rs` omits the
+`key_type'` segment — this must be fixed. The `key_type'` level enables multi-algorithm keys
+under the same identity index.
 
-Implementation exists in the old `identity_discovery.rs` (now deleted with the rename).
+#### 1.4.2 — Identity Discovery (DIP-13 gap-limit scan)
+
+Implementation exists in the old `platform_wallet_info/identity_discovery.rs`.
 Current behaviour:
 
 - Derives ECDSA auth key at `key_index=0` only
-- Queries Platform via `Identity::fetch(&sdk, PublicKeyHash(key_hash))`
+- Queries Platform via `Identity::fetch(&sdk, PublicKeyHash(key_hash))` — unique key hash
 - `start_index` and `gap_limit` passed by caller — state not persisted
-- SDK pulled from `IdentityManager.sdk` (stale pattern — sdk moves to `IdentityWallet`)
-- Errors during fetch silently treated as misses (just prints to stderr)
+- SDK pulled from `IdentityManager.sdk` (stale pattern)
+- Errors during fetch silently treated as misses
 
 **What needs fixing:**
 
-- Move from `PlatformWalletInfo::discover_identities` → `IdentityWallet::sync()`, no parameters
+- Move to `IdentityWallet::sync()`, no parameters
 - Store `last_scanned_index: u32` in `IdentityManager` — persist and resume from it
-- Gap limit hardcoded to 5 (DIP-13 spec), remove caller-controlled parameter
-- Derive auth keys for all standard key types (ECDSA, BLS, EdDSA), not just ECDSA index 0
-- Surface fetch errors properly instead of swallowing them to stderr
-- SDK sourced from `self.sdk` on `IdentityWallet`, not from `IdentityManager.sdk`
+- Gap limit hardcoded to 5 (implementation convention — DIP-13 does not specify a gap limit value; 5 matches the registration-funding bloom filter batch size and is a safe conservative choice)
+- Consider scanning multiple key indices per identity index: evo-tool's `discover_identities.rs` uses `AUTH_KEY_LOOKUP_WINDOW = 12` — scanning 12 consecutive key indices per identity index provides more robust discovery for wallets with non-sequential key usage
+- Use `PublicKeyHash` (unique lookup) — correct for authentication keys, one identity per key hash
+- Surface fetch errors properly
+- SDK sourced from `self.sdk` on `IdentityWallet`
 
 ```rust
-pub async fn sync(&mut self) -> Result<Vec<Identifier>, PlatformWalletError>
+pub async fn sync(&self) -> Result<Vec<Identifier>, PlatformWalletError>
 ```
 
-#### 1.3.3 — Refresh Identity
+#### 1.4.3 — Refresh Identity
 
 ```rust
 pub async fn refresh_identity(
@@ -513,7 +550,7 @@ pub async fn refresh_identity(
 
 Fetches latest balance and keys from Platform, updates `ManagedIdentity`.
 
-#### 1.3.4 — Top Up Identity Credits
+#### 1.4.4 — Top Up Identity Credits
 
 ```rust
 pub async fn top_up_identity(
@@ -526,10 +563,12 @@ pub async fn top_up_identity(
 Steps:
 
 1. `self.core.create_asset_lock_proof(amount_duffs)` — derives next top-up key internally
-2. Submit `IdentityTopUpTransition` via `self.sdk`
+2. Call `identity.top_up_identity(&self.sdk, asset_lock_proof, private_key, None, None)` — `TopUpIdentity` trait
 3. Update `ManagedIdentity` balance
 
-#### 1.3.5 — Withdraw Credits to Core
+**Note**: `top_up_identity` takes `private_key: [u8; 32]` — pass the raw bytes of the asset lock funding private key.
+
+#### 1.4.5 — Withdraw Credits to Core
 
 ```rust
 pub async fn withdraw_identity_credits(
@@ -541,10 +580,10 @@ pub async fn withdraw_identity_credits(
 ) -> Result<u64, PlatformWalletError>  // returns remaining balance
 ```
 
-Calls `sdk::WithdrawFromIdentity::withdraw()` with the identity's withdrawal key.
-Signs using `IdentitySigner` (see §1.6).
+Calls `identity.withdraw(&self.sdk, address, amount, core_fee_per_byte, signing_key, signer, settings)`.
+Signs using `IdentitySigner` (see §1.7).
 
-#### 1.3.6 — Transfer Credits Between Identities
+#### 1.4.6 — Transfer Credits Between Identities
 
 ```rust
 pub async fn transfer_credits(
@@ -555,7 +594,10 @@ pub async fn transfer_credits(
 ) -> Result<u64, PlatformWalletError>
 ```
 
-#### 1.3.7 — Update Identity Keys
+Calls `identity.transfer_credits(&self.sdk, to_identity_id, amount, signing_key, signer, settings)`.
+Returns `(from_balance, to_balance)` — expose the from-balance to caller.
+
+#### 1.4.7 — Update Identity Keys
 
 ```rust
 pub async fn add_key_to_identity(
@@ -573,12 +615,12 @@ pub async fn disable_identity_key(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/identity_wallet.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/identity_discovery.rs` (extend)
+- `packages/rs-platform-wallet/src/platform_wallet/identity_wallet.rs` (new)
+- Consolidates: `platform_wallet_info/identity_discovery.rs`, `platform_wallet_info/key_derivation.rs`
 
 ---
 
-### 1.4 DashPay — Contacts, Transactions, Sync
+### 1.5 DashPay — Contacts, Transactions, Sync
 
 > Full DIP-14/15 implementation: contact requests, encrypted xpub exchange, payment address
 > derivation, send/receive Dash between contacts.
@@ -592,38 +634,48 @@ m(userA)/9'/5'/15'/0'/(userA_id_256bit)/(userB_id_256bit)/index
 ```
 
 The 256-bit identity ID indices prevent the 31-bit collision attack. `CKDpriv256` is fully
-compatible with BIP32 for indices < 2^32; uses `ser_256(i)` for larger indices.
+compatible with BIP32 for indices < 2^32; uses `ser_256(i)` (big-endian, 32 bytes) for larger indices.
 
 **Current state**: Lives in `dash-evo-tool/src/backend_task/dashpay/dip14_derivation.rs`.
-Moves to `packages/rs-platform-wallet/src/wallet/dashpay/dip14.rs` — DashPay-specific derivation lives alongside the DashPay operations that use it.
+Moves to `packages/rs-platform-wallet/src/platform_wallet/dashpay/dip14.rs`.
 
 #### DIP-15 Background
 
 A contact request document on Platform contains:
 
-- `encryptedPublicKey` (96 bytes): AES-CBC-256 encrypted xpub (IV 16 + ciphertext 80)
+- `encryptedPublicKey` (exactly 96 bytes = IV 16 + ciphertext 80): AES-CBC-256 encrypted xpub
+  - xpub is 78 bytes in BIP32 wire format → padded to 80 bytes via PKCS7 (2 padding bytes)
 - `encryptedAccountLabel` (optional 48-80 bytes): encrypted account name
 - `accountReference` (32-bit): `(version<<28) | (HMAC-SHA256(senderKey, xpub)_28bits XOR account_28bits)`
-- `senderKeyIndex` / `recipientKeyIndex`: identity keys used for ECDH
+- `senderKeyIndex` / `recipientKeyIndex`: identity key indices used for ECDH
+- `$createdAt`, `$createdAtCoreBlockHeight`: required system fields
+- **Documents are immutable**: `documentsMutable: false, canBeDeleted: false` — no update/delete API
 
-ECDH shared key: `SHA256( (y[31]&0x1 | 0x2) || x )` via `libsecp256k1_ecdh`.
+ECDH shared key: `SHA256( (y[31]&0x1 | 0x2) || x )` — confirmed correct per DIP-15.
+Uses `libsecp256k1_ecdh` with compressed-point SHA256 hash (verify libsecp256k1 >= 0.3.0).
 
-**Current state**: Lives in `dash-evo-tool/src/backend_task/dashpay/encryption.rs`.
-Moves to `packages/rs-platform-wallet/src/wallet/dashpay/encryption.rs` — encryption module lives inside `rs-platform-wallet`, no separate crate needed.
+**The `rs-platform-encryption` crate already implements all DIP-15 crypto** (confirmed in codebase):
+- `derive_shared_key_ecdh()`, `encrypt_extended_public_key()`, `decrypt_extended_public_key()`,
+  `encrypt_account_label()`, `encrypt_aes_256_cbc()`, `decrypt_aes_256_cbc()`
+- Already a dependency: `platform-encryption = { path = "../rs-platform-encryption" }`
+- **Do NOT duplicate these functions** — reuse `rs-platform-encryption` directly.
 
-#### 1.4.1 — DIP-14 Key Derivation (dashpay module)
+**Recipient key purpose**: The recipient's key must have `Purpose::DECRYPTION` (confirmed from
+SDK's `contact_request.rs:229` — the SDK validates `Purpose::DECRYPTION` on the recipient key, NOT `ENCRYPTION`).
+
+#### 1.5.1 — DIP-14 Key Derivation (dashpay module)
 
 ```rust
-// packages/rs-platform-wallet/src/wallet/dashpay/dip14.rs  (new file)
+// packages/rs-platform-wallet/src/platform_wallet/dashpay/dip14.rs  (new file)
 pub fn ckd_priv_256(
     parent: &ExtendedPrivKey,
-    index: &[u8; 32],
+    index: &[u8; 32],  // 32-byte big-endian index (must be big-endian — interop requirement)
     hardened: bool,
 ) -> Result<ExtendedPrivKey>
 
 pub fn ckd_pub_256(
     parent: &ExtendedPubKey,
-    index: &[u8; 32],
+    index: &[u8; 32],  // non-hardened only
 ) -> Result<ExtendedPubKey>
 
 pub fn derive_dashpay_contact_xpub(
@@ -633,40 +685,46 @@ pub fn derive_dashpay_contact_xpub(
     sender_id: &[u8; 32],
     recipient_id: &[u8; 32],
 ) -> Result<ExtendedPubKey>
+// Path: m/9'/coin'/15'/0'/(sender_id_256bit)/(recipient_id_256bit)
+// First 4 components hardened, last 2 (identity IDs) non-hardened
 ```
 
-Test against DIP-14 Appendix A vectors (seed: "birth kingdom trash renew flavor utility donkey gasp regular alert pave layer").
+**DIP-14 test vectors** — must implement and pass before merging PR-3:
+- Mnemonic: "birth kingdom trash renew flavor utility donkey gasp regular alert pave layer"
+- Four vectors provided in DIP-14 Appendix A with full hex outputs
 
-#### 1.4.2 — DIP-15 ECDH + Encryption (dashpay encryption module)
+**Big-endian requirement**: `ser_256(i)` must use big-endian byte order (most-significant byte
+first), matching BIP32's `ser_32`. Verify this in `ckd_priv_256` before relying on the output.
+
+**Backward compatibility**: For indices < 2^32, `CKDpriv256` produces identical results to BIP32.
+
+#### 1.5.2 — DIP-15 Encryption (reuse `rs-platform-encryption`)
 
 ```rust
-// packages/rs-platform-wallet/src/wallet/dashpay/encryption.rs
-pub fn ecdh_shared_key(
-    private_key: &SecretKey,
-    public_key: &PublicKey,
-) -> [u8; 32]
-// Formula: SHA256( (y[31]&0x1 | 0x2) || x )
-
-pub fn aes_cbc_256_encrypt(key: &[u8; 32], plaintext: &[u8]) -> (Vec<u8>, [u8; 16])
-pub fn aes_cbc_256_decrypt(key: &[u8; 32], iv: &[u8; 16], ciphertext: &[u8]) -> Result<Vec<u8>>
-
-pub fn encrypt_extended_public_key(xpub: &ExtendedPubKey, shared_key: &[u8; 32]) -> Vec<u8>
-// IV(16) + ciphertext(80) = 96 bytes total
-pub fn decrypt_extended_public_key(data: &[u8; 96], shared_key: &[u8; 32]) -> Result<ExtendedPubKey>
-
-pub fn compute_account_reference(
-    account: u32,
-    sender_secret_key_bytes: &[u8],
-    xpub_bytes: &[u8],
-    version: u8,
-) -> u32
-// ASK = HMAC-SHA256(senderSecretKey, xpub)
-// result = (version << 28) | (ASK_28msb XOR (account & 0x0FFFFFFF))
+// DO NOT re-implement — use existing rs-platform-encryption functions:
+use platform_encryption::{
+    derive_shared_key_ecdh,       // ECDH: SHA256((y[31]&0x1|0x2)||x)
+    encrypt_extended_public_key,  // AES-CBC-256, IV(16) + ciphertext(80) = 96 bytes
+    decrypt_extended_public_key,  // Returns ExtendedPubKey from 96-byte blob
+    encrypt_account_label,        // Optional account label encryption
+    compute_account_reference,    // (version<<28) | (HMAC-SHA256_28bits XOR account_28bits)
+};
 ```
 
-#### 1.4.3 — Send Contact Request
+**Critical bug to fix**: The existing `add_incoming_contact_request` in `contact_requests.rs`
+calls `ExtendedPubKey::decode(&encrypted_public_key)` on the raw encrypted bytes without first
+decrypting them via AES-CBC-256. This must be fixed: decrypt first, then decode.
 
-Already partially implemented in `contact_requests.rs`. Complete and consolidate:
+The correct flow:
+```rust
+let shared_key = derive_shared_key_ecdh(&our_privkey, &sender_pubkey);
+let xpub = decrypt_extended_public_key(&contact_request.encrypted_public_key, &shared_key)?;
+// Now xpub is the 78-byte BIP32 xpub — use it to create DashpayExternalAccount
+```
+
+#### 1.5.3 — Send Contact Request
+
+Consolidate from `platform_wallet_info/contact_requests.rs::send_contact_request()`:
 
 ```rust
 pub async fn send_contact_request(
@@ -682,16 +740,20 @@ pub async fn send_contact_request(
 Steps:
 
 1. Find sender ENCRYPTION key at `signing_key_index`
-2. Find recipient first ENCRYPTION key
+2. Find recipient first DECRYPTION key (purpose = `DECRYPTION`, not `ENCRYPTION`)
 3. Derive contact xpub via DIP-14: `derive_dashpay_contact_xpub(..., sender_id, recipient_id)`
-4. ECDH shared key from sender private key + recipient public key
-5. Encrypt xpub → `encryptedPublicKey`
-6. Compute `accountReference`
-7. Submit `DocumentsBatchTransition` via rs-sdk `send_contact_request()`
+4. ECDH shared key: `derive_shared_key_ecdh(sender_privkey, recipient_pubkey)`
+5. Encrypt xpub: `encrypt_extended_public_key(&xpub, &shared_key)` → 96 bytes
+6. Compute `accountReference` via `compute_account_reference(account, sender_key_bytes, xpub_bytes, version=0)`
+7. Submit via `sdk.send_contact_request()` (SDK method with `EcdhProvider` closure)
 8. Store in `ManagedIdentity.sent_contact_requests`
 9. Add `DashpayReceivingFunds` account to `ManagedAccountCollection`
 
-#### 1.4.4 — Decrypt Incoming Contact Request
+**Note**: `contactRequest` documents are immutable — no retry/update API. If submission fails, it's a new request.
+
+#### 1.5.4 — Decrypt Incoming Contact Request
+
+Fix the existing implementation:
 
 ```rust
 pub fn decrypt_incoming_contact_request(
@@ -703,13 +765,13 @@ pub fn decrypt_incoming_contact_request(
 
 Steps:
 
-1. Retrieve our ENCRYPTION private key at `contact_request.recipient_key_index`
-2. Retrieve sender public key at `contact_request.sender_key_index`
-3. Compute ECDH shared key
-4. Decrypt `contact_request.encrypted_public_key` → `ExtendedPubKey`
-5. Store xpub as `DashpayExternalAccount` in `ManagedAccountCollection`
+1. Retrieve our DECRYPTION private key at `contact_request.recipient_key_index`
+2. Retrieve sender's public key at `contact_request.sender_key_index`
+3. Compute ECDH shared key: `derive_shared_key_ecdh(&our_privkey, &sender_pubkey)`
+4. **Decrypt first**: `decrypt_extended_public_key(&contact_request.encrypted_public_key, &shared_key)?`
+5. Store resulting xpub as `DashpayExternalAccount` in `ManagedAccountCollection`
 
-#### 1.4.5 — Payment Address Derivation
+#### 1.5.5 — Payment Address Derivation
 
 ```rust
 pub fn derive_payment_address_for_contact(
@@ -721,9 +783,10 @@ pub fn derive_payment_address_for_contact(
 ```
 
 Non-hardened BIP32 child of the stored `DashpayExternalAccount` xpub at `payment_index`.
-Payment gap limit: 10 (per DIP-15 §Created At Timestamp sync notes).
+Payment gap limit: **10** (per DIP-15: "a gap limit of 10 at this stage").
+Document this as a deliberate choice (20 is more conservative but DIP-15 specifies 10).
 
-#### 1.4.6 — Send Payment to Contact
+#### 1.5.6 — Send Payment to Contact
 
 ```rust
 pub async fn send_dashpay_payment(
@@ -738,23 +801,24 @@ pub async fn send_dashpay_payment(
 Gets next unused payment index → derives address → coin-selects UTXOs →
 builds, signs, broadcasts Core transaction → increments stored payment index.
 
-#### 1.4.7 — DashPay Sync (`DashPayWallet::sync()`)
+#### 1.5.7 — DashPay Sync (`DashPayWallet::sync()`)
 
 `DashPayWallet::sync()` is the Platform-side half of DashPay sync. It fetches new contact
 request documents from DAPI and establishes the corresponding address accounts:
 
 ```rust
-pub async fn sync(&mut self) -> Result<DashPaySyncResult, PlatformWalletError>
+pub async fn sync(&self) -> Result<DashPaySyncResult, PlatformWalletError>
 ```
+
+Uses `sdk.fetch_all_contact_requests_for_identity(identity, limit)` which returns
+`(sent_requests, received_requests)` in one call.
 
 For each known identity, in order:
 
-1. Fetch incoming contact requests from Platform since last sync timestamp
-2. For each new request: call `decrypt_incoming_contact_request()` to get the sender's xpub
-3. Add a `DashpayReceivingFunds` account to `ManagedAccountCollection` keyed by
-   `(our_identity_id, sender_identity_id)` — pre-derives `gap_limit` (20) addresses
-4. Also fetch outgoing contact requests that now have a matching incoming (mutual) — those
-   are established contacts; ensure the `DashpayReceivingFunds` account exists for them too
+1. Call `sdk.fetch_all_contact_requests_for_identity(&identity, None)` → `(sent, received)`
+2. For each new incoming request: call `decrypt_incoming_contact_request()` to get the sender's xpub
+3. Add a `DashpayReceivingFunds` account (`AccountType::DashpayReceivingFunds { index, user_identity_id, friend_identity_id }`) to `ManagedAccountCollection` — pre-derives gap_limit (20) addresses
+4. For mutual contacts (both sent + received exist): ensure `DashpayReceivingFunds` account exists
 
 **How incoming payments are detected (no manual registration needed):**
 
@@ -771,10 +835,10 @@ dashpay addresses" task — the gap limit pool is maintained exactly like BIP44:
 
 **Gap limits:**
 
-- Receiving address pool per contact: 20 (same as BIP44 core)
-- DIP-15 specifies wallet should watch `highest_receive_index + 20` addresses per contact
+- Receiving address pool per contact: 20 (same as BIP44 core, matches DIP-15: "watch highest_receive_index + 20 addresses per contact")
+- Payment gap limit (sending): 10 (DIP-15 spec)
 
-#### 1.4.8 — Profile Management
+#### 1.5.8 — Profile Management
 
 ```rust
 pub async fn create_dashpay_profile(
@@ -794,7 +858,7 @@ pub async fn update_dashpay_profile(
 ) -> Result<(), PlatformWalletError>
 ```
 
-#### 1.4.9 — Contact Info Document (Encrypted Private Metadata)
+#### 1.5.9 — Contact Info Document (Encrypted Private Metadata)
 
 ```rust
 pub async fn update_contact_info(
@@ -808,10 +872,9 @@ pub async fn update_contact_info(
 
 Submits DashPay `contactInfo` document — only visible to the identity owner.
 
-#### 1.4.10 — DPNS Name Registration
+#### 1.5.10 — DPNS Name Registration
 
-DPNS usernames are the lookup mechanism for DashPay contact discovery — registering a
-name makes the identity findable by other users.
+DPNS usernames are the lookup mechanism for DashPay contact discovery.
 
 ```rust
 pub async fn register_dpns_name(
@@ -821,7 +884,11 @@ pub async fn register_dpns_name(
 ) -> Result<Identifier, PlatformWalletError>  // document id
 ```
 
-#### 1.4.11 — Auto-Accept Proof
+#### 1.5.11 — Auto-Accept Proof
+
+Auto-accept key derivation path: `m/9'/coin'/16'/timestamp'` (hardened timestamp).
+Note: feature code `16'` (not `15'`) — distinct from the DashPay receiving fund path.
+Proof format: 1-byte key type + 4-byte key index + 1-byte signature size + 32–96 bytes signature.
 
 ```rust
 pub fn generate_auto_accept_proof(
@@ -840,55 +907,67 @@ pub fn verify_auto_accept_proof(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/dashpay/dip14.rs` (new — DIP-14 CKDpriv256/CKDpub256)
-- `packages/rs-platform-wallet/src/wallet/dashpay/encryption.rs` (new — DIP-15 ECDH + AES)
-- `packages/rs-platform-wallet/src/wallet/dashpay/mod.rs` (new — consolidates contact_requests.rs)
+- `packages/rs-platform-wallet/src/platform_wallet/dashpay/dip14.rs` (new — DIP-14 CKDpriv256/CKDpub256)
+- `packages/rs-platform-wallet/src/platform_wallet/dashpay/mod.rs` (new — consolidates `platform_wallet_info/contact_requests.rs`)
+- Reuses: `packages/rs-platform-encryption/` (DIP-15 crypto — do NOT duplicate)
 
 ---
 
-### 1.5 Platform Addresses (DIP-17)
+### 1.6 Platform Addresses (DIP-17)
 
 > Sync, send, transfer, and withdraw DIP-17 P2PKH credits through `PlatformWallet`.
 
 **Key finding**: `ManagedAccountCollection` already has `platform_payment_accounts:
-BTreeMap<PlatformPaymentAccountKey, Account>`. `ManagedPlatformAccount` (key-wallet) tracks
+BTreeMap<PlatformPaymentAccountKey, ManagedPlatformAccount>`. `ManagedPlatformAccount` (key-wallet) tracks
 per-address credit balances + gap-limit address pool. `PlatformWallet` must expose these
 and implement the SDK's `AddressProvider` trait.
 
 Derivation path (DIP-17): `m/9'/coin_type'/17'/account'/key_class'/index`
-Gap limit: 20 (`DIP17_GAP_LIMIT` constant already in key-wallet `gap_limit.rs`).
+- `key_class' = 0'` for receive keys; `key_class' = 1'` reserved
+- `index` is non-hardened
+- Gap limit: 20 (`DIP17_GAP_LIMIT` constant in key-wallet `gap_limit.rs` — confirmed, 20 is the DIP-17 RECOMMENDED value)
 
-#### 1.5.1 — AddressProvider Implementation
+#### 1.6.1 — AddressProvider Implementation
 
-The rs-sdk's `sync_address_balances()` requires `&mut impl AddressProvider`:
+The rs-sdk's `sync_address_balances()` requires `&mut impl AddressProvider`.
+
+**Actual `AddressProvider` trait** (confirmed from `rs-sdk/src/platform/address_sync/provider.rs`):
 
 ```rust
-// platform_wallet/platform_address_provider.rs
-impl AddressProvider for PlatformAddressWallet {
-    fn addresses(&self, account: u32, key_class: u32) -> Vec<PlatformP2PKHAddress>
-    fn next_unused_address(&mut self, account: u32, key_class: u32) -> PlatformP2PKHAddress
-    fn apply_balance(&mut self, address: &PlatformP2PKHAddress, balance: u64, nonce: u64)
-    fn found_balances(&self) -> Vec<(Address, AddressFunds)>
-    fn found_balances_with_indices(&self) -> Vec<(u32, (&Address, &AddressFunds))>
-    // no apply_results_to_wallet — PlatformAddressWallet already holds the state
+pub trait AddressProvider: Send {
+    fn gap_limit(&self) -> AddressIndex;
+    fn pending_addresses(&self) -> Vec<(AddressIndex, AddressKey)>;  // AddressKey = [u8; 32]
+    fn on_address_found(&mut self, index: AddressIndex, key: &[u8], funds: AddressFunds);
+    fn on_address_absent(&mut self, index: AddressIndex, key: &[u8]);
+    fn has_pending(&self) -> bool;
+    fn highest_found_index(&self) -> Option<AddressIndex>;
+    fn current_balances(&self) -> Vec<(AddressIndex, AddressKey, AddressFunds)>;
+    fn last_sync_height(&self) -> u64;
 }
 ```
 
-Reads/writes from `wallet_info.accounts.platform_payment_accounts`.
+**Note**: The trait uses a push-based callback API (`on_address_found`/`on_address_absent`), NOT
+the `addresses()` / `apply_balance()` pattern described in earlier drafts. Implementors push
+address indices into a `pending_addresses` set and handle SDK callbacks as balances arrive.
 
-#### 1.5.2 — Platform Address Sync
+`PlatformAddressWallet` implements `AddressProvider` using `platform_payment_accounts` for
+state storage. The `AddressKey` ([u8; 32]) is the DIP-17 derived P2PKH address key.
+
+Function: `sync_address_balances(sdk: &Sdk, provider: &mut P, config, last_sync_timestamp)` at `rs-sdk`.
+
+#### 1.6.2 — Platform Address Sync
 
 ```rust
 pub async fn sync_platform_address_balances(
-    &mut self,
+    &self,
     last_sync_timestamp: Option<u64>,
 ) -> Result<AddressSyncResult, PlatformWalletError>
 ```
 
-Calls `self.sdk.sync_address_balances(self_as_provider, config, last_sync_timestamp)`.
-Updates `platform_payment_accounts` via `apply_balance()`.
+Calls `sync_address_balances(&self.sdk, self, config, last_sync_timestamp)` where `self`
+is the `AddressProvider` implementation.
 
-#### 1.5.3 — Balance Accessors
+#### 1.6.3 — Balance Accessors
 
 ```rust
 pub fn platform_credit_balance(&self) -> u64
@@ -904,7 +983,7 @@ pub fn next_platform_receive_address(
 ) -> Result<PlatformP2PKHAddress, PlatformWalletError>
 ```
 
-#### 1.5.4 — Send Credits to Platform Address (Top Up Address)
+#### 1.6.4 — Send Credits to Platform Address (Top Up Address)
 
 ```rust
 pub async fn top_up_platform_address(
@@ -917,7 +996,7 @@ pub async fn top_up_platform_address(
 
 Calls `sdk::TopUpAddress` state transition, funded from the identity's balance.
 
-#### 1.5.5 — Transfer Between Platform Addresses
+#### 1.6.5 — Transfer Between Platform Addresses
 
 ```rust
 pub async fn transfer_platform_address_funds(
@@ -930,7 +1009,7 @@ pub async fn transfer_platform_address_funds(
 
 Calls `sdk::TransferAddressFunds`. Each `from_address` signed with its DIP-17 derived key.
 
-#### 1.5.6 — Withdraw Platform Address Credits to Core
+#### 1.6.6 — Withdraw Platform Address Credits to Core
 
 ```rust
 pub async fn withdraw_platform_address_funds(
@@ -944,7 +1023,7 @@ pub async fn withdraw_platform_address_funds(
 
 Calls `sdk::WithdrawAddressFunds::withdraw_address_funds()`.
 
-#### 1.5.7 — Platform Address Signer
+#### 1.6.7 — Platform Address Signer
 
 `PlatformAddress` signing requires the private key at its DIP-17 derivation index:
 
@@ -968,17 +1047,17 @@ pub fn platform_address_signer(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/platform_addresses.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/platform_address_signer.rs` (new)
+- `packages/rs-platform-wallet/src/platform_wallet/platform_addresses.rs` (new)
+- `packages/rs-platform-wallet/src/platform_wallet/platform_address_signer.rs` (new)
 
 ---
 
-### 1.6 State Transition Signing Facade
+### 1.7 State Transition Signing Facade
 
 > `PlatformWallet` provides `IdentitySigner` so callers never manage key material directly.
 
 ```rust
-// wallet/signer.rs
+// platform_wallet/signer.rs
 pub struct IdentitySigner {
     wallet:         Arc<Wallet>,
     identity_index: u32,
@@ -1001,11 +1080,11 @@ pub fn signer_for_identity(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/signer.rs` (new)
+- `packages/rs-platform-wallet/src/platform_wallet/signer.rs` (new)
 
 ---
 
-### 1.7 Serialization / Persistence
+### 1.8 Serialization / Persistence
 
 > `PlatformWallet` is the single persistence unit — callers (e.g. evo-tool's SQLite) store
 > the blob and don't need to know about sub-struct layout.
@@ -1023,7 +1102,7 @@ pub fn restore(data: &[u8]) -> Result<Self, PlatformWalletError>
 encode/decode. `ManagedPlatformAccount` and `PlatformP2PKHAddress` already have bincode.
 Still missing serialization:
 
-- `IdentityManager` — add bincode `Encode`/`Decode`
+- `IdentityManager` — add bincode `Encode`/`Decode` (with `Arc<RwLock<_>>` wrapping, serialize inner values)
 - `ManagedIdentity` (Identity + BlockTime + contact maps) — add bincode
 - `ContactRequest` — add bincode
 - `EstablishedContact` — add bincode
@@ -1032,12 +1111,12 @@ Still missing serialization:
 
 - `packages/rs-platform-wallet/src/identity_manager/serialization.rs` (new)
 - `packages/rs-platform-wallet/src/managed_identity/serialization.rs` (new)
-- `packages/rs-platform-wallet/src/contact_request.rs`
-- `packages/rs-platform-wallet/src/established_contact.rs`
+- `packages/rs-platform-wallet/src/contact_request.rs` (extend)
+- `packages/rs-platform-wallet/src/established_contact.rs` (extend)
 
 ---
 
-### 1.8 Sync Architecture
+### 1.9 Sync Architecture
 
 There are **two distinct sync mechanisms** with different lifecycles:
 
@@ -1060,7 +1139,7 @@ Platform state (identities, contacts, credit balances) is fetched via DAPI on a 
 `PlatformWallet::sync()` is the single entry point:
 
 ```rust
-pub async fn sync(&mut self) -> Result<SyncResult, PlatformWalletError>
+pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError>
 ```
 
 Sync order:
@@ -1088,8 +1167,6 @@ Sub-struct `sync()` methods remain individually callable for fine-grained contro
 
 ---
 
----
-
 ## PR Sequence
 
 Each PR implements features in `rs-platform-wallet` **and** immediately integrates into `evo-tool`.
@@ -1101,17 +1178,20 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 
 **Library** (`rs-platform-wallet`):
 
+- Clean up `lib.rs`: replace `pub mod platform_wallet_info` with `pub mod platform_wallet`
 - `PlatformWallet` struct skeleton with builder (§1.1, §Struct Definitions)
-- `CoreWallet` with `ManagedWalletInfo` Arc, `WalletInterface` impl (§1.2)
-- `monitored_addresses()` returns all account types including dashpay receival
-- `send_transaction`, `broadcast_transaction`, asset lock proof creation (§1.2.4–1.2.6)
-- `IdentitySigner` stub (§1.6) — needed for identity registration in PR-2
+- `CoreWallet` with `ManagedWalletInfo` Arc, `WalletInterface` impl (§1.3)
+- `monitored_addresses()` returns ALL account types including `dashpay_receival_accounts`
+- `send_transaction`, `broadcast_transaction`, asset lock proof creation (§1.3.4–1.3.6)
+- Asset lock timeout/fallback: 60s InstantLock wait, then ChainLock polling
+- `IdentitySigner` stub (§1.7) — needed for identity registration in PR-2
 - `static_assertions::assert_impl_all!(PlatformWallet: Send, Sync)`
+- `IdentityManager` refactor: wrap fields in `Arc<RwLock<_>>`, add `last_scanned_index`, remove `sdk` field
 
 **evo-tool integration**:
 
 - Add `platform-wallet = { path = "../../platform/packages/rs-platform-wallet" }` to `Cargo.toml`
-- Replace `AppContext.wallets` type: `Arc<RwLock<Wallet>>` → `Arc<RwLock<PlatformWallet>>`
+- Replace `AppContext.wallets`: `RwLock<BTreeMap<WalletSeedHash, Arc<RwLock<Wallet>>>>` → `RwLock<BTreeMap<WalletSeedHash, Arc<RwLock<PlatformWallet>>>>`
 - `wallet_lifecycle.rs`: construct via builder on import/creation, wire `sdk` from `AppContext.sdk`
 - `backend_task/core/refresh_wallet_info.rs`: feed through `CoreWallet::process_transaction()`
 - Delete `src/model/wallet/` (old custom wallet struct)
@@ -1130,12 +1210,14 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 
 **Library** (`rs-platform-wallet`):
 
-- `IdentityWallet` with `identity_manager`, sdk, wallet Arc (§1.3)
-- `register_identity`, `discover_identities` / `sync()`, `refresh_identity` (§1.3.1–1.3.3)
-- `top_up_identity`, `withdraw_identity_credits`, `transfer_credits` (§1.3.4–1.3.6)
-- `add_key_to_identity`, `disable_identity_key` (§1.3.7)
-- `IdentitySigner` complete (§1.6)
-- `IdentityManager` bincode serialization (§1.7 partial)
+- `IdentityWallet` with `identity_manager`, sdk, wallet Arc (§1.4)
+- `register_identity` (with corrected `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'` path), `sync()`, `refresh_identity` (§1.4.1–1.4.3)
+- Identity discovery: gap limit 5, consider AUTH_KEY_LOOKUP_WINDOW = 12 for key index scanning
+- `top_up_identity`, `withdraw_identity_credits`, `transfer_credits` (§1.4.4–1.4.6)
+- `add_key_to_identity`, `disable_identity_key` (§1.4.7)
+- `IdentitySigner` complete (§1.7)
+- `IdentityManager` bincode serialization (§1.8 partial)
+- DPNS name registration (§1.5.10, belongs to IdentityWallet for SDK access)
 
 **evo-tool integration**:
 
@@ -1158,23 +1240,27 @@ All signing replaced with `wallet.identity.signer_for_identity(identity_id)`.
 
 **Library** (`rs-platform-wallet`):
 
-- DIP-14: `ckd_priv_256`, `ckd_pub_256`, `derive_dashpay_contact_xpub` in `dashpay/dip14.rs` (§1.4.1)
-- DIP-15: `ecdh_shared_key`, AES-CBC encrypt/decrypt, `encrypt_extended_public_key`, `compute_account_reference` in `dashpay/encryption.rs` (§1.4.2)
-- `DashPayWallet` with `send_contact_request`, `decrypt_incoming_contact_request` (§1.4.3–1.4.4)
-- `derive_payment_address_for_contact`, `send_dashpay_payment` (§1.4.5–1.4.6)
-- `DashPayWallet::sync()` — fetches contact requests, adds `DashpayReceivingFunds` accounts, gap-limit pool management (§1.4.7)
-- Profile, contact info, DPNS name, auto-accept proof (§1.4.8–1.4.11)
-- `ManagedIdentity` contact maps + `ContactRequest` + `EstablishedContact` bincode (§1.7)
+- DIP-14: `ckd_priv_256`, `ckd_pub_256`, `derive_dashpay_contact_xpub` in `dashpay/dip14.rs` (§1.5.1)
+  - Big-endian `ser_256(i)` — verify and test before relying on it
+- DIP-15: Reuse `rs-platform-encryption` — do NOT duplicate functions (§1.5.2)
+- Fix the AES decryption bug: `decrypt_extended_public_key` before `ExtendedPubKey::decode`
+- Fix recipient key purpose: use `Purpose::DECRYPTION`, not `ENCRYPTION`
+- `DashPayWallet` with `send_contact_request`, `decrypt_incoming_contact_request` (§1.5.3–1.5.4)
+- `derive_payment_address_for_contact` (gap limit: 10), `send_dashpay_payment` (§1.5.5–1.5.6)
+- `DashPayWallet::sync()` using `sdk.fetch_all_contact_requests_for_identity()` (§1.5.7)
+- Profile, contact info, auto-accept proof (§1.5.8–1.5.11)
+- `ManagedIdentity` contact maps + `ContactRequest` + `EstablishedContact` bincode (§1.8)
 
-Test against DIP-14 Appendix A vectors before merging.
+Test against DIP-14 Appendix A test vectors before merging.
+Note: `contactRequest` documents are immutable — do not expose update/delete operations.
 
 **evo-tool integration**:
 
 | File | Action |
 |------|--------|
-| `backend_task/dashpay/dip14_derivation.rs` | Delete |
-| `backend_task/dashpay/encryption.rs` | Delete |
+| `backend_task/dashpay/dip14_derivation.rs` | Delete (replaced by `platform_wallet/dashpay/dip14.rs`) |
 | `backend_task/dashpay/hd_derivation.rs` | Delete |
+| `backend_task/dashpay/encryption.rs` | Delete (was duplicating `rs-platform-encryption`) |
 | `backend_task/dashpay/contact_requests.rs` | → `wallet.dashpay.send_contact_request()` |
 | `backend_task/dashpay/contacts.rs` | → `wallet.dashpay.sync()` |
 | `backend_task/dashpay/payments.rs` | → `wallet.dashpay.send_dashpay_payment()` |
@@ -1183,7 +1269,7 @@ Test against DIP-14 Appendix A vectors before merging.
 | `backend_task/dashpay/auto_accept_proof.rs` | → `wallet.dashpay.generate_auto_accept_proof()` |
 | `backend_task/dashpay/contact_info.rs` | → `wallet.dashpay.update_contact_info()` |
 
-**Done when**: DIP-14 vectors pass; contact requests sent/received and decrypted; incoming DashPay payments detected via SPV without manual address registration.
+**Done when**: DIP-14 vectors pass; contact requests sent/received and decrypted correctly (including AES decryption fix); incoming DashPay payments detected via SPV without manual address registration.
 
 ---
 
@@ -1191,10 +1277,10 @@ Test against DIP-14 Appendix A vectors before merging.
 
 **Library** (`rs-platform-wallet`):
 
-- `PlatformAddressWallet` with `AddressProvider` impl (§1.5.1)
-- `sync_platform_address_balances`, balance accessors (§1.5.2–1.5.3)
-- `top_up_platform_address`, `transfer_platform_address_funds`, `withdraw_platform_address_funds` (§1.5.4–1.5.6)
-- `PlatformAddressSigner` (§1.5.7)
+- `PlatformAddressWallet` with actual `AddressProvider` impl — push-based callbacks (`pending_addresses`, `on_address_found`, `on_address_absent`) (§1.6.1)
+- `sync_platform_address_balances`, balance accessors (§1.6.2–1.6.3)
+- `top_up_platform_address`, `transfer_platform_address_funds`, `withdraw_platform_address_funds` (§1.6.4–1.6.6)
+- `PlatformAddressSigner` (§1.6.7)
 
 **evo-tool integration**:
 
@@ -1209,8 +1295,9 @@ Test against DIP-14 Appendix A vectors before merging.
 
 **Library** (`rs-platform-wallet`):
 
-- `PlatformWallet::backup()` / `restore()` — full bincode blob excluding `Sdk` (§1.7)
+- `PlatformWallet::backup()` / `restore()` — full bincode blob excluding `Sdk` (§1.8)
 - Any remaining missing `Encode`/`Decode` impls
+- Ensure `rs-platform-wallet-ffi` re-exports any new functions (FFI layer exists at `packages/rs-platform-wallet-ffi/`)
 
 **evo-tool integration**:
 
@@ -1224,16 +1311,17 @@ Test against DIP-14 Appendix A vectors before merging.
 
 ## Address Type Coverage Summary
 
-| Address type | DIP | Derivation path | key-wallet collection field | Platform 1 section |
+| Address type | DIP | Derivation path | key-wallet collection field | Plan section |
 |---|---|---|---|---|
-| Core UTXO receive | BIP44 | `m/44'/coin'/acct'/0/i` | `core_accounts` | ✓ via `WalletInfoInterface` |
-| Core UTXO change | BIP44 | `m/44'/coin'/acct'/1/i` | `core_accounts` | ✓ via `WalletInfoInterface` |
-| Identity reg. funding | DIP-13 | `m/9'/coin'/5'/1'/i` | — | §1.3.1 |
-| Identity top-up funding | DIP-13 | `m/9'/coin'/5'/2'/i` | — | §1.3.4 |
-| Identity auth keys | DIP-13 | `m/9'/coin'/5'/0'/ktype'/id'/key'` | — | §1.3.1 |
-| DashPay receive from contact | DIP-15 | `m/9'/coin'/15'/acct'/(self)/(friend)/i` | `dashpay_receival_accounts` | §1.4.3 |
-| DashPay send to contact | DIP-15 | contact xpub + index | `dashpay_external_accounts` | §1.4.4 |
-| Platform P2PKH (credits) | DIP-17 | `m/9'/coin'/17'/acct'/class'/i` | `platform_payment_accounts` | §1.5 |
+| Core UTXO receive | BIP44 | `m/44'/coin'/acct'/0/i` | `standard_bip44_accounts` | §1.3.2 |
+| Core UTXO change | BIP44 | `m/44'/coin'/acct'/1/i` | `standard_bip44_accounts` | §1.3.2 |
+| Identity reg. funding | DIP-13 | `m/9'/coin'/5'/1'/i` (non-hardened i) | `identity_registration` | §1.4.1 |
+| Identity top-up funding | DIP-13 | `m/9'/coin'/5'/2'/i` (non-hardened i) | `identity_topup_not_bound` | §1.4.4 |
+| Identity auth keys | DIP-13 | `m/9'/coin'/5'/0'/key_type'/id'/key'` | — | §1.4.1 |
+| Auto-accept proof key | DIP-15 | `m/9'/coin'/16'/timestamp'` | — | §1.5.11 |
+| DashPay receive from contact | DIP-15 | `m/9'/coin'/15'/0'/(self)/(friend)/i` | `dashpay_receival_accounts` | §1.5.3 |
+| DashPay send to contact | DIP-15 | contact xpub + index | `dashpay_external_accounts` | §1.5.4 |
+| Platform P2PKH (credits) | DIP-17 | `m/9'/coin'/17'/acct'/class'/i` | `platform_payment_accounts` | §1.6 |
 
 ---
 
@@ -1241,12 +1329,17 @@ Test against DIP-14 Appendix A vectors before merging.
 
 | Risk | Mitigation |
 |---|---|
-| `IdentityManager`/`ManagedIdentity` not serializable | Add bincode impls as §1.7; test round-trip before Phase 2 |
+| `IdentityManager` fields not yet `Arc<RwLock<_>>`-wrapped | Refactor in PR-1; add `last_scanned_index` field; confirm tests pass |
+| `AddressProvider` API mismatch — actual trait uses push-based callbacks, not `apply_balance()` | Use confirmed trait definition from `rs-sdk/src/platform/address_sync/provider.rs`; implement `pending_addresses`/`on_address_found`/`on_address_absent` |
+| AES decryption bug in `add_incoming_contact_request` | Fix in PR-3 — `decrypt_extended_public_key` before `ExtendedPubKey::decode`; add unit test proving plaintext roundtrip |
+| DIP-13 auth key path missing `key_type'` segment | Fix in PR-2 — use full path `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`; note: existing deployed wallets may have used the old path (key_type' omitted = effectively key_type'=0') — document deviation |
+| DIP-14 `ser_256(i)` endianness | Add unit test against DIP-14 Appendix A vectors before any contact request is submitted |
+| BLS key derivation semantics | Use raw 32-byte seed from BIP32 derivation as BLS secret key (not scalar addition mod bls12381 group order) — matches DashSync iOS |
 | DB migration corrupts existing wallets | Version byte in DB; fallback read → convert; test against real DB fixture |
-| DIP-14 `index_to_child_number` interop with DashSync iOS | Verify against DashSync test vectors; add cross-client vector test |
-| Gap limit confusion (DIP-13: 5 auth / 30 topup; DIP-15: 10 payment) | Named constants per use case; never share a limit variable |
+| Asset lock proof: InstantLock timeout | Implement 60s timeout before falling back to ChainLock polling — confirm ChainLocked height is known to Platform before using Chain proof |
 | `PlatformWallet` not `Send+Sync` | Add `static_assertions::assert_impl_all!(PlatformWallet: Send, Sync)` |
 | `Arc<RwLock<ManagedWalletInfo>>` write starvation under concurrent SPV + Platform sync | SPV writes are short (tx update); Platform sync holds read lock briefly for balance reads — test under load |
+| `contactRequest` documents are immutable | Do not expose update/delete API; note in `send_contact_request` docs that retries create new documents |
 
 ---
 
@@ -1254,7 +1347,7 @@ Test against DIP-14 Appendix A vectors before merging.
 
 ### DIPs
 
-- [DIP-0013: Identities in HD Wallets](https://github.com/dashpay/dips/blob/master/dip-0013.md) — auth, registration, top-up, invitation funding paths; gap limits
+- [DIP-0013: Identities in HD Wallets](https://github.com/dashpay/dips/blob/master/dip-0013.md) — auth, registration, top-up funding paths
 - [DIP-0014: Extended Key Derivation (256-bit)](https://github.com/dashpay/dips/blob/master/dip-0014.md) — CKDpriv256/CKDpub256 spec and test vectors
 - [DIP-0015: DashPay](https://github.com/dashpay/dips/blob/master/dip-0015.md) — contact request structure, ECDH, AES-CBC encryption, account reference, DashPay payment paths
 - [DIP-0017: Dash Platform P2PKH Addresses](https://github.com/dashpay/dips/blob/master/dip-0017.md) — platform payment addresses at `m/9'/coin'/17'/account'/key_class'/index`
@@ -1264,36 +1357,38 @@ Test against DIP-14 Appendix A vectors before merging.
 | Repo | Disk Path | Notes |
 | ---- | --------- | ----- |
 | `rs-platform-wallet` | `packages/rs-platform-wallet/` | Target library (this plan) |
+| `rs-platform-encryption` | `packages/rs-platform-encryption/` | DIP-15 crypto — already a dependency, do not duplicate |
+| `rs-platform-wallet-ffi` | `packages/rs-platform-wallet-ffi/` | FFI layer — update exports in PR-5 |
 | `key-wallet` | `../rust-dashcore/key-wallet/` | UTXO wallet, key derivation, TransactionBuilder |
-| `key-wallet-manager` | `../rust-dashcore/key-wallet-manager/` | `WalletInterface` trait |
+| `key-wallet-manager` | `../rust-dashcore/key-wallet-manager/` | `WalletInterface` trait (feature = "manager") |
 | `dash-spv` | `../rust-dashcore/dash-spv/` | SPV client, BIP157/158 sync, push-based |
-| `rs-sdk` | `packages/rs-sdk/` | DAPI client (`Sdk`, `SdkBuilder`) |
-| `dash-evo-tool` | `../dash-evo-tool/` | Phase 2 integration target |
+| `rs-sdk` | `packages/rs-sdk/` | DAPI client (`Sdk`, `SdkBuilder`, `AddressProvider`) |
+| `dash-evo-tool` | `../dash-evo-tool/` | Integration target |
 
-### Platform Wallet (current)
+### Platform Wallet (current — being replaced)
 
-- [packages/rs-platform-wallet/src/wallet/mod.rs](packages/rs-platform-wallet/src/wallet/mod.rs)
-- [packages/rs-platform-wallet/src/wallet/identity_discovery.rs](packages/rs-platform-wallet/src/wallet/identity_discovery.rs)
-- [packages/rs-platform-wallet/src/wallet/contact_requests.rs](packages/rs-platform-wallet/src/wallet/contact_requests.rs)
+- [packages/rs-platform-wallet/src/platform_wallet_info/identity_discovery.rs](packages/rs-platform-wallet/src/platform_wallet_info/identity_discovery.rs) — consolidate into `IdentityWallet::sync()`
+- [packages/rs-platform-wallet/src/platform_wallet_info/contact_requests.rs](packages/rs-platform-wallet/src/platform_wallet_info/contact_requests.rs) — consolidate into `DashPayWallet`; fix AES decryption bug
+- [packages/rs-platform-wallet/src/platform_wallet_info/key_derivation.rs](packages/rs-platform-wallet/src/platform_wallet_info/key_derivation.rs) — fix `key_type'` path segment
 - [packages/rs-platform-wallet/src/managed_identity/mod.rs](packages/rs-platform-wallet/src/managed_identity/mod.rs)
-
-### Key Wallet
-
-- DIP-17 account: `rust-dashcore/key-wallet/src/managed_account/managed_platform_account.rs`
-- Account collection: `rust-dashcore/key-wallet/src/account/account_collection.rs` — `platform_payment_accounts`
-- Gap limits: `rust-dashcore/key-wallet/src/gap_limit.rs` — `DIP17_GAP_LIMIT = 20`
+- [packages/rs-platform-wallet/src/contact_request.rs](packages/rs-platform-wallet/src/contact_request.rs)
+- [packages/rs-platform-wallet/src/established_contact.rs](packages/rs-platform-wallet/src/established_contact.rs)
 
 ### SDK Transitions Used
 
-- [packages/rs-sdk/src/platform/transition/withdraw_from_identity.rs](packages/rs-sdk/src/platform/transition/withdraw_from_identity.rs)
-- [packages/rs-sdk/src/platform/transition/top_up_identity.rs](packages/rs-sdk/src/platform/transition/top_up_identity.rs)
-- [packages/rs-sdk/src/platform/transition/address_credit_withdrawal.rs](packages/rs-sdk/src/platform/transition/address_credit_withdrawal.rs)
-- [packages/rs-sdk/src/platform/transition/transfer_address_funds.rs](packages/rs-sdk/src/platform/transition/transfer_address_funds.rs)
-- [packages/rs-sdk/src/platform/transition/top_up_address.rs](packages/rs-sdk/src/platform/transition/top_up_address.rs)
+- `PutIdentity` trait — `packages/rs-sdk/src/platform/transition/put_identity.rs`
+- `TopUpIdentity` trait — `packages/rs-sdk/src/platform/transition/top_up_identity.rs`
+- `WithdrawFromIdentity` trait — `packages/rs-sdk/src/platform/transition/withdraw_from_identity.rs`
+- `TransferToIdentity` trait — `packages/rs-sdk/src/platform/transition/transfer.rs`
+- `AddressProvider` trait — `packages/rs-sdk/src/platform/address_sync/provider.rs`
+- Contact requests — `packages/rs-sdk/src/platform/dashpay/contact_request.rs`
 
 ### Evo Tool (to be replaced)
 
+- `dash-evo-tool/src/model/wallet/mod.rs` — current `Wallet` struct (will be deleted in PR-1)
+- `dash-evo-tool/src/app.rs` — `AppContext.wallets: RwLock<BTreeMap<WalletSeedHash, Arc<RwLock<Wallet>>>>`
 - `dash-evo-tool/src/backend_task/dashpay/dip14_derivation.rs`
+- `dash-evo-tool/src/backend_task/dashpay/hd_derivation.rs`
 - `dash-evo-tool/src/backend_task/dashpay/encryption.rs`
+- `dash-evo-tool/src/backend_task/identity/discover_identities.rs` — `AUTH_KEY_LOOKUP_WINDOW = 12`
 - `dash-evo-tool/src/backend_task/wallet/fetch_platform_address_balances.rs`
-- `dash-evo-tool/src/model/wallet/`
