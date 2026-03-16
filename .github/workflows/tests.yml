@@ -201,7 +201,7 @@ jobs:
     needs:
       - changes
       - rs-workspace-tests
-    if: ${{ needs.changes.outputs.swift-sdk-changed == 'true' }}
+    if: ${{ always() && needs.changes.outputs.swift-sdk-changed == 'true' && needs.changes.result != 'failure' && needs.rs-workspace-tests.result != 'failure' }}
     secrets: inherit
     uses: ./.github/workflows/swift-sdk-build.yml
 
