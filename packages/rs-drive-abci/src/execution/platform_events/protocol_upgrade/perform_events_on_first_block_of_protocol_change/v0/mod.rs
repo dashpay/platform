@@ -740,14 +740,20 @@ mod tests {
         .expect("expected to load wallet utils contract");
 
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        let fetched = platform.drive.get_contract_with_fetch_info_and_fee(
-            *wallet_utils_contract.id().as_bytes(),
-            None,
-            false,
-            Some(&transaction),
-            platform_version,
+        let (_fee_result, contract_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *wallet_utils_contract.id().as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+        assert!(
+            contract_fetch_info.is_some(),
+            "WalletUtils contract should exist after transition_to_version_6"
         );
-        assert!(fetched.is_ok());
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8
@@ -795,16 +801,65 @@ mod tests {
             .transition_to_version_11(&transaction, platform_version)
             .expect("expected version 11 transition to succeed");
 
-        let result = platform.transition_to_version_12(&transaction, platform_version);
+        platform
+            .transition_to_version_12(&transaction, platform_version)
+            .expect("expected version 12 transition to succeed");
 
-        assert!(result.is_ok());
+        // Verify shielded credit pool tree was created under AddressBalances
+        let shielded_pool_element = platform.drive.grove.get(
+            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            shielded_pool_element.value.is_ok(),
+            "Shielded credit pool tree should exist after transition_to_version_12"
+        );
+
+        // Verify notes tree was created inside the shielded pool
+        let shielded_pool_path = shielded_credit_pool_path();
+        let notes_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_NOTES_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            notes_element.value.is_ok(),
+            "Shielded notes tree should exist after transition_to_version_12"
+        );
+
+        // Verify nullifiers tree was created
+        let nullifiers_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_NULLIFIERS_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            nullifiers_element.value.is_ok(),
+            "Shielded nullifiers tree should exist after transition_to_version_12"
+        );
+
+        // Verify anchors tree was created
+        let anchors_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            anchors_element.value.is_ok(),
+            "Shielded anchors tree should exist after transition_to_version_12"
+        );
     }
 
     // test_full_transition_from_version_3_to_latest and test_transition_from_version_5
     // removed: multi-version transitions require cumulative state from each prior version
 
     #[test]
-    fn test_transition_from_version_10_only_does_11_and_12() {
+    fn test_transition_from_version_10_triggers_11_and_12() {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -820,16 +875,42 @@ mod tests {
             epoch: Epoch::new(1).expect("expected epoch"),
         };
 
-        // From version 10, only versions 11 and 12 should trigger
-        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
-            &platform_state,
-            &block_info,
-            &transaction,
-            10,
-            platform_version,
+        // From version 10, versions 11 and 12 should trigger
+        platform
+            .perform_events_on_first_block_of_protocol_change_v0(
+                &platform_state,
+                &block_info,
+                &transaction,
+                10,
+                platform_version,
+            )
+            .expect("expected transition from version 10 to succeed");
+
+        // Verify version 11 artifacts: AddressBalances root tree should exist
+        use drive::drive::RootTree;
+        use drive::grovedb_path::SubtreePath;
+        let address_balances = platform.drive.grove.get(
+            SubtreePath::empty(),
+            &[RootTree::AddressBalances as u8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            address_balances.value.is_ok(),
+            "AddressBalances root tree should exist (from version 11 transition)"
         );
 
-        assert!(result.is_ok());
+        // Verify version 12 artifacts: shielded credit pool tree should exist
+        let shielded_pool = platform.drive.grove.get(
+            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            shielded_pool.value.is_ok(),
+            "Shielded credit pool tree should exist (from version 12 transition)"
+        );
     }
 
     #[test]

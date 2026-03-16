@@ -240,14 +240,14 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_state_transition_at_exact_max_size() {
+    fn test_decode_state_transition_at_exact_max_size_is_not_rejected_as_oversized() {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
-        // Create a state transition that is exactly at the max size limit
-        // It should attempt to decode (not reject as oversized)
+        // Create a state transition that is exactly at the max size limit.
+        // It should attempt to decode (not be rejected as oversized).
         let max_size = platform_version.system_limits.max_state_transition_size as usize;
         let at_limit = vec![0u8; max_size];
 

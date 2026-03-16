@@ -47,38 +47,5 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::block::block_info::BlockInfo;
-    use dpp::block::epoch::Epoch;
-    use dpp::version::PlatformVersion;
-    use std::collections::BTreeMap;
-
-    #[test]
-    fn test_store_empty_address_balances() {
-        let platform_version = PlatformVersion::latest();
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_genesis_state();
-
-        let transaction = platform.drive.grove.start_transaction();
-
-        let block_info = BlockInfo {
-            time_ms: 1_000_000,
-            height: 1,
-            core_height: 1,
-            epoch: Epoch::default(),
-        };
-
-        let address_balances = BTreeMap::new();
-        let result = platform.store_address_balances_to_recent_block_storage_v0(
-            &address_balances,
-            &block_info,
-            &transaction,
-            platform_version,
-        );
-
-        assert!(result.is_ok());
-    }
-}
+// Tests for store_address_balances_to_recent_block_storage_v0 are covered by
+// higher-level integration tests that exercise realistic address balance data.
