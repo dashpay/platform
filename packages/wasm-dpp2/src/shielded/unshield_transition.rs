@@ -1,12 +1,52 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_type_info;
+use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * UnshieldTransition serialized as a plain object.
+ */
+export interface UnshieldTransitionObject {
+    $version: string;
+    outputAddress: object;
+    actions: Array<object>;
+    unshieldingAmount: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+}
+
+/**
+ * UnshieldTransition serialized as JSON (human-readable).
+ */
+export interface UnshieldTransitionJSON {
+    $version: string;
+    outputAddress: object;
+    actions: Array<object>;
+    unshieldingAmount: number;
+    anchor: number[];
+    proof: number[];
+    bindingSignature: number[];
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "UnshieldTransitionObject")]
+    pub type UnshieldTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "UnshieldTransitionJSON")]
+    pub type UnshieldTransitionJSONJs;
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = UnshieldTransition)]
 pub struct UnshieldTransitionWasm(UnshieldTransition);
 
@@ -24,6 +64,13 @@ impl From<UnshieldTransitionWasm> for UnshieldTransition {
 
 #[wasm_bindgen(js_class = UnshieldTransition)]
 impl UnshieldTransitionWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(value: JsValue) -> WasmDppResult<UnshieldTransitionWasm> {
+        let inner: UnshieldTransition = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(UnshieldTransitionWasm(inner))
+    }
+
     #[wasm_bindgen(js_name = getType)]
     pub fn get_type(&self) -> u8 {
         self.0.state_transition_type() as u8
@@ -88,12 +135,6 @@ impl UnshieldTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toBytes)]
     pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
         Ok(PlatformSerializable::serialize_to_bytes(
@@ -112,17 +153,17 @@ impl UnshieldTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        serde_wasm_bindgen::to_value(&json).map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toStateTransition)]
     pub fn to_state_transition(&self) -> crate::state_transitions::base::StateTransitionWasm {
         StateTransition::Unshield(self.0.clone()).into()
     }
 }
+
+impl_wasm_conversions_serde!(
+    UnshieldTransitionWasm,
+    UnshieldTransition,
+    UnshieldTransitionObjectJs,
+    UnshieldTransitionJSONJs
+);
 
 impl_wasm_type_info!(UnshieldTransitionWasm, UnshieldTransition);

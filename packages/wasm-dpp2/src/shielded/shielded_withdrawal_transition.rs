@@ -1,12 +1,56 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_type_info;
+use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ShieldedWithdrawalTransition serialized as a plain object.
+ */
+export interface ShieldedWithdrawalTransitionObject {
+    $version: string;
+    actions: Array<object>;
+    unshieldingAmount: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+    coreFeePerByte: number;
+    pooling: number;
+    outputScript: Uint8Array;
+}
+
+/**
+ * ShieldedWithdrawalTransition serialized as JSON (human-readable).
+ */
+export interface ShieldedWithdrawalTransitionJSON {
+    $version: string;
+    actions: Array<object>;
+    unshieldingAmount: number;
+    anchor: number[];
+    proof: number[];
+    bindingSignature: number[];
+    coreFeePerByte: number;
+    pooling: number;
+    outputScript: number[];
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldedWithdrawalTransitionObject")]
+    pub type ShieldedWithdrawalTransitionObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ShieldedWithdrawalTransitionJSON")]
+    pub type ShieldedWithdrawalTransitionJSONJs;
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = ShieldedWithdrawalTransition)]
 pub struct ShieldedWithdrawalTransitionWasm(ShieldedWithdrawalTransition);
 
@@ -24,6 +68,13 @@ impl From<ShieldedWithdrawalTransitionWasm> for ShieldedWithdrawalTransition {
 
 #[wasm_bindgen(js_class = ShieldedWithdrawalTransition)]
 impl ShieldedWithdrawalTransitionWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(value: JsValue) -> WasmDppResult<ShieldedWithdrawalTransitionWasm> {
+        let inner: ShieldedWithdrawalTransition = serde_wasm_bindgen::from_value(value)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(ShieldedWithdrawalTransitionWasm(inner))
+    }
+
     #[wasm_bindgen(js_name = getType)]
     pub fn get_type(&self) -> u8 {
         self.0.state_transition_type() as u8
@@ -103,12 +154,6 @@ impl ShieldedWithdrawalTransitionWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        serde_wasm_bindgen::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toBytes)]
     pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
         Ok(PlatformSerializable::serialize_to_bytes(
@@ -127,18 +172,18 @@ impl ShieldedWithdrawalTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = toJSON)]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json = serde_json::to_value(&self.0)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        serde_wasm_bindgen::to_value(&json).map_err(|e| WasmDppError::serialization(e.to_string()))
-    }
-
     #[wasm_bindgen(js_name = toStateTransition)]
     pub fn to_state_transition(&self) -> crate::state_transitions::base::StateTransitionWasm {
         StateTransition::ShieldedWithdrawal(self.0.clone()).into()
     }
 }
+
+impl_wasm_conversions_serde!(
+    ShieldedWithdrawalTransitionWasm,
+    ShieldedWithdrawalTransition,
+    ShieldedWithdrawalTransitionObjectJs,
+    ShieldedWithdrawalTransitionJSONJs
+);
 
 impl_wasm_type_info!(
     ShieldedWithdrawalTransitionWasm,

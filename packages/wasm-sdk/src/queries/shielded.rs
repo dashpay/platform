@@ -80,19 +80,47 @@ impl ShieldedNullifierStatusWasm {
 }
 impl_wasm_serde_conversions!(ShieldedNullifierStatusWasm, ShieldedNullifierStatus);
 
+// ── Helpers ───────────────────────────────────────────────────────────
+
+/// Parse a JS `Array<Uint8Array>` of nullifiers into `Vec<[u8; 32]>`.
+///
+/// Each element must be exactly 32 bytes, otherwise an error is returned.
+fn parse_nullifiers(nullifiers: &js_sys::Array) -> Result<Vec<[u8; 32]>, WasmSdkError> {
+    nullifiers
+        .iter()
+        .map(|n| {
+            let uint8_arr = Uint8Array::new(&n);
+            let bytes = uint8_arr.to_vec();
+            if bytes.len() != 32 {
+                return Err(WasmSdkError::invalid_argument(
+                    "Each nullifier must be exactly 32 bytes",
+                ));
+            }
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            Ok(arr)
+        })
+        .collect()
+}
+
 // ── Query methods ──────────────────────────────────────────────────────
 
 #[wasm_bindgen]
 impl WasmSdk {
-    /// Returns the total shielded pool balance as a BigInt.
-    #[wasm_bindgen(js_name = "getShieldedPoolState")]
-    pub async fn get_shielded_pool_state(&self) -> Result<BigInt, WasmSdkError> {
+    /// Returns the total shielded pool balance as a BigInt, or undefined if not available.
+    #[wasm_bindgen(
+        js_name = "getShieldedPoolState",
+        unchecked_return_type = "bigint | undefined"
+    )]
+    pub async fn get_shielded_pool_state(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{NoParamQuery, ShieldedPoolState};
 
         let result = ShieldedPoolState::fetch(self.as_ref(), NoParamQuery {}).await?;
-        let balance = result.map(|s| s.0).unwrap_or(0);
-        Ok(BigInt::from(balance))
+        match result {
+            Some(s) => Ok(JsValue::from(BigInt::from(s.0))),
+            None => Ok(JsValue::UNDEFINED),
+        }
     }
 
     /// Fetches encrypted notes from the shielded pool, paginated.
@@ -144,10 +172,10 @@ impl WasmSdk {
         Ok(array)
     }
 
-    /// Returns the most recent shielded anchor (32 bytes), or null if none exists.
+    /// Returns the most recent shielded anchor (32 bytes), or undefined if none exists.
     #[wasm_bindgen(
         js_name = "getMostRecentShieldedAnchor",
-        unchecked_return_type = "Uint8Array | null"
+        unchecked_return_type = "Uint8Array | undefined"
     )]
     pub async fn get_most_recent_shielded_anchor(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
@@ -156,7 +184,7 @@ impl WasmSdk {
         let result = MostRecentShieldedAnchor::fetch(self.as_ref(), NoParamQuery {}).await?;
         match result {
             Some(anchor) => Ok(Uint8Array::from(anchor.0.as_slice()).into()),
-            None => Ok(JsValue::NULL),
+            None => Ok(JsValue::UNDEFINED),
         }
     }
 
@@ -172,21 +200,7 @@ impl WasmSdk {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
-        let nullifier_arrays: Vec<[u8; 32]> = nullifiers
-            .iter()
-            .map(|n| {
-                let uint8_arr = Uint8Array::new(&n);
-                let bytes = uint8_arr.to_vec();
-                if bytes.len() != 32 {
-                    return Err(WasmSdkError::invalid_argument(
-                        "Each nullifier must be exactly 32 bytes",
-                    ));
-                }
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                Ok(arr)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let nullifier_arrays = parse_nullifiers(&nullifiers)?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let result = ShieldedNullifierStatuses::fetch(self.as_ref(), query).await?;
@@ -207,7 +221,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getShieldedPoolStateWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint | undefined>"
     )]
     pub async fn get_shielded_pool_state_with_proof_info(
         &self,
@@ -221,7 +235,7 @@ impl WasmSdk {
 
         let data = result
             .map(|s| JsValue::from(BigInt::from(s.0)))
-            .unwrap_or(JsValue::NULL);
+            .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -289,7 +303,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getMostRecentShieldedAnchorWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Uint8Array | undefined>"
     )]
     pub async fn get_most_recent_shielded_anchor_with_proof_info(
         &self,
@@ -306,7 +320,7 @@ impl WasmSdk {
 
         let data = result
             .map(|a| JsValue::from(Uint8Array::from(a.0.as_slice())))
-            .unwrap_or(JsValue::NULL);
+            .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
@@ -324,21 +338,7 @@ impl WasmSdk {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
-        let nullifier_arrays: Vec<[u8; 32]> = nullifiers
-            .iter()
-            .map(|n| {
-                let uint8_arr = Uint8Array::new(&n);
-                let bytes = uint8_arr.to_vec();
-                if bytes.len() != 32 {
-                    return Err(WasmSdkError::invalid_argument(
-                        "Each nullifier must be exactly 32 bytes",
-                    ));
-                }
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&bytes);
-                Ok(arr)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let nullifier_arrays = parse_nullifiers(&nullifiers)?;
 
         let query = ShieldedNullifiersQuery(nullifier_arrays);
         let (result, metadata, proof) =
