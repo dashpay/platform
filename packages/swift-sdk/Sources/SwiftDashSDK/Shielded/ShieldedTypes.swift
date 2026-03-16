@@ -242,7 +242,7 @@ func buildFFIActions(
             rk: dataToBytes32(action.rk),
             cmx: dataToBytes32(action.cmx),
             encrypted_note: nil, // set below via withUnsafeBytes during call
-            encrypted_note_len: action.encryptedNote.count,
+            encrypted_note_len: UInt(action.encryptedNote.count),
             cv_net: dataToBytes32(action.cvNet),
             spend_auth_sig: dataToBytes64(action.spendAuthSig)
         )

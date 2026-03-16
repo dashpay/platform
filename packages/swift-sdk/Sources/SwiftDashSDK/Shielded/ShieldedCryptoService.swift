@@ -203,7 +203,7 @@ extension SDK {
                                         anchorPtr,
                                         notesCStr,
                                         addrBase,
-                                        addrCopy.count,
+                                        UInt(addrCopy.count),
                                         amount,
                                         memoPtr
                                     )
@@ -288,7 +288,7 @@ extension SDK {
                                         anchorPtr,
                                         notesCStr,
                                         addrBase,
-                                        addrCopy.count,
+                                        UInt(addrCopy.count),
                                         amount,
                                         memoPtr
                                     )
@@ -377,7 +377,7 @@ extension SDK {
                                         anchorPtr,
                                         notesCStr,
                                         scriptBase,
-                                        scriptCopy.count,
+                                        UInt(scriptCopy.count),
                                         amount,
                                         memoPtr,
                                         coreFeePerByte,
@@ -565,7 +565,7 @@ extension SDK {
                     return dash_sdk_shielded_unshield_funds(
                         UnsafePointer(sdkPtr.ptr),
                         addrBase,
-                        outputAddress.count,
+                        UInt(outputAddress.count),
                         amount,
                         UnsafePointer(retainedBundle.ptr)
                     )

@@ -377,7 +377,7 @@ extension SDK {
                         dash_sdk_shielded_unshield_funds(
                             UnsafePointer(sdkPtr.ptr),
                             addrBase,
-                            outputAddress.count,
+                            UInt(outputAddress.count),
                             amount,
                             bundlePtr
                         )
@@ -440,9 +440,9 @@ extension SDK {
                                 dash_sdk_shielded_shield_from_instant_lock(
                                     UnsafePointer(sdkPtr.ptr),
                                     ilBase,
-                                    instantLock.count,
+                                    UInt(instantLock.count),
                                     txBase,
-                                    transaction.count,
+                                    UInt(transaction.count),
                                     outputIndex,
                                     pkBase,
                                     bundlePtr,
@@ -564,7 +564,7 @@ extension SDK {
                             coreFeePerByte,
                             pooling.rawValue,
                             scriptBase,
-                            outputScript.count
+                            UInt(outputScript.count)
                         )
                     }
                 }
@@ -651,7 +651,7 @@ extension SDK {
                         dash_sdk_shielded_build_unshield(
                             UnsafePointer(sdkPtr.ptr),
                             addrBase,
-                            outputAddress.count,
+                            UInt(outputAddress.count),
                             amount,
                             bundlePtr
                         )
@@ -766,9 +766,9 @@ extension SDK {
                                 dash_sdk_shielded_build_shield_from_instant_lock(
                                     UnsafePointer(sdkPtr.ptr),
                                     ilBase,
-                                    instantLock.count,
+                                    UInt(instantLock.count),
                                     txBase,
-                                    transaction.count,
+                                    UInt(transaction.count),
                                     outputIndex,
                                     pkBase,
                                     bundlePtr,
@@ -892,7 +892,7 @@ extension SDK {
                             coreFeePerByte,
                             pooling.rawValue,
                             scriptBase,
-                            outputScript.count
+                            UInt(outputScript.count)
                         )
                     }
                 }
@@ -936,7 +936,7 @@ extension SDK {
                     return dash_sdk_shielded_broadcast(
                         UnsafePointer(sdkPtr.ptr),
                         base,
-                        transitionBytes.count
+                        UInt(transitionBytes.count)
                     )
                 }
 
@@ -1019,7 +1019,7 @@ extension SDK {
                 rk: dataToBytes32(action.rk),
                 cmx: dataToBytes32(action.cmx),
                 encrypted_note: nil,
-                encrypted_note_len: action.encryptedNote.count,
+                encrypted_note_len: UInt(action.encryptedNote.count),
                 cv_net: dataToBytes32(action.cvNet),
                 spend_auth_sig: dataToBytes64(action.spendAuthSig)
             )
@@ -1049,7 +1049,7 @@ extension SDK {
                             actions_count: UInt32(ffiActions.count),
                             anchor: dataToBytes32(bundle.anchor),
                             proof: proofPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                            proof_len: bundle.proof.count,
+                            proof_len: UInt(bundle.proof.count),
                             binding_signature: dataToBytes64(bundle.bindingSignature)
                         )
                         return withUnsafePointer(to: &params) { paramsPtr in
@@ -1098,7 +1098,7 @@ extension SDK {
                     let (addrPtr, addrLen) = addrPtrs[i]
                     ffiInputs.append(FFIShieldInput(
                         address: addrPtr,
-                        address_len: addrLen,
+                        address_len: UInt(addrLen),
                         amount: input.amount,
                         private_key: pkPtrs[i]
                     ))

@@ -273,7 +273,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                         dash_sdk_shielded_pool_client_build_transfer_bundle(
                             poolHandle,
                             addrBase,
-                            addrCopy.count,
+                            UInt(addrCopy.count),
                             amount,
                             memoPtr
                         )
@@ -329,7 +329,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                         dash_sdk_shielded_pool_client_build_unshield_bundle(
                             poolHandle,
                             addrBase,
-                            addrCopy.count,
+                            UInt(addrCopy.count),
                             amount,
                             memoPtr
                         )
@@ -390,7 +390,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                         dash_sdk_shielded_pool_client_build_withdrawal_bundle(
                             poolHandle,
                             scriptBase,
-                            scriptCopy.count,
+                            UInt(scriptCopy.count),
                             amount,
                             memoPtr,
                             coreFeePerByte,
