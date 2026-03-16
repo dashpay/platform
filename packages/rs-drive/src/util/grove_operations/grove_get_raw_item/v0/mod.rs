@@ -81,3 +81,125 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::{DirectQueryType, QueryTarget};
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_get_raw_item_stateful_success() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item(b"value".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_get_raw_item_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert_eq!(result, b"value".to_vec());
+    }
+
+    #[test]
+    fn test_grove_get_raw_item_stateful_not_item_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Insert a tree, not an item
+        drive
+            .grove_insert_empty_tree(
+                [b"root".as_slice()].as_slice().into(),
+                b"child",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let result = drive.grove_get_raw_item_v0(
+            [b"root".as_slice()].as_slice().into(),
+            b"child",
+            DirectQueryType::StatefulDirectQuery,
+            Some(&tx),
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_grove_get_raw_item_stateless_returns_empty() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_get_raw_item_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                DirectQueryType::StatelessDirectQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTarget::QueryTargetValue(100),
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert!(result.is_empty());
+    }
+}

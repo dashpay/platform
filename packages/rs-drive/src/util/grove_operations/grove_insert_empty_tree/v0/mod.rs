@@ -46,3 +46,106 @@ impl Drive {
         push_drive_operation_result(cost_context, drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::TreeType;
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_insert_empty_tree_normal() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"normal",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grove_insert_empty_tree_sum() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"sum",
+                TreeType::SumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grove_insert_empty_tree_big_sum() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"big_sum",
+                TreeType::BigSumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grove_insert_empty_tree_count() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"count",
+                TreeType::CountTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grove_insert_empty_tree_count_sum() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"count_sum",
+                TreeType::CountSumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+    }
+}

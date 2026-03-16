@@ -28,3 +28,92 @@ impl Drive {
         push_drive_operation_result_optional(cost_context, drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_insert_if_not_exists_return_existing_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_insert_if_not_exists_return_existing_element_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                Element::new_item(b"val".to_vec()),
+                Some(&tx),
+                Some(&mut ops),
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Element did not exist, so None returned and it was inserted
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_grove_insert_if_not_exists_return_existing_element_already_exists() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item(b"existing".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_insert_if_not_exists_return_existing_element_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                Element::new_item(b"new".to_vec()),
+                Some(&tx),
+                Some(&mut ops),
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Existing element should be returned
+        assert_eq!(result, Some(Element::new_item(b"existing".to_vec())));
+    }
+}

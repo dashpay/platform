@@ -51,3 +51,58 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::object_size_info::DriveKeyInfo;
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::batch::key_info::KeyInfo;
+
+    #[test]
+    fn test_batch_insert_empty_sum_tree_key_ref() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path: &[&[u8]] = &[b"root"];
+        drive
+            .batch_insert_empty_sum_tree_v0(
+                path.iter().copied(),
+                DriveKeyInfo::KeyRef(b"child"),
+                None,
+                &mut ops,
+            )
+            .unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert_empty_sum_tree_key_size() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path: &[&[u8]] = &[b"root"];
+        drive
+            .batch_insert_empty_sum_tree_v0(
+                path.iter().copied(),
+                DriveKeyInfo::KeySize(KeyInfo::KnownKey(b"child".to_vec())),
+                None,
+                &mut ops,
+            )
+            .unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert_empty_sum_tree_key() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path: &[&[u8]] = &[b"root"];
+        drive
+            .batch_insert_empty_sum_tree_v0(
+                path.iter().copied(),
+                DriveKeyInfo::Key(b"child".to_vec()),
+                None,
+                &mut ops,
+            )
+            .unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+}

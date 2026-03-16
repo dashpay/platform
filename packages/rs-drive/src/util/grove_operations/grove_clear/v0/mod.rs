@@ -71,3 +71,86 @@ impl Drive {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_clear_empty_subtree() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Clear empty subtree should succeed
+        drive
+            .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grove_clear_with_items() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        // Insert some items
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key1",
+                Element::new_item(b"val1".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key2",
+                Element::new_item(b"val2".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+
+        // Clear subtree with items should succeed
+        drive
+            .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
+            .unwrap();
+    }
+}

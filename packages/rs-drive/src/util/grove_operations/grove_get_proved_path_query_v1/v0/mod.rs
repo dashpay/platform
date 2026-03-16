@@ -23,3 +23,45 @@ impl Drive {
         value.map_err(Error::from)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{PathQuery, Query, SizedQuery, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_get_proved_path_query_v1_basic() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        drive.grove.commit_transaction(tx).unwrap().unwrap();
+
+        let path_query = PathQuery::new(
+            vec![b"root".to_vec()],
+            SizedQuery::new(Query::new(), None, None),
+        );
+
+        let mut ops = vec![];
+        let proof = drive
+            .grove_get_proved_path_query_v1_v0(&path_query, &mut ops, &pv.drive)
+            .unwrap();
+
+        assert!(!proof.is_empty());
+        assert!(!ops.is_empty());
+    }
+}

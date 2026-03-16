@@ -226,3 +226,255 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
+    use crate::util::object_size_info::PathKeyElementInfo;
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    /// Insert new item-with-sum-item via PathKeyRefElement when nothing exists.
+    #[test]
+    fn test_item_with_sum_item_if_not_exists_new_ref() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyRefElement((
+            vec![b"root".to_vec()],
+            b"key",
+            Element::new_item_with_sum_item(b"data".to_vec(), 42),
+        ));
+
+        let inserted = drive
+            .batch_insert_item_with_sum_item_if_not_exists_v0(
+                info,
+                false,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert!(inserted);
+    }
+
+    /// Error when element is not ItemWithSumItem via PathKeyRefElement.
+    #[test]
+    fn test_item_with_sum_item_not_correct_element_type_ref() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyRefElement((
+            vec![b"root".to_vec()],
+            b"key",
+            Element::new_item(b"not_item_with_sum".to_vec()),
+        ));
+
+        let result = drive.batch_insert_item_with_sum_item_if_not_exists_v0(
+            info,
+            false,
+            BatchInsertApplyType::StatefulBatchInsert,
+            Some(&tx),
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    /// PathKeyElement variant - new insert.
+    #[test]
+    fn test_item_with_sum_item_if_not_exists_new_path_key_element() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElement((
+            vec![b"root".to_vec()],
+            b"key".to_vec(),
+            Element::new_item_with_sum_item(b"data".to_vec(), 42),
+        ));
+
+        let inserted = drive
+            .batch_insert_item_with_sum_item_if_not_exists_v0(
+                info,
+                false,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert!(inserted);
+    }
+
+    /// PathFixedSizeKeyRefElement variant - new insert.
+    #[test]
+    fn test_item_with_sum_item_if_not_exists_new_fixed_key() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .unwrap();
+
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((
+            path,
+            b"key",
+            Element::new_item_with_sum_item(b"data".to_vec(), 42),
+        ));
+
+        let inserted = drive
+            .batch_insert_item_with_sum_item_if_not_exists_v0(
+                info,
+                false,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert!(inserted);
+    }
+
+    /// PathKeyElementSize stateless variant.
+    #[test]
+    fn test_item_with_sum_item_stateless_size() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            Element::new_item_with_sum_item(b"data".to_vec(), 42),
+        ));
+
+        let inserted = drive
+            .batch_insert_item_with_sum_item_if_not_exists_v0(
+                info,
+                false,
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_type: TreeType::NormalTree,
+                    target: QueryTarget::QueryTargetValue(100),
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .unwrap();
+
+        assert!(inserted);
+        assert_eq!(ops.len(), 2);
+    }
+
+    /// PathKeyElementSize stateful returns error.
+    #[test]
+    fn test_item_with_sum_item_stateful_size_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            Element::new_item_with_sum_item(b"data".to_vec(), 42),
+        ));
+
+        let result = drive.batch_insert_item_with_sum_item_if_not_exists_v0(
+            info,
+            false,
+            BatchInsertApplyType::StatefulBatchInsert,
+            None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    /// PathKeyUnknownElementSize returns error.
+    #[test]
+    fn test_item_with_sum_item_unknown_size_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyUnknownElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            8,
+        ));
+
+        let result = drive.batch_insert_item_with_sum_item_if_not_exists_v0(
+            info,
+            false,
+            BatchInsertApplyType::StatefulBatchInsert,
+            None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+}
