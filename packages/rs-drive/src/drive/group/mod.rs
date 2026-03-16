@@ -245,6 +245,8 @@ mod tests {
             updated_at_block_height: None,
             created_at_epoch: None,
             updated_at_epoch: None,
+            // Use a position above 255 to exercise the 2-byte big-endian encoding,
+            // which is the exact scenario the fetch_group_infos bug would have broken.
             groups: BTreeMap::from([
                 (
                     0,
@@ -254,7 +256,7 @@ mod tests {
                     }),
                 ),
                 (
-                    1,
+                    300,
                     Group::V0(GroupV0 {
                         members: [(identity_1_id, 3)].into(),
                         required_power: 3,
@@ -287,7 +289,10 @@ mod tests {
 
         assert_eq!(groups.len(), 2);
         assert!(groups.contains_key(&0));
-        assert!(groups.contains_key(&1));
+        assert!(
+            groups.contains_key(&300),
+            "position 300 (above 255) should be correctly decoded from 2 bytes"
+        );
     }
 
     #[test]
@@ -609,6 +614,27 @@ mod tests {
         assert!(
             closed_signers.contains_key(&identity_2_id),
             "identity_2 should be in closed signers"
+        );
+
+        // Verify signers were REMOVED from the active state (moved, not copied)
+        let active_signers = drive
+            .fetch_action_signers(
+                contract_id,
+                0,
+                GroupActionStatus::ActionActive,
+                action_id,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch active signers");
+
+        assert!(
+            !active_signers.contains_key(&identity_1_id),
+            "identity_1 should not remain in active signers after closing"
+        );
+        assert!(
+            !active_signers.contains_key(&identity_2_id),
+            "identity_2 should not remain in active signers after closing"
         );
     }
 

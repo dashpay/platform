@@ -299,18 +299,45 @@ mod tests {
         let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, None, Some(10));
         assert_eq!(pq.query.limit, Some(10));
         assert_eq!(pq.path, group_contract_path_vec(&CONTRACT_ID));
+        // Should have a RangeFull query item
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(
+            matches!(pq.query.query.items[0], QueryItem::RangeFull(..)),
+            "expected RangeFull query item"
+        );
+        // Should have the subquery key set to GROUP_INFO_KEY
+        let subquery = pq
+            .query
+            .query
+            .default_subquery_branch
+            .subquery_path
+            .as_ref();
+        assert!(
+            subquery.is_some(),
+            "expected a subquery path for GROUP_INFO_KEY"
+        );
     }
 
     #[test]
     fn group_infos_query_with_start_included() {
         let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, Some((5, true)), Some(10));
         assert_eq!(pq.query.limit, Some(10));
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(
+            matches!(pq.query.query.items[0], QueryItem::RangeFrom(..)),
+            "expected RangeFrom for included start"
+        );
     }
 
     #[test]
     fn group_infos_query_with_start_excluded() {
         let pq = Drive::group_infos_for_contract_id_query(CONTRACT_ID, Some((5, false)), Some(10));
         assert_eq!(pq.query.limit, Some(10));
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(
+            matches!(pq.query.query.items[0], QueryItem::RangeAfter(..)),
+            "expected RangeAfter for excluded start"
+        );
     }
 
     #[test]
@@ -325,6 +352,18 @@ mod tests {
         assert_eq!(pq.query.limit, Some(5));
         // Path should end with the active actions key
         assert_eq!(pq.path.last().unwrap(), &GROUP_ACTIVE_ACTIONS_KEY.to_vec());
+        // Should be a RangeFull query item when no start_at
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(matches!(pq.query.query.items[0], QueryItem::RangeFull(..)));
+        // Should have subquery key for ACTION_INFO_KEY
+        assert!(
+            pq.query
+                .query
+                .default_subquery_branch
+                .subquery_path
+                .is_some(),
+            "expected a subquery path for ACTION_INFO_KEY"
+        );
     }
 
     #[test]
@@ -349,6 +388,11 @@ mod tests {
             Some(5),
         );
         assert_eq!(pq.query.limit, Some(5));
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(
+            matches!(pq.query.query.items[0], QueryItem::RangeFrom(..)),
+            "expected RangeFrom for included start_at"
+        );
     }
 
     #[test]
@@ -361,6 +405,11 @@ mod tests {
             Some(5),
         );
         assert_eq!(pq.query.limit, Some(5));
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(
+            matches!(pq.query.query.items[0], QueryItem::RangeAfter(..)),
+            "expected RangeAfter for excluded start_at"
+        );
     }
 
     #[test]
@@ -374,6 +423,12 @@ mod tests {
         assert!(pq.query.limit.is_none());
         // Path includes the action_id
         assert_eq!(pq.path.last().unwrap(), &ACTION_ID.to_vec());
+        // Query should contain ACTION_SIGNERS_KEY as a single key
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(ACTION_SIGNERS_KEY.to_vec())
+        );
     }
 
     #[test]
@@ -386,6 +441,12 @@ mod tests {
         );
         // The 4th element should be the closed actions key
         assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+        // Query should contain ACTION_SIGNERS_KEY as a single key
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(ACTION_SIGNERS_KEY.to_vec())
+        );
     }
 
     #[test]
@@ -398,6 +459,9 @@ mod tests {
         );
         assert!(pq.query.limit.is_none());
         assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+        // Should be a full range query
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert!(matches!(pq.query.query.items[0], QueryItem::RangeFull(..)));
     }
 
     #[test]
@@ -410,6 +474,8 @@ mod tests {
         );
         assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
         assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+        // Should be a full range query
+        assert!(matches!(pq.query.query.items[0], QueryItem::RangeFull(..)));
     }
 
     #[test]
@@ -426,6 +492,12 @@ mod tests {
             pq.path,
             group_action_signers_path_vec(&CONTRACT_ID, GROUP_POS, &ACTION_ID)
         );
+        // Query should have a single key for the identity
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(IDENTITY_ID.to_vec())
+        );
     }
 
     #[test]
@@ -441,6 +513,12 @@ mod tests {
             pq.path,
             group_closed_action_signers_path_vec(&CONTRACT_ID, GROUP_POS, &ACTION_ID)
         );
+        // Query should have a single key for the identity
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(IDENTITY_ID.to_vec())
+        );
     }
 
     #[test]
@@ -454,6 +532,12 @@ mod tests {
         );
         assert_eq!(pq.path[3], GROUP_ACTIVE_ACTIONS_KEY.to_vec());
         assert_eq!(pq.path.last().unwrap(), &ACTION_SIGNERS_KEY.to_vec());
+        // Query should have a single key for the identity
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(IDENTITY_ID.to_vec())
+        );
     }
 
     #[test]
@@ -466,6 +550,12 @@ mod tests {
             IDENTITY_ID,
         );
         assert_eq!(pq.path[3], GROUP_CLOSED_ACTIONS_KEY.to_vec());
+        // Query should have a single key for the identity
+        assert_eq!(pq.query.query.items.len(), 1);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(IDENTITY_ID.to_vec())
+        );
     }
 
     #[test]
@@ -473,6 +563,16 @@ mod tests {
         let pq = Drive::group_active_or_closed_action_query(CONTRACT_ID, GROUP_POS);
         assert!(pq.query.limit.is_none());
         assert_eq!(pq.path, group_path_vec(&CONTRACT_ID, GROUP_POS));
+        // Should have two keys: active and closed
+        assert_eq!(pq.query.query.items.len(), 2);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+        );
+        assert_eq!(
+            pq.query.query.items[1],
+            QueryItem::Key(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+        );
     }
 
     #[test]
@@ -485,5 +585,27 @@ mod tests {
         );
         assert!(pq.query.limit.is_none());
         assert_eq!(pq.path, group_path_vec(&CONTRACT_ID, GROUP_POS));
+        // Should have two keys: active and closed
+        assert_eq!(pq.query.query.items.len(), 2);
+        assert_eq!(
+            pq.query.query.items[0],
+            QueryItem::Key(GROUP_ACTIVE_ACTIONS_KEY.to_vec())
+        );
+        assert_eq!(
+            pq.query.query.items[1],
+            QueryItem::Key(GROUP_CLOSED_ACTIONS_KEY.to_vec())
+        );
+        // Should have a subquery path with action_id, signers key, and identity_id
+        let subquery_path = pq
+            .query
+            .query
+            .default_subquery_branch
+            .subquery_path
+            .as_ref()
+            .expect("expected a subquery path");
+        assert_eq!(subquery_path.len(), 3);
+        assert_eq!(subquery_path[0], ACTION_ID.to_vec());
+        assert_eq!(subquery_path[1], ACTION_SIGNERS_KEY.to_vec());
+        assert_eq!(subquery_path[2], IDENTITY_ID.to_vec());
     }
 }
