@@ -10,12 +10,36 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
+ * A serialized Orchard action (spend-output pair) in binary/Object form.
+ */
+export interface SerializedOrchardAction {
+    nullifier: Uint8Array;
+    rk: Uint8Array;
+    cmx: Uint8Array;
+    encryptedNote: Uint8Array;
+    cvNet: Uint8Array;
+    spendAuthSig: Uint8Array;
+}
+
+/**
+ * A serialized Orchard action (spend-output pair) in JSON form.
+ */
+export interface SerializedOrchardActionJSON {
+    nullifier: number[];
+    rk: number[];
+    cmx: number[];
+    encryptedNote: number[];
+    cvNet: number[];
+    spendAuthSig: string;
+}
+
+/**
  * ShieldFromAssetLockTransition serialized as a plain object.
  */
 export interface ShieldFromAssetLockTransitionObject {
-    $version: string;
-    assetLockProof: object;
-    actions: Array<object>;
+    $formatVersion: string;
+    assetLockProof: AssetLockProofObject;
+    actions: SerializedOrchardAction[];
     valueBalance: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
@@ -27,13 +51,13 @@ export interface ShieldFromAssetLockTransitionObject {
  * ShieldFromAssetLockTransition serialized as JSON (human-readable).
  */
 export interface ShieldFromAssetLockTransitionJSON {
-    $version: string;
-    assetLockProof: object;
-    actions: Array<object>;
+    $formatVersion: string;
+    assetLockProof: AssetLockProofJSON;
+    actions: SerializedOrchardActionJSON[];
     valueBalance: number;
-    anchor: number[];
-    proof: number[];
-    bindingSignature: number[];
+    anchor: string;
+    proof: string;
+    bindingSignature: string;
     signature: string;
 }
 "#;

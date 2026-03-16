@@ -13,8 +13,8 @@ const TS_TYPES: &str = r#"
  * ShieldedWithdrawalTransition serialized as a plain object.
  */
 export interface ShieldedWithdrawalTransitionObject {
-    $version: string;
-    actions: Array<object>;
+    $formatVersion: string;
+    actions: SerializedOrchardAction[];
     unshieldingAmount: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
@@ -28,15 +28,15 @@ export interface ShieldedWithdrawalTransitionObject {
  * ShieldedWithdrawalTransition serialized as JSON (human-readable).
  */
 export interface ShieldedWithdrawalTransitionJSON {
-    $version: string;
-    actions: Array<object>;
+    $formatVersion: string;
+    actions: SerializedOrchardActionJSON[];
     unshieldingAmount: number;
-    anchor: number[];
-    proof: number[];
-    bindingSignature: number[];
+    anchor: string;
+    proof: string;
+    bindingSignature: string;
     coreFeePerByte: number;
     pooling: number;
-    outputScript: number[];
+    outputScript: string;
 }
 "#;
 

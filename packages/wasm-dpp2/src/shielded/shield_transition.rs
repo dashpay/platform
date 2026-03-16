@@ -10,35 +10,87 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
+ * Fee strategy step: defines how fees are paid from inputs or outputs.
+ */
+export interface FeeStrategyStepObject {
+    type: string;
+    index: number;
+}
+
+/**
+ * Address witness for P2PKH spending.
+ */
+export interface AddressWitnessP2pkhObject {
+    type: "p2pkh";
+    signature: Uint8Array;
+}
+
+/**
+ * Address witness for P2SH spending.
+ */
+export interface AddressWitnessP2shObject {
+    type: "p2sh";
+    signatures: Uint8Array[];
+    redeemScript: Uint8Array;
+}
+
+/**
+ * Address witness (P2PKH or P2SH) in Object form.
+ */
+export type AddressWitnessObject = AddressWitnessP2pkhObject | AddressWitnessP2shObject;
+
+/**
+ * Address witness for P2PKH spending (JSON form).
+ */
+export interface AddressWitnessP2pkhJSON {
+    type: "p2pkh";
+    signature: string;
+}
+
+/**
+ * Address witness for P2SH spending (JSON form).
+ */
+export interface AddressWitnessP2shJSON {
+    type: "p2sh";
+    signatures: string[];
+    redeemScript: string;
+}
+
+/**
+ * Address witness (P2PKH or P2SH) in JSON form.
+ */
+export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSON;
+
+/**
  * ShieldTransition serialized as a plain object.
  */
 export interface ShieldTransitionObject {
-    $version: string;
-    inputs: object;
-    actions: Array<object>;
+    $formatVersion: string;
+    inputs: Map<object, [number, bigint]>;
+    actions: SerializedOrchardAction[];
     amount: bigint;
     anchor: Uint8Array;
     proof: Uint8Array;
     bindingSignature: Uint8Array;
-    feeStrategy: object;
+    feeStrategy: FeeStrategyStepObject[];
     userFeeIncrease: number;
-    inputWitnesses: object;
+    inputWitnesses: AddressWitnessObject[];
 }
 
 /**
  * ShieldTransition serialized as JSON (human-readable).
  */
 export interface ShieldTransitionJSON {
-    $version: string;
-    inputs: object;
-    actions: Array<object>;
+    $formatVersion: string;
+    inputs: Record<string, [number, number]>;
+    actions: SerializedOrchardActionJSON[];
     amount: number;
-    anchor: number[];
-    proof: number[];
-    bindingSignature: number[];
-    feeStrategy: object;
+    anchor: string;
+    proof: string;
+    bindingSignature: string;
+    feeStrategy: FeeStrategyStepObject[];
     userFeeIncrease: number;
-    inputWitnesses: object;
+    inputWitnesses: AddressWitnessJSON[];
 }
 "#;
 
