@@ -61,7 +61,7 @@ extension SDK {
         // Prepare config
         var ffiConfig: FFINullifierSyncConfig?
         if let cfg = config {
-            ffiConfig = cfg.toFFI()
+            ffiConfig = try cfg.toFFI()
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -175,7 +175,7 @@ extension SDK {
 
         var ffiConfig: FFINullifierSyncConfig?
         if let cfg = config {
-            ffiConfig = cfg.toFFI()
+            ffiConfig = try cfg.toFFI()
         }
 
         return try await withCheckedThrowingContinuation { continuation in

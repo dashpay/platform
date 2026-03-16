@@ -147,6 +147,33 @@ pub unsafe extern "C" fn dash_sdk_shielded_decrypt_notes(
             }
         };
 
+        // Validate field sizes
+        if cmx_bytes.len() != 32 {
+            tracing::debug!(
+                "Skipping note {}: cmx must be 32 bytes, got {}",
+                idx,
+                cmx_bytes.len()
+            );
+            continue;
+        }
+        if nf_bytes.len() != 32 {
+            tracing::debug!(
+                "Skipping note {}: nullifier must be 32 bytes, got {}",
+                idx,
+                nf_bytes.len()
+            );
+            continue;
+        }
+        // encrypted_note minimum: 32 (epk) + COMPACT_NOTE_SIZE bytes
+        if enc_note_bytes.len() < 84 {
+            tracing::debug!(
+                "Skipping note {}: encrypted_note too short ({} bytes)",
+                idx,
+                enc_note_bytes.len()
+            );
+            continue;
+        }
+
         let shielded_note = ShieldedEncryptedNote {
             cmx: cmx_bytes,
             nullifier: nf_bytes,

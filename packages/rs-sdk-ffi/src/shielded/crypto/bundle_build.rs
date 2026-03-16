@@ -138,29 +138,31 @@ pub unsafe extern "C" fn dash_sdk_shielded_bundle_params_free(
 
     // Free each action's encrypted_note allocation.
     if !params.actions.is_null() && params.actions_count > 0 {
-        let actions_slice = std::slice::from_raw_parts_mut(
-            params.actions as *mut DashSDKSerializedAction,
-            params.actions_count as usize,
-        );
+        let actions_ptr = params.actions as *mut DashSDKSerializedAction;
+        let actions_count = params.actions_count as usize;
+        let actions_slice = std::slice::from_raw_parts(actions_ptr, actions_count);
         for action in actions_slice.iter() {
             if !action.encrypted_note.is_null() && action.encrypted_note_len > 0 {
-                let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+                drop(Vec::from_raw_parts(
                     action.encrypted_note as *mut u8,
+                    action.encrypted_note_len,
                     action.encrypted_note_len,
                 ));
             }
         }
         // Free the actions array itself.
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
-            params.actions as *mut DashSDKSerializedAction,
-            params.actions_count as usize,
+        drop(Vec::from_raw_parts(
+            actions_ptr,
+            actions_count,
+            actions_count,
         ));
     }
 
     // Free the proof allocation.
     if !params.proof.is_null() && params.proof_len > 0 {
-        let _ = Box::from_raw(std::slice::from_raw_parts_mut(
+        drop(Vec::from_raw_parts(
             params.proof as *mut u8,
+            params.proof_len,
             params.proof_len,
         ));
     }
@@ -595,12 +597,11 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
         }
     };
 
-    // Compute minimum fee (conservative: at least max(spends, 2) actions for recipient + change)
-    let num_actions = spends.len().max(2);
-    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
-
-    // Validate sufficient funds for transfer + fee
-    let required = match transfer_amount.checked_add(min_fee) {
+    // Try with no-change fee first (recipient output only). If there's surplus
+    // after that, recompute with change output included.
+    let no_change_actions = spends.len().max(1);
+    let no_change_fee = compute_minimum_shielded_fee(no_change_actions, platform_version);
+    let no_change_required = match transfer_amount.checked_add(no_change_fee) {
         Some(v) => v,
         None => {
             return DashSDKResult::error(DashSDKError::new(
@@ -609,20 +610,63 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
             ))
         }
     };
-    if required > total_spent {
+
+    let (min_fee, change_amount) = if no_change_required == total_spent {
+        // Exact match — no change output needed
+        (no_change_fee, 0u64)
+    } else if no_change_required > total_spent {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             format!(
                 "transfer amount {} + fee {} = {} exceeds total spendable value {}",
-                transfer_amount, min_fee, required, total_spent
+                transfer_amount, no_change_fee, no_change_required, total_spent
+            ),
+        ));
+    } else {
+        // Surplus exists — recompute with change output (adds an action)
+        let with_change_actions = spends.len().max(2);
+        let with_change_fee = compute_minimum_shielded_fee(with_change_actions, platform_version);
+        let with_change_required = match transfer_amount.checked_add(with_change_fee) {
+            Some(v) => v,
+            None => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    "transfer amount + fee overflows u64".to_string(),
+                ))
+            }
+        };
+        if with_change_required > total_spent {
+            // Can't afford change output fee — use no-change fee and burn the dust
+            (no_change_fee, 0u64)
+        } else {
+            (with_change_fee, total_spent - with_change_required)
+        }
+    };
+
+    // Validate required <= i64::MAX (Orchard value_balance is i64)
+    let required = transfer_amount + min_fee + change_amount;
+    debug_assert_eq!(required, total_spent - change_amount + change_amount); // sanity
+    let value_balance = min_fee; // only fee leaves the shielded pool
+    if value_balance > i64::MAX as u64 {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "fee {} exceeds i64::MAX, cannot represent as Orchard value_balance",
+                value_balance
             ),
         ));
     }
 
-    let change_amount = total_spent - required;
-
     // Change goes back to sender's address (derived at index 0)
-    let change_address = fvk.address_at(0u32, Scope::External);
+    let change_output = if change_amount > 0 {
+        let change_address = fvk.address_at(0u32, Scope::External);
+        Some(ChangeOutput {
+            address: change_address,
+            amount: change_amount,
+        })
+    } else {
+        None
+    };
 
     // ShieldedTransfer: recipient gets transfer_amount, sender gets change, fee leaves pool.
     // No extra sighash data for transfers.
@@ -631,10 +675,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
         &recipient_payment,
         transfer_amount,
         memo,
-        Some(ChangeOutput {
-            address: change_address,
-            amount: change_amount,
-        }),
+        change_output,
         &fvk,
         &ask,
         anchor,
@@ -782,6 +823,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
             ))
         }
     };
+    if required > i64::MAX as u64 {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "unshield amount {} + fee {} = {} exceeds i64::MAX",
+                unshield_amount, min_fee, required
+            ),
+        ));
+    }
     if required > total_spent {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -946,6 +996,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
             ))
         }
     };
+    if required > i64::MAX as u64 {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!(
+                "withdrawal amount {} + fee {} = {} exceeds i64::MAX",
+                withdrawal_amount, min_fee, required
+            ),
+        ));
+    }
     if required > total_spent {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,

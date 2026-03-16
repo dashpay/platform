@@ -212,6 +212,23 @@ func parseDecryptedNotesJSON(_ jsonString: String) throws -> [DecryptedNote] {
             throw SDKError.serializationError("DecryptedNote[\(i)] contains invalid hex")
         }
 
+        // Validate field sizes
+        guard nullifier.count == 32 else {
+            throw SDKError.serializationError("DecryptedNote[\(i)] nullifier must be 32 bytes, got \(nullifier.count)")
+        }
+        guard cmx.count == 32 else {
+            throw SDKError.serializationError("DecryptedNote[\(i)] cmx must be 32 bytes, got \(cmx.count)")
+        }
+        guard address.count == 43 else {
+            throw SDKError.serializationError("DecryptedNote[\(i)] address must be 43 bytes, got \(address.count)")
+        }
+        guard rho.count == 32 else {
+            throw SDKError.serializationError("DecryptedNote[\(i)] rho must be 32 bytes, got \(rho.count)")
+        }
+        guard rseed.count == 32 else {
+            throw SDKError.serializationError("DecryptedNote[\(i)] rseed must be 32 bytes, got \(rseed.count)")
+        }
+
         notes.append(DecryptedNote(
             position: position,
             value: value,

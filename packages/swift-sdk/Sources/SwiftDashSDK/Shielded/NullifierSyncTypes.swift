@@ -108,12 +108,20 @@ public struct NullifierSyncConfig {
     }
 
     /// Convert to FFI struct.
-    func toFFI() -> FFINullifierSyncConfig {
-        let hasPoolId = poolIdentifier != nil && (poolIdentifier?.count ?? 0) == 32
+    /// - Throws: If `poolIdentifier` is set but not exactly 32 bytes.
+    func toFFI() throws -> FFINullifierSyncConfig {
+        let hasPoolId: Bool
         let poolIdTuple: Bytes32Tuple
-        if let pid = poolIdentifier, pid.count == 32 {
+        if let pid = poolIdentifier {
+            guard pid.count == 32 else {
+                throw SDKError.invalidParameter(
+                    "poolIdentifier must be exactly 32 bytes, got \(pid.count)"
+                )
+            }
+            hasPoolId = true
             poolIdTuple = dataToBytes32(pid)
         } else {
+            hasPoolId = false
             poolIdTuple = dataToBytes32(Data(count: 32))
         }
 
