@@ -60,7 +60,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 let result = withUnsafePointer(to: &skTuple) { skPtr in
                     dash_sdk_shielded_derive_address(skPtr, diversifierIndex)
                 }
@@ -115,7 +115,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
                 let result = withUnsafePointer(to: &skTuple) { skPtr in
@@ -186,7 +186,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -271,7 +271,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -360,7 +360,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
                 var anchorTuple = dataToBytes32(anchorCopy)
                 var memoTuple = dataToBytes36(memoCopy ?? Data(count: 36))
 
@@ -429,7 +429,7 @@ extension SDK {
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 var skTuple = dataToBytes32(skCopy)
-                defer { withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
+                defer { _ = withUnsafeMutableBytes(of: &skTuple) { $0.baseAddress?.initializeMemory(as: UInt8.self, repeating: 0, count: 32) } }
 
                 let result = notesJSON.withCString { notesCStr in
                     withUnsafePointer(to: &skTuple) { skPtr in

@@ -58,19 +58,21 @@ extension SDK {
         let sdkPtr = NullifierSendableSdkPtr(sdkHandle)
         let count = UInt32(nullifiers.count)
 
-        // Prepare config
-        var ffiConfig: FFINullifierSyncConfig?
-        if let cfg = config {
-            ffiConfig = try cfg.toFFI()
+        // Prepare config — use let so it can be captured by @Sendable closure
+        let ffiConfig: FFINullifierSyncConfig? = if let cfg = config {
+            try cfg.toFFI()
+        } else {
+            nil
         }
+        let nullifierData = concatenated  // immutable copy for capture
 
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async { [self] in
+            DispatchQueue.global().async {
                 // Use the _with_result variant for better error handling via DashSDKResult.
                 let result: DashSDKResult
 
                 if var cfg = ffiConfig {
-                    result = concatenated.withUnsafeBytes { bytesPtr -> DashSDKResult in
+                    result = nullifierData.withUnsafeBytes { bytesPtr -> DashSDKResult in
                         guard let base = bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                             return DashSDKResult()
                         }
@@ -86,7 +88,7 @@ extension SDK {
                         }
                     }
                 } else {
-                    result = concatenated.withUnsafeBytes { bytesPtr -> DashSDKResult in
+                    result = nullifierData.withUnsafeBytes { bytesPtr -> DashSDKResult in
                         guard let base = bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                             return DashSDKResult()
                         }
@@ -179,7 +181,7 @@ extension SDK {
         }
 
         return try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async { [self] in
+            DispatchQueue.global().async {
                 let resultPtr: UnsafeMutablePointer<FFINullifierSyncResult>?
 
                 if var cfg = ffiConfig {

@@ -141,10 +141,11 @@ extension SDK {
 
         let sdkPtr = SendableSdkPtr(sdkHandle)
         let count = UInt32(nullifiers.count)
+        let nullifierData = concatenated  // immutable copy for @Sendable capture
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
-                let result = concatenated.withUnsafeBytes { bytesPtr -> DashSDKResult in
+                let result = nullifierData.withUnsafeBytes { bytesPtr -> DashSDKResult in
                     guard let base = bytesPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                         return DashSDKResult()
                     }
@@ -1014,7 +1015,7 @@ extension SDK {
         let encryptedNoteStorage = bundle.actions.map { $0.encryptedNote }
 
         for (i, action) in bundle.actions.enumerated() {
-            var ffiAction = FFISerializedAction(
+            let ffiAction = FFISerializedAction(
                 nullifier: dataToBytes32(action.nullifier),
                 rk: dataToBytes32(action.rk),
                 cmx: dataToBytes32(action.cmx),
