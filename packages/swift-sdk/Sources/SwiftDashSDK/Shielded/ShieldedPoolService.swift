@@ -956,7 +956,7 @@ extension SDK {
 extension SDK {
 
     // Sendable wrapper for SDK handle pointer, used to cross @Sendable boundaries.
-    private final class SendableSdkPtr: @unchecked Sendable {
+    final class SendableSdkPtr: @unchecked Sendable {
         let ptr: UnsafeMutablePointer<SDKHandle>
         init(_ p: UnsafeMutablePointer<SDKHandle>) { self.ptr = p }
     }
