@@ -620,12 +620,9 @@ pub struct SdkBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
 
-    /// Whether to run background health check. Default: true.
+    /// Health check configuration. `Some` = enabled, `None` = disabled. Default: enabled.
     #[cfg(not(target_arch = "wasm32"))]
-    health_check: bool,
-    /// Configuration for the background health check.
-    #[cfg(not(target_arch = "wasm32"))]
-    health_check_config: rs_dapi_client::HealthCheckConfig,
+    health_check_config: Option<rs_dapi_client::HealthCheckConfig>,
 }
 
 impl Default for SdkBuilder {
@@ -665,9 +662,7 @@ impl Default for SdkBuilder {
             ca_certificate: None,
 
             #[cfg(not(target_arch = "wasm32"))]
-            health_check: true,
-            #[cfg(not(target_arch = "wasm32"))]
-            health_check_config: rs_dapi_client::HealthCheckConfig::default(),
+            health_check_config: Some(rs_dapi_client::HealthCheckConfig::default()),
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -815,24 +810,18 @@ impl SdkBuilder {
         self
     }
 
-    /// Enable or disable background health check.
+    /// Configure the background health check.
     ///
-    /// When enabled, the SDK will probe all DAPI nodes on startup and monitor
+    /// When set to `Some(config)`, the SDK will probe all DAPI nodes on startup and monitor
     /// ban expirations to re-probe nodes before making them available again.
+    /// Set to `None` to disable health checks.
     ///
     /// Enabled by default on non-WASM targets. Not available on WASM.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn with_health_check(mut self, enabled: bool) -> Self {
-        self.health_check = enabled;
-        self
-    }
-
-    /// Configure the background health check.
-    ///
-    /// Implicitly enables the health check.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn with_health_check_config(mut self, config: rs_dapi_client::HealthCheckConfig) -> Self {
-        self.health_check = true;
+    pub fn with_health_check_config(
+        mut self,
+        config: Option<rs_dapi_client::HealthCheckConfig>,
+    ) -> Self {
         self.health_check_config = config;
         self
     }
@@ -922,8 +911,6 @@ impl SdkBuilder {
         };
 
         #[cfg(not(target_arch = "wasm32"))]
-        let health_check_enabled = self.health_check;
-        #[cfg(not(target_arch = "wasm32"))]
         let health_check_config = self.health_check_config;
 
         let sdk= match self.addresses {
@@ -997,16 +984,20 @@ impl SdkBuilder {
                 };
 
                 #[cfg(not(target_arch = "wasm32"))]
-                if health_check_enabled {
-                    let hc_cancel = sdk.cancel_token.clone();
-                    let handle = tokio::spawn(rs_dapi_client::health_check::run_health_check(
-                        hc_address_list,
-                        hc_pool,
-                        health_check_config,
-                        hc_cancel,
-                        hc_ca_cert,
-                    ));
-                    sdk._health_check_handle = Some(handle);
+                if let Some(hc_config) = health_check_config {
+                    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                        let hc_cancel = sdk.cancel_token.clone();
+                        let task_handle = handle.spawn(rs_dapi_client::health_check::run_health_check(
+                            hc_address_list,
+                            hc_pool,
+                            hc_config,
+                            hc_cancel,
+                            hc_ca_cert,
+                        ));
+                        sdk._health_check_handle = Some(task_handle);
+                    } else {
+                        tracing::warn!("no Tokio runtime found, health check disabled");
+                    }
                 }
 
                 sdk

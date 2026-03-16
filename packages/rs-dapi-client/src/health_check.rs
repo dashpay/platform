@@ -22,7 +22,8 @@ pub struct HealthCheckConfig {
     pub probe_timeout: Duration,
     /// Maximum concurrent health probes. Default: 10.
     pub max_concurrent_probes: usize,
-    /// How long to sleep when no bans exist to watch. Default: 120 seconds.
+    /// How long to sleep when no bans exist to watch. Default: 59 seconds
+    /// (1 second less than the default base ban period, so the watcher wakes before bans expire).
     pub no_ban_idle_period: Duration,
 }
 
@@ -31,7 +32,7 @@ impl Default for HealthCheckConfig {
         Self {
             probe_timeout: Duration::from_secs(5),
             max_concurrent_probes: 10,
-            no_ban_idle_period: Duration::from_secs(120),
+            no_ban_idle_period: Duration::from_secs(59),
         }
     }
 }
@@ -76,9 +77,19 @@ pub async fn run_health_check(
             &pool,
             &probe_settings,
             &config,
+            &cancel_token,
         )
         .await;
-        tracing::info!(total = all_addresses.len(), "startup health check complete");
+        let banned_count = all_addresses
+            .iter()
+            .filter(|a| address_list.is_banned(a))
+            .count();
+        tracing::info!(
+            total = all_addresses.len(),
+            banned = banned_count,
+            healthy = all_addresses.len() - banned_count,
+            "startup health check complete"
+        );
     }
 
     // Phase 2: Watch for ban expirations
@@ -109,6 +120,7 @@ pub async fn run_health_check(
                         &pool,
                         &probe_settings,
                         &config,
+                        &cancel_token,
                     )
                     .await;
                 }
@@ -123,28 +135,33 @@ async fn probe_and_update_batch(
     pool: &ConnectionPool,
     settings: &AppliedRequestSettings,
     config: &HealthCheckConfig,
+    cancel_token: &CancellationToken,
 ) {
-    stream::iter(addresses)
-        .for_each_concurrent(config.max_concurrent_probes, |address| {
-            let pool = pool.clone();
-            let settings = settings.clone();
-            async move {
-                let healthy = probe_node(address, &pool, &settings).await;
-                if healthy {
-                    if address_list.is_banned(address) {
-                        address_list.unban(address);
-                        tracing::debug!(%address, "health check: node is healthy, unbanned");
+    tokio::select! {
+        _ = cancel_token.cancelled() => {
+            tracing::debug!("health check probing cancelled");
+        }
+        _ = stream::iter(addresses)
+            .for_each_concurrent(config.max_concurrent_probes.max(1), |address| {
+                let pool = pool.clone();
+                let settings = settings.clone();
+                async move {
+                    let healthy = probe_node(address, &pool, &settings).await;
+                    if healthy {
+                        if address_list.is_banned(address) {
+                            address_list.unban(address);
+                            tracing::debug!(%address, "health check: node is healthy, unbanned");
+                        }
+                    } else {
+                        // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
+                        // this increments ban_count and extends banned_until with exponential backoff,
+                        // effectively escalating the ban duration for persistently dead nodes.
+                        address_list.ban(address);
+                        tracing::debug!(%address, "health check: node is unhealthy, banned");
                     }
-                } else {
-                    // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
-                    // this increments ban_count and extends banned_until with exponential backoff,
-                    // effectively escalating the ban duration for persistently dead nodes.
-                    address_list.ban(address);
-                    tracing::debug!(%address, "health check: node is unhealthy, banned");
                 }
-            }
-        })
-        .await;
+            }) => {}
+    }
 }
 
 async fn probe_node(
@@ -191,7 +208,7 @@ mod tests {
         let config = HealthCheckConfig::default();
         assert_eq!(config.probe_timeout, Duration::from_secs(5));
         assert_eq!(config.max_concurrent_probes, 10);
-        assert_eq!(config.no_ban_idle_period, Duration::from_secs(120));
+        assert_eq!(config.no_ban_idle_period, Duration::from_secs(59));
     }
 
     #[tokio::test]

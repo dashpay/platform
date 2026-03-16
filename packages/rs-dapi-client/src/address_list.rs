@@ -85,7 +85,11 @@ impl AddressStatus {
         self.ban_count += 1;
     }
 
-    /// Check if [Address] is banned.
+    /// Check if [Address] has a ban record (has been banned at least once and not yet unbanned).
+    ///
+    /// Note: This checks `ban_count > 0`, not whether the ban is currently active.
+    /// An address with an expired `banned_until` but non-zero `ban_count` will still
+    /// return `true` here. Use [`AddressList::get_live_address`] for temporal ban checking.
     pub fn is_banned(&self) -> bool {
         self.ban_count > 0
     }
