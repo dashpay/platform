@@ -161,7 +161,7 @@ mod test {
         )
         .expect("json serialization should succeed");
 
-        assert!(serialized_contract.contains("\"$format_version\":\"0\""));
+        assert!(serialized_contract.contains("\"$formatVersion\":\"0\""));
         assert!(serialized_contract.contains("\"documentSchemas\""));
     }
 
