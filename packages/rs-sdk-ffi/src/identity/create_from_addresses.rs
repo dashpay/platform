@@ -1,4 +1,7 @@
 //! Identity creation from addresses operations
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
@@ -8,7 +11,6 @@ use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::prelude::AddressNonce;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use std::collections::BTreeMap;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::address::transitions::AddressSigner;
 use crate::identity::helpers::convert_put_settings;
@@ -49,49 +51,6 @@ pub struct DashSDKIdentityCreateFromAddressesResult {
 /// - Private keys must be exactly 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_create_from_addresses(
-    sdk_handle: *const SDKHandle,
-    identity_handle: *const IdentityHandle,
-    inputs: *const DashSDKAddressTransferInput,
-    inputs_count: usize,
-    output: *const DashSDKAddressTransferOutput,
-    identity_signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const DashSDKPutSettings,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_identity_create_from_addresses_inner(
-            sdk_handle,
-            identity_handle,
-            inputs,
-            inputs_count,
-            output,
-            identity_signer_handle,
-            put_settings,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during identity creation from addresses".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!(
-                    "Panic during identity creation from addresses: {}",
-                    panic_message
-                ),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_identity_create_from_addresses_inner(
     sdk_handle: *const SDKHandle,
     identity_handle: *const IdentityHandle,
     inputs: *const DashSDKAddressTransferInput,

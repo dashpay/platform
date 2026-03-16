@@ -1,4 +1,7 @@
 //! Identity top-up from addresses operations
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
@@ -8,7 +11,6 @@ use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::prelude::Identity;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use std::collections::BTreeMap;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::address::transitions::AddressSigner;
 use crate::identity::helpers::convert_put_settings;
@@ -46,45 +48,6 @@ pub struct DashSDKIdentityTopUpFromAddressesResult {
 /// - Private keys must be exactly 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_top_up_from_addresses(
-    sdk_handle: *const SDKHandle,
-    identity_handle: *const IdentityHandle,
-    inputs: *const DashSDKAddressTransferInput,
-    inputs_count: usize,
-    put_settings: *const DashSDKPutSettings,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_identity_top_up_from_addresses_inner(
-            sdk_handle,
-            identity_handle,
-            inputs,
-            inputs_count,
-            put_settings,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during identity top-up from addresses".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!(
-                    "Panic during identity top-up from addresses: {}",
-                    panic_message
-                ),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
     sdk_handle: *const SDKHandle,
     identity_handle: *const IdentityHandle,
     inputs: *const DashSDKAddressTransferInput,

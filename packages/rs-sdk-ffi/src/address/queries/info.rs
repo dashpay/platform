@@ -1,9 +1,11 @@
 //! Address info query operations
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::AddressInfo;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKAddressInfo, SDKHandle};
@@ -25,34 +27,6 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - On success, returns a DashSDKAddressInfo pointer inside `DashSDKResult`; caller must free it using `dash_sdk_address_info_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_address_fetch_info(
-    sdk_handle: *const SDKHandle,
-    address_bytes: *const u8,
-    address_len: usize,
-) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_fetch_info_inner(sdk_handle, address_bytes, address_len)
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during address fetch".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Panic during address fetch: {}", panic_message),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_address_fetch_info_inner(
     sdk_handle: *const SDKHandle,
     address_bytes: *const u8,
     address_len: usize,

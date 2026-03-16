@@ -1,6 +1,9 @@
 //! Address funds transfer state transition
 //!
 //! This module provides FFI functions to transfer funds between Platform addresses.
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
@@ -13,7 +16,6 @@ use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 use std::collections::BTreeMap;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -119,44 +121,6 @@ impl Signer<PlatformAddress> for AddressSigner {
 /// - Private keys must be exactly 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_address_transfer_funds(
-    sdk_handle: *const SDKHandle,
-    inputs: *const DashSDKAddressTransferInput,
-    inputs_count: usize,
-    outputs: *const DashSDKAddressTransferOutput,
-    outputs_count: usize,
-    fee_from_input_index: u16,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_transfer_funds_inner(
-            sdk_handle,
-            inputs,
-            inputs_count,
-            outputs,
-            outputs_count,
-            fee_from_input_index,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during address transfer".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Panic during address transfer: {}", panic_message),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_address_transfer_funds_inner(
     sdk_handle: *const SDKHandle,
     inputs: *const DashSDKAddressTransferInput,
     inputs_count: usize,

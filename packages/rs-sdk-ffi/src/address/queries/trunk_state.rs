@@ -1,8 +1,10 @@
 //! Trunk state query operations for address synchronization
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::PlatformAddressTrunkState;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKLeafBoundary, DashSDKTrunkState, DashSDKTrunkStateElement, SDKHandle};
@@ -27,30 +29,6 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 pub unsafe extern "C" fn dash_sdk_address_fetch_trunk_state(
     sdk_handle: *const SDKHandle,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_fetch_trunk_state_inner(sdk_handle)
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during trunk state fetch".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Panic during trunk state fetch: {}", panic_message),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle) -> DashSDKResult {
     if sdk_handle.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,

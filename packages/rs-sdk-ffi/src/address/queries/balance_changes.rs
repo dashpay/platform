@@ -1,10 +1,12 @@
 //! Recent address balance changes query operations
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::balances::credits::CreditOperation;
 use dash_sdk::platform::query::RecentAddressBalanceChangesQuery;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::RecentAddressBalanceChanges;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -31,36 +33,6 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - On success, returns a DashSDKRecentBalanceChanges pointer; caller must free it using `dash_sdk_recent_balance_changes_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_address_fetch_recent_balance_changes(
-    sdk_handle: *const SDKHandle,
-    start_height: u64,
-) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_fetch_recent_balance_changes_inner(sdk_handle, start_height)
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during recent balance changes fetch".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!(
-                    "Panic during recent balance changes fetch: {}",
-                    panic_message
-                ),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
     sdk_handle: *const SDKHandle,
     start_height: u64,
 ) -> DashSDKResult {

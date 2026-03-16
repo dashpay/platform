@@ -1,6 +1,9 @@
 //! Address top-up from asset lock state transition
 //!
 //! This module provides FFI functions to top up Platform addresses using asset lock proofs.
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
@@ -8,7 +11,6 @@ use dash_sdk::dpp::address_funds::{
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use std::collections::BTreeMap;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::address::transitions::transfer::AddressSigner;
 use crate::identity::{
@@ -53,6 +55,7 @@ pub enum DashSDKAssetLockProofType {
 /// - Arrays must contain at least the specified count of elements.
 /// - Private key must be exactly 32 bytes.
 /// - For Chain proof: out_point_bytes must be exactly 36 bytes.
+#[allow(clippy::too_many_arguments)]
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_address_top_up_from_asset_lock(
     sdk_handle: *const SDKHandle,
@@ -67,61 +70,6 @@ pub unsafe extern "C" fn dash_sdk_address_top_up_from_asset_lock(
     core_chain_locked_height: u32,
     out_point_bytes: *const [u8; 36],
     // Common parameters
-    asset_lock_private_key: *const [u8; 32],
-    outputs: *const DashSDKAddressTransferOutput,
-    outputs_count: usize,
-    fee_from_input_index: u16,
-    put_settings: *const DashSDKPutSettings,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_top_up_from_asset_lock_inner(
-            sdk_handle,
-            proof_type,
-            instant_lock_bytes,
-            instant_lock_len,
-            transaction_bytes,
-            transaction_len,
-            output_index,
-            core_chain_locked_height,
-            out_point_bytes,
-            asset_lock_private_key,
-            outputs,
-            outputs_count,
-            fee_from_input_index,
-            put_settings,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during address top-up".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Panic during address top-up: {}", panic_message),
-            ))
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn dash_sdk_address_top_up_from_asset_lock_inner(
-    sdk_handle: *const SDKHandle,
-    proof_type: DashSDKAssetLockProofType,
-    instant_lock_bytes: *const u8,
-    instant_lock_len: usize,
-    transaction_bytes: *const u8,
-    transaction_len: usize,
-    output_index: u32,
-    core_chain_locked_height: u32,
-    out_point_bytes: *const [u8; 36],
     asset_lock_private_key: *const [u8; 32],
     outputs: *const DashSDKAddressTransferOutput,
     outputs_count: usize,

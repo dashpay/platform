@@ -1,6 +1,9 @@
 //! Address credit withdrawal state transition
 //!
 //! This module provides FFI functions to withdraw credits from Platform addresses to Core (L1) addresses.
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress,
@@ -16,7 +19,6 @@ use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFu
 use std::collections::BTreeMap;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::panic::{self, AssertUnwindSafe};
 use std::str::FromStr;
 
 use super::transfer::AddressSigner;
@@ -58,53 +60,9 @@ impl From<DashSDKPooling> for Pooling {
 /// - Arrays must contain at least the specified count of elements.
 /// - Private keys must be exactly 32 bytes.
 /// - `core_address` must be a valid NUL-terminated C string.
+#[allow(clippy::too_many_arguments)]
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_address_withdraw_funds(
-    sdk_handle: *const SDKHandle,
-    inputs: *const DashSDKAddressTransferInput,
-    inputs_count: usize,
-    core_address: *const c_char,
-    core_fee_per_byte: u32,
-    pooling: DashSDKPooling,
-    fee_from_input_index: u16,
-    change_address: *const u8,
-    change_address_len: usize,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_address_withdraw_funds_inner(
-            sdk_handle,
-            inputs,
-            inputs_count,
-            core_address,
-            core_fee_per_byte,
-            pooling,
-            fee_from_input_index,
-            change_address,
-            change_address_len,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during address withdrawal".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Panic during address withdrawal: {}", panic_message),
-            ))
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-unsafe fn dash_sdk_address_withdraw_funds_inner(
     sdk_handle: *const SDKHandle,
     inputs: *const DashSDKAddressTransferInput,
     inputs_count: usize,

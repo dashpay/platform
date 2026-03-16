@@ -1,4 +1,7 @@
 //! Identity credit transfer to addresses operations
+//!
+//! Note: `catch_unwind` intentionally not used -- `panic = "abort"` in the release profile
+//! makes it a no-op, and dereferencing invalid pointers is UB regardless of `catch_unwind`.
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::fee::Credits;
@@ -6,7 +9,6 @@ use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
 use std::collections::BTreeMap;
-use std::panic::{self, AssertUnwindSafe};
 
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
@@ -45,49 +47,6 @@ pub struct DashSDKIdentityTransferToAddressesResult {
 /// - Arrays must contain at least the specified count of elements.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_transfer_credits_to_addresses(
-    sdk_handle: *const SDKHandle,
-    identity_handle: *const IdentityHandle,
-    outputs: *const DashSDKAddressTransferOutput,
-    outputs_count: usize,
-    public_key_id: u32,
-    signer_handle: *const crate::types::SignerHandle,
-    put_settings: *const DashSDKPutSettings,
-) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        dash_sdk_identity_transfer_credits_to_addresses_inner(
-            sdk_handle,
-            identity_handle,
-            outputs,
-            outputs_count,
-            public_key_id,
-            signer_handle,
-            put_settings,
-        )
-    }));
-
-    match result {
-        Ok(result) => result,
-        Err(panic_info) => {
-            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "Unknown panic occurred during identity transfer to addresses".to_string()
-            };
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!(
-                    "Panic during identity transfer to addresses: {}",
-                    panic_message
-                ),
-            ))
-        }
-    }
-}
-
-unsafe fn dash_sdk_identity_transfer_credits_to_addresses_inner(
     sdk_handle: *const SDKHandle,
     identity_handle: *const IdentityHandle,
     outputs: *const DashSDKAddressTransferOutput,
