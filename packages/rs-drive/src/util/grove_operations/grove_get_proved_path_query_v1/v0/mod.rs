@@ -49,7 +49,11 @@ mod tests {
             )
             .expect("expected to insert root tree");
 
-        drive.grove.commit_transaction(tx).unwrap().expect("expected to commit transaction");
+        drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .expect("expected to commit transaction");
 
         let path_query = PathQuery::new(
             vec![b"root".to_vec()],

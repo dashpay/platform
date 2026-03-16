@@ -71,7 +71,9 @@ mod tests {
         let path = vec![b"root".to_vec()];
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyRefElement((path, b"key", element));
-        drive.batch_insert_v0(info, &mut ops).expect("expected operation to succeed");
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 
@@ -82,7 +84,9 @@ mod tests {
         let path = vec![b"root".to_vec()];
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyElement((path, b"key".to_vec(), element));
-        drive.batch_insert_v0(info, &mut ops).expect("expected operation to succeed");
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 
@@ -94,7 +98,9 @@ mod tests {
         let key_info = KeyInfo::KnownKey(b"key".to_vec());
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::<0>::PathKeyElementSize((key_info_path, key_info, element));
-        drive.batch_insert_v0(info, &mut ops).expect("expected operation to succeed");
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 
@@ -116,7 +122,9 @@ mod tests {
         let path: [&[u8]; 1] = [b"root"];
         let element = Element::new_item(b"value".to_vec());
         let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((path, b"key", element));
-        drive.batch_insert_v0(info, &mut ops).expect("expected operation to succeed");
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
         assert_eq!(ops.len(), 1);
     }
 }
