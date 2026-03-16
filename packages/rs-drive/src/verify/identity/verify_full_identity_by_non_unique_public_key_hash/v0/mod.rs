@@ -67,13 +67,24 @@ impl Drive {
                     return Err(Error::Proof(ProofError::IncompleteProof("identity is not in proof even though identity id is set from non unique public key hash")));
                 };
 
-                Self::verify_full_identity_by_identity_id(
-                    identity_proof.as_slice(),
-                    false,
-                    identity_id,
-                    platform_version,
-                )
-                .map(|(_, maybe_identity)| maybe_identity)
+                let (identity_root_hash, maybe_identity) =
+                    Self::verify_full_identity_by_identity_id(
+                        identity_proof.as_slice(),
+                        false,
+                        identity_id,
+                        platform_version,
+                    )?;
+
+                // Both proofs must come from the same tree state. If the root
+                // hashes differ, the identity proof may be from a stale or
+                // fabricated state that does not match the quorum-signed root.
+                if identity_root_hash != root_hash {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "identity proof root hash does not match the public key hash proof root hash".to_string(),
+                    )));
+                }
+
+                Ok(maybe_identity)
             })
             .transpose()?
             .flatten();
