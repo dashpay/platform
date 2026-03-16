@@ -44,17 +44,21 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
         ));
     }
 
-    let client = &mut *handle;
+    let client = &*handle;
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Prepare the incoming viewing key for trial decryption.
     let prepared_ivk = client.keys.ivk.prepare();
 
-    // Round down to nearest chunk boundary so the server accepts the query.
-    let already_have = client.last_synced_index;
-    let aligned_start = (already_have / CHUNK_SIZE) * CHUNK_SIZE;
+    // Read sync position under lock, then release before async call.
+    let (already_have, aligned_start) = {
+        let state = client.state.lock().unwrap();
+        let already = state.last_synced_index;
+        let aligned = (already / CHUNK_SIZE) * CHUNK_SIZE;
+        (already, aligned)
+    };
 
-    // Execute the async note sync on the SDK runtime.
+    // Execute the async note sync on the SDK runtime (no lock held).
     let result = wrapper.runtime.block_on(async {
         sync_shielded_notes(&wrapper.sdk, &prepared_ivk, aligned_start, None).await
     });
@@ -69,12 +73,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
         }
     };
 
+    // Re-acquire lock for tree updates and note tracking.
+    let mut state = client.state.lock().unwrap();
+
     // Append notes to the local commitment tree, skipping positions already present.
     let mut appended = 0u32;
     for (i, raw_note) in result.all_notes.iter().enumerate() {
         let global_pos = aligned_start + i as u64;
         if global_pos < already_have {
-            continue; // already appended in a previous sync
+            continue;
         }
 
         let cmx_bytes: [u8; 32] = match raw_note.cmx.as_slice().try_into() {
@@ -97,13 +104,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
             Retention::Ephemeral
         };
 
-        let tree_result = client
-            .commitment_tree
-            .lock()
-            .unwrap()
-            .append(cmx_bytes, retention);
-
-        if let Err(e) = tree_result {
+        if let Err(e) = state.commitment_tree.append(cmx_bytes, retention) {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to append note to tree: {}", e),
@@ -116,12 +117,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
     // Checkpoint the tree if we appended anything.
     if appended > 0 {
         let checkpoint_id = result.next_start_index as u32;
-        if let Err(e) = client
-            .commitment_tree
-            .lock()
-            .unwrap()
-            .checkpoint(checkpoint_id)
-        {
+        if let Err(e) = state.commitment_tree.checkpoint(checkpoint_id) {
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to checkpoint tree: {}", e),
@@ -129,18 +125,17 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
         }
     }
 
-    // Track newly decrypted notes (skipping positions already stored).
+    // Track newly decrypted notes.
     let mut new_note_count = 0u32;
     for dn in &result.decrypted_notes {
         if dn.position < already_have {
-            continue; // already stored in a previous sync
+            continue;
         }
 
-        // Compute the spending nullifier from our FVK.
         let nullifier = dn.note.nullifier(&client.keys.fvk);
         let value = dn.note.value().inner();
 
-        client.notes.push(ShieldedNote {
+        state.notes.push(ShieldedNote {
             note: dn.note,
             position: Position::from(dn.position),
             nullifier,
@@ -152,11 +147,13 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_notes(
     }
 
     // Update sync position.
-    client.last_synced_index = aligned_start + result.total_notes_scanned;
+    state.last_synced_index = aligned_start + result.total_notes_scanned;
 
-    let balance = client.recalculate_balance();
+    let balance = state.recalculate_balance();
 
-    // Return JSON result.
+    // Drop lock before JSON serialization.
+    drop(state);
+
     let json = serde_json::json!({
         "newNotes": new_note_count,
         "balance": balance,
@@ -203,21 +200,37 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_nullifiers(
         ));
     }
 
-    let client = &mut *handle;
+    let client = &*handle;
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
-    // Collect unspent nullifier bytes.
-    let unspent_nullifiers: Vec<[u8; 32]> = client
-        .notes
-        .iter()
-        .filter(|n| !n.is_spent)
-        .map(|n| n.nullifier.to_bytes())
-        .collect();
+    // Collect unspent nullifiers and sync checkpoint under lock, then release.
+    let (unspent_nullifiers, last_sync) = {
+        let state = client.state.lock().unwrap();
+
+        let nullifiers: Vec<[u8; 32]> = state
+            .notes
+            .iter()
+            .filter(|n| !n.is_spent)
+            .map(|n| n.nullifier.to_bytes())
+            .collect();
+
+        let checkpoint = if state.last_nullifier_sync_height > 0 {
+            Some(NullifierSyncCheckpoint {
+                height: state.last_nullifier_sync_height,
+                timestamp: state.last_nullifier_sync_timestamp,
+            })
+        } else {
+            None
+        };
+
+        (nullifiers, checkpoint)
+    };
 
     if unspent_nullifiers.is_empty() {
+        let balance = client.state.lock().unwrap().recalculate_balance();
         let json = serde_json::json!({
             "spentCount": 0,
-            "balance": client.recalculate_balance(),
+            "balance": balance,
         });
         return match CString::new(json.to_string()) {
             Ok(c_str) => {
@@ -235,17 +248,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_nullifiers(
         };
     }
 
-    // Build checkpoint from stored sync state.
-    let last_sync = if client.last_nullifier_sync_height > 0 {
-        Some(NullifierSyncCheckpoint {
-            height: client.last_nullifier_sync_height,
-            timestamp: client.last_nullifier_sync_timestamp,
-        })
-    } else {
-        None
-    };
-
-    // Execute the async nullifier sync on the SDK runtime.
+    // Execute async nullifier sync (no lock held).
     let result = wrapper.runtime.block_on(async {
         wrapper
             .sdk
@@ -263,10 +266,12 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_nullifiers(
         }
     };
 
-    // Mark found (spent) nullifiers.
+    // Re-acquire lock to update state.
+    let mut state = client.state.lock().unwrap();
+
     let mut spent_count = 0u32;
     for nf_bytes in &result.found {
-        for note in &mut client.notes {
+        for note in &mut state.notes {
             if !note.is_spent && note.nullifier.to_bytes() == *nf_bytes {
                 note.is_spent = true;
                 spent_count += 1;
@@ -274,13 +279,12 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_sync_nullifiers(
         }
     }
 
-    // Update sync checkpoint.
-    client.last_nullifier_sync_height = result.new_sync_height;
-    client.last_nullifier_sync_timestamp = result.new_sync_timestamp;
+    state.last_nullifier_sync_height = result.new_sync_height;
+    state.last_nullifier_sync_timestamp = result.new_sync_timestamp;
 
-    let balance = client.recalculate_balance();
+    let balance = state.recalculate_balance();
+    drop(state);
 
-    // Return JSON result.
     let json = serde_json::json!({
         "spentCount": spent_count,
         "balance": balance,

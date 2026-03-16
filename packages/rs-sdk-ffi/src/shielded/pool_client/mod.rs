@@ -40,25 +40,21 @@ pub(crate) struct ShieldedNote {
     pub value: u64,
 }
 
-/// Opaque shielded pool client exposed across the FFI boundary.
+/// Mutable state behind a Mutex for thread-safe FFI access.
 ///
-/// Holds derived Orchard keys, the SQLite-backed commitment tree, and all
-/// tracked notes. The commitment tree is behind a `Mutex` because
-/// `ClientPersistentCommitmentTree` contains a `rusqlite::Connection` which
-/// is `!Sync`. The mutex makes the overall struct `Sync` so `&self` is `Send`
-/// across `.await` boundaries.
-pub struct ShieldedPoolClient {
-    pub(crate) keys: OrchardKeySet,
-    pub(crate) notes: Vec<ShieldedNote>,
-    pub(crate) commitment_tree: Mutex<ClientPersistentCommitmentTree>,
-    pub(crate) last_synced_index: u64,
-    pub(crate) last_nullifier_sync_height: u64,
-    pub(crate) last_nullifier_sync_timestamp: u64,
+/// All mutable fields are grouped here so concurrent FFI calls from
+/// different Swift dispatch queues don't produce data races.
+pub(crate) struct ShieldedPoolState {
+    pub notes: Vec<ShieldedNote>,
+    pub commitment_tree: ClientPersistentCommitmentTree,
+    pub last_synced_index: u64,
+    pub last_nullifier_sync_height: u64,
+    pub last_nullifier_sync_timestamp: u64,
 }
 
-impl ShieldedPoolClient {
+impl ShieldedPoolState {
     /// Recalculate the shielded balance from unspent notes.
-    pub(crate) fn recalculate_balance(&self) -> u64 {
+    pub fn recalculate_balance(&self) -> u64 {
         self.notes
             .iter()
             .filter(|n| !n.is_spent)
@@ -67,9 +63,19 @@ impl ShieldedPoolClient {
     }
 
     /// Get unspent notes.
-    pub(crate) fn unspent_notes(&self) -> Vec<&ShieldedNote> {
+    pub fn unspent_notes(&self) -> Vec<&ShieldedNote> {
         self.notes.iter().filter(|n| !n.is_spent).collect()
     }
+}
+
+/// Opaque shielded pool client exposed across the FFI boundary.
+///
+/// Holds derived Orchard keys and all mutable state behind a `Mutex`.
+/// This is `Sync` because all mutable access goes through the mutex,
+/// making concurrent FFI calls from different Swift dispatch queues safe.
+pub struct ShieldedPoolClient {
+    pub(crate) keys: OrchardKeySet,
+    pub(crate) state: Mutex<ShieldedPoolState>,
 }
 
 /// Derive an `OrchardKeySet` from raw spending key bytes.
@@ -162,25 +168,19 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_create(
         }
     };
 
-    // Resume from persisted tree state if available.
-    let last_synced_index = match commitment_tree.max_leaf_position() {
-        Ok(Some(pos)) => u64::from(pos) + 1,
-        Ok(None) => 0,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Failed to read tree position: {}", e),
-            ))
-        }
-    };
-
+    // Notes are not persisted separately — start from index 0 so
+    // sync_notes rediscovers all notes via trial decryption. The
+    // commitment tree IS persisted (SQLite), so appending already-seen
+    // positions is a no-op handled by the tree internally.
     let client = ShieldedPoolClient {
         keys,
-        notes: Vec::new(),
-        commitment_tree: Mutex::new(commitment_tree),
-        last_synced_index,
-        last_nullifier_sync_height: 0,
-        last_nullifier_sync_timestamp: 0,
+        state: Mutex::new(ShieldedPoolState {
+            notes: Vec::new(),
+            commitment_tree,
+            last_synced_index: 0,
+            last_nullifier_sync_height: 0,
+            last_nullifier_sync_timestamp: 0,
+        }),
     };
 
     let handle = Box::into_raw(Box::new(client));
@@ -260,7 +260,8 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_get_balance(
     }
 
     let client = &*handle;
-    let balance = client.recalculate_balance();
+    let state = client.state.lock().unwrap();
+    let balance = state.recalculate_balance();
     let balance_str = balance.to_string();
 
     match CString::new(balance_str) {

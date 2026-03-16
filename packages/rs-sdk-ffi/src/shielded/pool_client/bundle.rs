@@ -12,6 +12,7 @@ use dash_sdk::dpp::shielded::builder::{
     build_shielded_transfer_transition, build_shielded_withdrawal_transition,
     build_unshield_transition, serialize_authorized_bundle, SpendableNote,
 };
+use dash_sdk::dpp::shielded::compute_minimum_shielded_fee;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::withdrawal::Pooling;
 
@@ -26,10 +27,10 @@ use super::ShieldedPoolClient;
 /// Select notes to cover the requested amount using a greedy algorithm
 /// (largest-value first).
 fn select_notes_for_amount(
-    client: &ShieldedPoolClient,
+    state: &super::ShieldedPoolState,
     amount: u64,
 ) -> Result<(Vec<&super::ShieldedNote>, u64), String> {
-    let unspent = client.unspent_notes();
+    let unspent = state.unspent_notes();
 
     if unspent.is_empty() {
         return Err("No unspent shielded notes available".to_string());
@@ -68,9 +69,9 @@ fn payment_address_to_orchard(
     OrchardAddress::from_raw_bytes(&raw).map_err(|e| format!("Invalid Orchard address: {}", e))
 }
 
-/// Get Merkle witnesses and anchor for the selected notes by locking the tree.
+/// Get Merkle witnesses and anchor for the selected notes from the locked state.
 fn get_witnesses_and_anchor(
-    client: &ShieldedPoolClient,
+    state: &super::ShieldedPoolState,
     selected: &[&super::ShieldedNote],
 ) -> Result<
     (
@@ -79,7 +80,7 @@ fn get_witnesses_and_anchor(
     ),
     String,
 > {
-    let tree = client.commitment_tree.lock().unwrap();
+    let tree = &state.commitment_tree;
 
     let spends = selected
         .iter()
@@ -292,19 +293,55 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_build_transfer_bundle(
         }
     };
 
-    // Select notes.
-    let (selected, _total) = match select_notes_for_amount(client, amount) {
+    // Lock state once for note selection and witness generation.
+    let state = client.state.lock().unwrap();
+
+    // Fee-aware note selection: select enough to cover amount + estimated fee.
+    let (mut selected, mut total) = match select_notes_for_amount(&state, amount) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
         }
     };
 
-    // Get witnesses and anchor (lock scoped to avoid holding across other operations).
-    let (spends, anchor) = match get_witnesses_and_anchor(client, &selected) {
+    // Transfer has recipient + change = at least 2 outputs.
+    let num_actions = selected.len().max(2);
+    let estimated_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let required = match amount.checked_add(estimated_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "amount + fee overflows".to_string(),
+            ))
+        }
+    };
+
+    // Re-select if initial selection doesn't cover amount + fee.
+    if total < required {
+        match select_notes_for_amount(&state, required) {
+            Ok((reselected, retotal)) => {
+                selected = reselected;
+                total = retotal;
+                let _ = total; // suppress unused warning
+            }
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    e,
+                ))
+            }
+        }
+    }
+
+    // Get witnesses and anchor from locked state.
+    let (spends, anchor) = match get_witnesses_and_anchor(&state, &selected) {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::CryptoError, e)),
     };
+
+    // Drop state lock before expensive proof generation.
+    drop(state);
 
     let change_addr = match payment_address_to_orchard(&client.keys.default_address) {
         Ok(a) => a,
@@ -395,19 +432,55 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_build_unshield_bundle(
         }
     };
 
-    // Select notes.
-    let (selected, _total) = match select_notes_for_amount(client, amount) {
+    // Lock state once for note selection and witness generation.
+    let state = client.state.lock().unwrap();
+
+    // Fee-aware note selection: select enough to cover amount + estimated fee.
+    let (mut selected, mut total) = match select_notes_for_amount(&state, amount) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
         }
     };
 
-    // Get witnesses and anchor.
-    let (spends, anchor) = match get_witnesses_and_anchor(client, &selected) {
+    // Unshield has change output = at least 1 output.
+    let num_actions = selected.len().max(1);
+    let estimated_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let required = match amount.checked_add(estimated_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "amount + fee overflows".to_string(),
+            ))
+        }
+    };
+
+    // Re-select if initial selection doesn't cover amount + fee.
+    if total < required {
+        match select_notes_for_amount(&state, required) {
+            Ok((reselected, retotal)) => {
+                selected = reselected;
+                total = retotal;
+                let _ = total;
+            }
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    e,
+                ))
+            }
+        }
+    }
+
+    // Get witnesses and anchor from locked state.
+    let (spends, anchor) = match get_witnesses_and_anchor(&state, &selected) {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::CryptoError, e)),
     };
+
+    // Drop state lock before expensive proof generation.
+    drop(state);
 
     let change_addr = match payment_address_to_orchard(&client.keys.default_address) {
         Ok(a) => a,
@@ -499,19 +572,55 @@ pub unsafe extern "C" fn dash_sdk_shielded_pool_client_build_withdrawal_bundle(
         _ => Pooling::Standard,
     };
 
-    // Select notes.
-    let (selected, _total) = match select_notes_for_amount(client, amount) {
+    // Lock state once for note selection and witness generation.
+    let state = client.state.lock().unwrap();
+
+    // Fee-aware note selection: select enough to cover amount + estimated fee.
+    let (mut selected, mut total) = match select_notes_for_amount(&state, amount) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
         }
     };
 
-    // Get witnesses and anchor.
-    let (spends, anchor) = match get_witnesses_and_anchor(client, &selected) {
+    // Withdrawal has change output = at least 1 output.
+    let num_actions = selected.len().max(1);
+    let estimated_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let required = match amount.checked_add(estimated_fee) {
+        Some(v) => v,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "amount + fee overflows".to_string(),
+            ))
+        }
+    };
+
+    // Re-select if initial selection doesn't cover amount + fee.
+    if total < required {
+        match select_notes_for_amount(&state, required) {
+            Ok((reselected, retotal)) => {
+                selected = reselected;
+                total = retotal;
+                let _ = total;
+            }
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    e,
+                ))
+            }
+        }
+    }
+
+    // Get witnesses and anchor from locked state.
+    let (spends, anchor) = match get_witnesses_and_anchor(&state, &selected) {
         Ok(s) => s,
         Err(e) => return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::CryptoError, e)),
     };
+
+    // Drop state lock before expensive proof generation.
+    drop(state);
 
     let change_addr = match payment_address_to_orchard(&client.keys.default_address) {
         Ok(a) => a,
