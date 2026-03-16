@@ -308,17 +308,24 @@ impl From<dashcore_rpc::Error> for DapiError {
                     match code {
                         // RPC_INVALID_ADDRESS_OR_KEY: address/key not found
                         -5 => DapiError::NotFound(msg),
+                        // RPC_TYPE_ERROR: unexpected type for a parameter
+                        -3 => DapiError::InvalidArgument(msg),
                         // RPC_INVALID_PARAMETER: invalid, missing or duplicate parameter
                         -8 => DapiError::InvalidArgument(msg),
                         // RPC_MISC_ERROR: std::exception thrown in command handling
                         -1 => DapiError::Internal(msg),
+                        // RPC_WALLET_NOT_FOUND
+                        -18 => DapiError::NotFound(msg),
                         // RPC_TRANSACTION_ALREADY_IN_CHAIN
                         -27 => DapiError::AlreadyExists(msg),
                         // RPC_VERIFY_REJECTED: transaction or block rejected
                         -26 => DapiError::FailedPrecondition(msg),
-                        // RPC_VERIFY_ERROR (-25): general verification error
-                        // RPC_DESERIALIZATION_ERROR (-22): raw tx/block deserialization
-                        -25 | -22 => DapiError::InvalidArgument(msg),
+                        // RPC_VERIFY_ERROR: general verification error
+                        -25 => DapiError::FailedPrecondition(msg),
+                        // RPC_DESERIALIZATION_ERROR: raw tx/block deserialization
+                        -22 => DapiError::InvalidArgument(msg),
+                        // RPC_IN_WARMUP: node is still starting up
+                        -28 => DapiError::Unavailable(msg),
                         _ => DapiError::Unavailable(format!("Core RPC error {}: {}", code, msg)),
                     }
                 }
