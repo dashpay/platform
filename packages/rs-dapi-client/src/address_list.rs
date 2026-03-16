@@ -90,6 +90,11 @@ impl AddressStatus {
         self.ban_count > 0
     }
 
+    /// Returns the number of times this address has been banned.
+    pub fn ban_count(&self) -> usize {
+        self.ban_count
+    }
+
     /// Clears ban record.
     pub fn unban(&mut self) {
         self.ban_count = 0;
@@ -266,6 +271,42 @@ impl AddressList {
             .collect()
     }
 
+    /// Returns ALL addresses (both banned and unbanned).
+    pub fn get_all_addresses(&self) -> Vec<Address> {
+        let guard = self.addresses.read().unwrap();
+        guard.keys().cloned().collect()
+    }
+
+    /// Returns the earliest `banned_until` timestamp that is still in the future.
+    /// Returns `None` if no addresses are currently banned with a future expiry.
+    pub fn get_next_ban_expiry(&self) -> Option<chrono::DateTime<Utc>> {
+        let guard = self.addresses.read().unwrap();
+        let now = chrono::Utc::now();
+        guard
+            .values()
+            .filter_map(|status| status.banned_until)
+            .filter(|banned_until| *banned_until > now)
+            .min()
+    }
+
+    /// Returns addresses whose ban has expired but still have a ban record (ban_count > 0).
+    /// These are candidates for re-probing before being made available again.
+    pub fn get_expired_ban_addresses(&self) -> Vec<Address> {
+        let guard = self.addresses.read().unwrap();
+        let now = chrono::Utc::now();
+        guard
+            .iter()
+            .filter(|(_, status)| {
+                status.ban_count > 0
+                    && status
+                        .banned_until
+                        .map(|banned_until| banned_until <= now)
+                        .unwrap_or(true)
+            })
+            .map(|(addr, _)| addr.clone())
+            .collect()
+    }
+
     /// Get number of all addresses, both banned and not banned.
     pub fn len(&self) -> usize {
         self.addresses.read().unwrap().len()
@@ -391,5 +432,274 @@ mod tests {
         let live_addresses = list.get_live_addresses();
         assert_eq!(live_addresses.len(), 1);
         assert!(live_addresses.contains(&addr1));
+    }
+
+    #[test]
+    fn test_address_try_from_uri_without_host() {
+        let uri: Uri = Uri::from_str("/path/only").unwrap();
+        let result = Address::try_from(uri);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, AddressListError::InvalidAddressUri(_)));
+    }
+
+    #[test]
+    fn test_address_from_str_invalid_uri() {
+        // Use a string with invalid URI characters that http::Uri rejects
+        let result = Address::from_str("not a valid uri\x00");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_address_uri_accessor() {
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let uri = addr.uri();
+        assert_eq!(uri.host(), Some("127.0.0.1"));
+    }
+
+    #[test]
+    fn test_address_partial_eq_with_uri() {
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let uri = Uri::from_str("http://127.0.0.1:3000").unwrap();
+        assert!(addr == uri);
+
+        let other_uri = Uri::from_str("http://127.0.0.1:4000").unwrap();
+        assert!(addr != other_uri);
+    }
+
+    #[test]
+    fn test_address_display() {
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let display = format!("{}", addr);
+        assert!(display.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn test_address_status_is_banned() {
+        let mut status = AddressStatus::default();
+        assert!(!status.is_banned());
+
+        status.ban(&Duration::from_secs(60));
+        assert!(status.is_banned());
+
+        status.unban();
+        assert!(!status.is_banned());
+    }
+
+    #[test]
+    fn test_address_status_exponential_ban() {
+        let mut status = AddressStatus::default();
+        let base_period = Duration::from_secs(1);
+
+        // First ban: coefficient = exp(0) = 1, period = 1s
+        status.ban(&base_period);
+        assert_eq!(status.ban_count, 1);
+        assert!(status.banned_until.is_some());
+
+        // Second ban: coefficient = exp(1) ~= 2.718, period ~= 2.718s
+        status.ban(&base_period);
+        assert_eq!(status.ban_count, 2);
+    }
+
+    #[test]
+    fn test_address_list_is_empty() {
+        let list = AddressList::new();
+        assert!(list.is_empty());
+
+        let mut list = AddressList::new();
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        assert!(!list.is_empty());
+    }
+
+    #[test]
+    fn test_address_list_len() {
+        let mut list = AddressList::new();
+        assert_eq!(list.len(), 0);
+
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        assert_eq!(list.len(), 1);
+
+        list.add("http://127.0.0.1:3001".parse().unwrap());
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_address_list_add_duplicate() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+
+        assert!(list.add(addr.clone()));
+        assert!(!list.add(addr)); // duplicate returns false
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_address_list_remove() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+
+        list.add(addr.clone());
+        assert_eq!(list.len(), 1);
+
+        let removed = list.remove(&addr);
+        assert!(removed.is_some());
+        assert_eq!(list.len(), 0);
+
+        // Removing non-existent address returns None
+        let removed = list.remove(&addr);
+        assert!(removed.is_none());
+    }
+
+    #[test]
+    fn test_address_list_ban_nonexistent() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        assert!(!list.ban(&addr));
+    }
+
+    #[test]
+    fn test_address_list_unban_nonexistent() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        assert!(!list.unban(&addr));
+    }
+
+    #[test]
+    fn test_address_list_is_banned() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let unknown: Address = "http://127.0.0.1:9999".parse().unwrap();
+
+        list.add(addr.clone());
+
+        assert!(!list.is_banned(&addr));
+        assert!(!list.is_banned(&unknown)); // unknown returns false
+
+        list.ban(&addr);
+        assert!(list.is_banned(&addr));
+    }
+
+    #[test]
+    fn test_address_list_from_str() {
+        let list: AddressList = "http://127.0.0.1:3000,http://127.0.0.1:3001"
+            .parse()
+            .unwrap();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_address_list_from_str_single() {
+        let list: AddressList = "http://127.0.0.1:3000".parse().unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn test_address_list_from_str_invalid() {
+        let result: Result<AddressList, _> = "not a valid uri\x00".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_address_list_get_live_address_returns_none_when_empty() {
+        let list = AddressList::new();
+        assert!(list.get_live_address().is_none());
+    }
+
+    #[test]
+    fn test_address_list_get_live_address_returns_some_when_available() {
+        let mut list = AddressList::new();
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        assert!(list.get_live_address().is_some());
+    }
+
+    #[test]
+    fn test_address_list_into_iter() {
+        let mut list = AddressList::new();
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        list.add("http://127.0.0.1:3001".parse().unwrap());
+
+        let items: Vec<_> = list.into_iter().collect();
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_address_list_with_settings() {
+        let list = AddressList::with_settings(Duration::from_secs(120));
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_address_list_default() {
+        let list = AddressList::default();
+        assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_addresses_returns_both_banned_and_unbanned() {
+        let mut list = AddressList::new();
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
+        list.add(addr1.clone());
+        list.add(addr2.clone());
+        list.ban(&addr2);
+
+        let all = list.get_all_addresses();
+        assert_eq!(all.len(), 2);
+        assert!(all.contains(&addr1));
+        assert!(all.contains(&addr2));
+    }
+
+    #[test]
+    fn test_get_next_ban_expiry_returns_earliest() {
+        let mut list = AddressList::new();
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
+        list.add(addr1.clone());
+        list.add(addr2.clone());
+
+        list.ban(&addr1);
+        list.ban(&addr2);
+        list.ban(&addr2);
+
+        let expiry = list.get_next_ban_expiry();
+        assert!(expiry.is_some());
+    }
+
+    #[test]
+    fn test_get_next_ban_expiry_none_when_no_bans() {
+        let mut list = AddressList::new();
+        list.add("http://127.0.0.1:3000".parse().unwrap());
+        assert!(list.get_next_ban_expiry().is_none());
+    }
+
+    #[test]
+    fn test_get_expired_ban_addresses() {
+        let mut list = AddressList::with_settings(Duration::from_millis(1));
+        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
+        list.add(addr1.clone());
+        list.add(addr2.clone());
+
+        list.ban(&addr1);
+        std::thread::sleep(Duration::from_millis(50));
+
+        let expired = list.get_expired_ban_addresses();
+        assert!(expired.contains(&addr1));
+        assert!(!expired.contains(&addr2));
+    }
+
+    #[test]
+    fn test_address_status_ban_count() {
+        let mut status = AddressStatus::default();
+        assert_eq!(status.ban_count(), 0);
+
+        status.ban(&Duration::from_secs(60));
+        assert_eq!(status.ban_count(), 1);
+
+        status.ban(&Duration::from_secs(60));
+        assert_eq!(status.ban_count(), 2);
+
+        status.unban();
+        assert_eq!(status.ban_count(), 0);
     }
 }

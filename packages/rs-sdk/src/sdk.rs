@@ -130,6 +130,10 @@ pub struct Sdk {
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+
+    /// Handle for the background health check task.
+    #[cfg(not(target_arch = "wasm32"))]
+    _health_check_handle: Option<tokio::task::JoinHandle<()>>,
 }
 impl Clone for Sdk {
     fn clone(&self) -> Self {
@@ -146,6 +150,8 @@ impl Clone for Sdk {
             dapi_client_settings: self.dapi_client_settings,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
+            #[cfg(not(target_arch = "wasm32"))]
+            _health_check_handle: None,
         }
     }
 }
@@ -429,6 +435,17 @@ impl Sdk {
     }
 }
 
+impl Drop for Sdk {
+    fn drop(&mut self) {
+        // Abort the background health check task when the Sdk that owns the handle is dropped.
+        // Clones always have `None`, so only the original Sdk triggers this.
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(handle) = self._health_check_handle.take() {
+            handle.abort();
+        }
+    }
+}
+
 /// If received metadata time differs from local time by more than `tolerance`, the remote node is considered stale.
 ///
 /// ## Parameters
@@ -602,6 +619,13 @@ pub struct SdkBuilder {
     /// CA certificate to use for TLS connections.
     #[cfg(not(target_arch = "wasm32"))]
     ca_certificate: Option<Certificate>,
+
+    /// Whether to run background health check. Default: true.
+    #[cfg(not(target_arch = "wasm32"))]
+    health_check: bool,
+    /// Configuration for the background health check.
+    #[cfg(not(target_arch = "wasm32"))]
+    health_check_config: rs_dapi_client::HealthCheckConfig,
 }
 
 impl Default for SdkBuilder {
@@ -639,6 +663,11 @@ impl Default for SdkBuilder {
             version: PlatformVersion::latest(),
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+
+            #[cfg(not(target_arch = "wasm32"))]
+            health_check: true,
+            #[cfg(not(target_arch = "wasm32"))]
+            health_check_config: rs_dapi_client::HealthCheckConfig::default(),
 
             #[cfg(feature = "mocks")]
             dump_dir: None,
@@ -786,6 +815,28 @@ impl SdkBuilder {
         self
     }
 
+    /// Enable or disable background health check.
+    ///
+    /// When enabled, the SDK will probe all DAPI nodes on startup and monitor
+    /// ban expirations to re-probe nodes before making them available again.
+    ///
+    /// Enabled by default on non-WASM targets. Not available on WASM.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_health_check(mut self, enabled: bool) -> Self {
+        self.health_check = enabled;
+        self
+    }
+
+    /// Configure the background health check.
+    ///
+    /// Implicitly enables the health check.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_health_check_config(mut self, config: rs_dapi_client::HealthCheckConfig) -> Self {
+        self.health_check = true;
+        self.health_check_config = config;
+        self
+    }
+
     /// Use Dash Core as a wallet and context provider.
     ///
     /// This is a convenience method that configures the SDK to use Dash Core as a wallet and context provider.
@@ -870,6 +921,11 @@ impl SdkBuilder {
             None => DEFAULT_REQUEST_SETTINGS,
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let health_check_enabled = self.health_check;
+        #[cfg(not(target_arch = "wasm32"))]
+        let health_check_config = self.health_check_config;
+
         let sdk= match self.addresses {
             // non-mock mode
             Some(addresses) => {
@@ -882,6 +938,14 @@ impl SdkBuilder {
 
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
+
+                // Extract clones needed for health check before dapi is moved
+                #[cfg(not(target_arch = "wasm32"))]
+                let hc_address_list = dapi.address_list().clone();
+                #[cfg(not(target_arch = "wasm32"))]
+                let hc_pool = dapi.connection_pool().clone();
+                #[cfg(not(target_arch = "wasm32"))]
+                let hc_ca_cert = dapi.ca_certificate.clone();
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
@@ -898,6 +962,8 @@ impl SdkBuilder {
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    _health_check_handle: None,
                 };
                 // if context provider is not set correctly (is None), it means we need to fall back to core wallet
                 if  sdk.context_provider.load().is_none() {
@@ -929,6 +995,19 @@ impl SdkBuilder {
                         "or enable `mocks` feature to use mock context provider")
                         .to_string()));
                 };
+
+                #[cfg(not(target_arch = "wasm32"))]
+                if health_check_enabled {
+                    let hc_cancel = sdk.cancel_token.clone();
+                    let handle = tokio::spawn(rs_dapi_client::health_check::run_health_check(
+                        hc_address_list,
+                        hc_pool,
+                        health_check_config,
+                        hc_cancel,
+                        hc_ca_cert,
+                    ));
+                    sdk._health_check_handle = Some(handle);
+                }
 
                 sdk
             },
@@ -964,6 +1043,8 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    _health_check_handle: None,
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());

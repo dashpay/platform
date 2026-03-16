@@ -8,6 +8,8 @@ mod dapi_client;
 #[cfg(feature = "dump")]
 pub mod dump;
 mod executor;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod health_check;
 #[cfg(feature = "mocks")]
 pub mod mock;
 mod request_settings;
@@ -26,6 +28,8 @@ pub use executor::{
     WrapToExecutionResult,
 };
 use futures::{future::BoxFuture, FutureExt};
+#[cfg(not(target_arch = "wasm32"))]
+pub use health_check::HealthCheckConfig;
 #[cfg(any(target_arch = "wasm32", not(feature = "mocks")))]
 pub use http::Uri;
 #[cfg(all(feature = "mocks", not(target_arch = "wasm32")))]

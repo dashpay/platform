@@ -155,6 +155,16 @@ impl DapiClient {
     pub fn get_live_addresses(&self) -> Vec<crate::Address> {
         self.address_list.get_live_addresses()
     }
+
+    /// Returns a reference to the connection pool.
+    pub fn connection_pool(&self) -> &ConnectionPool {
+        &self.pool
+    }
+
+    /// Returns the client's request settings.
+    pub fn settings(&self) -> &RequestSettings {
+        &self.settings
+    }
 }
 
 /// Ban address in case of retryable error or unban it
