@@ -417,3 +417,161 @@ impl From<IdentityRootStructure> for &'static [u8; 1] {
         }
     }
 }
+
+#[cfg(all(test, any(feature = "server", feature = "verify")))]
+mod tests {
+    use super::*;
+
+    mod identity_root_structure {
+        use super::*;
+
+        #[test]
+        fn should_convert_from_valid_u8_values() {
+            assert!(matches!(
+                IdentityRootStructure::try_from(192u8),
+                Ok(IdentityRootStructure::IdentityTreeRevision)
+            ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(64u8),
+                Ok(IdentityRootStructure::IdentityTreeNonce)
+            ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(128u8),
+                Ok(IdentityRootStructure::IdentityTreeKeys)
+            ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(160u8),
+                Ok(IdentityRootStructure::IdentityTreeKeyReferences)
+            ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(96u8),
+                Ok(IdentityRootStructure::IdentityTreeNegativeCredit)
+            ));
+            assert!(matches!(
+                IdentityRootStructure::try_from(32u8),
+                Ok(IdentityRootStructure::IdentityContractInfo)
+            ));
+        }
+
+        #[test]
+        fn should_fail_for_invalid_u8_value() {
+            let result = IdentityRootStructure::try_from(0u8);
+            assert!(result.is_err());
+            let result = IdentityRootStructure::try_from(1u8);
+            assert!(result.is_err());
+            let result = IdentityRootStructure::try_from(255u8);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn should_display_correct_names() {
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityTreeRevision),
+                "Revision"
+            );
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityTreeNonce),
+                "Nonce"
+            );
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityTreeKeys),
+                "IdentityKeys"
+            );
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityTreeKeyReferences),
+                "IdentityKeyReferences"
+            );
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityTreeNegativeCredit),
+                "NegativeCredit"
+            );
+            assert_eq!(
+                format!("{}", IdentityRootStructure::IdentityContractInfo),
+                "ContractInfo"
+            );
+        }
+
+        #[test]
+        fn should_convert_to_u8() {
+            let val: u8 = IdentityRootStructure::IdentityTreeRevision.into();
+            assert_eq!(val, 192);
+            let val: u8 = IdentityRootStructure::IdentityTreeNonce.into();
+            assert_eq!(val, 64);
+            let val: u8 = IdentityRootStructure::IdentityTreeKeys.into();
+            assert_eq!(val, 128);
+        }
+
+        #[test]
+        fn should_convert_to_u8_array() {
+            let val: [u8; 1] = IdentityRootStructure::IdentityTreeRevision.into();
+            assert_eq!(val, [192]);
+            let val: [u8; 1] = IdentityRootStructure::IdentityTreeNonce.into();
+            assert_eq!(val, [64]);
+        }
+
+        #[test]
+        fn should_convert_to_static_u8_array_ref() {
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityTreeRevision.into();
+            assert_eq!(val, &[192]);
+            let val: &'static [u8; 1] = IdentityRootStructure::IdentityContractInfo.into();
+            assert_eq!(val, &[32]);
+        }
+    }
+
+    mod identity_path_functions {
+        use super::*;
+
+        #[test]
+        fn should_create_correct_identity_path() {
+            let id = [1u8; 32];
+            let path = identity_path(&id);
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[1], &id);
+        }
+
+        #[test]
+        fn should_create_correct_identity_path_vec() {
+            let id = [2u8; 32];
+            let path = identity_path_vec(&id);
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[1], id.to_vec());
+        }
+
+        #[test]
+        fn should_create_correct_key_tree_path() {
+            let id = [3u8; 32];
+            let path = identity_key_tree_path(&id);
+            assert_eq!(path.len(), 3);
+            assert_eq!(path[1], &id);
+            assert_eq!(path[2], &[IdentityRootStructure::IdentityTreeKeys as u8]);
+        }
+
+        #[test]
+        fn should_create_correct_key_tree_path_vec() {
+            let id = [4u8; 32];
+            let path = identity_key_tree_path_vec(&id);
+            assert_eq!(path.len(), 3);
+            assert_eq!(path[1], id.to_vec());
+            assert_eq!(path[2], vec![IdentityRootStructure::IdentityTreeKeys as u8]);
+        }
+
+        #[cfg(feature = "server")]
+        #[test]
+        fn should_create_correct_contract_info_root_path() {
+            let id = [5u8; 32];
+            let path = identity_contract_info_root_path(&id);
+            assert_eq!(path.len(), 3);
+            assert_eq!(path[1], &id);
+        }
+
+        #[test]
+        fn should_create_correct_contract_info_group_path() {
+            let id = [6u8; 32];
+            let group_id = [7u8; 32];
+            let path = identity_contract_info_group_path(&id, &group_id);
+            assert_eq!(path.len(), 4);
+            assert_eq!(path[1], &id);
+            assert_eq!(path[3], &group_id);
+        }
+    }
+}
