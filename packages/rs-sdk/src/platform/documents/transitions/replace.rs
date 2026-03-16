@@ -1,5 +1,6 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::validate_batch_base_structure;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -161,23 +162,7 @@ impl DocumentReplaceTransitionBuilder {
         )?;
 
         // Validate the transition structure before returning
-        let validation_result = match &state_transition {
-            StateTransition::Batch(batch_transition) => {
-                batch_transition.validate_base_structure(platform_version)?
-            }
-            _ => {
-                return Err(Error::Protocol(
-                    dpp::ProtocolError::InvalidStateTransitionType(
-                        "expected Batch transition".to_string(),
-                    ),
-                ));
-            }
-        };
-        if let Some(first_error) = validation_result.errors.into_iter().next() {
-            return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(
-                Box::new(first_error),
-            )));
-        }
+        validate_batch_base_structure(&state_transition, platform_version)?;
 
         Ok(state_transition)
     }

@@ -3,7 +3,35 @@ use dpp::{
     consensus::{basic::BasicError, ConsensusError},
     state_transition::{StateTransition, StateTransitionStructureValidation},
     version::PlatformVersion,
+    ProtocolError,
 };
+
+/// Validates the base structure of a Batch state transition.
+///
+/// Used by document and token transition builders to validate the constructed
+/// `BatchTransition` before returning it to the caller. Catches invalid
+/// transitions early with clear errors instead of confusing network rejections.
+pub(crate) fn validate_batch_base_structure(
+    state_transition: &StateTransition,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    let validation_result = match state_transition {
+        StateTransition::Batch(batch_transition) => {
+            batch_transition.validate_base_structure(platform_version)?
+        }
+        _ => {
+            return Err(Error::Protocol(ProtocolError::InvalidStateTransitionType(
+                "expected Batch transition".to_string(),
+            )));
+        }
+    };
+    if let Some(first_error) = validation_result.errors.into_iter().next() {
+        return Err(Error::Protocol(ProtocolError::ConsensusError(Box::new(
+            first_error,
+        ))));
+    }
+    Ok(())
+}
 
 /// Checks if an error is an UnsupportedFeatureError
 fn is_unsupported_feature_error(error: &ConsensusError) -> bool {
