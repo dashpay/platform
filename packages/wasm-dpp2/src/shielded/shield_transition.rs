@@ -123,8 +123,8 @@ impl From<ShieldTransitionWasm> for ShieldTransition {
 #[wasm_bindgen(js_class = ShieldTransition)]
 impl ShieldTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: JsValue) -> WasmDppResult<ShieldTransitionWasm> {
-        let inner: ShieldTransition = serde_wasm_bindgen::from_value(value)
+    pub fn new(value: ShieldTransitionObjectJs) -> WasmDppResult<ShieldTransitionWasm> {
+        let inner: ShieldTransition = serde_wasm_bindgen::from_value(value.into())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Ok(ShieldTransitionWasm(inner))
     }

@@ -91,8 +91,8 @@ impl From<ShieldFromAssetLockTransitionWasm> for ShieldFromAssetLockTransition {
 #[wasm_bindgen(js_class = ShieldFromAssetLockTransition)]
 impl ShieldFromAssetLockTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: JsValue) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
-        let inner: ShieldFromAssetLockTransition = serde_wasm_bindgen::from_value(value)
+    pub fn new(value: ShieldFromAssetLockTransitionObjectJs) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
+        let inner: ShieldFromAssetLockTransition = serde_wasm_bindgen::from_value(value.into())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Ok(ShieldFromAssetLockTransitionWasm(inner))
     }

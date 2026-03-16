@@ -69,8 +69,8 @@ impl From<ShieldedWithdrawalTransitionWasm> for ShieldedWithdrawalTransition {
 #[wasm_bindgen(js_class = ShieldedWithdrawalTransition)]
 impl ShieldedWithdrawalTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: JsValue) -> WasmDppResult<ShieldedWithdrawalTransitionWasm> {
-        let inner: ShieldedWithdrawalTransition = serde_wasm_bindgen::from_value(value)
+    pub fn new(value: ShieldedWithdrawalTransitionObjectJs) -> WasmDppResult<ShieldedWithdrawalTransitionWasm> {
+        let inner: ShieldedWithdrawalTransition = serde_wasm_bindgen::from_value(value.into())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Ok(ShieldedWithdrawalTransitionWasm(inner))
     }

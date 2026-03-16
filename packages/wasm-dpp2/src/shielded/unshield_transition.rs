@@ -65,8 +65,8 @@ impl From<UnshieldTransitionWasm> for UnshieldTransition {
 #[wasm_bindgen(js_class = UnshieldTransition)]
 impl UnshieldTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: JsValue) -> WasmDppResult<UnshieldTransitionWasm> {
-        let inner: UnshieldTransition = serde_wasm_bindgen::from_value(value)
+    pub fn new(value: UnshieldTransitionObjectJs) -> WasmDppResult<UnshieldTransitionWasm> {
+        let inner: UnshieldTransition = serde_wasm_bindgen::from_value(value.into())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Ok(UnshieldTransitionWasm(inner))
     }
