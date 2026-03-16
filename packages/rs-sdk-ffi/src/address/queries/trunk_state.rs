@@ -27,7 +27,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 pub unsafe extern "C" fn dash_sdk_address_fetch_trunk_state(
     sdk_handle: *const SDKHandle,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_address_fetch_trunk_state_inner(sdk_handle)
     }));
