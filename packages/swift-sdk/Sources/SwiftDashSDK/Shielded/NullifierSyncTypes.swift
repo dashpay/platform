@@ -6,72 +6,12 @@
 
 import Foundation
 
-// MARK: - FFI C-Compatible Structs
+// MARK: - FFI Type Aliases
+// These types are imported from the DashSDKFFI C header.
 
-/// Matches `DashSDKNullifierSyncConfig` in Rust.
-/// Configuration for nullifier BLAST sync. Pass nil to use defaults.
-struct FFINullifierSyncConfig {
-    /// Minimum privacy count -- subtrees smaller than this are expanded.
-    /// Default: 32
-    var min_privacy_count: UInt64
-
-    /// Maximum concurrent branch queries.
-    /// Default: 10
-    var max_concurrent_requests: UInt32
-
-    /// Maximum number of iterations (safety limit).
-    /// Default: 50
-    var max_iterations: UInt32
-
-    /// Shielded pool type (0 = credit, 1 = main token, 2 = individual token).
-    /// Default: 0
-    var pool_type: UInt32
-
-    /// Optional 32-byte pool identifier for individual token pools.
-    /// Only used when `has_pool_identifier` is true.
-    var pool_identifier: Bytes32Tuple
-
-    /// Whether `pool_identifier` is valid.
-    var has_pool_identifier: Bool
-
-    /// Maximum age in seconds before a full tree rescan is forced.
-    /// Default: 604800 (7 days)
-    var full_rescan_after_time_s: UInt64
-}
-
-/// Matches `DashSDKNullifierSyncMetrics` in Rust.
-/// Metrics about the nullifier sync process.
-struct FFINullifierSyncMetrics {
-    var trunk_queries: UInt32
-    var branch_queries: UInt32
-    var total_elements_seen: UInt32
-    var total_proof_bytes: UInt32
-    var branch_query_failures: UInt32
-    var iterations: UInt32
-    var compacted_queries: UInt32
-    var recent_queries: UInt32
-}
-
-/// Matches `DashSDKNullifierSyncResult` in Rust.
-/// Result of nullifier BLAST sync. Free with `dash_sdk_nullifier_sync_result_free`.
-struct FFINullifierSyncResult {
-    /// Contiguous array of found (spent) nullifiers, each 32 bytes.
-    var found: UnsafeMutablePointer<UInt8>?
-    /// Number of found nullifiers.
-    var found_count: UInt32
-    /// Contiguous array of absent (unspent) nullifiers, each 32 bytes.
-    var absent: UnsafeMutablePointer<UInt8>?
-    /// Number of absent nullifiers.
-    var absent_count: UInt32
-    /// Block height of the tree snapshot.
-    var checkpoint_height: UInt64
-    /// Highest block height seen -- persist for next sync call.
-    var new_sync_height: UInt64
-    /// Block time at the latest response -- persist for next sync call.
-    var new_sync_timestamp: UInt64
-    /// Sync metrics.
-    var metrics: FFINullifierSyncMetrics
-}
+typealias FFINullifierSyncConfig = DashSDKNullifierSyncConfig
+typealias FFINullifierSyncMetrics = DashSDKNullifierSyncMetrics
+typealias FFINullifierSyncResult = DashSDKNullifierSyncResult
 
 // MARK: - High-Level Swift Models
 

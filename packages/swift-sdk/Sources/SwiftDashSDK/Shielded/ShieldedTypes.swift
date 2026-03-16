@@ -7,83 +7,13 @@
 
 import Foundation
 
-// MARK: - FFI C-Compatible Structs
-// These must have EXACTLY the same memory layout as the corresponding Rust #[repr(C)] types.
+// MARK: - FFI Type Aliases
+// These types are imported from the DashSDKFFI C header.
+// Aliases preserve backward compatibility with code that uses the FFI* prefix.
 
-/// Matches `DashSDKSerializedAction` in Rust.
-/// A serialized Orchard action for FFI.
-struct FFISerializedAction {
-    var nullifier: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-    var rk: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-    var cmx: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-    var encrypted_note: UnsafePointer<UInt8>?
-    var encrypted_note_len: Int
-    var cv_net: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-    var spend_auth_sig: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-}
-
-/// Matches `DashSDKOrchardBundleParams` in Rust.
-/// Orchard bundle parameters for FFI, shared across all shielded transition types.
-struct FFIOrchardBundleParams {
-    var actions: UnsafePointer<FFISerializedAction>?
-    var actions_count: UInt32
-    var anchor: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-    var proof: UnsafePointer<UInt8>?
-    var proof_len: Int
-    var binding_signature: (
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-        UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-    )
-}
-
-/// Matches `DashSDKShieldInput` in Rust.
-/// Input entry for shield operation: address + amount + private key.
-struct FFIShieldInput {
-    var address: UnsafePointer<UInt8>?
-    var address_len: Int
-    var amount: UInt64
-    var private_key: UnsafePointer<UInt8>?
-}
+typealias FFISerializedAction = DashSDKSerializedAction
+typealias FFIOrchardBundleParams = DashSDKOrchardBundleParams
+typealias FFIShieldInput = DashSDKShieldInput
 
 // MARK: - Tuple Helpers
 
