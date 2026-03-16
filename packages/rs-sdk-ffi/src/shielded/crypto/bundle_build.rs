@@ -133,16 +133,14 @@ unsafe fn parse_memo(memo: *const [u8; 36]) -> [u8; 36] {
     }
 }
 
-/// Derive SpendingKey, FullViewingKey, and SpendAuthorizingKey from raw bytes.
-fn derive_keys(
-    sk_bytes: &[u8; 32],
-) -> Result<(SpendingKey, FullViewingKey, SpendAuthorizingKey), String> {
+/// Derive FullViewingKey and SpendAuthorizingKey from raw spending key bytes.
+fn derive_keys(sk_bytes: &[u8; 32]) -> Result<(FullViewingKey, SpendAuthorizingKey), String> {
     let sk: SpendingKey = SpendingKey::from_bytes(*sk_bytes)
         .into_option()
         .ok_or_else(|| "Invalid spending key bytes".to_string())?;
     let fvk = FullViewingKey::from(&sk);
     let ask = SpendAuthorizingKey::from(&sk);
-    Ok((sk, fvk, ask))
+    Ok((fvk, ask))
 }
 
 /// Decode a hex string into a fixed-size byte array.
@@ -378,7 +376,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_shield_bundle(
     let sk_bytes = &*spending_key_bytes;
     let memo = parse_memo(memo);
 
-    let (_sk, fvk, _ask) = match derive_keys(sk_bytes) {
+    let (fvk, _ask) = match derive_keys(sk_bytes) {
         Ok(keys) => keys,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
@@ -492,7 +490,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_transfer_bundle(
         }
     };
 
-    let (_sk, fvk, ask) = match derive_keys(sk_bytes) {
+    let (fvk, ask) = match derive_keys(sk_bytes) {
         Ok(keys) => keys,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
@@ -620,7 +618,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
         }
     };
 
-    let (_sk, fvk, ask) = match derive_keys(sk_bytes) {
+    let (fvk, ask) = match derive_keys(sk_bytes) {
         Ok(keys) => keys,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))
@@ -746,7 +744,7 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
     let script_bytes = std::slice::from_raw_parts(output_script, output_script_len);
     let core_script = CoreScript::from_bytes(script_bytes.to_vec());
 
-    let (_sk, fvk, ask) = match derive_keys(sk_bytes) {
+    let (fvk, ask) = match derive_keys(sk_bytes) {
         Ok(keys) => keys,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e))

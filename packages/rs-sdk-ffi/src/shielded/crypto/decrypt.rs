@@ -120,18 +120,27 @@ pub unsafe extern "C" fn dash_sdk_shielded_decrypt_notes(
     let mut decrypted = Vec::new();
 
     for (idx, enc) in encrypted_notes.iter().enumerate() {
-        // Decode hex fields
+        // Decode hex fields — skip malformed entries with a debug log
         let cmx_bytes = match hex::decode(&enc.cmx) {
             Ok(b) => b,
-            Err(_) => continue, // Skip malformed entries
+            Err(e) => {
+                tracing::debug!("Skipping note {}: invalid cmx hex: {}", idx, e);
+                continue;
+            }
         };
         let nf_bytes = match hex::decode(&enc.nullifier) {
             Ok(b) => b,
-            Err(_) => continue,
+            Err(e) => {
+                tracing::debug!("Skipping note {}: invalid nullifier hex: {}", idx, e);
+                continue;
+            }
         };
         let enc_note_bytes = match hex::decode(&enc.encrypted_note) {
             Ok(b) => b,
-            Err(_) => continue,
+            Err(e) => {
+                tracing::debug!("Skipping note {}: invalid encrypted_note hex: {}", idx, e);
+                continue;
+            }
         };
 
         let shielded_note = ShieldedEncryptedNote {
