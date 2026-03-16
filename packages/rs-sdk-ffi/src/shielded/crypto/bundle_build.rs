@@ -64,7 +64,7 @@ struct ParsedSpendableNote {
 /// The returned pointer owns all its inner allocations (actions array, each
 /// action's encrypted_note, and proof bytes). Free with
 /// `dash_sdk_shielded_bundle_params_free`.
-fn bundle_to_ffi_params(
+pub(crate) fn bundle_to_ffi_params(
     sb: &dash_sdk::dpp::shielded::builder::SerializedBundle,
 ) -> *mut crate::shielded::types::DashSDKOrchardBundleParams {
     use crate::shielded::types::{DashSDKOrchardBundleParams, DashSDKSerializedAction};
