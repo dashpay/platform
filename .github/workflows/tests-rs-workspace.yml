@@ -137,6 +137,10 @@ jobs:
             echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
           fi
 
+      - name: Remove stale coverage data
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: rm -f lcov.info
+
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
@@ -174,7 +178,9 @@ jobs:
         run: |
           cargo llvm-cov test --no-report \
             --package dpp \
+            --package drive \
             --package drive-abci \
+            --package dash-sdk \
             --all-features \
             --locked \
             -- shield
