@@ -76,7 +76,7 @@ struct FFINullifierSyncResult {
 // MARK: - High-Level Swift Models
 
 /// Configuration for nullifier BLAST sync.
-public struct NullifierSyncConfig {
+public struct NullifierSyncConfig: Sendable {
     /// Minimum privacy count -- subtrees smaller than this are expanded.
     public var minPrivacyCount: UInt64
     /// Maximum concurrent branch queries.
@@ -149,7 +149,7 @@ public struct NullifierSyncConfig {
 }
 
 /// Metrics about a nullifier sync operation.
-public struct NullifierSyncMetrics {
+public struct NullifierSyncMetrics: Sendable {
     public let trunkQueries: UInt32
     public let branchQueries: UInt32
     public let totalElementsSeen: UInt32
@@ -172,7 +172,7 @@ public struct NullifierSyncMetrics {
 }
 
 /// Result of a nullifier BLAST sync operation.
-public struct NullifierSyncResult {
+public struct NullifierSyncResult: Sendable {
     /// Nullifiers that were found (spent) in the shielded pool.
     public let found: [Data]
     /// Nullifiers that were absent (unspent) in the shielded pool.

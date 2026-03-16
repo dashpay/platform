@@ -10,7 +10,7 @@ import Foundation
 // MARK: - Decrypted Note
 
 /// A successfully decrypted Orchard note returned by `decryptNotes`.
-public struct DecryptedNote {
+public struct DecryptedNote: Sendable {
     /// Position index of this note in the encrypted notes array that was passed to decryption.
     public let position: Int
     /// Note value in credits.
@@ -51,7 +51,7 @@ public struct DecryptedNote {
 ///
 /// This contains the full note data plus the Merkle authentication path needed
 /// to prove the note exists in the commitment tree.
-public struct SpendableNoteInfo {
+public struct SpendableNoteInfo: Sendable {
     /// 43-byte Orchard payment address.
     public let address: Data
     /// Note value in credits.

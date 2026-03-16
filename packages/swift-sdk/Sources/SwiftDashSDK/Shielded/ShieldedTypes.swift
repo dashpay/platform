@@ -237,7 +237,7 @@ public struct OrchardBundle: Sendable {
 }
 
 /// Input for shield operation: address + amount + private key.
-public struct ShieldFundsInput {
+public struct ShieldFundsInput: Sendable {
     /// Platform address bytes
     public let address: Data
     /// Amount to shield from this address (in credits)
@@ -263,7 +263,7 @@ public enum WithdrawalPooling: UInt8, Sendable {
 }
 
 /// Status of a single nullifier as returned by query.
-public struct NullifierStatus {
+public struct NullifierStatus: Sendable {
     /// The 32-byte nullifier hash
     public let nullifier: Data
     /// Whether this nullifier has been spent
@@ -276,7 +276,7 @@ public struct NullifierStatus {
 }
 
 /// An encrypted note from the shielded pool.
-public struct EncryptedNote {
+public struct EncryptedNote: Sendable {
     /// Note commitment (hex-decoded from cmx)
     public let cmx: Data
     /// Nullifier hash
