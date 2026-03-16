@@ -93,23 +93,24 @@ impl TokenConfigUpdateTransition {
         hash_double(bytes).into()
     }
 
-    /// v1: action_id includes the full serialized config change item, binding
-    /// the voted-on value into the hash and preventing vote-swap attacks.
+    /// v1: action_id includes the u8 discriminant plus an optional serialized
+    /// payload, binding the voted-on value into the hash and preventing
+    /// vote-swap attacks.
     pub fn calculate_action_id_with_fields_v1(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
-        update_token_configuration_item: &TokenConfigurationChangeItem,
+        update_token_config_item: u8,
+        payload: Option<&[u8]>,
     ) -> Identifier {
-        let serialized_item =
-            bincode::encode_to_vec(update_token_configuration_item, bincode::config::standard())
-                .expect("expected to encode token configuration change item");
-
         let mut bytes = b"action_token_config_update".to_vec();
         bytes.extend_from_slice(token_id);
         bytes.extend_from_slice(owner_id);
         bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
-        bytes.extend_from_slice(&serialized_item);
+        bytes.push(update_token_config_item);
+        if let Some(payload) = payload {
+            bytes.extend_from_slice(payload);
+        }
 
         hash_double(bytes).into()
     }
@@ -122,6 +123,11 @@ mod tests {
     use crate::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
     use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+
+    fn serialize_item(item: &TokenConfigurationChangeItem) -> Vec<u8> {
+        bincode::encode_to_vec(item, bincode::config::standard())
+            .expect("expected to encode item")
+    }
 
     fn make_transition(item: TokenConfigurationChangeItem) -> TokenConfigUpdateTransition {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
@@ -175,13 +181,15 @@ mod tests {
             &token_id,
             &owner_id,
             nonce,
-            &item_small,
+            item_small.u8_item_index(),
+            Some(&serialize_item(&item_small)),
         );
         let id_large = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_large,
+            item_large.u8_item_index(),
+            Some(&serialize_item(&item_large)),
         );
 
         // v1: these must be DIFFERENT -- the fix
@@ -204,13 +212,15 @@ mod tests {
             &token_id,
             &owner_id,
             nonce,
-            &item_max_supply,
+            item_max_supply.u8_item_index(),
+            Some(&serialize_item(&item_max_supply)),
         );
         let id_dest = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             &token_id,
             &owner_id,
             nonce,
-            &item_allow_dest,
+            item_allow_dest.u8_item_index(),
+            Some(&serialize_item(&item_allow_dest)),
         );
 
         assert_ne!(
@@ -235,7 +245,7 @@ mod tests {
             item.u8_item_index(),
         );
         let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item,
+            &token_id, &owner_id, nonce, item.u8_item_index(), Some(&serialize_item(&item)),
         );
 
         assert_ne!(
@@ -265,11 +275,13 @@ mod tests {
 
         // Verify the versioned result matches v1 directly
         let base = t.base();
+        let item = t.update_token_configuration_item();
         let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),
-            t.update_token_configuration_item(),
+            item.u8_item_index(),
+            Some(&serialize_item(item)),
         );
         assert_eq!(
             id_versioned, id_v1,
@@ -289,10 +301,10 @@ mod tests {
         let item2 = TokenConfigurationChangeItem::MaxSupply(Some(42));
 
         let id1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item1,
+            &token_id, &owner_id, nonce, item1.u8_item_index(), Some(&serialize_item(&item1)),
         );
         let id2 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, &item2,
+            &token_id, &owner_id, nonce, item2.u8_item_index(), Some(&serialize_item(&item2)),
         );
 
         assert_eq!(

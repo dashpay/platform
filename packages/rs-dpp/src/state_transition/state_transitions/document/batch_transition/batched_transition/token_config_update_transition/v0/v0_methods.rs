@@ -90,12 +90,20 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
                 base.identity_contract_nonce(),
                 update_token_configuration_item.u8_item_index(),
             )),
-            1 => Ok(TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-                base.token_id().as_bytes(),
-                owner_id.as_bytes(),
-                base.identity_contract_nonce(),
-                update_token_configuration_item,
-            )),
+            1 => {
+                let serialized_item = bincode::encode_to_vec(
+                    update_token_configuration_item,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+                Ok(TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
+                    base.token_id().as_bytes(),
+                    owner_id.as_bytes(),
+                    base.identity_contract_nonce(),
+                    update_token_configuration_item.u8_item_index(),
+                    Some(&serialized_item),
+                ))
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "calculate_action_id".to_string(),
                 known_versions: vec![0, 1],
