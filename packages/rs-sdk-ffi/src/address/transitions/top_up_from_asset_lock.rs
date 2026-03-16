@@ -272,8 +272,7 @@ unsafe fn dash_sdk_address_top_up_from_asset_lock_inner(
             .map(|(address, info_opt)| {
                 let address_bytes = address.to_bytes();
                 let address_len = address_bytes.len();
-                let address_ptr = address_bytes.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes);
+                let address_ptr = Box::into_raw(address_bytes.into_boxed_slice()) as *mut u8;
 
                 // Handle Option<AddressInfo>
                 let (nonce, balance) = match info_opt {

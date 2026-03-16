@@ -92,8 +92,7 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
             for (address, operation) in block.changes.iter() {
                 let address_bytes = address.to_bytes();
                 let address_len = address_bytes.len();
-                let address_ptr = address_bytes.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes);
+                let address_ptr = Box::into_raw(address_bytes.into_boxed_slice()) as *mut u8;
 
                 let (op_type, credits) = match operation {
                     CreditOperation::SetCredits(c) => (DashSDKCreditOperationType::SetCredits, *c),
@@ -114,9 +113,8 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
             let changes_ptr = if address_changes.is_empty() {
                 std::ptr::null_mut()
             } else {
-                let ptr = address_changes.as_ptr() as *mut DashSDKAddressBalanceChange;
-                std::mem::forget(address_changes);
-                ptr
+                Box::into_raw(address_changes.into_boxed_slice())
+                    as *mut DashSDKAddressBalanceChange
             };
 
             blocks.push(DashSDKBlockBalanceChanges {
@@ -130,9 +128,7 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
         let blocks_ptr = if blocks.is_empty() {
             std::ptr::null_mut()
         } else {
-            let ptr = blocks.as_ptr() as *mut DashSDKBlockBalanceChanges;
-            std::mem::forget(blocks);
-            ptr
+            Box::into_raw(blocks.into_boxed_slice()) as *mut DashSDKBlockBalanceChanges
         };
 
         Ok(DashSDKRecentBalanceChanges {

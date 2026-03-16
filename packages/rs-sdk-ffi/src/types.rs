@@ -769,7 +769,10 @@ pub unsafe extern "C" fn dash_sdk_address_info_free(info: *mut DashSDKAddressInf
 
     let info = Box::from_raw(info);
     if !info.address.is_null() && info.address_len > 0 {
-        let _ = Vec::from_raw_parts(info.address, info.address_len, info.address_len);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            info.address,
+            info.address_len,
+        )));
     }
 }
 
@@ -790,10 +793,16 @@ pub unsafe extern "C" fn dash_sdk_address_info_map_free(map: *mut DashSDKAddress
         let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
         for entry in entries_slice.iter() {
             if !entry.address.is_null() && entry.address_len > 0 {
-                let _ = Vec::from_raw_parts(entry.address, entry.address_len, entry.address_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    entry.address,
+                    entry.address_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            map.entries,
+            map.count,
+        )));
     }
 }
 
@@ -816,10 +825,16 @@ pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState
         let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
         for element in elements_slice.iter() {
             if !element.key.is_null() && element.key_len > 0 {
-                let _ = Vec::from_raw_parts(element.key, element.key_len, element.key_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    element.key,
+                    element.key_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            state.elements,
+            state.elements_count,
+        )));
     }
 
     // Free leaf boundaries
@@ -828,14 +843,16 @@ pub unsafe extern "C" fn dash_sdk_trunk_state_free(state: *mut DashSDKTrunkState
             std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
         for boundary in boundaries_slice.iter() {
             if !boundary.key.is_null() && boundary.key_len > 0 {
-                let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    boundary.key,
+                    boundary.key_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             state.leaf_boundaries,
             state.leaf_boundaries_count,
-            state.leaf_boundaries_count,
-        );
+        )));
     }
 }
 
@@ -858,10 +875,16 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
         let elements_slice = std::slice::from_raw_parts_mut(state.elements, state.elements_count);
         for element in elements_slice.iter() {
             if !element.key.is_null() && element.key_len > 0 {
-                let _ = Vec::from_raw_parts(element.key, element.key_len, element.key_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    element.key,
+                    element.key_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(state.elements, state.elements_count, state.elements_count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            state.elements,
+            state.elements_count,
+        )));
     }
 
     // Free leaf boundaries
@@ -870,14 +893,16 @@ pub unsafe extern "C" fn dash_sdk_branch_state_free(state: *mut DashSDKBranchSta
             std::slice::from_raw_parts_mut(state.leaf_boundaries, state.leaf_boundaries_count);
         for boundary in boundaries_slice.iter() {
             if !boundary.key.is_null() && boundary.key_len > 0 {
-                let _ = Vec::from_raw_parts(boundary.key, boundary.key_len, boundary.key_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    boundary.key,
+                    boundary.key_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             state.leaf_boundaries,
             state.leaf_boundaries_count,
-            state.leaf_boundaries_count,
-        );
+        )));
     }
 }
 
@@ -907,18 +932,22 @@ pub unsafe extern "C" fn dash_sdk_recent_balance_changes_free(
                     std::slice::from_raw_parts_mut(block.changes, block.changes_count);
                 for change in changes_slice.iter() {
                     if !change.address.is_null() && change.address_len > 0 {
-                        let _ = Vec::from_raw_parts(
+                        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                             change.address,
                             change.address_len,
-                            change.address_len,
-                        );
+                        )));
                     }
                 }
-                let _ =
-                    Vec::from_raw_parts(block.changes, block.changes_count, block.changes_count);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    block.changes,
+                    block.changes_count,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(changes.blocks, changes.blocks_count, changes.blocks_count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            changes.blocks,
+            changes.blocks_count,
+        )));
     }
 }
 
@@ -949,26 +978,29 @@ pub unsafe extern "C" fn dash_sdk_compacted_balance_changes_free(
                 for change in changes_slice.iter() {
                     // Free address
                     if !change.address.is_null() && change.address_len > 0 {
-                        let _ = Vec::from_raw_parts(
+                        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                             change.address,
                             change.address_len,
-                            change.address_len,
-                        );
+                        )));
                     }
                     // Free add entries
                     if !change.add_entries.is_null() && change.add_entries_count > 0 {
-                        let _ = Vec::from_raw_parts(
+                        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
                             change.add_entries,
                             change.add_entries_count,
-                            change.add_entries_count,
-                        );
+                        )));
                     }
                 }
-                let _ =
-                    Vec::from_raw_parts(range.changes, range.changes_count, range.changes_count);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    range.changes,
+                    range.changes_count,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(changes.ranges, changes.ranges_count, changes.ranges_count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            changes.ranges,
+            changes.ranges_count,
+        )));
     }
 }
 
@@ -1192,10 +1224,16 @@ pub(crate) unsafe fn free_address_info_map_entries(map: &DashSDKAddressInfoMap) 
         let entries_slice = std::slice::from_raw_parts_mut(map.entries, map.count);
         for entry in entries_slice.iter() {
             if !entry.address.is_null() && entry.address_len > 0 {
-                let _ = Vec::from_raw_parts(entry.address, entry.address_len, entry.address_len);
+                drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+                    entry.address,
+                    entry.address_len,
+                )));
             }
         }
-        let _ = Vec::from_raw_parts(map.entries, map.count, map.count);
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            map.entries,
+            map.count,
+        )));
     }
 }
 
