@@ -526,8 +526,6 @@ mod tests {
     fn test_query_documents_dry_run() {
         let (drive, contract) = setup_dashpay("query-dry-run", true);
 
-        let _platform_version = PlatformVersion::latest();
-
         let sql_string = "select * from contactRequest";
         let query =
             DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))

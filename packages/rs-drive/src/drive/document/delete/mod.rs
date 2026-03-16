@@ -1204,6 +1204,23 @@ mod tests {
         // Should have processing fee but no storage fee for estimation
         assert_eq!(fee_result.storage_fee, 0);
         assert!(fee_result.processing_fee > 0);
+
+        // Verify the document still exists after dry-run delete (apply=false)
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "document should still exist after dry-run delete"
+        );
     }
 
     #[test]

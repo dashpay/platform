@@ -49,6 +49,7 @@ mod tests {
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
 
+    use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveDocumentQuery;
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
@@ -2053,6 +2054,51 @@ mod tests {
         )
         .expect("expected to get document");
 
+        // Insert documents first so update operations target existing documents
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &doc0,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert first document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &doc1,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert second document");
+
         let documents = vec![doc0, doc1];
 
         let mut drive_operations = vec![];
@@ -2205,7 +2251,9 @@ mod tests {
 
         // Update document
         document.set("displayName", "Bob".into());
-        document.increment_revision().unwrap();
+        document
+            .increment_revision()
+            .expect("document should have a revision to increment");
 
         let serialized = DocumentPlatformConversionMethodsV0::serialize(
             &document,
@@ -2232,6 +2280,28 @@ mod tests {
             .expect("expected to update document with serialization");
 
         assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify the update took effect
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let outcome = drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected to query documents");
+
+        assert_eq!(outcome.documents().len(), 1);
+        let fetched_doc = &outcome.documents()[0];
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "Bob",
+            "displayName should have been updated to Bob"
+        );
     }
 
     #[test]
@@ -2284,7 +2354,9 @@ mod tests {
 
         // Update document using contract_id API
         document.set("displayName", "Bob".into());
-        document.increment_revision().unwrap();
+        document
+            .increment_revision()
+            .expect("document should have a revision to increment");
 
         let serialized = DocumentPlatformConversionMethodsV0::serialize(
             &document,
@@ -2310,5 +2382,27 @@ mod tests {
             .expect("expected to update document for contract id");
 
         assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify the update took effect
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let outcome = drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected to query documents");
+
+        assert_eq!(outcome.documents().len(), 1);
+        let fetched_doc = &outcome.documents()[0];
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "Bob",
+            "displayName should have been updated to Bob"
+        );
     }
 }
