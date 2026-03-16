@@ -179,7 +179,7 @@ func bytes32ToData(_ tuple: Bytes32Tuple) -> Data {
 // MARK: - High-Level Swift Models
 
 /// A single Orchard action (high-level Swift representation).
-public struct OrchardAction {
+public struct OrchardAction: Sendable {
     /// 32-byte nullifier
     public let nullifier: Data
     /// 32-byte randomized verification key
@@ -213,7 +213,7 @@ public struct OrchardAction {
 /// Orchard bundle parameters (high-level Swift representation).
 /// Clients construct the Orchard proof and signatures independently,
 /// then pass these parameters to shielded transition functions.
-public struct OrchardBundle {
+public struct OrchardBundle: Sendable {
     /// Actions in the bundle
     public let actions: [OrchardAction]
     /// 32-byte anchor (tree root)
@@ -253,7 +253,7 @@ public struct ShieldFundsInput {
 }
 
 /// Withdrawal pooling mode.
-public enum WithdrawalPooling: UInt8 {
+public enum WithdrawalPooling: UInt8, Sendable {
     /// Never pool withdrawals
     case never = 0
     /// Pool if available
