@@ -7,6 +7,7 @@ use dash_sdk::grovedb_commitment_tree::{
     FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
 };
 use drive_proof_verifier::types::ShieldedEncryptedNote;
+use zeroize::Zeroize;
 
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 
@@ -81,12 +82,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_decrypt_notes(
         ));
     }
 
-    let sk_bytes = &*spending_key_bytes;
-
-    // Derive incoming viewing key
-    let sk = match SpendingKey::from_bytes(*sk_bytes).into_option() {
-        Some(sk) => sk,
+    // Derive incoming viewing key — zeroize key copy immediately after derivation
+    let mut key_copy = *spending_key_bytes;
+    let sk = match SpendingKey::from_bytes(key_copy).into_option() {
+        Some(sk) => {
+            key_copy.zeroize();
+            sk
+        }
         None => {
+            key_copy.zeroize();
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 "Invalid spending key bytes".to_string(),

@@ -4,6 +4,7 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 
 use dash_sdk::grovedb_commitment_tree::{FullViewingKey, Scope, SpendingKey};
+use zeroize::Zeroize;
 
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 
@@ -31,11 +32,15 @@ pub unsafe extern "C" fn dash_sdk_shielded_derive_address(
         ));
     }
 
-    let sk_bytes = &*spending_key_bytes;
+    let mut key_copy = *spending_key_bytes;
 
-    let sk = match SpendingKey::from_bytes(*sk_bytes).into_option() {
-        Some(sk) => sk,
+    let sk = match SpendingKey::from_bytes(key_copy).into_option() {
+        Some(sk) => {
+            key_copy.zeroize();
+            sk
+        }
         None => {
+            key_copy.zeroize();
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 "Invalid spending key bytes".to_string(),

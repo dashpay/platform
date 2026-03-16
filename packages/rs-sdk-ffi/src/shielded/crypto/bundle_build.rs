@@ -21,6 +21,7 @@ use dash_sdk::grovedb_commitment_tree::{
     SpendAuthorizingKey, SpendingKey, NOTE_COMMITMENT_TREE_DEPTH,
 };
 use rand::rngs::OsRng;
+use zeroize::Zeroize;
 
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 
@@ -175,12 +176,23 @@ unsafe fn parse_memo(memo: *const [u8; 36]) -> [u8; 36] {
 }
 
 /// Derive FullViewingKey and SpendAuthorizingKey from raw spending key bytes.
+/// The local copy of key bytes is zeroized after derivation.
 fn derive_keys(sk_bytes: &[u8; 32]) -> Result<(FullViewingKey, SpendAuthorizingKey), String> {
-    let sk: SpendingKey = SpendingKey::from_bytes(*sk_bytes)
-        .into_option()
-        .ok_or_else(|| "Invalid spending key bytes".to_string())?;
+    let mut key_copy = *sk_bytes;
+    let sk: SpendingKey = match SpendingKey::from_bytes(key_copy).into_option() {
+        Some(sk) => {
+            key_copy.zeroize();
+            sk
+        }
+        None => {
+            key_copy.zeroize();
+            return Err("Invalid spending key bytes".to_string());
+        }
+    };
     let fvk = FullViewingKey::from(&sk);
     let ask = SpendAuthorizingKey::from(&sk);
+    // sk is dropped here; SpendingKey may or may not zeroize on drop
+    // but key_copy is already zeroed above
     Ok((fvk, ask))
 }
 
