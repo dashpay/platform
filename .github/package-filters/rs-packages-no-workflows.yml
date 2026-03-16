@@ -74,6 +74,10 @@ dapi-grpc: &dapi_grpc
   - packages/dapi-grpc/build.rs
   - packages/dapi-grpc/Cargo.toml
 
+rs-dapi:
+  - packages/rs-dapi/**
+  - *dapi_grpc
+
 rs-dapi-client: &dapi_client
   - packages/rs-dapi-client/**
   - *dapi_grpc

@@ -118,9 +118,6 @@ class DataContractTests: XCTestCase {
 
             // Clean up
             swift_dash_string_free(jsonString)
-        } else {
-            // No history is also valid for test vectors
-            XCTAssertTrue(true, "Contract history may return nil if no history exists")
         }
     }
 

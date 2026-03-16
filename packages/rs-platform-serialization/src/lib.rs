@@ -106,3 +106,91 @@ pub fn platform_versioned_decode_from_reader<D: PlatformVersionedDecode, R: Read
     let mut decoder = DecoderImpl::<_, C, crate::BincodeContext>::new(reader, config, ());
     D::platform_versioned_decode(&mut decoder, platform_version)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bincode::config;
+    use platform_version::version::PlatformVersion;
+
+    fn cfg() -> impl Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    fn pv() -> &'static PlatformVersion {
+        PlatformVersion::first()
+    }
+
+    // -----------------------------------------------------------------------
+    // Top-level encode/decode round-trip functions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_into_slice_and_decode_round_trip() {
+        let value: u32 = 42;
+        let mut buf = [0u8; 64];
+        let written = platform_encode_into_slice(value, &mut buf, cfg(), pv()).unwrap();
+        assert!(written > 0);
+
+        let decoded: u32 =
+            platform_versioned_decode_from_slice(&buf[..written], cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn encode_into_slice_too_small_returns_error() {
+        let value: u64 = u64::MAX;
+        let mut buf = [0u8; 1]; // too small for a u64
+        let result = platform_encode_into_slice(value, &mut buf, cfg(), pv());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encode_into_writer_round_trip() {
+        let value: u16 = 1234;
+        let mut writer = enc::VecWriter::default();
+        encode_into_writer(value, &mut writer, cfg(), pv()).unwrap();
+
+        let encoded = platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        let decoded: u16 = platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn borrow_decode_from_slice_str() {
+        let value = "hello world";
+        let encoded = platform_encode_to_vec(value, cfg(), pv()).unwrap();
+
+        let decoded: &str =
+            platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn decode_from_reader() {
+        let value: i64 = -99999;
+        let encoded = platform_encode_to_vec(value, cfg(), pv()).unwrap();
+
+        let reader = bincode::de::read::SliceReader::new(&encoded);
+        let decoded: i64 = platform_versioned_decode_from_reader(reader, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn decode_from_slice_empty_input_fails() {
+        let result = platform_versioned_decode_from_slice::<u32, _>(&[], cfg(), pv());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_from_slice_truncated_input_fails() {
+        let encoded = platform_encode_to_vec(42u32, cfg(), pv()).unwrap();
+        // only give half the bytes
+        let result = platform_versioned_decode_from_slice::<u32, _>(
+            &encoded[..encoded.len() / 2],
+            cfg(),
+            pv(),
+        );
+        assert!(result.is_err());
+    }
+}

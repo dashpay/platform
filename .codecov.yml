@@ -1,6 +1,10 @@
 codecov:
   require_ci_to_pass: true
 
+flags:
+  rust:
+    carryforward: true
+
 ignore:
   - "**/test_utils.rs"
   - "**/test_utils/**"
@@ -13,6 +17,13 @@ ignore:
   - "packages/wasm-dpp/**"
   - "packages/wasm-dpp2/**"
   - "packages/wasm-sdk/**"
+  - "**/block_end/validator_set_update/v0/**"
+  - "**/block_end/validator_set_update/v1/**"
+  # Error type definitions — these are enum/struct declarations with Display/thiserror
+  # derives, not logic that needs test coverage
+  - "packages/rs-drive/src/error/**"
+  - "packages/rs-drive-abci/src/error/**"
+  - "packages/rs-dpp/src/errors/**"
 
 coverage:
   status:

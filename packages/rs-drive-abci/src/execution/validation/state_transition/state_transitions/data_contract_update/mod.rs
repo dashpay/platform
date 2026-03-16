@@ -2243,6 +2243,127 @@ mod tests {
                 }]
             );
         }
+
+        #[test]
+        fn test_data_contract_update_token_without_minting_destination_should_fail() {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            // Create initial contract (no tokens)
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract successfully");
+
+            // Updated contract: add token without minting destination
+            // and minting_allow_choosing_destination=false
+            // but minting_allow_choosing_destination_rules allow modification (ContractOwner)
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_base_supply(1_000);
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "coin".to_string(),
+                            plural_form: "coins".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            // Set no minting destination, disallow choosing, but allow rule changes
+            token_cfg
+                .distribution_rules_mut()
+                .set_new_tokens_destination_identity(None);
+            token_cfg
+                .distribution_rules_mut()
+                .set_minting_allow_choosing_destination(false);
+            token_cfg
+                .distribution_rules_mut()
+                .set_minting_allow_choosing_destination_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                        admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+
+            updated_data_contract.add_token(0, token_cfg);
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_data_contract,
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .expect("expect to create data contract update transition");
+
+            let tx_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::NewTokensDestinationIdentityOptionRequiredError(_)
+                ))]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+        }
     }
 
     mod keyword_updates {

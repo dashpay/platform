@@ -46,3 +46,6 @@ where
         Ok(())
     }
 }
+
+// Tests for store_address_balances_to_recent_block_storage_v0 are covered by
+// higher-level integration tests that exercise realistic address balance data.

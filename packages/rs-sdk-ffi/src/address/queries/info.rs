@@ -29,7 +29,11 @@ pub unsafe extern "C" fn dash_sdk_address_fetch_info(
     address_bytes: *const u8,
     address_len: usize,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_address_fetch_info_inner(sdk_handle, address_bytes, address_len)
     }));
@@ -95,8 +99,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
                 // Convert address to bytes
                 let address_bytes_vec = info.address.to_bytes();
                 let address_len = address_bytes_vec.len();
-                let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes_vec); // Prevent deallocation
+                let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
                 Ok(DashSDKAddressInfo {
                     address: address_ptr,
@@ -109,8 +112,7 @@ unsafe fn dash_sdk_address_fetch_info_inner(
                 // Address not found - return with max values to indicate not found
                 let address_bytes_vec = address.to_bytes();
                 let address_len = address_bytes_vec.len();
-                let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes_vec);
+                let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
                 Ok(DashSDKAddressInfo {
                     address: address_ptr,
