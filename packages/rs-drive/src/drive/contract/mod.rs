@@ -36,12 +36,17 @@ pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 #[cfg(test)]
 mod tests {
     use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use rand::prelude::StdRng;
     use rand::{random, SeedableRng};
     use std::borrow::Cow;
     use std::option::Option::None;
 
+    use crate::drive::contract::paths::contract_root_path_vec;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -169,6 +174,35 @@ mod tests {
             .apply_contract(
                 &contract,
                 BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract)
+    }
+
+    /// Sets up a drive instance with a history-enabled contract applied at time_ms=1000.
+    pub(in crate::drive::contract) fn setup_history_contract() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract_path =
+            "tests/supporting_files/contract/references/references_with_contract_history.json";
+        let contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected to get contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo {
+                    time_ms: 1000,
+                    height: 100,
+                    core_height: 10,
+                    epoch: Default::default(),
+                },
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
@@ -351,7 +385,13 @@ mod tests {
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(request, None, platform_version)
             .expect("expected keys");
         assert_eq!(identity_keys.len(), 1);
-        assert_eq!(&identity_keys.first().unwrap().1, &encryption_key);
+        assert_eq!(
+            &identity_keys
+                .first()
+                .expect("expected at least one identity key")
+                .1,
+            &encryption_key
+        );
     }
 
     #[test]
@@ -414,7 +454,13 @@ mod tests {
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(request, None, platform_version)
             .expect("expected keys");
         assert_eq!(identity_keys.len(), 1);
-        assert_eq!(&identity_keys.first().unwrap().1, &encryption_key);
+        assert_eq!(
+            &identity_keys
+                .first()
+                .expect("expected at least one identity key")
+                .1,
+            &encryption_key
+        );
     }
 
     #[test]
@@ -427,7 +473,7 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get cbor document");
-        drive
+        let fee = drive
             .apply_contract(
                 &contract,
                 BlockInfo::default(),
@@ -437,6 +483,12 @@ mod tests {
                 platform_version,
             )
             .expect("expected to apply contract successfully");
+
+        // Estimation (apply=false) should produce non-zero processing fee
+        assert!(
+            fee.processing_fee > 0,
+            "estimation should produce non-zero processing fee"
+        );
     }
 
     #[test]
@@ -450,7 +502,7 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get contract");
-        drive
+        let fee = drive
             .apply_contract(
                 &contract,
                 BlockInfo::default(),
@@ -460,6 +512,12 @@ mod tests {
                 platform_version,
             )
             .expect("expected to apply contract successfully");
+
+        // Estimation (apply=false) for a history contract should produce non-zero processing fee
+        assert!(
+            fee.processing_fee > 0,
+            "history estimation should produce non-zero processing fee"
+        );
     }
 
     #[test]
@@ -530,13 +588,32 @@ mod tests {
             )
             .expect("should not error");
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().contract.id(), contract.id());
+        assert_eq!(
+            cached
+                .expect("cached contract should be present")
+                .contract
+                .id(),
+            contract.id()
+        );
     }
 
     #[test]
     fn test_get_cached_contract_in_transaction_context() {
         let (drive, contract) = setup_reference_contract();
         let platform_version = PlatformVersion::latest();
+
+        // Populate the non-tx cache by fetching the contract outside any transaction
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract");
+        assert!(fetched.is_some(), "contract should be fetchable");
+        assert_eq!(
+            fetched
+                .expect("fetched contract should exist")
+                .contract
+                .version(),
+            1
+        );
 
         let transaction = drive.grove.start_transaction();
 
@@ -564,7 +641,34 @@ mod tests {
             )
             .expect("should not error");
         assert!(cached_in_tx.is_some());
-        assert_eq!(cached_in_tx.unwrap().contract.version(), 2);
+        assert_eq!(
+            cached_in_tx
+                .expect("tx-cached contract should be present")
+                .contract
+                .version(),
+            2
+        );
+
+        // Non-transaction cache should still see the original version (v1)
+        let cached_outside_tx = drive
+            .get_cached_contract_with_fetch_info(
+                contract.id().to_buffer(),
+                None,
+                &platform_version.drive,
+            )
+            .expect("should not error");
+        assert!(
+            cached_outside_tx.is_some(),
+            "non-tx cache should still have the contract"
+        );
+        assert_eq!(
+            cached_outside_tx
+                .expect("non-tx cached contract should be present")
+                .contract
+                .version(),
+            1,
+            "non-tx cache should still see original v1 before commit"
+        );
     }
 
     #[test]
@@ -605,8 +709,14 @@ mod tests {
             .expect("should get contracts");
 
         assert_eq!(result.len(), 2);
-        assert!(result.get(&contract1.id().to_buffer()).unwrap().is_some());
-        assert!(result.get(&contract2.id().to_buffer()).unwrap().is_some());
+        assert!(result
+            .get(&contract1.id().to_buffer())
+            .expect("result should contain contract1 id")
+            .is_some());
+        assert!(result
+            .get(&contract2.id().to_buffer())
+            .expect("result should contain contract2 id")
+            .is_some());
     }
 
     #[test]
@@ -620,8 +730,14 @@ mod tests {
             .expect("should get contracts");
 
         assert_eq!(result.len(), 2);
-        assert!(result.get(&[0u8; 32]).unwrap().is_none());
-        assert!(result.get(&[1u8; 32]).unwrap().is_none());
+        assert!(result
+            .get(&[0u8; 32])
+            .expect("result should contain zeroed id")
+            .is_none());
+        assert!(result
+            .get(&[1u8; 32])
+            .expect("result should contain ones id")
+            .is_none());
     }
 
     #[test]
@@ -660,7 +776,25 @@ mod tests {
             .prove_contracts(&contract_ids, None, platform_version)
             .expect("should prove contracts");
 
-        assert!(!proof.is_empty());
+        // Verify proof against root hash using Drive::verify_contracts
+        let (_root_hash, verified) =
+            Drive::verify_contracts(&proof, false, &contract_ids, platform_version)
+                .expect("should verify contracts proof");
+        assert_eq!(verified.len(), 2);
+        assert!(
+            verified
+                .get(&contract.id().to_buffer())
+                .expect("should contain first contract id")
+                .is_some(),
+            "first contract should be present in proof"
+        );
+        assert!(
+            verified
+                .get(&contract2.id().to_buffer())
+                .expect("should contain second contract id")
+                .is_some(),
+            "second contract should be present in proof"
+        );
     }
 
     #[test]
@@ -674,7 +808,20 @@ mod tests {
             .prove_contracts(&contract_ids, None, platform_version)
             .expect("should prove contracts even if nonexistent");
 
-        assert!(!proof.is_empty());
+        // Verify proof proves non-existence using Drive::verify_contract
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            false,
+            true,
+            [42u8; 32],
+            platform_version,
+        )
+        .expect("should verify absence proof for nonexistent contract");
+        assert!(
+            verified_contract.is_none(),
+            "nonexistent contract should verify as None"
+        );
     }
 
     #[test]
@@ -686,7 +833,23 @@ mod tests {
             .prove_contract(contract.id().to_buffer(), None, platform_version)
             .expect("should prove contract");
 
-        assert!(!proof.is_empty());
+        // Verify proof against root hash using Drive::verify_contract
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            false,
+            false,
+            contract.id().to_buffer(),
+            platform_version,
+        )
+        .expect("should verify single contract proof");
+        assert!(verified_contract.is_some(), "contract should be in proof");
+        assert_eq!(
+            verified_contract
+                .expect("verified contract should exist")
+                .id(),
+            contract.id()
+        );
     }
 
     #[test]
@@ -698,18 +861,33 @@ mod tests {
             .prove_contract([99u8; 32], None, platform_version)
             .expect("should prove contract nonexistence");
 
-        assert!(!proof.is_empty());
+        // Verify proof proves non-existence using Drive::verify_contract
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            false,
+            false,
+            [99u8; 32],
+            platform_version,
+        )
+        .expect("should verify nonexistent contract proof");
+        assert!(
+            verified_contract.is_none(),
+            "nonexistent contract should verify as None"
+        );
     }
 
     #[test]
     fn test_prove_contract_history() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        let contract_path =
-            "tests/supporting_files/contract/references/references_with_contract_history.json";
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected to get contract");
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(false);
 
         drive
             .apply_contract(
@@ -721,7 +899,7 @@ mod tests {
                     epoch: Default::default(),
                 },
                 true,
-                StorageFlags::optional_default_as_cow(),
+                None,
                 None,
                 platform_version,
             )
@@ -738,13 +916,25 @@ mod tests {
             )
             .expect("should prove contract history");
 
-        assert!(!proof.is_empty());
+        // Verify proof using Drive::verify_contract_history
+        let (_root_hash, verified_history) = Drive::verify_contract_history(
+            &proof,
+            contract.id().to_buffer(),
+            0,
+            Some(10),
+            None,
+            platform_version,
+        )
+        .expect("should verify contract history proof");
+        let history = verified_history.expect("history should be Some");
+        assert!(
+            history.contains_key(&1000),
+            "history should contain entry at time 1000"
+        );
     }
 
     #[test]
     fn test_update_contract_errors_on_readonly() {
-        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -773,12 +963,15 @@ mod tests {
             None,
         );
 
-        assert!(result.is_err());
-        let err_string = result.unwrap_err().to_string();
         assert!(
-            err_string.contains("readonly"),
-            "Error should mention readonly: {}",
-            err_string
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
+                    _
+                )))
+            ),
+            "Expected UpdatingReadOnlyImmutableContract error, got: {:?}",
+            result
         );
     }
 
@@ -839,9 +1032,6 @@ mod tests {
         let (drive, contract) = setup_reference_contract();
         let platform_version = PlatformVersion::latest();
 
-        use dpp::block::epoch::Epoch;
-        use grovedb_costs::CostsExt;
-
         let epoch = Epoch::new(0).expect("should create epoch");
         let result = drive
             .fetch_contract(
@@ -866,8 +1056,6 @@ mod tests {
         let (drive, contract) = setup_reference_contract();
         let platform_version = PlatformVersion::latest();
 
-        use grovedb_costs::CostsExt;
-
         let result = drive
             .fetch_contract(
                 contract.id().to_buffer(),
@@ -891,8 +1079,6 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        use grovedb_costs::CostsExt;
-
         let result = drive
             .fetch_contract([0u8; 32], None, None, None, platform_version)
             .unwrap_add_cost(&mut Default::default())
@@ -905,8 +1091,6 @@ mod tests {
     fn test_fetch_contract_and_add_operations_with_epoch() {
         let (drive, contract) = setup_reference_contract();
         let platform_version = PlatformVersion::latest();
-
-        use dpp::block::epoch::Epoch;
 
         let epoch = Epoch::new(0).expect("should create epoch");
         let mut operations = vec![];
@@ -932,8 +1116,6 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        use dpp::block::epoch::Epoch;
-
         let epoch = Epoch::new(0).expect("should create epoch");
         let mut operations = vec![];
         let result = drive
@@ -956,8 +1138,6 @@ mod tests {
 
     #[test]
     fn test_contract_history_with_apply_and_updates() {
-        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -1115,35 +1295,62 @@ mod tests {
 
         let query_with_limit = Drive::fetch_contract_query(contract_id, true);
         assert_eq!(query_with_limit.query.limit, Some(1));
+        assert_eq!(query_with_limit.path, contract_root_path_vec(&contract_id));
 
         let query_without_limit = Drive::fetch_contract_query(contract_id, false);
         assert!(query_without_limit.query.limit.is_none());
+        assert_eq!(
+            query_without_limit.path,
+            contract_root_path_vec(&contract_id)
+        );
     }
 
     #[test]
     fn test_queries_fetch_contract_with_history_latest_query() {
+        use crate::drive::contract::paths::contract_keeping_history_root_path_vec;
+
         let contract_id = [42u8; 32];
 
         let query_with_limit = Drive::fetch_contract_with_history_latest_query(contract_id, true);
         assert_eq!(query_with_limit.query.limit, Some(1));
+        assert_eq!(
+            query_with_limit.path,
+            contract_keeping_history_root_path_vec(&contract_id)
+        );
 
         let query_without_limit =
             Drive::fetch_contract_with_history_latest_query(contract_id, false);
         assert!(query_without_limit.query.limit.is_none());
+        assert_eq!(
+            query_without_limit.path,
+            contract_keeping_history_root_path_vec(&contract_id)
+        );
     }
 
     #[test]
     fn test_queries_fetch_non_historical_contracts_query() {
+        use crate::drive::RootTree;
+
         let ids = [[1u8; 32], [2u8; 32], [3u8; 32]];
         let query = Drive::fetch_non_historical_contracts_query(&ids);
         assert_eq!(query.query.limit, Some(3));
+        assert_eq!(
+            query.path,
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()]
+        );
     }
 
     #[test]
     fn test_queries_fetch_historical_contracts_query() {
+        use crate::drive::RootTree;
+
         let ids = [[1u8; 32], [2u8; 32]];
         let query = Drive::fetch_historical_contracts_query(&ids);
         assert_eq!(query.query.limit, Some(2));
+        assert_eq!(
+            query.path,
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()]
+        );
     }
 
     #[test]
@@ -1173,19 +1380,27 @@ mod tests {
         let hist = [[2u8; 32]];
         let query = Drive::fetch_contracts_query(&non_hist, &hist, platform_version)
             .expect("should create merged query");
-        // Merged query has no individual limit
-        // Just verify it doesn't error
-        assert!(query.query.limit.is_none() || query.query.limit.is_some());
+        // Merged query has no individual limit since it merges two sub-queries
+        assert!(
+            query.query.limit.is_none(),
+            "merged query should have no limit"
+        );
     }
 
     #[test]
     fn test_queries_fetch_contract_history_query_valid_limits() {
+        use crate::drive::contract::paths::contract_keeping_history_root_path_vec;
+
         let contract_id = [42u8; 32];
 
         // Default limit (None -> 10)
         let query = Drive::fetch_contract_history_query(contract_id, 0, None, None)
             .expect("should create query");
         assert_eq!(query.query.limit, Some(10));
+        assert_eq!(
+            query.path,
+            contract_keeping_history_root_path_vec(&contract_id)
+        );
 
         // Explicit valid limit
         let query = Drive::fetch_contract_history_query(contract_id, 0, Some(5), None)
@@ -1213,8 +1428,6 @@ mod tests {
 
     #[test]
     fn test_fetch_contract_with_known_keeps_history_true() {
-        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -1240,8 +1453,6 @@ mod tests {
                 platform_version,
             )
             .expect("expected to apply contract successfully");
-
-        use grovedb_costs::CostsExt;
 
         // Fetch with known_keeps_history = Some(true) - directly queries
         // the contract_keeping_history_root_path
@@ -1261,8 +1472,6 @@ mod tests {
 
     #[test]
     fn test_fetch_contract_with_known_keeps_history_false_discovers_tree() {
-        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
-
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -1289,8 +1498,6 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        use grovedb_costs::CostsExt;
-
         // Fetch with known_keeps_history = Some(false) will get the raw element
         // at contract_root_path, discover it's a Tree, and follow the history path.
         // This exercises the Element::Tree(..) branch in fetch_contract_v0.
@@ -1309,31 +1516,53 @@ mod tests {
     }
 
     #[test]
-    fn test_contract_fetch_info_fixture_methods() {
+    fn test_contract_fetch_info_fixtures_can_be_applied_and_fetched() {
         use crate::drive::contract::DataContractFetchInfo;
 
+        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
-        // Test dpns fixture
-        let dpns = DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version);
-        assert!(dpns.fee.is_some());
-        assert!(dpns.storage_flags.is_none());
+        // Build fixture contracts
+        let fixtures = [
+            DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version),
+            DataContractFetchInfo::dashpay_contract_fixture(platform_version.protocol_version),
+            DataContractFetchInfo::masternode_rewards_contract_fixture(
+                platform_version.protocol_version,
+            ),
+            DataContractFetchInfo::withdrawals_contract_fixture(platform_version.protocol_version),
+        ];
 
-        // Test dashpay fixture
-        let dashpay =
-            DataContractFetchInfo::dashpay_contract_fixture(platform_version.protocol_version);
-        assert!(dashpay.fee.is_some());
+        // Apply each fixture to drive, then fetch it back and verify
+        for fixture in &fixtures {
+            assert!(fixture.fee.is_some(), "fixture should have a fee");
 
-        // Test masternode rewards fixture
-        let mn_rewards = DataContractFetchInfo::masternode_rewards_contract_fixture(
-            platform_version.protocol_version,
-        );
-        assert!(mn_rewards.fee.is_some());
+            drive
+                .apply_contract(
+                    &fixture.contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply fixture contract successfully");
 
-        // Test withdrawals fixture
-        let withdrawals =
-            DataContractFetchInfo::withdrawals_contract_fixture(platform_version.protocol_version);
-        assert!(withdrawals.fee.is_some());
+            let fetched = drive
+                .get_contract_with_fetch_info(
+                    fixture.contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should fetch contract")
+                .expect("contract should exist");
+
+            assert_eq!(
+                fetched.contract.id(),
+                fixture.contract.id(),
+                "fetched contract id should match fixture"
+            );
+        }
     }
 
     #[test]
@@ -1399,92 +1628,35 @@ mod tests {
     }
 
     #[test]
-    fn test_estimation_costs_for_contract_insertion() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let contract_path = "tests/supporting_files/contract/references/references.json";
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected to get contract");
-
-        // Apply with apply=false to exercise estimation cost paths
-        let fee = drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                false,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected estimation to succeed");
-
-        assert!(
-            fee.processing_fee > 0,
-            "estimation should produce non-zero processing fee"
-        );
-    }
-
-    #[test]
-    fn test_estimation_costs_for_history_contract_insertion() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-
-        let contract_path =
-            "tests/supporting_files/contract/references/references_with_contract_history.json";
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected to get contract");
-
-        // Apply with apply=false to exercise history estimation cost paths
-        let fee = drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                false,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected estimation to succeed");
-
-        assert!(
-            fee.processing_fee > 0,
-            "history estimation should produce non-zero processing fee"
-        );
-    }
-
-    #[test]
     fn test_prove_contract_with_history() {
-        let drive = setup_drive_with_initial_state_structure(None);
+        let (drive, contract) = setup_history_contract();
         let platform_version = PlatformVersion::latest();
-
-        let contract_path =
-            "tests/supporting_files/contract/references/references_with_contract_history.json";
-        let contract = json_document_to_contract(contract_path, false, platform_version)
-            .expect("expected to get contract");
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo {
-                    time_ms: 1000,
-                    height: 100,
-                    core_height: 10,
-                    epoch: Default::default(),
-                },
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("expected to apply contract successfully");
 
         // Prove a contract that keeps history - exercises the Tree branch in prove_contract_v0
         let proof = drive
             .prove_contract(contract.id().to_buffer(), None, platform_version)
             .expect("should prove history contract");
 
-        assert!(!proof.is_empty());
+        // Verify proof using Drive::verify_contract
+        let (_root_hash, verified_contract) = Drive::verify_contract(
+            &proof,
+            None,
+            false,
+            false,
+            contract.id().to_buffer(),
+            platform_version,
+        )
+        .expect("should verify history contract proof");
+        assert!(
+            verified_contract.is_some(),
+            "history contract should be present in proof"
+        );
+        assert_eq!(
+            verified_contract
+                .expect("verified contract should exist")
+                .id(),
+            contract.id()
+        );
     }
 
     #[test]
@@ -1522,7 +1694,7 @@ mod tests {
                     epoch: Default::default(),
                 },
                 true,
-                StorageFlags::optional_default_as_cow(),
+                None,
                 None,
                 platform_version,
             )
@@ -1537,6 +1709,33 @@ mod tests {
             .prove_contracts(&contract_ids, None, platform_version)
             .expect("should prove mixed contracts");
 
-        assert!(!proof.is_empty());
+        // Verify each contract individually as a subset of the proof
+        let (_root_hash_1, verified_non_hist) = Drive::verify_contract(
+            &proof,
+            Some(false),
+            true,
+            true,
+            non_hist_contract.id().to_buffer(),
+            platform_version,
+        )
+        .expect("should verify non-historical contract from mixed proof");
+        assert!(
+            verified_non_hist.is_some(),
+            "non-historical contract should be present in proof"
+        );
+
+        let (_root_hash_2, verified_hist) = Drive::verify_contract(
+            &proof,
+            None,
+            true,
+            true,
+            hist_contract.id().to_buffer(),
+            platform_version,
+        )
+        .expect("should verify historical contract from mixed proof");
+        assert!(
+            verified_hist.is_some(),
+            "historical contract should be present in proof"
+        );
     }
 }
