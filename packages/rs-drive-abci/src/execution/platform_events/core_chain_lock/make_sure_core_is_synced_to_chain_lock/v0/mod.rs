@@ -36,3 +36,8 @@ where
         })
     }
 }
+
+// Tests removed: the production method `make_sure_core_is_synced_to_chain_lock_v0` requires
+// a Platform<C> whose `core_rpc` has mock expectations configured before construction.
+// The previous tests created mocks but never called the production method, only testing
+// inline if/else arithmetic. Real integration coverage belongs in higher-level tests.
