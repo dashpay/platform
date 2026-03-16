@@ -29,7 +29,7 @@ export interface UnshieldTransitionJSON {
     $formatVersion: string;
     outputAddress: object;
     actions: SerializedOrchardActionJSON[];
-    unshieldingAmount: number;
+    unshieldingAmount: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;

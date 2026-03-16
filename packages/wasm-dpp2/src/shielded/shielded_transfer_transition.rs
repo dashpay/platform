@@ -27,7 +27,7 @@ export interface ShieldedTransferTransitionObject {
 export interface ShieldedTransferTransitionJSON {
     $formatVersion: string;
     actions: SerializedOrchardActionJSON[];
-    valueBalance: number;
+    valueBalance: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;

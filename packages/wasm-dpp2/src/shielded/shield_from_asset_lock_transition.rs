@@ -54,7 +54,7 @@ export interface ShieldFromAssetLockTransitionJSON {
     $formatVersion: string;
     assetLockProof: AssetLockProofJSON;
     actions: SerializedOrchardActionJSON[];
-    valueBalance: number;
+    valueBalance: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;

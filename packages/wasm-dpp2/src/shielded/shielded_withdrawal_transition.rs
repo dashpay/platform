@@ -30,7 +30,7 @@ export interface ShieldedWithdrawalTransitionObject {
 export interface ShieldedWithdrawalTransitionJSON {
     $formatVersion: string;
     actions: SerializedOrchardActionJSON[];
-    unshieldingAmount: number;
+    unshieldingAmount: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;

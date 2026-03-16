@@ -84,7 +84,7 @@ export interface ShieldTransitionJSON {
     $formatVersion: string;
     inputs: Record<string, [number, number]>;
     actions: SerializedOrchardActionJSON[];
-    amount: number;
+    amount: number | string;
     anchor: string;
     proof: string;
     bindingSignature: string;
