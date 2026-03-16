@@ -1021,4 +1021,274 @@ mod tests {
         assert_eq!(fee_result.storage_fee, 0);
         assert_eq!(fee_result.processing_fee, 71994700);
     }
+
+    #[test]
+    fn test_delete_document_for_contract_id() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        // Verify the document exists
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert_eq!(results.len(), 1);
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Delete using contract_id instead of contract reference
+        drive
+            .delete_document_for_contract_id(
+                document_id,
+                contract.id(),
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("expected to be able to delete the document by contract id");
+
+        // Verify the document was deleted
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_id_estimated_costs() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Use apply=false to exercise the estimation costs path
+        let fee_result = drive
+            .delete_document_for_contract_id(
+                document_id,
+                contract.id(),
+                "person",
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("expected to estimate delete costs");
+
+        // Should have processing fee but no storage fee for estimation
+        assert_eq!(fee_result.storage_fee, 0);
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn test_delete_document_keeps_history_returns_error() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Attempting to delete a document that keeps history should return an error
+        let err = drive
+            .delete_document_for_contract(
+                document_id,
+                &contract,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected deleting a history-keeping document to fail");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))
+        ));
+    }
 }
