@@ -24,6 +24,23 @@ ignore:
   - "packages/rs-drive/src/error/**"
   - "packages/rs-drive-abci/src/error/**"
   - "packages/rs-dpp/src/errors/**"
+  # Generated gRPC bindings — no hand-written logic to test
+  - "packages/dapi-grpc/**"
+  # Data contract crates — these are JSON schema definitions with only
+  # auto-generated load_* boilerplate, not testable application logic
+  - "packages/dashpay-contract/src/**"
+  - "packages/data-contracts/src/**"
+  - "packages/dpns-contract/src/**"
+  - "packages/feature-flags-contract/src/**"
+  - "packages/keyword-search-contract/src/**"
+  - "packages/masternode-reward-shares-contract/src/**"
+  - "packages/token-history-contract/src/**"
+  - "packages/wallet-utils-contract/src/**"
+  - "packages/withdrawals-contract/src/**"
+  # Version tables — large const structs, not logic
+  - "packages/rs-platform-version/**"
+  # Simple signer — thin test-only wrapper
+  - "packages/simple-signer/src/**"
 
 coverage:
   status:

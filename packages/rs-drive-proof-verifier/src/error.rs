@@ -142,3 +142,180 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use drive::grovedb::{Error as GroveError, Query, SizedQuery};
+
+    /// Helper: build a minimal `Proof` with the given grovedb_proof bytes.
+    fn test_proof(grovedb_proof: Vec<u8>) -> Proof {
+        Proof {
+            grovedb_proof,
+            quorum_hash: vec![0u8; 32],
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        }
+    }
+
+    /// Helper: build a minimal `ResponseMetadata`.
+    fn test_metadata(height: u64, time_ms: u64) -> ResponseMetadata {
+        ResponseMetadata {
+            height,
+            core_chain_locked_height: 1,
+            epoch: 0,
+            time_ms,
+            protocol_version: 1,
+            chain_id: "test-chain".to_string(),
+        }
+    }
+
+    /// Helper: build a simple `PathQuery`.
+    fn test_path_query() -> PathQuery {
+        let query = Query::new();
+        let sized = SizedQuery::new(query, Some(10), None);
+        PathQuery::new(vec![vec![1, 2, 3]], sized)
+    }
+
+    #[test]
+    fn test_map_drive_error_ok_passes_through() {
+        let result: Result<u64, drive::error::Error> = Ok(42u64);
+        let proof = test_proof(vec![0xAA, 0xBB]);
+        let metadata = test_metadata(100, 5000);
+
+        let mapped = result.map_drive_error(&proof, &metadata);
+        assert_eq!(mapped.unwrap(), 42u64);
+    }
+
+    #[test]
+    fn test_map_drive_error_grovedb_invalid_proof() {
+        let pq = test_path_query();
+        let grove_err = GroveError::InvalidProof(pq.clone(), "bad proof data".to_string());
+        let drive_err = drive::error::Error::GroveDB(Box::new(grove_err));
+        let result: Result<u64, drive::error::Error> = Err(drive_err);
+
+        let proof_bytes = vec![0xDE, 0xAD];
+        let proof = test_proof(proof_bytes.clone());
+        let metadata = test_metadata(42, 9999);
+
+        let mapped = result.map_drive_error(&proof, &metadata);
+        let err = mapped.unwrap_err();
+
+        match err {
+            Error::GroveDBError {
+                proof_bytes: pb,
+                path_query: maybe_pq,
+                height,
+                time_ms,
+                error,
+            } => {
+                assert_eq!(pb, proof_bytes, "proof_bytes should match the input proof");
+                assert!(
+                    maybe_pq.is_some(),
+                    "path_query should be Some for InvalidProof"
+                );
+                assert_eq!(
+                    maybe_pq.unwrap(),
+                    pq,
+                    "path_query should match the original"
+                );
+                assert_eq!(height, 42);
+                assert_eq!(time_ms, 9999);
+                assert!(
+                    error.contains("bad proof data"),
+                    "error message should contain the original message, got: {error}"
+                );
+            }
+            other => panic!("expected GroveDBError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_map_drive_error_grovedb_other() {
+        let grove_err = GroveError::InternalError("something broke".to_string());
+        let drive_err = drive::error::Error::GroveDB(Box::new(grove_err));
+        let result: Result<u64, drive::error::Error> = Err(drive_err);
+
+        let proof = test_proof(vec![0x01]);
+        let metadata = test_metadata(10, 2000);
+
+        let mapped = result.map_drive_error(&proof, &metadata);
+        let err = mapped.unwrap_err();
+
+        match err {
+            Error::GroveDBError {
+                path_query, error, ..
+            } => {
+                assert!(
+                    path_query.is_none(),
+                    "path_query should be None for non-InvalidProof GroveDB errors"
+                );
+                assert!(
+                    error.contains("something broke"),
+                    "error message should be preserved, got: {error}"
+                );
+            }
+            other => panic!("expected GroveDBError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_map_drive_error_non_grovedb() {
+        let drive_err = drive::error::Error::Drive(
+            drive::error::drive::DriveError::CorruptedCodeExecution("test drive error"),
+        );
+        let result: Result<u64, drive::error::Error> = Err(drive_err);
+
+        let proof = test_proof(vec![]);
+        let metadata = test_metadata(1, 1);
+
+        let mapped = result.map_drive_error(&proof, &metadata);
+        let err = mapped.unwrap_err();
+
+        match err {
+            Error::DriveError { error } => {
+                assert!(
+                    error.contains("test drive error"),
+                    "error message should contain the original text, got: {error}"
+                );
+            }
+            other => panic!("expected DriveError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_from_protocol_error() {
+        let protocol_err = ProtocolError::IdentifierError("bad id".to_string());
+        let err: Error = protocol_err.into();
+
+        match err {
+            Error::ProtocolError { error } => {
+                assert!(
+                    error.contains("bad id"),
+                    "error message should contain the original text, got: {error}"
+                );
+            }
+            other => panic!("expected ProtocolError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_from_drive_error() {
+        let drive_err = drive::error::Error::Drive(
+            drive::error::drive::DriveError::CorruptedCodeExecution("from conversion test"),
+        );
+        let err: Error = drive_err.into();
+
+        match err {
+            Error::DriveError { error } => {
+                assert!(
+                    error.contains("from conversion test"),
+                    "error message should contain the original text, got: {error}"
+                );
+            }
+            other => panic!("expected DriveError, got: {other:?}"),
+        }
+    }
+}
