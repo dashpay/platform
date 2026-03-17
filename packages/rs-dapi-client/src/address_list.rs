@@ -11,7 +11,8 @@ use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
+// Base ban period in seconds. Ban duration will increase exponentially with each subsequent ban.
+pub(crate) const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]

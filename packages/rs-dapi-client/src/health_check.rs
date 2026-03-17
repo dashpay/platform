@@ -11,6 +11,7 @@ use futures::stream::{self, StreamExt};
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
+use crate::address_list::DEFAULT_BASE_BAN_PERIOD;
 use crate::connection_pool::ConnectionPool;
 use crate::request_settings::AppliedRequestSettings;
 use crate::transport::{TransportClient, TransportError, TransportRequest};
@@ -43,7 +44,7 @@ impl Default for HealthCheckConfig {
         Self {
             probe_timeout: Duration::from_secs(5),
             max_concurrent_probes: 10,
-            no_ban_idle_period: Duration::from_secs(59),
+            no_ban_idle_period: DEFAULT_BASE_BAN_PERIOD.saturating_sub(Duration::from_secs(1)),
         }
     }
 }
