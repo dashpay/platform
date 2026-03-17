@@ -502,15 +502,13 @@ impl Sdk {
 
             #[cfg(target_arch = "wasm32")]
             {
-                wasm_bindgen_futures::spawn_local(
-                    rs_dapi_client::health_check::run_health_check(
-                        hc_address_list,
-                        hc_pool,
-                        config,
-                        hc_token,
-                        hc_ca_cert,
-                    ),
-                );
+                wasm_bindgen_futures::spawn_local(rs_dapi_client::health_check::run_health_check(
+                    hc_address_list,
+                    hc_pool,
+                    config,
+                    hc_token,
+                    hc_ca_cert,
+                ));
             }
         }
     }
