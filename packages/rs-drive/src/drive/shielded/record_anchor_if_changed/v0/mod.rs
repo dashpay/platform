@@ -59,7 +59,9 @@ impl Drive {
                         ))
                     })
                 } else {
-                    Ok([0u8; 32])
+                    Err(Error::Drive(DriveError::CorruptedElementType(
+                        "most recent anchor element is not an Item",
+                    )))
                 }
             })?;
 
