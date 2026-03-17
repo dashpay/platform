@@ -1,6 +1,5 @@
 pub mod v1;
 pub mod v2;
-pub mod v3;
 
 use versioned_feature_core::FeatureVersion;
 

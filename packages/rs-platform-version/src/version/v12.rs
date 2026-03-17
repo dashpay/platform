@@ -10,7 +10,7 @@ use crate::version::dpp_versions::dpp_state_transition_conversion_versions::v2::
 use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STATE_TRANSITION_METHOD_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
-use crate::version::dpp_versions::dpp_token_versions::v3::TOKEN_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
@@ -55,7 +55,7 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V3,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V3, // fixes action_id vote-swap for config update + set price
+        token_versions: TOKEN_VERSIONS_V2, // fixes action_id vote-swap for config update + set price
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V2,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
