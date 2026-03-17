@@ -886,8 +886,10 @@ mod tests {
             public_note: None,
         }));
         let pv = PlatformVersion::latest();
-        let result = burn.calculate_action_id(owner_id, pv);
-        assert!(result.is_some());
+        assert!(matches!(
+            burn.calculate_action_id(owner_id, pv),
+            Some(Ok(_))
+        ));
     }
 
     #[test]
@@ -902,8 +904,10 @@ mod tests {
             public_note: None,
         }));
         let pv = PlatformVersion::latest();
-        let result = mint.calculate_action_id(owner_id, pv);
-        assert!(result.is_some());
+        assert!(matches!(
+            mint.calculate_action_id(owner_id, pv),
+            Some(Ok(_))
+        ));
     }
 
     // -----------------------------------------------------------------------
