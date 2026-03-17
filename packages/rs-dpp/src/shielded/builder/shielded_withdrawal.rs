@@ -88,8 +88,10 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // ShieldedWithdrawal extra_data = output_script.as_bytes()
-    let extra_sighash_data = output_script.as_bytes().to_vec();
+    // ShieldedWithdrawal extra_data = output_script || unshielding_amount (le bytes)
+    // Must match server-side sighash in shielded_proof.rs
+    let mut extra_sighash_data = output_script.as_bytes().to_vec();
+    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
 
     let bundle = build_spend_bundle(
         spends,

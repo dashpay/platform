@@ -80,8 +80,10 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // Unshield extra_data = output_address.to_bytes()
-    let extra_sighash_data = output_address.to_bytes();
+    // Unshield extra_data = output_address || unshielding_amount (le bytes)
+    // Must match server-side sighash in shielded_proof.rs
+    let mut extra_sighash_data = output_address.to_bytes();
+    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
 
     let bundle = build_spend_bundle(
         spends,
