@@ -75,6 +75,9 @@ pub async fn run_health_check(
     .await
 }
 
+/// Runtime-agnostic inner loop. Uses `futures::select_biased!` instead of `tokio::select!`
+/// so this compiles on WASM (no tokio runtime). The tradeoff is explicit `pin_mut!` and
+/// `FusedFuture` requirements — `select_biased!` needs pinned, fused futures.
 async fn health_check_loop(
     address_list: AddressList,
     pool: ConnectionPool,
