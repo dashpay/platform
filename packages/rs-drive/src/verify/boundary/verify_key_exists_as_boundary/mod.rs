@@ -31,7 +31,13 @@ impl Drive {
         key: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
-        match platform_version.drive.methods.verify.document.verify_proof {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .boundary
+            .verify_key_exists_as_boundary
+        {
             0 => Self::verify_key_exists_as_boundary_v0(proof, path, key),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_key_exists_as_boundary".to_string(),

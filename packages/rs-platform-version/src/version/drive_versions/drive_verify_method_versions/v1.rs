@@ -1,7 +1,7 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
-    DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
-    DriveVerifyDocumentMethodVersions, DriveVerifyGroupMethodVersions,
-    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyAddressFundsMethodVersions, DriveVerifyBoundaryMethodVersions,
+    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
+    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
@@ -101,5 +101,8 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_nullifiers_branch_query: 0,
         verify_recent_nullifier_changes: 0,
         verify_compacted_nullifier_changes: 0,
+    },
+    boundary: DriveVerifyBoundaryMethodVersions {
+        verify_key_exists_as_boundary: 0,
     },
 };
