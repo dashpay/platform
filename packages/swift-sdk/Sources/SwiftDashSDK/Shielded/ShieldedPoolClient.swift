@@ -28,8 +28,8 @@ import DashSDKFFI
 /// The handle is freed automatically on `deinit`.
 public final class ShieldedPoolClient: @unchecked Sendable {
 
-    /// Opaque pointer to the Rust `ShieldedPoolClient`.
-    private let handle: OpaquePointer
+    /// Pointer to the Rust `ShieldedPoolClient`.
+    private let handle: UnsafeMutablePointer<DashSDKFFI.ShieldedPoolClient>
 
     // MARK: - Lifecycle
 
@@ -68,7 +68,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.internalError("No handle returned from ShieldedPoolClient create")
         }
 
-        self.handle = OpaquePointer(dataPtr)
+        self.handle = dataPtr.assumingMemoryBound(to: DashSDKFFI.ShieldedPoolClient.self)
     }
 
     deinit {

@@ -130,11 +130,14 @@ struct WalletDetailView: View {
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
                 .environmentObject(walletService)
+                .environmentObject(unifiedAppState)
+                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
                 .environmentObject(walletService)
                 .environmentObject(unifiedAppState)
+                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showWalletInfo) {
             WalletInfoView(wallet: wallet) {
@@ -464,15 +467,18 @@ struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
-    
+    @EnvironmentObject var shieldedService: ShieldedService
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+
+    /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
     var platformBalance: UInt64 {
-        // Only sum balances of identities that belong to this specific wallet
-        // and are on the same network
-        
+        let blastBalance = platformBalanceSyncService.totalPlatformBalance
+        if blastBalance > 0 || platformBalanceSyncService.lastSyncTime != nil {
+            return blastBalance
+        }
+        // Fallback to identity-based sum if BLAST sync hasn't run yet
         return unifiedAppState.platformState.identities
             .filter { identity in
-                // Check if identity belongs to this wallet and is on the same network
-                // Only count identities that have been explicitly associated with this wallet
                 identity.walletId == wallet.walletId &&
                 identity.network == wallet.network.rawValue
             }
@@ -482,81 +488,99 @@ struct BalanceCardView: View {
     }
 
     var body: some View {
+        let balance = walletService.walletManager.getBalance(for: wallet)
+        let allZero = balance.total == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+
         VStack(spacing: 12) {
-            // Show main balance or "Empty Wallet"
-            let balance = walletService.walletManager.getBalance(for: wallet)
-            if balance.total == 0 {
+            if allZero {
                 Text("Empty Wallet")
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             } else {
-                Text("Wallet Balance")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Text(balance.formattedTotal)
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-            }
+                // Core Balance row
+                WalletBalanceRow(
+                    label: "Core Balance",
+                    amount: balance.confirmed,
+                    incoming: balance.unconfirmed,
+                    color: .primary
+                )
 
-            HStack(spacing: 20) {
-                // Incoming (unconfirmed) balance
-                VStack(spacing: 4) {
-                    Text("Incoming")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    if balance.unconfirmed > 0 {
-                        Text(balance.formattedUnconfirmed)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.orange)
-                    } else {
-                        Text("—")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                // Platform Balance row
+                WalletBalanceRow(
+                    label: "Platform Balance",
+                    amount: platformBalance,
+                    color: .blue,
+                    showSyncIndicator: platformBalanceSyncService.isSyncing
+                )
 
-                Divider()
-                    .frame(height: 30)
-
-                // Platform balance
-                VStack(spacing: 4) {
-                    Text("Platform Balance")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    if platformBalance > 0 {
-                        Text(formatBalance(platformBalance))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.blue)
-                    } else {
-                        Text("—")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                // Shielded Balance row
+                WalletBalanceRow(
+                    label: "Shielded Balance",
+                    amount: shieldedService.shieldedBalance,
+                    color: .purple,
+                    showSyncIndicator: shieldedService.isSyncing
+                )
             }
         }
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(12)
     }
+}
+
+/// A single balance row showing label, amount, and optional incoming amount.
+private struct WalletBalanceRow: View {
+    let label: String
+    var amount: UInt64
+    var incoming: UInt64 = 0
+    var color: Color
+    var showSyncIndicator: Bool = false
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if showSyncIndicator {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                    }
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                if amount > 0 {
+                    Text(formatBalance(amount))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(color)
+                } else {
+                    Text("—")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                if incoming > 0 {
+                    Text("(+\(formatBalance(incoming)) incoming)")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+        }
+    }
 
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-
-        // Format with up to 8 decimal places, removing trailing zeros
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-
-        return String(format: "%.8f DASH", dash).replacingOccurrences(of: "0+$", with: "", options: .regularExpression).replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
+        return String(format: "%.8f DASH", dash)
     }
 }

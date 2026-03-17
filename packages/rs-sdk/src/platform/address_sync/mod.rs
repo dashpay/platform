@@ -362,11 +362,14 @@ pub async fn sync_address_balances<P: AddressProvider>(
         scan_height
     };
 
-    // Incremental catch-up from catch_up_from to chain tip
+    // Incremental catch-up from catch_up_from to chain tip.
+    // Skip the compacted phase in incremental-only mode — the gap is typically
+    // small (seconds), so only recent per-block queries are needed.
     incremental_catch_up(
         sdk,
         &key_to_index,
         catch_up_from,
+        needs_full_scan, // use_compacted: only after a full tree scan
         provider,
         &mut result,
         config.request_settings,
@@ -389,6 +392,7 @@ async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
     key_to_index: &HashMap<AddressKey, AddressIndex>,
     start_height: u64,
+    use_compacted: bool,
     provider: &mut P,
     result: &mut AddressSyncResult,
     settings: RequestSettings,
@@ -404,7 +408,11 @@ async fn incremental_catch_up<P: AddressProvider>(
     let mut had_successful_query = false;
 
     // Phase 1 — Compacted (historical) catch-up
-    loop {
+    // Platform compacts per-block entries every 64 blocks. If the incremental
+    // catch-up starts from a height that's within the recent (uncompacted) zone,
+    // the compacted endpoint will return nothing useful. Skip it when
+    // needs_compacted is false to avoid a wasted network roundtrip.
+    while use_compacted {
         let request = GetRecentCompactedAddressBalanceChangesRequest {
             version: Some(
                 get_recent_compacted_address_balance_changes_request::Version::V0(
@@ -444,14 +452,18 @@ async fn incremental_catch_up<P: AddressProvider>(
         };
 
         result.new_sync_timestamp = metadata.time_ms / 1000;
+        result.metrics.compacted_queries += 1;
+        had_successful_query = true;
+        // Track the platform's chain tip from response metadata
+        if metadata.height > current_height {
+            current_height = metadata.height;
+        }
 
         if entries.is_empty() {
             break;
         }
 
         let entry_count = entries.len();
-        result.metrics.compacted_queries += 1;
-        had_successful_query = true;
 
         for entry in &entries {
             for (platform_addr, credit_op) in &entry.changes {
@@ -535,14 +547,18 @@ async fn incremental_catch_up<P: AddressProvider>(
         };
 
         result.new_sync_timestamp = metadata.time_ms / 1000;
+        result.metrics.recent_queries += 1;
+        had_successful_query = true;
+        // Track the platform's chain tip from response metadata
+        if metadata.height > current_height {
+            current_height = metadata.height;
+        }
 
         if entries.is_empty() {
             break;
         }
 
         let entry_count = entries.len();
-        result.metrics.recent_queries += 1;
-        had_successful_query = true;
 
         for entry in &entries {
             for (platform_addr, credit_op) in &entry.changes {

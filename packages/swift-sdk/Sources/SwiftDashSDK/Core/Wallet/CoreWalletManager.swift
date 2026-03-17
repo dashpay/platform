@@ -72,6 +72,15 @@ public class CoreWalletManager: ObservableObject {
             serializedBytes = result.serializedWallet
 
             print("Wallet added with ID: \(walletId.hexString)")
+
+            // Ensure a DIP-17 Platform Payment account is created for BLAST sync
+            do {
+                try sdkWalletManager.ensurePlatformPaymentAccount(walletId: walletId)
+                print("Platform payment account ensured for wallet \(walletId.hexString)")
+            } catch {
+                print("Warning: Failed to create platform payment account: \(error)")
+                // Non-fatal — wallet still works without platform addresses
+            }
         } catch {
             print("Failed to add wallet: \(error)")
             throw WalletError.walletError("Failed to add wallet: \(error.localizedDescription)")
@@ -173,6 +182,22 @@ public class CoreWalletManager: ObservableObject {
     
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
         return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
+    }
+
+    /// Ensure a DIP-17 Platform Payment account exists for the given wallet.
+    public func ensurePlatformPaymentAccount(for wallet: HDWallet) throws {
+        try sdkWalletManager.ensurePlatformPaymentAccount(walletId: wallet.walletId)
+    }
+
+    /// Get platform payment addresses for BLAST sync.
+    /// Returns (derivation index, address key) tuples from the DIP-17 address pool.
+    public func getPlatformAddresses(for wallet: HDWallet) throws -> [(index: UInt32, key: Data)] {
+        return try sdkWalletManager.getPlatformAddresses(walletId: wallet.walletId)
+    }
+
+    /// Get the managed account collection for a wallet.
+    public func getManagedAccountCollection(for wallet: HDWallet) throws -> ManagedAccountCollection {
+        return try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
     }
     
     /// Get detailed account information including xpub and addresses

@@ -580,6 +580,59 @@ extension SDK {
             }
         }
     }
+
+    /// Withdraw from shielded pool to Core (L1) using a pre-built bundle handle.
+    ///
+    /// - Parameters:
+    ///   - amount: Amount to withdraw (in credits).
+    ///   - bundle: Bundle handle from `buildWithdrawalBundle`.
+    ///   - coreFeePerByte: Core fee per byte for the withdrawal transaction.
+    ///   - pooling: Withdrawal pooling mode.
+    ///   - outputScript: Raw Core output script bytes.
+    /// - Throws: `SDKError` on failure.
+    public func shieldedWithdraw(
+        amount: UInt64,
+        bundle: ShieldedBundleHandle,
+        coreFeePerByte: UInt32,
+        pooling: WithdrawalPooling,
+        outputScript: Data
+    ) async throws {
+        guard let sdkHandle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !outputScript.isEmpty else {
+            throw SDKError.invalidParameter("Output script must not be empty")
+        }
+
+        let sdkPtr = SendableSdkPtr(sdkHandle)
+        let retainedBundle = bundle
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global().async { [self, retainedBundle] in
+                let result = outputScript.withUnsafeBytes { scriptPtr -> DashSDKResult in
+                    guard let scriptBase = scriptPtr.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                        return DashSDKResult()
+                    }
+                    return dash_sdk_shielded_withdraw(
+                        UnsafePointer(sdkPtr.ptr),
+                        amount,
+                        UnsafePointer(retainedBundle.ptr),
+                        coreFeePerByte,
+                        pooling.rawValue,
+                        scriptBase,
+                        UInt(outputScript.count)
+                    )
+                }
+
+                do {
+                    try self.shieldedExtractVoid(result)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Private Helpers

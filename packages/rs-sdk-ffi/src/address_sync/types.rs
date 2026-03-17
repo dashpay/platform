@@ -73,6 +73,12 @@ pub struct DashSDKAddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds)
     pub iterations: u32,
+
+    /// Number of compacted incremental queries (historical aggregated changes)
+    pub compacted_queries: u32,
+
+    /// Number of recent incremental queries (per-block changes)
+    pub recent_queries: u32,
 }
 
 /// A found address with its balance (FFI-compatible)
@@ -131,6 +137,10 @@ pub struct DashSDKAddressSyncResult {
 
     /// Whether highest_found_index is valid
     pub has_highest_found_index: bool,
+
+    /// The checkpoint height from the trunk/branch tree scan.
+    /// Only meaningful when a full tree scan was performed (0 otherwise).
+    pub checkpoint_height: u64,
 
     /// The new sync height to store for the next incremental sync.
     ///

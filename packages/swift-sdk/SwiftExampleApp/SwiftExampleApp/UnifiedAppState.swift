@@ -26,6 +26,12 @@ class UnifiedAppState: ObservableObject {
     // Services from Core
     let walletService: WalletService
 
+    // Shielded pool service
+    let shieldedService = ShieldedService()
+
+    // Platform address balance sync service (BLAST sync)
+    let platformBalanceSyncService = PlatformBalanceSyncService()
+
     // State from Platform
     let platformState: AppState
 
@@ -78,6 +84,12 @@ class UnifiedAppState: ObservableObject {
             }
         }
 
+        // Initialize shielded pool client
+        initializeShieldedService()
+
+        // Start periodic BLAST address sync
+        startPlatformBalanceSync()
+
         isInitialized = true
     }
 
@@ -87,6 +99,8 @@ class UnifiedAppState: ObservableObject {
 
         // Reset services
         walletService.stopSync()
+        shieldedService.reset()
+        platformBalanceSyncService.reset()
 
         // Reset platform state
         platformState.sdk = nil
@@ -104,6 +118,79 @@ class UnifiedAppState: ObservableObject {
         // Switch wallet service to new network (convert to DashNetwork)
         await walletService.switchNetwork(to: network)
 
+        // Reinitialize shielded service for the new network
+        initializeShieldedService()
+
+        // Restart BLAST sync for the new network
+        startPlatformBalanceSync()
+
         // The platform state handles its own network switching in AppState.switchNetwork
+    }
+
+    /// Start periodic BLAST address balance sync.
+    /// Creates a provider from the wallet's known identities and syncs every 15 seconds.
+    func startPlatformBalanceSync() {
+        platformBalanceSyncService.reset()
+
+        let network = platformState.currentNetwork
+        platformBalanceSyncService.startPeriodicSync(network: network)
+
+        // Listen for sync tick notifications from the timer
+        NotificationCenter.default.addObserver(
+            forName: .platformBalanceSyncTick,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.performPlatformBalanceSync()
+            }
+        }
+    }
+
+    /// Perform a single BLAST address sync using the wallet's DIP-17 platform payment addresses.
+    /// Skips silently if there are no wallets or no platform addresses to sync.
+    func performPlatformBalanceSync() async {
+        guard let sdk = platformState.sdk else { return }
+
+        // No wallet → nothing to sync
+        let wallets = walletService.walletManager.wallets
+        guard let firstWallet = wallets.first else { return }
+
+        do {
+            // Ensure platform payment account exists (no-op if already there)
+            try walletService.walletManager.ensurePlatformPaymentAccount(for: firstWallet)
+
+            // Get addresses from the wallet's DIP-17 address pool
+            let addresses = try walletService.walletManager.getPlatformAddresses(for: firstWallet)
+
+            NSLog("BLAST sync: got \(addresses.count) platform addresses for wallet \(firstWallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())...")
+
+            // No addresses → skip sync entirely (don't hit the network)
+            guard !addresses.isEmpty else { return }
+
+            await platformBalanceSyncService.performSync(sdk: sdk, addresses: addresses)
+        } catch {
+            NSLog("BLAST sync: error getting platform addresses: \(error)")
+            SDKLogger.log(
+                "BLAST sync: failed to get platform addresses: \(error.localizedDescription)",
+                minimumLevel: .medium
+            )
+        }
+    }
+
+    /// Initialize the shielded service using the first wallet's seed.
+    /// Call after wallet seed becomes available or on network switch.
+    func initializeShieldedService() {
+        // Get the first wallet's seed data (first 32 bytes used as spending key)
+        // For now, use the wallet's serializedWalletBytes as a seed source
+        let wallets = walletService.walletManager.wallets
+        guard let firstWallet = wallets.first else { return }
+
+        // Use first 32 bytes of the wallet's serialized bytes as the spending key
+        // (proper ZIP32 derivation can be added later)
+        let seedData = firstWallet.serializedWalletBytes
+        guard seedData.count >= 32 else { return }
+
+        shieldedService.initialize(seed: seedData, network: platformState.currentNetwork)
     }
 }

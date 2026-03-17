@@ -227,6 +227,8 @@ typedef struct DocumentHandle { unsigned char _private[0]; } DocumentHandle;
 typedef struct IdentityHandle { unsigned char _private[0]; } IdentityHandle;
 typedef struct IdentityPublicKeyHandle { unsigned char _private[0]; } IdentityPublicKeyHandle;
 typedef struct SignerHandle { unsigned char _private[0]; } SignerHandle;
+// Shielded pool opaque handle
+typedef struct ShieldedPoolClient { unsigned char _private[0]; } ShieldedPoolClient;
 
 // ============================================================================
 // Key Wallet FFI Functions and Types

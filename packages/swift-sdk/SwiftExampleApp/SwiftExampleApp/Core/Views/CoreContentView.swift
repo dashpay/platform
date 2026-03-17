@@ -5,14 +5,7 @@ import SwiftData
 struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
-    @Environment(\.modelContext) private var modelContext
-    @Query private var wallets: [HDWallet]
-    @State private var showingCreateWallet = false
-
-    // Filter wallets by current network - show wallets that support the current network
-    private var walletsForCurrentNetwork: [HDWallet] {
-        return wallets
-    }
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     // Progress values come from WalletService (kept in sync with SPV callbacks)
 
     // Display helpers
@@ -118,32 +111,159 @@ var body: some View {
                 Text("Core Sync Status")
             }
 
-            // Section 2: Platform Sync Status
+            // Section 2: Platform Sync Status (BLAST address sync)
             Section {
                 VStack(spacing: 8) {
+                    // Sync state row
                     HStack {
-                        Text("Last Block Height")
+                        if platformBalanceSyncService.isSyncing {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Syncing...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else if let lastSync = platformBalanceSyncService.lastSyncTime {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Last sync: \(lastSync, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+
+                    // Balance summary
+                    HStack {
+                        Text("Platform Balance")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("—")
+                        if platformBalanceSyncService.totalPlatformBalance > 0 {
+                            Text(formatCredits(platformBalanceSyncService.totalPlatformBalance))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("0")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Active addresses
+                    HStack {
+                        Text("Active Addresses")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(platformBalanceSyncService.activeAddressCount)")
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
 
+                    // Chain tip height
+                    if platformBalanceSyncService.chainTipHeight > 0 {
+                        HStack {
+                            Text("Chain Tip Height")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formattedHeight(UInt32(platformBalanceSyncService.chainTipHeight)))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                    }
+
+                    // Sync checkpoint (from tree scan)
+                    if platformBalanceSyncService.checkpointHeight > 0 {
+                        HStack {
+                            Text("Sync Checkpoint")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Block time
+                    if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
+                        HStack {
+                            Text("Block Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(blockTime, style: .date)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(blockTime, style: .time)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Query counts since launch
+                    if platformBalanceSyncService.syncCountSinceLaunch > 0 {
+                        let svc = platformBalanceSyncService
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Queries Since Launch")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(svc.syncCountSinceLaunch) syncs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 12) {
+                                QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
+                                QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
+                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, color: .orange)
+                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, color: .green)
+                            }
+                        }
+                    }
+
+                    // Error display
+                    if let error = platformBalanceSyncService.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .lineLimit(2)
+                    }
+
+                    // Action buttons
                     HStack {
                         Spacer()
 
-                        Button(action: { /* TODO: Start platform sync */ }) {
-                            Text("Start")
-                                .font(.caption)
-                                .fontWeight(.medium)
+                        Button {
+                            Task {
+                                await unifiedAppState.performPlatformBalanceSync()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Sync Now")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.mini)
+                        .disabled(platformBalanceSyncService.isSyncing)
 
-                        Button(action: { /* TODO: Clear platform sync */ }) {
+                        Button {
+                            platformBalanceSyncService.reset()
+                        } label: {
                             Text("Clear")
                                 .font(.caption)
                                 .fontWeight(.medium)
@@ -158,72 +278,14 @@ var body: some View {
                 Text("Platform Sync Status")
             }
 
-            // Section 2: Wallets
-            Section("Wallets (\(unifiedAppState.platformState.currentNetwork.displayName))") {
-                if walletsForCurrentNetwork.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "wallet.pass")
-                            .font(.system(size: 40))
-                            .foregroundColor(.gray)
-
-                        Text("No \(unifiedAppState.platformState.currentNetwork.displayName) Wallets")
-                            .font(.headline)
-
-                        Text("Create a wallet for \(unifiedAppState.platformState.currentNetwork.displayName)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Button {
-                            showingCreateWallet = true
-                        } label: {
-                            Text("Create Wallet")
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
-                                .cornerRadius(8)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                } else {
-                    ForEach(walletsForCurrentNetwork) { wallet in
-                        NavigationLink {
-                            WalletDetailView(wallet: wallet)
-                                .environmentObject(unifiedAppState)
-                        } label: {
-                            WalletRowView(wallet: wallet)
-                        }
-                    }
-                }
-            }
         }
-        .navigationTitle("Wallets")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingCreateWallet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-        }
-        .sheet(isPresented: $showingCreateWallet) {
-            NavigationStack {
-                CreateWalletView()
-                    .environmentObject(walletService)
-                    .environmentObject(unifiedAppState)
-                    .environment(\.modelContext, modelContext)
-            }
-        }
+        .navigationTitle("Sync Status")
         .onAppear {
-            // Show detailed sync banner only on the Wallets root
             unifiedAppState.showWalletsSyncDetails = true
         }
         .onDisappear {
             unifiedAppState.showWalletsSyncDetails = false
         }
-        // No local polling; rows bind to WalletService progress directly
     }
 
     // MARK: - Sync Methods
@@ -485,6 +547,27 @@ struct WalletRowView: View {
     }
 }
 
+// MARK: - Query Count Badge
+
+private struct QueryCountBadge: View {
+    let label: String
+    let count: UInt32
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("\(count)")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(count > 0 ? color : .secondary)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 // MARK: - Formatting Helpers
 extension CoreContentView {
     func formattedHeight(_ height: UInt32) -> String {
@@ -494,5 +577,20 @@ extension CoreContentView {
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
         return formatter.string(from: NSNumber(value: height)) ?? String(height)
+    }
+
+    /// Format platform credits as DASH string (1 DASH = 100,000,000,000 credits)
+    func formatCredits(_ credits: UInt64) -> String {
+        let dash = Double(credits) / 100_000_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.8f DASH", dash)
     }
 }
