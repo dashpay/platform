@@ -844,7 +844,8 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_unshield_bundle(
 
     let change_amount = total_spent - required;
 
-    // Unshield extra_data = output_address || unshielding_amount (le bytes)
+    // Unshield extra_data = output_address || value_balance (le bytes)
+    // value_balance = unshield_amount + fee, becomes v0.unshielding_amount in the state transition
     // Must match server-side sighash in shielded_proof.rs
     let mut extra_sighash_data = output_address.to_bytes();
     extra_sighash_data.extend_from_slice(&required.to_le_bytes());
@@ -1019,7 +1020,8 @@ pub unsafe extern "C" fn dash_sdk_shielded_build_withdrawal_bundle(
 
     let change_amount = total_spent - required;
 
-    // ShieldedWithdrawal extra_data = output_script || unshielding_amount (le bytes)
+    // ShieldedWithdrawal extra_data = output_script || value_balance (le bytes)
+    // value_balance = withdrawal_amount + fee, becomes v0.unshielding_amount in the state transition
     // Must match server-side sighash in shielded_proof.rs
     let mut extra_sighash_data = core_script.as_bytes().to_vec();
     extra_sighash_data.extend_from_slice(&required.to_le_bytes());
