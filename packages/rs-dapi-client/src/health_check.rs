@@ -146,18 +146,20 @@ async fn probe_and_update_batch(
                 let pool = pool.clone();
                 let settings = settings.clone();
                 async move {
-                    let healthy = probe_node(address, &pool, &settings).await;
-                    if healthy {
-                        if address_list.is_banned(address) {
-                            address_list.unban(address);
-                            tracing::debug!(%address, "health check: node is healthy, unbanned");
+                    match probe_node(address, &pool, &settings).await {
+                        Ok(()) => {
+                            if address_list.is_banned(address) {
+                                address_list.unban(address);
+                                tracing::debug!(%address, "health check: node is healthy, unbanned");
+                            }
                         }
-                    } else {
-                        // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
-                        // this increments ban_count and extends banned_until with exponential backoff,
-                        // effectively escalating the ban duration for persistently dead nodes.
-                        address_list.ban(address);
-                        tracing::debug!(%address, "health check: node is unhealthy, banned");
+                        Err(reason) => {
+                            // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
+                            // this increments ban_count and extends banned_until with exponential backoff,
+                            // effectively escalating the ban duration for persistently dead nodes.
+                            address_list.ban(address);
+                            tracing::debug!(%address, %reason, "health check: node is unhealthy, banned");
+                        }
                     }
                 }
             }) => {}
@@ -168,7 +170,7 @@ async fn probe_node(
     address: &Address,
     pool: &ConnectionPool,
     settings: &AppliedRequestSettings,
-) -> bool {
+) -> Result<(), String> {
     let client_result =
         <platform_proto::GetStatusRequest as TransportRequest>::Client::with_uri_and_settings(
             address.uri().clone(),
@@ -179,8 +181,7 @@ async fn probe_node(
     let mut client = match client_result {
         Ok(client) => client,
         Err(e) => {
-            tracing::trace!(%address, error = %e, "health check: failed to create transport client");
-            return false;
+            return Err(format!("failed to create transport client: {e}"));
         }
     };
 
@@ -190,13 +191,11 @@ async fn probe_node(
         )),
     };
 
-    match request.execute_transport(&mut client, settings).await {
-        Ok(_) => true,
-        Err(e) => {
-            tracing::trace!(%address, error = %e, "health check: probe failed");
-            false
-        }
-    }
+    request
+        .execute_transport(&mut client, settings)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("probe failed: {e}"))
 }
 
 #[cfg(test)]
