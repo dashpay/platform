@@ -72,13 +72,11 @@ impl AllowedAsMultiPartyAction for TokenSetPriceForDirectPurchaseTransitionV0 {
     ) -> Result<Identifier, ProtocolError> {
         let TokenSetPriceForDirectPurchaseTransitionV0 { base, price, .. } = self;
 
-        Ok(
-            TokenSetPriceForDirectPurchaseTransition::calculate_action_id_with_fields(
-                base.token_id().as_bytes(),
-                owner_id.as_bytes(),
-                base.identity_contract_nonce(),
-                price.as_ref(),
-            ),
+        TokenSetPriceForDirectPurchaseTransition::calculate_action_id_with_fields(
+            base.token_id().as_bytes(),
+            owner_id.as_bytes(),
+            base.identity_contract_nonce(),
+            price.as_ref(),
         )
     }
 }
