@@ -77,7 +77,8 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError, ShieldedInvalidValueBalanceError,
+    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
+    ShieldedEncryptedNoteSizeMismatchError, ShieldedInvalidValueBalanceError,
     ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
     StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
     TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
@@ -673,6 +674,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
+
+    #[error(transparent)]
+    ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
 }
 
 impl From<BasicError> for ConsensusError {

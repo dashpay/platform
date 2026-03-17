@@ -238,6 +238,7 @@ impl ErrorWithCode for BasicError {
             Self::ShieldedZeroAnchorError(_) => 10821,
             Self::ShieldedInvalidValueBalanceError(_) => 10822,
             Self::ShieldedTooManyActionsError(_) => 10825,
+            Self::ShieldedEncryptedNoteSizeMismatchError(_) => 10823,
         }
     }
 }
