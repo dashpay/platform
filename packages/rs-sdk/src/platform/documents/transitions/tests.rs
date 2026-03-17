@@ -197,7 +197,7 @@ async fn document_builder_sign_masks_nonce_so_out_of_bounds_is_unreachable() {
     // which masks out-of-bounds bits. This makes `validate_base_structure`
     // nonce-out-of-bounds errors unreachable through the builder API.
     // One test suffices since all document builders use the same SDK nonce path.
-    let document_type_name = "testDoc";
+    let document_type_name = TEST_DOCUMENT_TYPE_NAME;
     let data_contract = test_data_contract(document_type_name);
     let owner_id = Identifier::random();
 
@@ -228,7 +228,7 @@ async fn document_builder_sign_masks_nonce_so_out_of_bounds_is_unreachable() {
 
 #[tokio::test]
 async fn document_delete_builder_sign_succeeds_for_valid_input() {
-    let document_type_name = "testDoc";
+    let document_type_name = TEST_DOCUMENT_TYPE_NAME;
     let data_contract = test_data_contract(document_type_name);
     let owner_id = Identifier::random();
     let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
@@ -253,6 +253,11 @@ async fn document_delete_builder_sign_succeeds_for_valid_input() {
         result.is_ok(),
         "valid input should pass validation; got error: {:?}",
         result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
     );
 }
 
@@ -284,6 +289,11 @@ async fn document_create_builder_sign_succeeds_for_valid_input() {
         "valid input should pass validation; got error: {:?}",
         result.err()
     );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
 }
 
 #[tokio::test]
@@ -312,6 +322,11 @@ async fn document_replace_builder_sign_succeeds_for_valid_input() {
         result.is_ok(),
         "valid input should pass validation; got error: {:?}",
         result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
     );
 }
 
@@ -345,6 +360,11 @@ async fn document_purchase_builder_sign_succeeds_for_valid_input() {
         "valid input should pass validation; got error: {:?}",
         result.err()
     );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
 }
 
 #[tokio::test]
@@ -374,6 +394,11 @@ async fn document_set_price_builder_sign_succeeds_for_valid_input() {
         result.is_ok(),
         "valid input should pass validation; got error: {:?}",
         result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
     );
 }
 
@@ -405,5 +430,10 @@ async fn document_transfer_builder_sign_succeeds_for_valid_input() {
         result.is_ok(),
         "valid input should pass validation; got error: {:?}",
         result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
     );
 }
