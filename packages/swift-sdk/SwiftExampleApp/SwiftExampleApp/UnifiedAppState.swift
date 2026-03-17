@@ -44,6 +44,9 @@ class UnifiedAppState: ObservableObject {
     // Transition state for temporary data
     @Published var transitionState = TransitionState()
 
+    // Observer token for platform balance sync tick (prevents duplicate observers)
+    private var syncTickObserver: NSObjectProtocol?
+
     // Computed property for easy SDK access
     var sdk: SDK? {
         platformState.sdk
@@ -135,8 +138,13 @@ class UnifiedAppState: ObservableObject {
         let network = platformState.currentNetwork
         platformBalanceSyncService.startPeriodicSync(network: network)
 
+        // Remove previous observer if any to prevent duplicate observers
+        if let observer = syncTickObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
         // Listen for sync tick notifications from the timer
-        NotificationCenter.default.addObserver(
+        syncTickObserver = NotificationCenter.default.addObserver(
             forName: .platformBalanceSyncTick,
             object: nil,
             queue: .main

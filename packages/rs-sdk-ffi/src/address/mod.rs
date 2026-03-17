@@ -64,7 +64,12 @@ pub unsafe extern "C" fn dash_sdk_encode_platform_address(
         1 => dash_sdk::dpp::dashcore::Network::Testnet,
         2 => dash_sdk::dpp::dashcore::Network::Regtest,
         3 => dash_sdk::dpp::dashcore::Network::Devnet,
-        _ => dash_sdk::dpp::dashcore::Network::Testnet,
+        _ => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Unknown network code: {}. Expected 0 (mainnet), 1 (testnet), 2 (regtest), or 3 (devnet)", network),
+            ));
+        }
     };
 
     let encoded = platform_addr.to_bech32m_string(dash_network);
@@ -102,12 +107,18 @@ pub unsafe extern "C" fn dash_sdk_script_to_platform_address_key(
     let script_bytes = std::slice::from_raw_parts(script_pubkey, script_len as usize);
     let script = Script::from_bytes(script_bytes);
 
+    // Read the caller-supplied capacity before writing
+    let capacity = *out_key_len as usize;
+
     // Extract the pubkey hash from the P2PKH script
     if let Some(hash_bytes) = script.p2pkh_public_key_hash_bytes() {
         if hash_bytes.len() == 20 {
             let hash: [u8; 20] = hash_bytes.try_into().unwrap();
             let platform_addr = PlatformAddress::P2pkh(hash);
             let storage_bytes = platform_addr.to_bytes();
+            if storage_bytes.len() > capacity {
+                return false;
+            }
             std::ptr::copy_nonoverlapping(storage_bytes.as_ptr(), out_key, storage_bytes.len());
             *out_key_len = storage_bytes.len() as u32;
             return true;

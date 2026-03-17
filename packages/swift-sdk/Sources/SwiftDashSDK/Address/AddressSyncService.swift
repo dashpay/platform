@@ -75,8 +75,12 @@ extension SDK {
         var tmpKbIndices: [UInt32] = []
         var tmpKbNonces: [UInt32] = []
         var tmpKbAmounts: [UInt64] = []
-        for found in knownBalances {
-            guard found.key.count == keySize else { continue }
+        for (i, found) in knownBalances.enumerated() {
+            guard found.key.count == keySize else {
+                throw SDKError.invalidParameter(
+                    "knownBalances[\(i)] has key size \(found.key.count), expected \(keySize)"
+                )
+            }
             tmpKbKeys.append(found.key)
             tmpKbIndices.append(found.index)
             tmpKbNonces.append(found.nonce)

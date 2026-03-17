@@ -126,7 +126,7 @@ var body: some View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
                                 .font(.caption)
-                            Text("Last sync: \(lastSync, style: .relative) ago")
+                            Text("Last sync: \(lastSync, style: .relative)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         } else {

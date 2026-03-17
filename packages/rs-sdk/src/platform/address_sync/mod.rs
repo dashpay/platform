@@ -405,6 +405,7 @@ async fn incremental_catch_up<P: AddressProvider>(
         .collect();
 
     let mut current_height = start_height;
+    let mut observed_tip_height = start_height;
     let mut had_successful_query = false;
 
     // Phase 1 — Compacted (historical) catch-up
@@ -455,8 +456,8 @@ async fn incremental_catch_up<P: AddressProvider>(
         result.metrics.compacted_queries += 1;
         had_successful_query = true;
         // Track the platform's chain tip from response metadata
-        if metadata.height > current_height {
-            current_height = metadata.height;
+        if metadata.height > observed_tip_height {
+            observed_tip_height = metadata.height;
         }
 
         if entries.is_empty() {
@@ -550,8 +551,8 @@ async fn incremental_catch_up<P: AddressProvider>(
         result.metrics.recent_queries += 1;
         had_successful_query = true;
         // Track the platform's chain tip from response metadata
-        if metadata.height > current_height {
-            current_height = metadata.height;
+        if metadata.height > observed_tip_height {
+            observed_tip_height = metadata.height;
         }
 
         if entries.is_empty() {
@@ -603,7 +604,7 @@ async fn incremental_catch_up<P: AddressProvider>(
         }
     }
 
-    result.new_sync_height = current_height;
+    result.new_sync_height = current_height.max(observed_tip_height);
     Ok(())
 }
 

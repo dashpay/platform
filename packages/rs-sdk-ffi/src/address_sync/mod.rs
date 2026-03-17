@@ -333,6 +333,45 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         ));
     }
 
+    // Validate known balance pointers when known_balance_count > 0
+    if known_balance_count > 0 {
+        if key_size == 0 {
+            error!("dash_sdk_sync_addresses_batch_with_result: key_size is 0 but known_balance_count > 0");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "key_size must be > 0 when known_balance_count > 0".to_string(),
+            ));
+        }
+        if known_balance_keys.is_null() {
+            error!("dash_sdk_sync_addresses_batch_with_result: known_balance_keys is null but known_balance_count > 0");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "known_balance_keys must not be null when known_balance_count > 0".to_string(),
+            ));
+        }
+        if known_balance_indices.is_null() {
+            error!("dash_sdk_sync_addresses_batch_with_result: known_balance_indices is null but known_balance_count > 0");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "known_balance_indices must not be null when known_balance_count > 0".to_string(),
+            ));
+        }
+        if known_balance_nonces.is_null() {
+            error!("dash_sdk_sync_addresses_batch_with_result: known_balance_nonces is null but known_balance_count > 0");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "known_balance_nonces must not be null when known_balance_count > 0".to_string(),
+            ));
+        }
+        if known_balance_amounts.is_null() {
+            error!("dash_sdk_sync_addresses_batch_with_result: known_balance_amounts is null but known_balance_count > 0");
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "known_balance_amounts must not be null when known_balance_count > 0".to_string(),
+            ));
+        }
+    }
+
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Parse flat arrays into BTreeMap
@@ -395,12 +434,15 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         last_sync_height
     );
 
+    // Seed highest_found from known balances so we don't lose the high-water mark
+    let initial_highest_found = known_balances.iter().map(|(index, _, _)| *index).max();
+
     let mut provider = BatchAddressProvider {
         gap_limit,
         pending,
         found: BTreeMap::new(),
         absent: BTreeSet::new(),
-        highest_found: None,
+        highest_found: initial_highest_found,
         known_balances,
         sync_height: last_sync_height,
     };
