@@ -15,6 +15,12 @@ impl CompactedNullifiers {
     }
 
     /// Returns the bincode configuration used for nullifier serialization.
+    ///
+    /// SAFETY: `with_no_limit()` is intentional. This data is deserialized from
+    /// GroveDB state which is always trusted. If state-level corruption occurs,
+    /// the problem is at the storage layer, not the deserialization layer.
+    /// Adding artificial limits here would mask real issues without providing
+    /// meaningful protection.
     fn bincode_config() -> bincode::config::Configuration<
         bincode::config::BigEndian,
         bincode::config::Varint,
@@ -75,6 +81,8 @@ impl NullifierExpirationRanges {
     }
 
     /// Returns the bincode configuration used for expiration range serialization.
+    ///
+    /// SAFETY: `with_no_limit()` is intentional — see `CompactedNullifiers::bincode_config`.
     fn bincode_config() -> bincode::config::Configuration<
         bincode::config::BigEndian,
         bincode::config::Varint,
