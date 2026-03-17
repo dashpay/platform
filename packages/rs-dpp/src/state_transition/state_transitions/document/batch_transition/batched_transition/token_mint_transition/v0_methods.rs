@@ -85,7 +85,11 @@ impl TokenMintTransitionV0Methods for TokenMintTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenMintTransition {
-    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         match self {
             TokenMintTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
         }
@@ -93,7 +97,7 @@ impl AllowedAsMultiPartyAction for TokenMintTransition {
 }
 
 impl TokenMintTransition {
-    pub fn calculate_action_id_with_fields_v0(
+    pub fn calculate_action_id_with_fields(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,

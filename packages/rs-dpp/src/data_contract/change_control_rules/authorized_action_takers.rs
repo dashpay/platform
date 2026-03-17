@@ -2,6 +2,7 @@ use crate::data_contract::group::accessors::v0::GroupV0Getters;
 use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
 use crate::group::action_taker::{ActionGoal, ActionTaker};
+use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,61 @@ impl fmt::Display for AuthorizedActionTakers {
 }
 
 impl AuthorizedActionTakers {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            AuthorizedActionTakers::NoOne => vec![0],
+            AuthorizedActionTakers::ContractOwner => vec![1],
+            AuthorizedActionTakers::Identity(identifier) => {
+                let mut bytes = vec![2];
+                bytes.extend_from_slice(identifier.as_bytes());
+                bytes
+            }
+            AuthorizedActionTakers::MainGroup => vec![3],
+            AuthorizedActionTakers::Group(position) => {
+                let mut bytes = vec![4];
+                bytes.extend_from_slice(&position.to_be_bytes());
+                bytes
+            }
+        }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        let Some(&tag) = bytes.first() else {
+            return Err(ProtocolError::DecodingError(
+                "empty bytes for AuthorizedActionTakers".to_string(),
+            ));
+        };
+        match tag {
+            0 => Ok(AuthorizedActionTakers::NoOne),
+            1 => Ok(AuthorizedActionTakers::ContractOwner),
+            2 => {
+                if bytes.len() != 33 {
+                    return Err(ProtocolError::DecodingError(format!(
+                        "expected 33 bytes for AuthorizedActionTakers::Identity, got {}",
+                        bytes.len()
+                    )));
+                }
+                let identifier = Identifier::from_bytes(&bytes[1..])
+                    .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
+                Ok(AuthorizedActionTakers::Identity(identifier))
+            }
+            3 => Ok(AuthorizedActionTakers::MainGroup),
+            4 => {
+                if bytes.len() != 3 {
+                    return Err(ProtocolError::DecodingError(format!(
+                        "expected 3 bytes for AuthorizedActionTakers::Group, got {}",
+                        bytes.len()
+                    )));
+                }
+                let position = u16::from_be_bytes([bytes[1], bytes[2]]);
+                Ok(AuthorizedActionTakers::Group(position))
+            }
+            other => Err(ProtocolError::DecodingError(format!(
+                "unknown AuthorizedActionTakers tag: {}",
+                other
+            ))),
+        }
+    }
     pub fn allowed_for_action_taker(
         &self,
         contract_owner_id: &Identifier,

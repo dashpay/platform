@@ -68,17 +68,58 @@ impl TokenConfigUpdateTransitionV0Methods for TokenConfigUpdateTransition {
 }
 
 impl AllowedAsMultiPartyAction for TokenConfigUpdateTransition {
-    fn calculate_action_id(&self, owner_id: Identifier, platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         match self {
-            TokenConfigUpdateTransition::V0(v0) => v0.calculate_action_id(owner_id, platform_version),
+            TokenConfigUpdateTransition::V0(v0) => {
+                v0.calculate_action_id(owner_id, platform_version)
+            }
         }
     }
 }
 
 impl TokenConfigUpdateTransition {
+    pub fn calculate_action_id_with_fields(
+        token_id: &[u8; 32],
+        owner_id: &[u8; 32],
+        identity_contract_nonce: IdentityNonce,
+        token_configuration_change_item: &TokenConfigurationChangeItem,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version
+            .dpp
+            .token_versions
+            .token_config_update_action_id_version
+        {
+            0 => Ok(Self::calculate_action_id_with_fields_v0(
+                token_id,
+                owner_id,
+                identity_contract_nonce,
+                token_configuration_change_item.u8_item_index(),
+            )),
+            1 => {
+                let payload = token_configuration_change_item.payload_serialization()?;
+                Ok(Self::calculate_action_id_with_fields_v1(
+                    token_id,
+                    owner_id,
+                    identity_contract_nonce,
+                    token_configuration_change_item.u8_item_index(),
+                    payload.as_ref().map(|a| a.as_slice()),
+                ))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "calculate_action_id_with_fields".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
     /// v0: action_id uses only the u8 discriminant of the config change item.
     /// This is kept for backward compatibility with existing production data.
-    pub fn calculate_action_id_with_fields_v0(
+    fn calculate_action_id_with_fields_v0(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
@@ -96,7 +137,7 @@ impl TokenConfigUpdateTransition {
     /// v1: action_id includes the u8 discriminant plus an optional serialized
     /// payload, binding the voted-on value into the hash and preventing
     /// vote-swap attacks.
-    pub fn calculate_action_id_with_fields_v1(
+    fn calculate_action_id_with_fields_v1(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
@@ -125,8 +166,7 @@ mod tests {
     use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 
     fn serialize_item(item: &TokenConfigurationChangeItem) -> Vec<u8> {
-        bincode::encode_to_vec(item, bincode::config::standard())
-            .expect("expected to encode item")
+        bincode::encode_to_vec(item, bincode::config::standard()).expect("expected to encode item")
     }
 
     fn make_transition(item: TokenConfigurationChangeItem) -> TokenConfigUpdateTransition {
@@ -156,8 +196,12 @@ mod tests {
         )));
 
         let platform_version = PlatformVersion::first();
-        let id_small = t_small.calculate_action_id(owner_id, platform_version).expect("expected action id");
-        let id_large = t_large.calculate_action_id(owner_id, platform_version).expect("expected action id");
+        let id_small = t_small
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id_large = t_large
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
 
         // v0: these are EQUAL -- the vulnerability
         assert_eq!(
@@ -245,7 +289,11 @@ mod tests {
             item.u8_item_index(),
         );
         let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, item.u8_item_index(), Some(&serialize_item(&item)),
+            &token_id,
+            &owner_id,
+            nonce,
+            item.u8_item_index(),
+            Some(&serialize_item(&item)),
         );
 
         assert_ne!(
@@ -264,8 +312,12 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let id_plain_v0 = t.calculate_action_id(owner_id, PlatformVersion::first()).expect("expected action id");
-        let id_versioned = t.calculate_action_id(owner_id, platform_version).expect("expected action id");
+        let id_plain_v0 = t
+            .calculate_action_id(owner_id, PlatformVersion::first())
+            .expect("expected action id");
+        let id_versioned = t
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
 
         // v1 produces a different id from v0 because it hashes the full payload
         assert_ne!(
@@ -301,10 +353,18 @@ mod tests {
         let item2 = TokenConfigurationChangeItem::MaxSupply(Some(42));
 
         let id1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, item1.u8_item_index(), Some(&serialize_item(&item1)),
+            &token_id,
+            &owner_id,
+            nonce,
+            item1.u8_item_index(),
+            Some(&serialize_item(&item1)),
         );
         let id2 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id, &owner_id, nonce, item2.u8_item_index(), Some(&serialize_item(&item2)),
+            &token_id,
+            &owner_id,
+            nonce,
+            item2.u8_item_index(),
+            Some(&serialize_item(&item2)),
         );
 
         assert_eq!(

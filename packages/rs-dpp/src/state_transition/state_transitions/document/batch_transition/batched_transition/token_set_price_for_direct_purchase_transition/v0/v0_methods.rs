@@ -65,14 +65,20 @@ impl TokenSetPriceForDirectPurchaseTransitionV0Methods
 }
 
 impl AllowedAsMultiPartyAction for TokenSetPriceForDirectPurchaseTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenSetPriceForDirectPurchaseTransitionV0 { base, price, .. } = self;
 
-        Ok(TokenSetPriceForDirectPurchaseTransition::calculate_action_id_with_fields_v0(
-            base.token_id().as_bytes(),
-            owner_id.as_bytes(),
-            base.identity_contract_nonce(),
-            price.as_ref(),
-        ))
+        Ok(
+            TokenSetPriceForDirectPurchaseTransition::calculate_action_id_with_fields(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                price.as_ref(),
+            ),
+        )
     }
 }

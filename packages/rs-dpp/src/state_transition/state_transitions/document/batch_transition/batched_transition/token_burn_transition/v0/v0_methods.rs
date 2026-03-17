@@ -62,12 +62,16 @@ impl TokenBurnTransitionV0Methods for TokenBurnTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenBurnTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenBurnTransitionV0 {
             base, burn_amount, ..
         } = self;
 
-        Ok(TokenBurnTransition::calculate_action_id_with_fields_v0(
+        Ok(TokenBurnTransition::calculate_action_id_with_fields(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),

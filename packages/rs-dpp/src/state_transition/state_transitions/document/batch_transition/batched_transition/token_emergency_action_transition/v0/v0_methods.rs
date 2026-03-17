@@ -65,18 +65,24 @@ impl TokenEmergencyActionTransitionV0Methods for TokenEmergencyActionTransitionV
 }
 
 impl AllowedAsMultiPartyAction for TokenEmergencyActionTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenEmergencyActionTransitionV0 {
             base,
             emergency_action,
             ..
         } = self;
 
-        Ok(TokenEmergencyActionTransition::calculate_action_id_with_fields_v0(
-            base.token_id().as_bytes(),
-            owner_id.as_bytes(),
-            base.identity_contract_nonce(),
-            *emergency_action,
-        ))
+        Ok(
+            TokenEmergencyActionTransition::calculate_action_id_with_fields(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                *emergency_action,
+            ),
+        )
     }
 }

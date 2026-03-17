@@ -1078,12 +1078,14 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MaxSupply(Some(1000000)).u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::MaxSupply(Some(1000000)),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1293,15 +1295,16 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                     AuthorizedActionTakers::Group(0),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1461,12 +1464,14 @@ mod token_config_update_tests {
 
             // now that we are group 0 as the group that can make the change, let's make the change to allow minting to choose the destination
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestination(true).u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestination(true),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1684,15 +1689,16 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
                     AuthorizedActionTakers::Group(1),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1909,15 +1915,16 @@ mod token_config_update_tests {
 
             // Let's try doing this action with group 1
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                     AuthorizedActionTakers::Group(2),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2146,15 +2153,16 @@ mod token_config_update_tests {
                 platform_version,
             );
 
-            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::ConventionsAdminGroup(AuthorizedActionTakers::Group(
-                    0,
-                ))
-                .u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::ConventionsAdminGroup(
+                    AuthorizedActionTakers::Group(0),
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2433,15 +2441,16 @@ mod token_config_update_tests {
             // Now let's have Group 0 change the control of the conventions to identity 2 only
 
             let action_id_change_control =
-                TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+                TokenConfigUpdateTransition::calculate_action_id_with_fields(
                     token_id.as_bytes(),
                     identity.id().as_bytes(),
                     2,
-                    TokenConfigurationChangeItem::ConventionsControlGroup(
+                    &TokenConfigurationChangeItem::ConventionsControlGroup(
                         AuthorizedActionTakers::Identity(identity_2.id()),
-                    )
-                    .u8_item_index(),
-                );
+                    ),
+                    platform_version,
+                )
+                .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2577,15 +2586,16 @@ mod token_config_update_tests {
 
             // Now let's have Group 0 hand it back to Group 1
 
-            let action_id_return = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
+            let action_id_return = TokenConfigUpdateTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
-                TokenConfigurationChangeItem::ConventionsAdminGroup(AuthorizedActionTakers::Group(
-                    1,
-                ))
-                .u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::ConventionsAdminGroup(
+                    AuthorizedActionTakers::Group(1),
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,

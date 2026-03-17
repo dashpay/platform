@@ -63,14 +63,18 @@ impl TokenFreezeTransitionV0Methods for TokenFreezeTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenFreezeTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenFreezeTransitionV0 {
             base,
             identity_to_freeze_id: frozen_identity_id,
             ..
         } = self;
 
-        Ok(TokenFreezeTransition::calculate_action_id_with_fields_v0(
+        Ok(TokenFreezeTransition::calculate_action_id_with_fields(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),

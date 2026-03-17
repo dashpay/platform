@@ -100,10 +100,14 @@ impl TokenMintTransitionV0Methods for TokenMintTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenMintTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenMintTransitionV0 { base, amount, .. } = self;
 
-        Ok(TokenMintTransition::calculate_action_id_with_fields_v0(
+        Ok(TokenMintTransition::calculate_action_id_with_fields(
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),

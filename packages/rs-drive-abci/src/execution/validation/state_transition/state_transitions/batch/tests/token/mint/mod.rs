@@ -1602,7 +1602,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -1868,7 +1868,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -2191,7 +2191,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -2411,7 +2411,7 @@ mod token_mint_tests {
 
             // Now we need to get the second identity to also sign it, but we are going to resubmit with first
             // This will create an error
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -2630,7 +2630,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -2919,7 +2919,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -3335,7 +3335,7 @@ mod token_mint_tests {
             assert_eq!(token_balance, Some(100000));
 
             // Now we need to get the second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
@@ -3472,7 +3472,7 @@ mod token_mint_tests {
             );
 
             // The second identity to also sign it
-            let action_id = TokenMintTransition::calculate_action_id_with_fields_v0(
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,

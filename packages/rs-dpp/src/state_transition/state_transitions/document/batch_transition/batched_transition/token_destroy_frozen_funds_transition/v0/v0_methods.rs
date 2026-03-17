@@ -63,18 +63,24 @@ impl TokenDestroyFrozenFundsTransitionV0Methods for TokenDestroyFrozenFundsTrans
 }
 
 impl AllowedAsMultiPartyAction for TokenDestroyFrozenFundsTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier, _platform_version: &PlatformVersion) -> Result<Identifier, ProtocolError> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenDestroyFrozenFundsTransitionV0 {
             base,
             frozen_identity_id,
             ..
         } = self;
 
-        Ok(TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields_v0(
-            base.token_id().as_bytes(),
-            owner_id.as_bytes(),
-            base.identity_contract_nonce(),
-            frozen_identity_id.as_bytes(),
-        ))
+        Ok(
+            TokenDestroyFrozenFundsTransition::calculate_action_id_with_fields(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                frozen_identity_id.as_bytes(),
+            ),
+        )
     }
 }

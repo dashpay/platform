@@ -66,6 +66,63 @@ pub enum TokenConfigurationChangeItem {
     MainControlGroup(Option<GroupContractPosition>),
 }
 impl TokenConfigurationChangeItem {
+    pub fn payload_serialization(&self) -> Result<Option<Vec<u8>>, ProtocolError> {
+        Ok(match self {
+            TokenConfigurationChangeItem::TokenConfigurationNoChange => None,
+            TokenConfigurationChangeItem::Conventions(convention) => Some(
+                bincode::encode_to_vec(convention, bincode::config::standard())
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+            ),
+            TokenConfigurationChangeItem::ConventionsControlGroup(a)
+            | TokenConfigurationChangeItem::ConventionsAdminGroup(a)
+            | TokenConfigurationChangeItem::MaxSupplyControlGroup(a)
+            | TokenConfigurationChangeItem::MaxSupplyAdminGroup(a)
+            | TokenConfigurationChangeItem::PerpetualDistributionControlGroup(a)
+            | TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(a)
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(a)
+            | TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(a)
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(a)
+            | TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(a)
+            | TokenConfigurationChangeItem::ManualMinting(a)
+            | TokenConfigurationChangeItem::ManualMintingAdminGroup(a)
+            | TokenConfigurationChangeItem::ManualBurning(a)
+            | TokenConfigurationChangeItem::ManualBurningAdminGroup(a)
+            | TokenConfigurationChangeItem::Freeze(a)
+            | TokenConfigurationChangeItem::FreezeAdminGroup(a)
+            | TokenConfigurationChangeItem::Unfreeze(a)
+            | TokenConfigurationChangeItem::UnfreezeAdminGroup(a)
+            | TokenConfigurationChangeItem::DestroyFrozenFunds(a)
+            | TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(a)
+            | TokenConfigurationChangeItem::EmergencyAction(a)
+            | TokenConfigurationChangeItem::EmergencyActionAdminGroup(a)
+            | TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(a)
+            | TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(a) => Some(a.to_bytes()),
+            TokenConfigurationChangeItem::MaxSupply(max_supply) => {
+                max_supply.map(|amount| amount.to_be_bytes().to_vec())
+            }
+            TokenConfigurationChangeItem::PerpetualDistribution(distribution) => distribution
+                .as_ref()
+                .map(|dist| {
+                    bincode::encode_to_vec(dist, bincode::config::standard())
+                        .map_err(|e| ProtocolError::EncodingError(e.to_string()))
+                })
+                .transpose()?,
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(identity) => {
+                identity.map(|id| id.to_vec())
+            }
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(allow) => {
+                Some(vec![*allow as u8])
+            }
+            TokenConfigurationChangeItem::MarketplaceTradeMode(mode) => Some(
+                bincode::encode_to_vec(mode, bincode::config::standard())
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+            ),
+            TokenConfigurationChangeItem::MainControlGroup(position) => match position {
+                Some(pos) => Some(pos.to_be_bytes().to_vec()),
+                None => Some(vec![]),
+            },
+        })
+    }
     pub fn u8_item_index(&self) -> u8 {
         match self {
             TokenConfigurationChangeItem::TokenConfigurationNoChange => 0,
