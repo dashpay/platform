@@ -47,12 +47,12 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "9959201593826def0ad1f6db51b2ceb95b68a1ca" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
@@ -87,14 +87,3 @@ opt-level = 3
 
 version = "3.1.0-dev.1"
 rust-version = "1.92"
-
-# Redirect rust-dashcore git deps to local checkout so we pick up the
-# `&Wallet` (immutable) fix in check_core_transaction and other changes.
-[patch."https://github.com/dashpay/rust-dashcore"]
-dashcore = { path = "../rust-dashcore/dash" }
-dash-spv = { path = "../rust-dashcore/dash-spv" }
-dash-spv-ffi = { path = "../rust-dashcore/dash-spv-ffi" }
-key-wallet = { path = "../rust-dashcore/key-wallet" }
-key-wallet-manager = { path = "../rust-dashcore/key-wallet-manager" }
-dashcore-rpc = { path = "../rust-dashcore/rpc-client" }
-dashcore-rpc-json = { path = "../rust-dashcore/rpc-json" }

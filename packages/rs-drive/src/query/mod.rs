@@ -104,7 +104,7 @@ pub mod vote_polls_by_document_type_query;
 /// contract required for operations like proof verification.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub type ContractLookupFn<'a> =
-    dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error> + 'a;
+    dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error> + Send + Sync + 'a;
 
 /// Creates a [ContractLookupFn] function that returns provided data contract when requested.
 ///
