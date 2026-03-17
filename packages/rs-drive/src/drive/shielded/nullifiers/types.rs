@@ -2,6 +2,26 @@ use crate::error::Error;
 use dpp::ProtocolError;
 use std::ops::Deref;
 
+/// Maximum byte size for decoding compacted nullifiers via bincode.
+///
+/// Derived from the platform version constant `max_nullifiers_before_compaction` (2048):
+/// 2048 nullifiers * 32 bytes each + 64 bytes overhead for the bincode Vec length prefix
+/// and struct framing = 65,600 bytes. We round up to 128 KiB (131,072) to leave headroom
+/// for potential future increases without being dangerously large.
+///
+/// This prevents a corrupted GroveDB entry with a huge Vec length prefix from causing
+/// the node to attempt allocating an enormous amount of memory.
+const COMPACTED_NULLIFIERS_MAX_BYTES: usize = 128 * 1024; // 128 KiB
+
+/// Maximum byte size for decoding nullifier expiration ranges via bincode.
+///
+/// Each `(u64, u64)` pair uses at most ~20 bytes with varint encoding. The number of
+/// ranges per expiration entry is naturally bounded (typically 1, occasionally a few if
+/// multiple compaction events land on the same timestamp). 128 KiB is generous enough
+/// to accommodate any realistic set of ranges while still preventing runaway allocation
+/// from corrupted data.
+const EXPIRATION_RANGES_MAX_BYTES: usize = 128 * 1024; // 128 KiB
+
 /// Wrapper around `Vec<[u8; 32]>` for serialized nullifier lists.
 ///
 /// Encapsulates the bincode configuration used for encoding and decoding
@@ -15,14 +35,16 @@ impl CompactedNullifiers {
     }
 
     /// Returns the bincode configuration used for nullifier serialization.
+    ///
+    /// Uses a size limit to prevent runaway memory allocation from corrupted data.
     fn bincode_config() -> bincode::config::Configuration<
         bincode::config::BigEndian,
         bincode::config::Varint,
-        bincode::config::NoLimit,
+        bincode::config::Limit<COMPACTED_NULLIFIERS_MAX_BYTES>,
     > {
         bincode::config::standard()
             .with_big_endian()
-            .with_no_limit()
+            .with_limit::<COMPACTED_NULLIFIERS_MAX_BYTES>()
     }
 
     /// Encodes the nullifier list into bytes using bincode.
@@ -75,14 +97,16 @@ impl NullifierExpirationRanges {
     }
 
     /// Returns the bincode configuration used for expiration range serialization.
+    ///
+    /// Uses a size limit to prevent runaway memory allocation from corrupted data.
     fn bincode_config() -> bincode::config::Configuration<
         bincode::config::BigEndian,
         bincode::config::Varint,
-        bincode::config::NoLimit,
+        bincode::config::Limit<EXPIRATION_RANGES_MAX_BYTES>,
     > {
         bincode::config::standard()
             .with_big_endian()
-            .with_no_limit()
+            .with_limit::<EXPIRATION_RANGES_MAX_BYTES>()
     }
 
     /// Encodes the expiration range list into bytes using bincode.
