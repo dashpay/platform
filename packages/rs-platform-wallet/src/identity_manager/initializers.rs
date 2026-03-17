@@ -13,25 +13,6 @@ impl IdentityManager {
         Self::default()
     }
 
-    /// Create a new identity manager with an SDK instance
-    pub fn new_with_sdk(sdk: std::sync::Arc<dash_sdk::Sdk>) -> Self {
-        Self {
-            identities: indexmap::IndexMap::new(),
-            primary_identity_id: None,
-            sdk: Some(sdk),
-        }
-    }
-
-    /// Set the SDK instance
-    pub fn set_sdk(&mut self, sdk: std::sync::Arc<dash_sdk::Sdk>) {
-        self.sdk = Some(sdk);
-    }
-
-    /// Get a reference to the SDK instance
-    pub fn sdk(&self) -> Option<&std::sync::Arc<dash_sdk::Sdk>> {
-        self.sdk.as_ref()
-    }
-
     /// Add an identity to the manager
     pub fn add_identity(&mut self, identity: Identity) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();

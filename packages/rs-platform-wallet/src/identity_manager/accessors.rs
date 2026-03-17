@@ -93,4 +93,24 @@ impl IdentityManager {
             .map(|managed| managed.identity.balance())
             .sum()
     }
+
+    /// Get the number of managed identities.
+    pub fn identity_count(&self) -> usize {
+        self.identities.len()
+    }
+
+    /// Check if there are no managed identities.
+    pub fn is_empty(&self) -> bool {
+        self.identities.is_empty()
+    }
+
+    /// Get the last scanned identity index.
+    pub fn last_scanned_index(&self) -> u32 {
+        self.last_scanned_index
+    }
+
+    /// Set the last scanned identity index.
+    pub fn set_last_scanned_index(&mut self, index: u32) {
+        self.last_scanned_index = index;
+    }
 }

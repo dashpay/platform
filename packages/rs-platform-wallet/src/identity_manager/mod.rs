@@ -7,8 +7,6 @@ use crate::managed_identity::ManagedIdentity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
 
-use std::sync::Arc;
-
 // Import implementation modules
 mod accessors;
 mod initializers;
@@ -22,8 +20,8 @@ pub struct IdentityManager {
     /// The primary identity ID (if set)
     pub primary_identity_id: Option<Identifier>,
 
-    /// SDK instance for platform operations (optional, available with 'sdk' feature)
-    pub sdk: Option<Arc<dash_sdk::Sdk>>,
+    /// The last scanned identity index for gap-limit scanning
+    pub last_scanned_index: u32,
 }
 
 impl Default for IdentityManager {
@@ -31,7 +29,7 @@ impl Default for IdentityManager {
         Self {
             identities: IndexMap::new(),
             primary_identity_id: None,
-            sdk: None,
+            last_scanned_index: 0,
         }
     }
 }

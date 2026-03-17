@@ -4,6 +4,15 @@ use key_wallet::Network;
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
+    #[error("Wallet creation failed: {0}")]
+    WalletCreation(String),
+
+    #[error("Wallet not found: {0}")]
+    WalletNotFound(String),
+
+    #[error("Wallet already exists: {0}")]
+    WalletAlreadyExists(String),
+
     #[error("Identity already exists: {0}")]
     IdentityAlreadyExists(Identifier),
 

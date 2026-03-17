@@ -26,8 +26,15 @@ async-trait = "0.1"
 # Collections
 indexmap = "2.0"
 
+# Async runtime
+tokio = { version = "1", features = ["sync"] }
+
+# Encoding
+hex = "0.4"
+
 [dev-dependencies]
 rand = "0.8"
+static_assertions = "1.1"
 
 
 [features]
