@@ -333,7 +333,9 @@ mod tests {
             owner_id.as_bytes(),
             base.identity_contract_nonce(),
             item.u8_item_index(),
-            Some(&serialize_item(item)),
+            item.payload_serialization()
+                .expect("expected to serialize payload")
+                .as_deref(),
         );
         assert_eq!(
             id_versioned, id_v1,
