@@ -133,10 +133,10 @@ pub struct Sdk {
 
     /// Cancellation token for the background health check task.
     ///
-    /// This is a child of `cancel_token`, so SDK shutdown automatically cancels the
-    /// health check. Calling `stop_health_check()` cancels only the health check.
-    /// All clones share the same token instance.
-    health_check_cancel: CancellationToken,
+    /// `Some` = health check is running; `None` = stopped or not started.
+    /// This is a child of `cancel_token`, so SDK shutdown automatically cancels it.
+    /// All clones share the same `ArcSwapOption` instance.
+    health_check_cancel: Arc<ArcSwapOption<CancellationToken>>,
 }
 impl Clone for Sdk {
     fn clone(&self) -> Self {
@@ -153,7 +153,7 @@ impl Clone for Sdk {
             dapi_client_settings: self.dapi_client_settings,
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
-            health_check_cancel: self.health_check_cancel.clone(),
+            health_check_cancel: Arc::clone(&self.health_check_cancel),
         }
     }
 }
@@ -436,22 +436,52 @@ impl Sdk {
         }
     }
 
-    /// Returns `true` if the background health check has not been stopped.
-    ///
-    /// Note: this checks the cancellation token state, not whether a task is
-    /// actively running. It returns `true` even in mock mode where no task
-    /// is spawned, until `stop_health_check()` is called.
+    /// Returns `true` if the background health check is running.
     pub fn is_health_check_running(&self) -> bool {
-        !self.health_check_cancel.is_cancelled()
+        self.health_check_cancel.load().is_some()
     }
 
     /// Stops the background health check. No-op if already stopped.
     ///
-    /// All `Sdk` clones share the same cancellation token, so stopping from
-    /// any clone stops it for all of them. The spawned task will exit cleanly
-    /// on the next cancellation check.
+    /// All `Sdk` clones share the same state, so stopping from any clone
+    /// stops it for all of them. The spawned task will exit cleanly on the
+    /// next cancellation check.
     pub fn stop_health_check(&self) {
-        self.health_check_cancel.cancel();
+        if let Some(token) = self.health_check_cancel.swap(None) {
+            token.cancel();
+        }
+    }
+
+    /// Starts (or restarts) the background health check with the given config.
+    ///
+    /// If a health check is already running, it is stopped first.
+    /// All `Sdk` clones share the same state, so starting from any clone
+    /// starts it for all of them.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start_health_check(&self, config: rs_dapi_client::HealthCheckConfig) {
+        self.stop_health_check();
+
+        let new_cancel = self.cancel_token.child_token();
+
+        if let SdkInstance::Dapi { dapi, .. } = &self.inner {
+            let hc_address_list = dapi.address_list().clone();
+            let hc_pool = dapi.connection_pool().clone();
+            let hc_ca_cert = dapi.ca_certificate.clone();
+            let hc_token = new_cancel.clone();
+
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                self.health_check_cancel.store(Some(Arc::new(new_cancel)));
+                drop(runtime.spawn(rs_dapi_client::health_check::run_health_check(
+                    hc_address_list,
+                    hc_pool,
+                    config,
+                    hc_token,
+                    hc_ca_cert,
+                )));
+            } else {
+                tracing::warn!("no Tokio runtime found, cannot start health check");
+            }
+        }
     }
 }
 
@@ -922,7 +952,7 @@ impl SdkBuilder {
         #[cfg(not(target_arch = "wasm32"))]
         let health_check_config = self.health_check_config;
 
-        let health_check_cancel = self.cancel_token.child_token();
+        let health_check_cancel = Arc::new(ArcSwapOption::new(None));
 
         let sdk= match self.addresses {
             // non-mock mode
@@ -960,7 +990,7 @@ impl SdkBuilder {
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
-                    health_check_cancel: health_check_cancel.clone(),
+                    health_check_cancel: Arc::clone(&health_check_cancel),
                 };
                 // if context provider is not set correctly (is None), it means we need to fall back to core wallet
                 if  sdk.context_provider.load().is_none() {
@@ -996,13 +1026,16 @@ impl SdkBuilder {
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(hc_config) = health_check_config {
                     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                        let hc_cancel = sdk.cancel_token.child_token();
+                        let hc_token = hc_cancel.clone();
+                        health_check_cancel.store(Some(Arc::new(hc_cancel)));
                         // JoinHandle is intentionally dropped -- the task is governed
-                        // by health_check_cancel (child of cancel_token).
+                        // by the CancellationToken stored in health_check_cancel.
                         drop(runtime.spawn(rs_dapi_client::health_check::run_health_check(
                             hc_address_list,
                             hc_pool,
                             hc_config,
-                            health_check_cancel,
+                            hc_token,
                             hc_ca_cert,
                         )));
                     } else {
@@ -1044,7 +1077,7 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
-                    health_check_cancel: health_check_cancel.clone(),
+                    health_check_cancel: Arc::clone(&health_check_cancel),
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());
