@@ -1738,4 +1738,1024 @@ mod tests {
             "historical contract should be present in proof"
         );
     }
+
+    #[test]
+    fn test_insert_contract_history_same_timestamp_error() {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(false);
+
+        let block_info = BlockInfo {
+            time_ms: 1000,
+            height: 100,
+            core_height: 10,
+            epoch: Default::default(),
+        };
+
+        // Initial insert at time_ms=1000
+        drive
+            .apply_contract(
+                &contract,
+                block_info.clone(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Update at the same time_ms=1000 should trigger UpdatingContractWithHistoryError.
+        // We need to actually change the contract so that apply_contract sees a different
+        // serialization and takes the update path (otherwise it skips updating).
+        let new_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "extra_field": {
+                    "type": "string",
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+        contract
+            .set_document_schema(
+                "extraDocType",
+                new_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should set document schema");
+        contract.increment_version();
+
+        let result =
+            drive.update_contract(&contract, block_info, true, None, platform_version, None);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UpdatingContractWithHistoryError(
+                    _
+                )))
+            ),
+            "Expected UpdatingContractWithHistoryError, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_insert_contract_too_big_error() {
+        // The max_serialized_size in the current platform version is 65000 bytes.
+        // To trigger the ContractTooBig error, we need to construct a DataContract whose
+        // serialized representation exceeds this limit. We achieve this by adding many
+        // document types, each with many properties, to inflate the serialized size.
+        use crate::error::contract::DataContractError;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+        contract.config_mut().set_readonly(false);
+
+        // Add many document types with many string properties to inflate the size.
+        // The max_serialized_size is 65000 bytes. We use 100 document types, each
+        // with 100 properties using 62-char names (within the 1-64 char schema limit),
+        // to push well past that threshold.
+        for i in 0..100 {
+            let mut properties = String::from("{");
+            for j in 0..100 {
+                if j > 0 {
+                    properties.push(',');
+                }
+                // 62 chars: fits the ^[a-zA-Z0-9-_]{1,64}$ regex in the meta schema
+                let prop_name = format!(
+                    "abcdefghijklmnopqrstuvwxyz_inflate_d{:04}_p{:04}_padding_x",
+                    i, j
+                );
+                properties.push_str(&format!(
+                    "\"{}\": {{\"type\": \"string\", \"maxLength\": 63, \"position\": {}}}",
+                    prop_name, j
+                ));
+            }
+            properties.push('}');
+
+            let schema_json = format!(
+                r#"{{
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }}"#,
+                properties
+            );
+
+            let schema_value: dpp::platform_value::Value =
+                serde_json::from_str(&schema_json).expect("should parse schema JSON");
+
+            contract
+                .set_document_schema(
+                    &format!("bigDocType{:04}", i),
+                    schema_value,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("should set document schema");
+        }
+
+        // Use insert_contract directly (not apply_contract) because the ContractTooBig
+        // check lives in insert_contract_v0/v1, which serializes the contract and checks
+        // the size against max_serialized_size. The apply_contract path bypasses this
+        // check when apply=true because it delegates to apply_contract_with_serialization
+        // which does not re-check the size.
+        let result = drive.insert_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        match &result {
+            Err(Error::DataContract(DataContractError::ContractTooBig(_))) => {
+                // Expected error
+            }
+            other => {
+                panic!("Expected ContractTooBig error, got: {:?}", other);
+            }
+        }
+    }
+
+    #[test]
+    fn test_insert_contract_with_contested_indexes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Use the DPNS contract fixture that has a contested unique index on the
+        // "domain" document type's "parentNameAndLabel" index.
+        let contract_path =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json";
+        let contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected to get contract with contested indexes");
+
+        // Verify the contract actually has contested indexes before inserting
+        let contested_types = contract.document_types_with_contested_indexes();
+        assert!(
+            !contested_types.is_empty(),
+            "DPNS contract should have at least one document type with contested indexes"
+        );
+
+        // Insert the contract - this exercises the contested indexes tree creation branch
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract with contested indexes successfully");
+
+        // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(
+            fetched.contract.id(),
+            contract.id(),
+            "fetched contract id should match inserted contract"
+        );
+
+        // Verify the fetched contract also has contested indexes
+        let fetched_contested = fetched.contract.document_types_with_contested_indexes();
+        assert!(
+            !fetched_contested.is_empty(),
+            "fetched contract should have contested indexes"
+        );
+    }
+
+    #[test]
+    fn test_insert_contract_storage_flags_readonly() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a readonly contract that cannot be deleted.
+        // When readonly=true AND can_be_deleted=false, the insert_contract code
+        // sets storage_flags = None (the else branch at v0 line 45-47).
+        let mut readonly_contract =
+            get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                .data_contract_owned();
+        readonly_contract.config_mut().set_readonly(true);
+        readonly_contract.config_mut().set_can_be_deleted(false);
+
+        drive
+            .apply_contract(
+                &readonly_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply readonly contract successfully");
+
+        // Verify readonly contract can be fetched
+        let fetched_readonly = drive
+            .get_contract_with_fetch_info(
+                readonly_contract.id().to_buffer(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should fetch readonly contract")
+            .expect("readonly contract should exist");
+
+        assert_eq!(fetched_readonly.contract.id(), readonly_contract.id());
+        assert!(
+            fetched_readonly.contract.config().readonly(),
+            "fetched contract should be readonly"
+        );
+
+        // Create a non-readonly contract (default config).
+        // When readonly=false, the code sets storage_flags = Some(...) (the if branch).
+        let mutable_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version)
+                .data_contract_owned();
+
+        // Sanity check: the default contract should not be readonly
+        assert!(
+            !mutable_contract.config().readonly(),
+            "default contract fixture should not be readonly"
+        );
+
+        drive
+            .apply_contract(
+                &mutable_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply mutable contract successfully");
+
+        // Verify mutable contract can be fetched
+        let fetched_mutable = drive
+            .get_contract_with_fetch_info(
+                mutable_contract.id().to_buffer(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("should fetch mutable contract")
+            .expect("mutable contract should exist");
+
+        assert_eq!(fetched_mutable.contract.id(), mutable_contract.id());
+        assert!(
+            !fetched_mutable.contract.config().readonly(),
+            "fetched contract should not be readonly"
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_to_readonly() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a mutable contract (readonly=false is the default) and insert it
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with readonly=true
+        contract.config_mut().set_readonly(true);
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::ChangingContractToReadOnly(_)))
+            ),
+            "Expected ChangingContractToReadOnly error, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_keeps_history() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a contract with keeps_history=false (the default) and insert it
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with keeps_history=true
+        contract.config_mut().set_keeps_history(true);
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::ChangingContractKeepsHistory(_)))
+            ),
+            "Expected ChangingContractKeepsHistory error, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_documents_keeps_history_default() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a contract with documents_keep_history_contract_default=false (the default)
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with documents_keep_history_contract_default=true
+        contract
+            .config_mut()
+            .set_documents_keep_history_contract_default(true);
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(
+                    DriveError::ChangingContractDocumentsKeepsHistoryDefault(_)
+                ))
+            ),
+            "Expected ChangingContractDocumentsKeepsHistoryDefault error, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_documents_mutability_default() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a contract with documents_mutable_contract_default=true (the default)
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with documents_mutable_contract_default=false
+        contract
+            .config_mut()
+            .set_documents_mutable_contract_default(false);
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(
+                    DriveError::ChangingContractDocumentsMutabilityDefault(_)
+                ))
+            ),
+            "Expected ChangingContractDocumentsMutabilityDefault error, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_document_type_mutability() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a contract and add a document type with documentsMutable=true
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        let mutable_schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        contract
+            .set_document_schema(
+                "test_doc",
+                mutable_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should set document schema");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with the same document type but documentsMutable=false
+        let immutable_schema = platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        contract
+            .set_document_schema(
+                "test_doc",
+                immutable_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should set document schema");
+
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(_)))
+            ),
+            "Expected ChangingDocumentTypeMutability error, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_update_contract_errors_on_changing_document_type_keeps_history() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Create a contract and add a document type with documentsKeepHistory=false
+        let mut contract = get_dashpay_contract_fixture(None, 0, 1).data_contract_owned();
+
+        let no_history_schema = platform_value!({
+            "type": "object",
+            "documentsKeepHistory": false,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        contract
+            .set_document_schema(
+                "test_doc",
+                no_history_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should set document schema");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        // Now try to update with the same document type but documentsKeepHistory=true
+        let history_schema = platform_value!({
+            "type": "object",
+            "documentsKeepHistory": true,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        contract
+            .set_document_schema(
+                "test_doc",
+                history_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("should set document schema");
+
+        contract.increment_version();
+
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
+                    _
+                )))
+            ),
+            "Expected ChangingDocumentTypeKeepsHistory error, got: {:?}",
+            result
+        );
+    }
+
+    /// Sets up a Drive instance with the keyword_search system data contract
+    /// applied in GroveDB storage. This is required before inserting contracts
+    /// that have descriptions or keywords, because `insert_contract_v1` creates
+    /// documents in the keyword_search contract.
+    fn setup_drive_with_keyword_search_contract() -> Drive {
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("should load keyword_search system data contract");
+
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply keyword_search system data contract");
+
+        drive
+    }
+
+    #[test]
+    fn test_insert_contract_with_description() {
+        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_description(Some("A test contract with a short description".to_string()));
+
+        // insert_contract_v1 should create description documents in the
+        // keyword_search contract without error.
+        let fee = drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should insert contract with description successfully");
+
+        assert!(
+            fee.processing_fee > 0,
+            "inserting a contract with description should produce a non-zero processing fee"
+        );
+
+        // Verify the contract can still be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+        assert_eq!(
+            fetched.contract.description(),
+            Some(&"A test contract with a short description".to_string()),
+        );
+    }
+
+    #[test]
+    fn test_update_contract_description() {
+        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_description(Some("Original description text".to_string()));
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("should insert contract with description");
+
+        // Now update the description via the dedicated method
+        let new_description = "Updated description text".to_string();
+        let fee = drive
+            .update_contract_description(
+                contract.id(),
+                contract.owner_id(),
+                &new_description,
+                &BlockInfo {
+                    time_ms: 5000,
+                    height: 10,
+                    core_height: 5,
+                    epoch: Default::default(),
+                },
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("should update contract description successfully");
+
+        assert!(
+            fee.processing_fee > 0,
+            "updating a contract description should produce a non-zero processing fee"
+        );
+    }
+
+    #[test]
+    fn test_insert_contract_with_keywords() {
+        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_keywords(vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "gamma".to_string(),
+        ]);
+
+        // insert_contract_v1 should create keyword documents in the
+        // keyword_search contract without error.
+        let fee = drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("should insert contract with keywords successfully");
+
+        assert!(
+            fee.processing_fee > 0,
+            "inserting a contract with keywords should produce a non-zero processing fee"
+        );
+
+        // Verify the contract can still be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+        assert_eq!(
+            fetched.contract.keywords(),
+            &vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+        );
+    }
+
+    #[test]
+    fn test_update_contract_keywords_add_and_remove() {
+        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+        use dpp::tests::fixtures::get_data_contract_fixture;
+
+        let drive = setup_drive_with_keyword_search_contract();
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        contract.set_keywords(vec!["alpha".to_string(), "beta".to_string()]);
+
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("should insert contract with initial keywords");
+
+        // Update keywords: remove "alpha", keep "beta", add "gamma"
+        let new_keywords = vec!["beta".to_string(), "gamma".to_string()];
+        let fee = drive
+            .update_contract_keywords(
+                contract.id(),
+                contract.owner_id(),
+                &new_keywords,
+                &BlockInfo {
+                    time_ms: 5000,
+                    height: 10,
+                    core_height: 5,
+                    epoch: Default::default(),
+                },
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("should update contract keywords successfully");
+
+        assert!(
+            fee.processing_fee > 0,
+            "updating contract keywords should produce a non-zero processing fee"
+        );
+    }
+
+    #[test]
+    fn test_insert_contract_with_token_zero_base_supply() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Add a token with zero base supply to exercise the SumItem(0) branch
+        let token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract with zero-supply token successfully");
+
+        // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
+
+    #[test]
+    fn test_insert_contract_with_token_nonzero_base_supply() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Add a token with a positive base supply to exercise the balance-insert branch
+        let token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(1_000_000),
+        );
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract with nonzero-supply token successfully");
+
+        // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
+
+    #[test]
+    fn test_insert_contract_with_paused_token() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Add a token that starts as paused to exercise the start_as_paused branch
+        let mut token_config =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        token_config.set_start_as_paused(true);
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract with paused token successfully");
+
+        // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
+
+    #[test]
+    fn test_insert_contract_with_groups() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::group::v0::GroupV0;
+        use dpp::data_contract::group::Group;
+        use dpp::prelude::Identifier;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Add a group with a single member to exercise the groups branch
+        let member_id = Identifier::random();
+        let group = Group::V0(GroupV0 {
+            members: BTreeMap::from([(member_id, 1)]),
+            required_power: 1,
+        });
+        contract.set_groups(BTreeMap::from([(0, group)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract with groups successfully");
+
+        // Verify the contract can be fetched back
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("should fetch contract")
+            .expect("contract should exist");
+
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
 }
