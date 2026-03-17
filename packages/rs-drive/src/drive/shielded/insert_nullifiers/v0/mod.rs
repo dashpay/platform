@@ -40,10 +40,9 @@ impl Drive {
 
         // Store to per-block sync storage for catch-up RPCs
         //
-        // SAFETY: Both the permanent nullifier ops (returned for batch application)
-        // and this sync storage write use the same GroveDB transaction. If the block
-        // is rolled back (transaction aborted), both are rolled back atomically.
-        // There is no inconsistency window because GroveDB transactions are atomic.
+        // SAFETY: `store_nullifiers_for_block` writes under the same GroveDB
+        // transaction that the caller later uses to apply the returned `ops`.
+        // If that transaction aborts, neither write persists (atomic commit/rollback).
         self.store_nullifiers_for_block(
             nullifiers,
             block_height,
