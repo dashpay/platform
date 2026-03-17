@@ -500,7 +500,12 @@ impl ExecutionEvent<'_> {
                 // Fee = asset_lock_value - shield_amount (excess from asset lock)
                 let fee_amount = shield_from_asset_lock_action
                     .asset_lock_value_to_be_consumed()
-                    .saturating_sub(shield_from_asset_lock_action.shield_amount());
+                    .checked_sub(shield_from_asset_lock_action.shield_amount())
+                    .ok_or(Error::Execution(
+                        ExecutionError::CorruptedCodeExecution(
+                            "shield amount exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
+                        ),
+                    ))?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAssetLockToPool {
