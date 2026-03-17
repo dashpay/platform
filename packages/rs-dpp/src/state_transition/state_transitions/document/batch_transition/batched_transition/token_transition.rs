@@ -855,14 +855,15 @@ mod tests {
                 shared_encrypted_note: None,
                 private_encrypted_note: None,
             }));
-        assert!(transfer.calculate_action_id(owner_id).is_none());
+        let pv = PlatformVersion::latest();
+        assert!(transfer.calculate_action_id(owner_id, pv).is_none());
 
         let claim = TokenTransition::Claim(TokenClaimTransition::V0(TokenClaimTransitionV0 {
             base: base.clone(),
             distribution_type: TokenDistributionType::PreProgrammed,
             public_note: None,
         }));
-        assert!(claim.calculate_action_id(owner_id).is_none());
+        assert!(claim.calculate_action_id(owner_id, pv).is_none());
 
         let direct_purchase = TokenTransition::DirectPurchase(TokenDirectPurchaseTransition::V0(
             TokenDirectPurchaseTransitionV0 {
@@ -871,7 +872,7 @@ mod tests {
                 total_agreed_price: 100,
             },
         ));
-        assert!(direct_purchase.calculate_action_id(owner_id).is_none());
+        assert!(direct_purchase.calculate_action_id(owner_id, pv).is_none());
     }
 
     #[test]
@@ -884,7 +885,8 @@ mod tests {
             burn_amount: 50,
             public_note: None,
         }));
-        let result = burn.calculate_action_id(owner_id);
+        let pv = PlatformVersion::latest();
+        let result = burn.calculate_action_id(owner_id, pv);
         assert!(result.is_some());
     }
 
@@ -899,7 +901,8 @@ mod tests {
             amount: 100,
             public_note: None,
         }));
-        let result = mint.calculate_action_id(owner_id);
+        let pv = PlatformVersion::latest();
+        let result = mint.calculate_action_id(owner_id, pv);
         assert!(result.is_some());
     }
 
