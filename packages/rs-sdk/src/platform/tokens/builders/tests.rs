@@ -798,3 +798,344 @@ async fn token_set_price_sign_returns_note_too_big_error() {
         result
     );
 }
+
+// ── Happy-path sign() tests ────────────────────────────────────────────
+
+#[tokio::test]
+async fn token_mint_sign_succeeds_for_valid_input() {
+    let issuer_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(issuer_id, data_contract.id(), 0).await;
+
+    let result = TokenMintTransitionBuilder::new(Arc::clone(&data_contract), 0, issuer_id, 1)
+        .issued_to_identity_id(Identifier::random())
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_burn_sign_succeeds_for_valid_input() {
+    let owner_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let result = TokenBurnTransitionBuilder::new(Arc::clone(&data_contract), 0, owner_id, 1)
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_transfer_sign_succeeds_for_valid_input() {
+    let sender_id = Identifier::random();
+    let recipient_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(sender_id, data_contract.id(), 0).await;
+
+    let result = TokenTransferTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        sender_id,
+        recipient_id,
+        1,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_freeze_sign_succeeds_for_valid_input() {
+    let actor_id = Identifier::random();
+    let freeze_identity_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(actor_id, data_contract.id(), 0).await;
+
+    let result = TokenFreezeTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        actor_id,
+        freeze_identity_id,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_unfreeze_sign_succeeds_for_valid_input() {
+    let actor_id = Identifier::random();
+    let unfreeze_identity_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(actor_id, data_contract.id(), 0).await;
+
+    let result = TokenUnfreezeTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        actor_id,
+        unfreeze_identity_id,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_destroy_sign_succeeds_for_valid_input() {
+    let actor_id = Identifier::random();
+    let frozen_identity_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(actor_id, data_contract.id(), 0).await;
+
+    let result = TokenDestroyFrozenFundsTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        actor_id,
+        frozen_identity_id,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_emergency_action_sign_succeeds_for_valid_input() {
+    let actor_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(actor_id, data_contract.id(), 0).await;
+
+    let result =
+        TokenEmergencyActionTransitionBuilder::pause(Arc::clone(&data_contract), 0, actor_id)
+            .sign(
+                &sdk,
+                &test_identity_public_key(),
+                &TestSigner,
+                dpp::version::PlatformVersion::latest(),
+            )
+            .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_config_update_sign_succeeds_for_valid_input() {
+    let owner_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let result = TokenConfigUpdateTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        owner_id,
+        TokenConfigurationChangeItem::MintingAllowChoosingDestination(true),
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_claim_sign_succeeds_for_valid_input() {
+    let owner_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let result = TokenClaimTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        owner_id,
+        TokenDistributionType::PreProgrammed,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_purchase_sign_succeeds_for_valid_input() {
+    let actor_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(actor_id, data_contract.id(), 0).await;
+
+    let result =
+        TokenDirectPurchaseTransitionBuilder::new(Arc::clone(&data_contract), 0, actor_id, 1, 1000)
+            .sign(
+                &sdk,
+                &test_identity_public_key(),
+                &TestSigner,
+                dpp::version::PlatformVersion::latest(),
+            )
+            .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
+
+#[tokio::test]
+async fn token_set_price_sign_succeeds_for_valid_input() {
+    let issuer_id = Identifier::random();
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let sdk = new_mock_sdk_with_contract_nonce(issuer_id, data_contract.id(), 0).await;
+
+    let result = TokenChangeDirectPurchasePriceTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        0,
+        issuer_id,
+    )
+    .sign(
+        &sdk,
+        &test_identity_public_key(),
+        &TestSigner,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+    let st = result.unwrap();
+    assert!(
+        st.signature().is_some_and(|sig| !sig.is_empty()),
+        "transition should have a non-empty signature"
+    );
+}
