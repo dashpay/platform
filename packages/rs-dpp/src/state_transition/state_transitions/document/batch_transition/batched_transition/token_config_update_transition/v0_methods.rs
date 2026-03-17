@@ -392,8 +392,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let t_max = make_transition(TokenConfigurationChangeItem::MaxSupply(None));
-        let t_dest =
-            make_transition(TokenConfigurationChangeItem::NewTokensDestinationIdentity(None));
+        let t_dest = make_transition(TokenConfigurationChangeItem::NewTokensDestinationIdentity(
+            None,
+        ));
         let t_dist = make_transition(TokenConfigurationChangeItem::PerpetualDistribution(None));
         let t_ctrl = make_transition(TokenConfigurationChangeItem::MainControlGroup(None));
 
