@@ -94,6 +94,31 @@ pub async fn run_health_check(
 
     // Phase 2: Watch for ban expirations
     loop {
+        // Check for already-expired bans before sleeping, so we re-probe them
+        // immediately rather than waiting for `no_ban_idle_period` when
+        // `get_next_ban_expiry()` returns None (all bans expired).
+        let expired = address_list.get_expired_ban_addresses();
+        if !expired.is_empty() {
+            tracing::debug!(
+                count = expired.len(),
+                "re-probing addresses with expired bans"
+            );
+            probe_and_update_batch(
+                &expired,
+                &address_list,
+                &pool,
+                &probe_settings,
+                &config,
+                &cancel_token,
+            )
+            .await;
+            if cancel_token.is_cancelled() {
+                tracing::debug!("health check cancelled");
+                break;
+            }
+            continue;
+        }
+
         let sleep_duration = match address_list.get_next_ban_expiry() {
             Some(expiry) => {
                 let until = expiry - chrono::Utc::now();
@@ -107,28 +132,18 @@ pub async fn run_health_check(
                 tracing::debug!("health check cancelled");
                 break;
             }
-            _ = tokio::time::sleep(sleep_duration) => {
-                let expired = address_list.get_expired_ban_addresses();
-                if !expired.is_empty() {
-                    tracing::debug!(
-                        count = expired.len(),
-                        "re-probing addresses with expired bans"
-                    );
-                    probe_and_update_batch(
-                        &expired,
-                        &address_list,
-                        &pool,
-                        &probe_settings,
-                        &config,
-                        &cancel_token,
-                    )
-                    .await;
-                }
-            }
+            _ = tokio::time::sleep(sleep_duration) => {}
         }
     }
 }
 
+/// Probes a batch of addresses concurrently and updates the address list.
+///
+/// **Known race condition:** If a foreground request bans or unbans an address while
+/// `probe_node()` is in flight for that same address, the probe result may overwrite
+/// the newer state. This is an accepted tradeoff -- the next probe cycle or foreground
+/// request will correct the state. A generation counter was considered but rejected as
+/// disproportionate complexity for the narrow race window.
 async fn probe_and_update_batch(
     addresses: &[Address],
     address_list: &AddressList,
