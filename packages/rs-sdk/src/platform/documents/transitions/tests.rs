@@ -1,10 +1,14 @@
+use super::create::DocumentCreateTransitionBuilder;
 use super::delete::DocumentDeleteTransitionBuilder;
+use super::purchase::DocumentPurchaseTransitionBuilder;
+use super::replace::DocumentReplaceTransitionBuilder;
+use super::set_price::DocumentSetPriceTransitionBuilder;
+use super::transfer::DocumentTransferTransitionBuilder;
 use crate::platform::test_helpers::{
     new_mock_sdk_with_contract_nonce, test_data_contract, test_identity_public_key,
     validate_transition_like_builder, TestSigner, INVALID_NONCE, TEST_DOCUMENT_TYPE_NAME,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0};
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -234,6 +238,158 @@ async fn document_delete_builder_sign_succeeds_for_valid_input() {
         document_type_name.to_string(),
         Identifier::random(),
         owner_id,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn document_create_builder_sign_succeeds_for_valid_input() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentCreateTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        [7; 32],
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn document_replace_builder_sign_succeeds_for_valid_input() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentReplaceTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn document_purchase_builder_sign_succeeds_for_valid_input() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let purchaser_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(purchaser_id, data_contract.id(), 0).await;
+
+    let builder = DocumentPurchaseTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        purchaser_id,
+        100,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn document_set_price_builder_sign_succeeds_for_valid_input() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentSetPriceTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        200,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert!(
+        result.is_ok(),
+        "valid input should pass validation; got error: {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+async fn document_transfer_builder_sign_succeeds_for_valid_input() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let document = test_document(owner_id);
+    let recipient_id = Identifier::random();
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentTransferTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        recipient_id,
     );
 
     let result = builder
