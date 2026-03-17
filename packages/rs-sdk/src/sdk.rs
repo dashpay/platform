@@ -621,7 +621,6 @@ pub struct SdkBuilder {
     ca_certificate: Option<Certificate>,
 
     /// Health check configuration. `Some` = enabled, `None` = disabled. Default: enabled.
-    #[cfg(not(target_arch = "wasm32"))]
     health_check_config: Option<rs_dapi_client::HealthCheckConfig>,
 }
 
@@ -661,7 +660,6 @@ impl Default for SdkBuilder {
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
-            #[cfg(not(target_arch = "wasm32"))]
             health_check_config: Some(rs_dapi_client::HealthCheckConfig::default()),
 
             #[cfg(feature = "mocks")]
@@ -816,8 +814,7 @@ impl SdkBuilder {
     /// ban expirations to re-probe nodes before making them available again.
     /// Set to `None` to disable health checks.
     ///
-    /// Enabled by default on non-WASM targets. Not available on WASM.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Enabled by default.
     pub fn with_health_check_config(
         mut self,
         config: Option<rs_dapi_client::HealthCheckConfig>,
@@ -910,7 +907,6 @@ impl SdkBuilder {
             None => DEFAULT_REQUEST_SETTINGS,
         };
 
-        #[cfg(not(target_arch = "wasm32"))]
         let health_check_config = self.health_check_config;
 
         let sdk= match self.addresses {
@@ -927,12 +923,12 @@ impl SdkBuilder {
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
                 // Extract clones needed for health check before dapi is moved
-                #[cfg(not(target_arch = "wasm32"))]
                 let hc_address_list = dapi.address_list().clone();
-                #[cfg(not(target_arch = "wasm32"))]
                 let hc_pool = dapi.connection_pool().clone();
                 #[cfg(not(target_arch = "wasm32"))]
                 let hc_ca_cert = dapi.ca_certificate.clone();
+                #[cfg(target_arch = "wasm32")]
+                let hc_ca_cert: Option<()> = None;
 
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
@@ -998,6 +994,18 @@ impl SdkBuilder {
                     } else {
                         tracing::warn!("no Tokio runtime found, health check disabled");
                     }
+                }
+
+                #[cfg(target_arch = "wasm32")]
+                if let Some(hc_config) = health_check_config {
+                    let hc_cancel = sdk.cancel_token.clone();
+                    wasm_bindgen_futures::spawn_local(rs_dapi_client::health_check::run_health_check(
+                        hc_address_list,
+                        hc_pool,
+                        hc_config,
+                        hc_cancel,
+                        hc_ca_cert,
+                    ));
                 }
 
                 sdk

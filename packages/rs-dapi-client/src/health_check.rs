@@ -2,10 +2,13 @@
 //!
 //! Provides startup probing and ban-expiry re-probing to maintain a clean address list.
 
+use std::future::Future;
 use std::time::Duration;
 
 use dapi_grpc::platform::v0 as platform_proto;
+use futures::future::FusedFuture;
 use futures::stream::{self, StreamExt};
+use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::connection_pool::ConnectionPool;
@@ -13,7 +16,15 @@ use crate::request_settings::AppliedRequestSettings;
 use crate::transport::{TransportClient, TransportError, TransportRequest};
 use crate::{Address, AddressList, RequestSettings};
 
-use dapi_grpc::tonic::transport::Certificate;
+#[cfg(target_arch = "wasm32")]
+use gloo_timers::future::sleep;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::sleep;
+
+#[cfg(not(target_arch = "wasm32"))]
+type OptionalCertificate = Option<dapi_grpc::tonic::transport::Certificate>;
+#[cfg(target_arch = "wasm32")]
+type OptionalCertificate = Option<()>;
 
 /// Configuration for the background health check.
 #[derive(Debug, Clone)]
@@ -44,7 +55,7 @@ impl Default for HealthCheckConfig {
 ///
 /// **Note:** There is a small race window between ban expiry and re-probe completion
 /// where `get_live_address()` may return a previously-banned node before the health check
-/// has confirmed it is healthy. This is an accepted design tradeoff — changing this would
+/// has confirmed it is healthy. This is an accepted design tradeoff -- changing this would
 /// require modifying `get_live_address()` to never auto-unban expired bans, which would break
 /// the existing reactive ban behavior.
 pub async fn run_health_check(
@@ -52,7 +63,24 @@ pub async fn run_health_check(
     pool: ConnectionPool,
     config: HealthCheckConfig,
     cancel_token: CancellationToken,
-    ca_certificate: Option<Certificate>,
+    ca_certificate: OptionalCertificate,
+) {
+    health_check_loop(
+        address_list,
+        pool,
+        config,
+        cancel_token.cancelled(),
+        ca_certificate,
+    )
+    .await
+}
+
+async fn health_check_loop(
+    address_list: AddressList,
+    pool: ConnectionPool,
+    config: HealthCheckConfig,
+    stop: impl Future<Output = ()>,
+    ca_certificate: OptionalCertificate,
 ) {
     let probe_settings = RequestSettings {
         timeout: Some(config.probe_timeout),
@@ -61,8 +89,14 @@ pub async fn run_health_check(
         connect_timeout: Some(config.probe_timeout),
         ..RequestSettings::default()
     }
-    .finalize()
-    .with_ca_certificate(ca_certificate);
+    .finalize();
+    #[cfg(not(target_arch = "wasm32"))]
+    let probe_settings = probe_settings.with_ca_certificate(ca_certificate);
+    #[cfg(target_arch = "wasm32")]
+    let _ = ca_certificate;
+
+    let stop = stop.fuse();
+    futures::pin_mut!(stop);
 
     // Phase 1: Startup probe
     let all_addresses = address_list.get_all_addresses();
@@ -77,7 +111,7 @@ pub async fn run_health_check(
             &pool,
             &probe_settings,
             &config,
-            &cancel_token,
+            &mut stop,
         )
         .await;
         let banned_count = all_addresses
@@ -94,6 +128,10 @@ pub async fn run_health_check(
 
     // Phase 2: Watch for ban expirations
     loop {
+        if stop.is_terminated() {
+            break;
+        }
+
         let sleep_duration = match address_list.get_next_ban_expiry() {
             Some(expiry) => {
                 let until = expiry - chrono::Utc::now();
@@ -102,12 +140,15 @@ pub async fn run_health_check(
             None => config.no_ban_idle_period,
         };
 
-        tokio::select! {
-            _ = cancel_token.cancelled() => {
+        let sleep_fut = sleep(sleep_duration).fuse();
+        futures::pin_mut!(sleep_fut);
+
+        futures::select_biased! {
+            _ = stop => {
                 tracing::debug!("health check cancelled");
                 break;
             }
-            _ = tokio::time::sleep(sleep_duration) => {
+            _ = sleep_fut => {
                 let expired = address_list.get_expired_ban_addresses();
                 if !expired.is_empty() {
                     tracing::debug!(
@@ -120,7 +161,7 @@ pub async fn run_health_check(
                         &pool,
                         &probe_settings,
                         &config,
-                        &cancel_token,
+                        &mut stop,
                     )
                     .await;
                 }
@@ -135,34 +176,35 @@ async fn probe_and_update_batch(
     pool: &ConnectionPool,
     settings: &AppliedRequestSettings,
     config: &HealthCheckConfig,
-    cancel_token: &CancellationToken,
+    mut stop: &mut (impl FusedFuture<Output = ()> + Unpin),
 ) {
-    tokio::select! {
-        _ = cancel_token.cancelled() => {
-            tracing::debug!("health check probing cancelled");
-        }
-        _ = stream::iter(addresses)
-            .for_each_concurrent(config.max_concurrent_probes.max(1), |address| {
-                let pool = pool.clone();
-                let settings = settings.clone();
-                async move {
-                    match probe_node(address, &pool, &settings).await {
-                        Ok(()) => {
-                            if address_list.is_banned(address) {
-                                address_list.unban(address);
-                                tracing::debug!(%address, "health check: node is healthy, unbanned");
-                            }
-                        }
-                        Err(error) => {
-                            // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
-                            // this increments ban_count and extends banned_until with exponential backoff,
-                            // effectively escalating the ban duration for persistently dead nodes.
-                            address_list.ban(address);
-                            tracing::debug!(%address, error = %error, "health check: node is unhealthy, banned");
+    let probe_fut = stream::iter(addresses)
+        .for_each_concurrent(config.max_concurrent_probes.max(1), |address| {
+            let pool = pool.clone();
+            let settings = settings.clone();
+            async move {
+                match probe_node(address, &pool, &settings).await {
+                    Ok(()) => {
+                        if address_list.is_banned(address) {
+                            address_list.unban(address);
+                            tracing::debug!(%address, "health check: node is healthy, unbanned");
                         }
                     }
+                    Err(error) => {
+                        address_list.ban(address);
+                        tracing::debug!(%address, error = %error, "health check: node is unhealthy, banned");
+                    }
                 }
-            }) => {}
+            }
+        })
+        .fuse();
+    futures::pin_mut!(probe_fut);
+
+    futures::select_biased! {
+        _ = stop => {
+            tracing::debug!("health check probing cancelled");
+        }
+        _ = probe_fut => {}
     }
 }
 
