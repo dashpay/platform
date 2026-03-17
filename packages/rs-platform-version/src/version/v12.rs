@@ -55,7 +55,7 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
         document_versions: DOCUMENT_VERSIONS_V3,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V2, // fixes issue with token config update action id
+        token_versions: TOKEN_VERSIONS_V2, // fixes action_id vote-swap for config update + set price
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V2,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
