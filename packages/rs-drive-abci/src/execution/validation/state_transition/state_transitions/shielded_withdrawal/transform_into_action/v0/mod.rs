@@ -53,6 +53,12 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         };
 
         // Read current shielded pool total balance from GroveDB
+        //
+        // SAFETY: No TOCTOU risk. State transitions within a block are processed
+        // sequentially: each transition's operations are applied to the GroveDB
+        // transaction (via apply_batch) before the next transition's validation
+        // reads the balance. GroveDB supports read-your-own-writes within an
+        // uncommitted transaction, so this read always sees the latest balance.
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;

@@ -27,6 +27,11 @@ impl Drive {
         let pool_path = shielded_credit_pool_path();
 
         // 1. Read current anchor from CommitmentTree
+        //
+        // NOTE: .unwrap() below is CostContext::unwrap(), NOT Result::unwrap().
+        // CostContext::unwrap() simply discards cost tracking info and never
+        // panics. This is the standard pattern for GroveDB operations throughout
+        // the Drive codebase when cost tracking is not needed.
         let current_anchor = self
             .grove
             .commitment_tree_anchor(
