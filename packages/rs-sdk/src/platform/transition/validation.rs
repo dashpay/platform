@@ -25,7 +25,15 @@ pub(crate) fn validate_batch_base_structure(
             )));
         }
     };
-    if let Some(first_error) = validation_result.errors.into_iter().next() {
+    let mut errors = validation_result.errors.into_iter();
+    if let Some(first_error) = errors.next() {
+        // Log any additional errors that won't be reported
+        for additional_error in errors {
+            tracing::warn!(
+                ?additional_error,
+                "additional validation error dropped (only first error is reported)"
+            );
+        }
         return Err(Error::Protocol(ProtocolError::ConsensusError(Box::new(
             first_error,
         ))));

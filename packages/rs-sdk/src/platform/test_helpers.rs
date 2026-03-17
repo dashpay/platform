@@ -20,6 +20,8 @@ use std::sync::Arc;
 use crate::platform::transition::validation::validate_batch_base_structure;
 
 pub(crate) const TEST_DOCUMENT_TYPE_NAME: &str = "testDoc";
+/// Exceeds the 40-bit nonce mask (MISSING_IDENTITY_REVISIONS_FILTER), triggering
+/// NonceOutOfBoundsError in validate_base_structure.
 pub(crate) const INVALID_NONCE: u64 = 1_u64 << 50;
 
 #[derive(Debug)]
