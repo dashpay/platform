@@ -18,11 +18,11 @@ public class CoreWalletManager: ObservableObject {
     private let sdkWalletManager: WalletManager
     private let modelContainer: ModelContainer
     private let storage = WalletStorage()
-    
+
     /// Initialize with a valid SPVClient instance
     init(spvClient: SPVClient, modelContainer: ModelContainer) throws {
         print("=== WalletManager.init START ===")
-        
+
         self.sdkWalletManager = try spvClient.getWalletManager()
         self.modelContainer = modelContainer
 
@@ -36,7 +36,7 @@ public class CoreWalletManager: ObservableObject {
     // MARK: - Wallet Management
     public func createWallet(label: String, mnemonic: String, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
-        
+
         print("Validating provided mnemonic...")
         guard SwiftDashSDK.Mnemonic.validate(mnemonic) else {
             print("Mnemonic validation failed")
@@ -89,7 +89,7 @@ public class CoreWalletManager: ObservableObject {
         // Create HDWallet model for SwiftUI
         let network = AppNetwork(network: sdkWalletManager.network)
         let wallet = HDWallet(walletId: walletId, serializedWalletBytes: serializedBytes, label: label, network: network, isImported: isImport)
-        
+
         do {
             let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonic)
             _ = try storage.storeSeed(seed, pin: pin)
@@ -97,14 +97,14 @@ public class CoreWalletManager: ObservableObject {
             print("Failed to store seed: \(error)")
             // Continue anyway - wallet is already created
         }
-        
+
         // Insert wallet into context ans save it
         modelContainer.mainContext.insert(wallet)
         try modelContainer.mainContext.save()
-        
+
         return wallet
-    } 
-    
+    }
+
     public func deleteWallet(_ wallet: HDWallet) async throws {
         let walletId = wallet.id
 
@@ -121,14 +121,14 @@ public class CoreWalletManager: ObservableObject {
         try modelContainer.mainContext.save()
         return wallet
     }
-    
+
     public func decryptSeed(_ encryptedSeed: Data?) -> Data? {
         // This method is used internally by other services
         // In a real implementation, this would decrypt using the current PIN
         // For now, return nil to indicate manual unlock is needed
         return nil
     }
-    
+
     public func changeWalletPIN(currentPIN: String, newPIN: String) async throws {
         // Retrieve seed with current PIN
         let seed = try storage.retrieveSeed(pin: currentPIN)
@@ -148,7 +148,7 @@ public class CoreWalletManager: ObservableObject {
     public func unlockWithBiometric() async throws -> Data {
         return try storage.retrieveSeedWithBiometric()
     }
-    
+
     // MARK: - Account Management
 
     /// Get transactions for a wallet
@@ -164,10 +164,7 @@ public class CoreWalletManager: ObservableObject {
             accountType: .standardBIP44
         )
 
-        // Get current height (TODO: get from SPV client when available)
-        let currentHeight: UInt32 = 0
-
-        return try! managedAccount.getTransactions(currentHeight: currentHeight)
+        return managedAccount.getTransactions()
     }
 
     public func getBalance(for wallet: HDWallet, accountIndex: UInt32 = 0) -> Balance {
@@ -176,10 +173,10 @@ public class CoreWalletManager: ObservableObject {
             accountIndex: accountIndex,
             accountType: .standardBIP44
         )
-        
+
         return try! managedAccount.getBalance()
     }
-    
+
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
         return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
     }
@@ -199,7 +196,6 @@ public class CoreWalletManager: ObservableObject {
     public func getManagedAccountCollection(for wallet: HDWallet) throws -> ManagedAccountCollection {
         return try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
     }
-    
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
@@ -441,7 +437,7 @@ public class CoreWalletManager: ObservableObject {
         }
         return list
     }
-    
+
     // MARK: - Private Methods
 
     private func loadWallets() async {
@@ -453,9 +449,9 @@ public class CoreWalletManager: ObservableObject {
             self.error = WalletError.databaseError(error.localizedDescription)
             return
         }
-            
+
         // Try to import each wallet into the FFI wallet manager
-        // If it succeeds, we store the HDWallet for later querying. If it fails, 
+        // If it succeeds, we store the HDWallet for later querying. If it fails,
         // we log the error and remove that wallet from the database.
         for wallet in wallets {
             do {
@@ -468,7 +464,7 @@ public class CoreWalletManager: ObservableObject {
                 }
 
                 self.wallets.append(wallet)
-                
+
                 print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
             } catch {
                 modelContainer.mainContext.delete(wallet)
