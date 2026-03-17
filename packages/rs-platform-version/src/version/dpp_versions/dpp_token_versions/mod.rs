@@ -12,4 +12,8 @@ pub struct DPPTokenVersions {
     /// v0: uses only the u8 discriminant of the config change item (vulnerable to value swap)
     /// v1: includes the full serialized config change item in the hash
     pub token_config_update_action_id_version: FeatureVersion,
+    /// Version for the set-price-for-direct-purchase action_id calculation.
+    /// v0: uses only minimum_purchase_amount_and_price().1 (vulnerable to schedule swap)
+    /// v1: includes the full serialized TokenPricingSchedule in the hash
+    pub token_set_price_action_id_version: FeatureVersion,
 }
