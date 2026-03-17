@@ -1269,6 +1269,8 @@ mod tests {
     }
 
     #[test]
+    /// Proof sizes differ from v11 by +33/+35 bytes on nodes touching the
+    /// shielded pool subtree, which uses `KVValueHashFeatureTypeWithChildHash`.
     fn test_initial_state_structure_proper_heights_in_latest_protocol_version() {
         let drive = setup_drive_with_initial_state_structure(None);
 
@@ -1360,7 +1362,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Pools as u8]);
@@ -1381,7 +1383,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 287); //it + left + parent + sibling + parent sibling + grandparent (was 253, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 287); //it + left + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::WithdrawalTransactions as u8]);
@@ -1402,7 +1404,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Votes as u8]);
@@ -1423,7 +1425,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 285); //it + left + right + parent + sibling + parent sibling + grandparent
 
         // Merk Level 3
 
@@ -1490,7 +1492,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 320); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 288, +33 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 320); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::AddressBalances as u8]);
@@ -1511,7 +1513,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 286); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 252, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 286); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::SpentAssetLockTransactions as u8]);
@@ -1574,7 +1576,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 285); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         let mut query = Query::new();
         query.insert_key(vec![RootTree::Versions as u8]);
@@ -1595,7 +1597,7 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 285); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent (was 251, +35 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 285); //it + parent + sibling + parent sibling + grandparent + grandparent sibling + great-grandparent
 
         // Merk Level 4
 
@@ -1618,6 +1620,6 @@ mod tests {
                 drive_version,
             )
             .expect("expected to get root elements");
-        assert_eq!(proof.len(), 319); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent + great-grandparent sibling + great-great-grandparent (was 287, +33 from KVValueHashFeatureTypeWithChildHash)
+        assert_eq!(proof.len(), 319); //it + parent + parent sibling + grandparent + grandparent sibling + great-grandparent + great-grandparent sibling + great-great-grandparent
     }
 }
