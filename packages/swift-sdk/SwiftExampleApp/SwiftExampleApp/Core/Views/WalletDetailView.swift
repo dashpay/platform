@@ -75,8 +75,10 @@ struct WalletDetailView: View {
 
                         Spacer()
 
-                        if wallet.transactionCount > 0 {
-                            Text("\(wallet.transactionCount)")
+                        let transactions = walletService.walletManager.getTransactions(for: wallet)
+                        let transactionCount = transactions.count
+                        if transactionCount > 0 {
+                            Text("\(transactionCount)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 8)
@@ -139,9 +141,6 @@ struct WalletDetailView: View {
                 dismiss()
             }
             .environmentObject(walletService)
-        }
-        .task {
-            await walletService.loadWallet(wallet)
         }
         .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
@@ -279,17 +278,15 @@ struct WalletInfoView: View {
                         Text(wallet.createdAt, style: .date)
                             .foregroundColor(.secondary)
                     }
-
-                    if let walletId = wallet.walletId {
-                        HStack {
-                            Text("Wallet ID")
-                            Spacer()
-                            Text(walletId.toHexString())
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                                .multilineTextAlignment(.trailing)
-                        }
+                    
+                    HStack {
+                        Text("Wallet ID")
+                        Spacer()
+                        Text(wallet.walletId.toHexString())
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.trailing)
                     }
 
                     if mainnetEnabled {
@@ -373,7 +370,7 @@ struct WalletInfoView: View {
 
     private func loadNetworkStates() {
         // TODO: Probably not needed this way anymore?
-        switch wallet.dashNetwork {
+        switch wallet.network {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
@@ -388,21 +385,20 @@ struct WalletInfoView: View {
 
     private func loadAccountCounts() async {
         // TODO: This can probably be refactored now with with single network manager?
-        guard let manager = walletService.walletManager else { return }
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 mainnetAccountCount = list.count
             }
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 testnetAccountCount = list.count
             }
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
+            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
@@ -453,57 +449,32 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        isDeleting = true
-        defer {
-            Task { @MainActor in
-                isDeleting = false
-            }
+        // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+        // This prevents "Never access a full future backing data" crash
+        await MainActor.run {
+            dismiss()
+            onWalletDeleted()
         }
 
-        do {
-            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
-            // This prevents "Never access a full future backing data" crash
-            await MainActor.run {
-                dismiss()
-                onWalletDeleted()
-            }
-
-            // Notify the wallet service (removes wallet from observable arrays)
-            await walletService.walletDeleted(wallet)
-
-            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
-            modelContext.delete(wallet)
-            try modelContext.save()
-
-        } catch {
-            await MainActor.run {
-                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
-                showError = true
-            }
-        }
+        try! await walletService.walletManager.deleteWallet(wallet)
     }
 }
 
 struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
-
+    @EnvironmentObject var walletService: WalletService
+    
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
-
-        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
-        // don't show any platform balance
-        guard let walletId = wallet.walletId else {
-            return 0
-        }
-
+        
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
                 // Only count identities that have been explicitly associated with this wallet
-                identity.walletId == walletId &&
-                identity.network == wallet.dashNetwork.rawValue
+                identity.walletId == wallet.walletId &&
+                identity.network == wallet.network.rawValue
             }
             .reduce(0) { sum, identity in
                 sum + identity.balance
@@ -513,7 +484,8 @@ struct BalanceCardView: View {
     var body: some View {
         VStack(spacing: 12) {
             // Show main balance or "Empty Wallet"
-            if wallet.totalBalance == 0 {
+            let balance = walletService.walletManager.getBalance(for: wallet)
+            if balance.total == 0 {
                 Text("Empty Wallet")
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
@@ -521,8 +493,8 @@ struct BalanceCardView: View {
                 Text("Wallet Balance")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-
-                Text(formatBalance(wallet.totalBalance))
+                
+                Text(balance.formattedTotal)
                     .font(.system(size: 36, weight: .bold, design: .rounded))
             }
 
@@ -532,8 +504,8 @@ struct BalanceCardView: View {
                     Text("Incoming")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    if wallet.unconfirmedBalance > 0 {
-                        Text(formatBalance(wallet.unconfirmedBalance))
+                    if balance.unconfirmed > 0 {
+                        Text(balance.formattedUnconfirmed)
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.orange)
@@ -588,181 +560,3 @@ struct BalanceCardView: View {
         return String(format: "%.8f DASH", dash).replacingOccurrences(of: "0+$", with: "", options: .regularExpression).replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
     }
 }
-
-// MARK: - Legacy Views (kept for reference)
-// These views show transactions, addresses, and UTXOs directly
-// They have been replaced by AccountListView which shows account-level information
-
-/*
-struct TransactionListView: View {
-    let transactions: [HDTransaction]
-
-    var body: some View {
-        if transactions.isEmpty {
-            ContentUnavailableView(
-                "No Transactions",
-                systemImage: "list.bullet.rectangle",
-                description: Text("Transactions will appear here")
-            )
-        } else {
-            List(transactions.sorted(by: { $0.timestamp > $1.timestamp })) { transaction in
-                TransactionRowView(transaction: transaction)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct TransactionRowView: View {
-    let transaction: HDTransaction
-
-    var body: some View {
-        HStack {
-            Image(systemName: transaction.amount < 0 ? "arrow.up.circle" : "arrow.down.circle")
-                .font(.title2)
-                .foregroundColor(transaction.amount < 0 ? .red : .green)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.type.capitalized)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Text(transaction.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(formatAmount(transaction.amount))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(transaction.amount < 0 ? .red : .green)
-
-                if transaction.isPending {
-                    Text("Pending")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                } else {
-                    Text("\(transaction.confirmations) conf")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func formatAmount(_ amount: Int64) -> String {
-        let dash = Double(abs(amount)) / 100_000_000.0
-        let sign = amount < 0 ? "-" : "+"
-        return "\(sign)\(String(format: "%.8f", dash))"
-    }
-}
-
-struct AddressListView: View {
-    let addresses: [HDAddress]
-
-    var body: some View {
-        if addresses.isEmpty {
-            ContentUnavailableView(
-                "No Addresses",
-                systemImage: "qrcode",
-                description: Text("Addresses will appear here")
-            )
-        } else {
-            List(addresses.sorted(by: { $0.index < $1.index })) { address in
-                AddressRowView(address: address)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct AddressRowView: View {
-    let address: HDAddress
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Address #\(address.index)")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Spacer()
-
-                if address.isUsed {
-                    Label("Used", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-            }
-
-            Text(address.address)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct UTXOListView: View {
-    let utxos: [HDUTXO]
-
-    var body: some View {
-        if utxos.isEmpty {
-            ContentUnavailableView(
-                "No UTXOs",
-                systemImage: "bitcoinsign.circle",
-                description: Text("Unspent outputs will appear here")
-            )
-        } else {
-            List(utxos) { utxo in
-                UTXORowView(utxo: utxo)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct UTXORowView: View {
-    let utxo: HDUTXO
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(formatAmount(utxo.amount))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Spacer()
-
-                if utxo.isConfirmed {
-                    Label("Confirmed", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                } else {
-                    Label("Unconfirmed", systemImage: "clock")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            }
-
-            Text("\(utxo.txid):\(utxo.outputIndex)")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func formatAmount(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
-        return String(format: "%.8f DASH", dash)
-    }
-}
-*/

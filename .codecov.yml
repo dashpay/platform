@@ -19,11 +19,39 @@ ignore:
   - "packages/wasm-sdk/**"
   - "**/block_end/validator_set_update/v0/**"
   - "**/block_end/validator_set_update/v1/**"
-  # Error type definitions — these are enum/struct declarations with Display/thiserror
+  # Error type definitions — enum/struct declarations with Display/thiserror
   # derives, not logic that needs test coverage
   - "packages/rs-drive/src/error/**"
   - "packages/rs-drive-abci/src/error/**"
   - "packages/rs-dpp/src/errors/**"
+  - "packages/rs-dpp/src/state_transition/errors/**"
+  # State transition boilerplate — trait interfaces, accessors, field constants,
+  # type metadata, version dispatch, and factory patterns
+  - "packages/rs-dpp/src/state_transition/traits/**"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/accessors/**"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/fields.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/common_fields.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/types.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/version.rs"
+  - "packages/rs-dpp/src/state_transition/state_transition_types.rs"
+  - "packages/rs-dpp/src/state_transition/state_transition_factory.rs"
+  # Generated gRPC bindings — no hand-written logic to test
+  - "packages/dapi-grpc/**"
+  # Data contract crates — these are JSON schema definitions with only
+  # auto-generated load_* boilerplate, not testable application logic
+  - "packages/dashpay-contract/src/**"
+  - "packages/data-contracts/src/**"
+  - "packages/dpns-contract/src/**"
+  - "packages/feature-flags-contract/src/**"
+  - "packages/keyword-search-contract/src/**"
+  - "packages/masternode-reward-shares-contract/src/**"
+  - "packages/token-history-contract/src/**"
+  - "packages/wallet-utils-contract/src/**"
+  - "packages/withdrawals-contract/src/**"
+  # Version tables — large const structs, not logic
+  - "packages/rs-platform-version/**"
+  # Simple signer — thin test-only wrapper
+  - "packages/simple-signer/src/**"
 
 coverage:
   status:

@@ -22,7 +22,7 @@ struct SendTransactionView: View {
         !recipientAddress.isEmpty &&
         amount != nil &&
         amount! > 0 &&
-        amount! <= wallet.confirmedBalance
+        amount! <= 99999
     }
 
     var body: some View {
@@ -48,14 +48,14 @@ struct SendTransactionView: View {
                     HStack {
                         Text("Available:")
                         Spacer()
-                        Text(formatBalance(wallet.confirmedBalance))
+                        Text(formatBalance(99999))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 } header: {
                     Text("Amount")
                 } footer: {
-                    if let amount = amount, amount > wallet.confirmedBalance {
+                    if let amount = amount, amount > 99999 {
                         Text("Insufficient balance")
                             .foregroundColor(.red)
                     }
@@ -123,28 +123,7 @@ struct SendTransactionView: View {
     }
 
     private func sendTransaction() {
-        guard let amount = amount else { return }
-
-        isSending = true
-
-        Task {
-            do {
-                let txid = try await walletService.sendTransaction(
-                    to: recipientAddress,
-                    amount: amount,
-                    memo: memo.isEmpty ? nil : memo
-                )
-
-                await MainActor.run {
-                    successTxid = txid
-                }
-            } catch {
-                await MainActor.run {
-                    self.error = error
-                    isSending = false
-                }
-            }
-        }
+        // TODO: Send transactions is not yet implemented
     }
 
     private func formatBalance(_ amount: UInt64) -> String {
