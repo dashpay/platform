@@ -65,7 +65,7 @@ export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSO
  * ShieldTransition serialized as a plain object.
  */
 export interface ShieldTransitionObject {
-    $version: string;
+    $formatVersion: string;
     inputs: Record<string, [number, bigint]>;
     actions: SerializedOrchardAction[];
     amount: bigint;
@@ -81,7 +81,7 @@ export interface ShieldTransitionObject {
  * ShieldTransition serialized as JSON (human-readable).
  */
 export interface ShieldTransitionJSON {
-    $version: string;
+    $formatVersion: string;
     inputs: Record<string, [number, number]>;
     actions: SerializedOrchardActionJSON[];
     amount: number | string;

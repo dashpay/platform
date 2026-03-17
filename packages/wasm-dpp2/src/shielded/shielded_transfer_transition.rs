@@ -13,7 +13,7 @@ const TS_TYPES: &str = r#"
  * ShieldedTransferTransition serialized as a plain object.
  */
 export interface ShieldedTransferTransitionObject {
-    $version: string;
+    $formatVersion: string;
     actions: SerializedOrchardAction[];
     valueBalance: bigint;
     anchor: Uint8Array;
@@ -25,7 +25,7 @@ export interface ShieldedTransferTransitionObject {
  * ShieldedTransferTransition serialized as JSON (human-readable).
  */
 export interface ShieldedTransferTransitionJSON {
-    $version: string;
+    $formatVersion: string;
     actions: SerializedOrchardActionJSON[];
     valueBalance: number | string;
     anchor: string;
@@ -63,7 +63,9 @@ impl From<ShieldedTransferTransitionWasm> for ShieldedTransferTransition {
 #[wasm_bindgen(js_class = ShieldedTransferTransition)]
 impl ShieldedTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: ShieldedTransferTransitionObjectJs) -> WasmDppResult<ShieldedTransferTransitionWasm> {
+    pub fn new(
+        value: ShieldedTransferTransitionObjectJs,
+    ) -> WasmDppResult<ShieldedTransferTransitionWasm> {
         let inner: ShieldedTransferTransition = serde_wasm_bindgen::from_value(value.into())
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
         Ok(ShieldedTransferTransitionWasm(inner))

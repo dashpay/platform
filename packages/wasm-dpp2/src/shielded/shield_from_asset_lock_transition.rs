@@ -1,11 +1,32 @@
+use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::utils::try_from_options;
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use dpp::platform_value::BinaryData;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShieldFromAssetLockTransitionSimpleFields {
+    #[serde(default)]
+    actions: Vec<dpp::shielded::SerializedAction>,
+    #[serde(default)]
+    value_balance: u64,
+    #[serde(default)]
+    anchor: Vec<u8>,
+    #[serde(default)]
+    proof: Vec<u8>,
+    #[serde(default)]
+    binding_signature: Vec<u8>,
+    #[serde(default)]
+    signature: Vec<u8>,
+}
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
@@ -34,10 +55,24 @@ export interface SerializedOrchardActionJSON {
 }
 
 /**
+ * Options for constructing a ShieldFromAssetLockTransition.
+ * Uses WASM instance types for complex fields like AssetLockProof.
+ */
+export interface ShieldFromAssetLockTransitionOptions {
+    assetLockProof: AssetLockProof;
+    actions: SerializedOrchardAction[];
+    valueBalance: bigint;
+    anchor: Uint8Array;
+    proof: Uint8Array;
+    bindingSignature: Uint8Array;
+    signature: Uint8Array;
+}
+
+/**
  * ShieldFromAssetLockTransition serialized as a plain object.
  */
 export interface ShieldFromAssetLockTransitionObject {
-    $version: string;
+    $formatVersion: string;
     assetLockProof: AssetLockProofObject;
     actions: SerializedOrchardAction[];
     valueBalance: bigint;
@@ -51,7 +86,7 @@ export interface ShieldFromAssetLockTransitionObject {
  * ShieldFromAssetLockTransition serialized as JSON (human-readable).
  */
 export interface ShieldFromAssetLockTransitionJSON {
-    $version: string;
+    $formatVersion: string;
     assetLockProof: AssetLockProofJSON;
     actions: SerializedOrchardActionJSON[];
     valueBalance: number | string;
@@ -64,6 +99,9 @@ export interface ShieldFromAssetLockTransitionJSON {
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "ShieldFromAssetLockTransitionOptions")]
+    pub type ShieldFromAssetLockTransitionOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ShieldFromAssetLockTransitionObject")]
     pub type ShieldFromAssetLockTransitionObjectJs;
 
@@ -91,10 +129,37 @@ impl From<ShieldFromAssetLockTransitionWasm> for ShieldFromAssetLockTransition {
 #[wasm_bindgen(js_class = ShieldFromAssetLockTransition)]
 impl ShieldFromAssetLockTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(value: ShieldFromAssetLockTransitionObjectJs) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
-        let inner: ShieldFromAssetLockTransition = serde_wasm_bindgen::from_value(value.into())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        Ok(ShieldFromAssetLockTransitionWasm(inner))
+    pub fn new(
+        options: ShieldFromAssetLockTransitionOptionsJs,
+    ) -> WasmDppResult<ShieldFromAssetLockTransitionWasm> {
+        // Extract assetLockProof as a WASM instance (required)
+        let asset_lock: AssetLockProofWasm = try_from_options(&options, "assetLockProof")?;
+
+        // Extract remaining simple fields via serde
+        let fields: ShieldFromAssetLockTransitionSimpleFields =
+            serde_wasm_bindgen::from_value(options.into())
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        let anchor: [u8; 32] = fields
+            .anchor
+            .try_into()
+            .map_err(|_| WasmDppError::invalid_argument("anchor must be exactly 32 bytes"))?;
+
+        let binding_signature: [u8; 64] = fields.binding_signature.try_into().map_err(|_| {
+            WasmDppError::invalid_argument("bindingSignature must be exactly 64 bytes")
+        })?;
+
+        Ok(ShieldFromAssetLockTransitionWasm(
+            ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: asset_lock.into(),
+                actions: fields.actions,
+                value_balance: fields.value_balance,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+                signature: BinaryData::from(fields.signature),
+            }),
+        ))
     }
 
     #[wasm_bindgen(js_name = getType)]
