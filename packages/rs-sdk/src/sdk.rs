@@ -133,10 +133,11 @@ pub struct Sdk {
 
     /// Cancellation token for the background health check task.
     ///
-    /// `Some` = health check is running; `None` = stopped or not started.
-    /// This is a child of `cancel_token`, so SDK shutdown automatically cancels it.
-    /// All clones share the same `ArcSwapOption` instance.
-    health_check_cancel: Arc<ArcSwapOption<CancellationToken>>,
+    /// A live (non-cancelled) token means the health check is running.
+    /// A cancelled token means stopped or not started.
+    /// This is always a child of `cancel_token`, so SDK shutdown automatically cancels it.
+    /// All clones share the same `Mutex` instance via `Arc`.
+    health_check_cancel: Arc<std::sync::Mutex<CancellationToken>>,
 }
 impl Clone for Sdk {
     fn clone(&self) -> Self {
@@ -438,7 +439,11 @@ impl Sdk {
 
     /// Returns `true` if the background health check is running.
     pub fn is_health_check_running(&self) -> bool {
-        self.health_check_cancel.load().is_some()
+        !self
+            .health_check_cancel
+            .lock()
+            .expect("health_check_cancel mutex poisoned")
+            .is_cancelled()
     }
 
     /// Stops the background health check. No-op if already stopped.
@@ -447,9 +452,10 @@ impl Sdk {
     /// stops it for all of them. The spawned task will exit cleanly on the
     /// next cancellation check.
     pub fn stop_health_check(&self) {
-        if let Some(token) = self.health_check_cancel.swap(None) {
-            token.cancel();
-        }
+        self.health_check_cancel
+            .lock()
+            .expect("health_check_cancel mutex poisoned")
+            .cancel();
     }
 
     /// Starts (or restarts) the background health check with the given config.
@@ -470,14 +476,19 @@ impl Sdk {
             let hc_token = new_cancel.clone();
 
             if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                self.health_check_cancel.store(Some(Arc::new(new_cancel)));
-                drop(runtime.spawn(rs_dapi_client::health_check::run_health_check(
-                    hc_address_list,
-                    hc_pool,
-                    config,
-                    hc_token,
-                    hc_ca_cert,
-                )));
+                *self
+                    .health_check_cancel
+                    .lock()
+                    .expect("health_check_cancel mutex poisoned") = new_cancel;
+                drop(
+                    runtime.spawn(rs_dapi_client::health_check::run_health_check(
+                        hc_address_list,
+                        hc_pool,
+                        config,
+                        hc_token,
+                        hc_ca_cert,
+                    )),
+                );
             } else {
                 tracing::warn!("no Tokio runtime found, cannot start health check");
             }
@@ -952,7 +963,9 @@ impl SdkBuilder {
         #[cfg(not(target_arch = "wasm32"))]
         let health_check_config = self.health_check_config;
 
-        let health_check_cancel = Arc::new(ArcSwapOption::new(None));
+        let pre_cancelled = self.cancel_token.child_token();
+        pre_cancelled.cancel();
+        let health_check_cancel = Arc::new(std::sync::Mutex::new(pre_cancelled));
 
         let sdk= match self.addresses {
             // non-mock mode
@@ -1028,7 +1041,7 @@ impl SdkBuilder {
                     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                         let hc_cancel = sdk.cancel_token.child_token();
                         let hc_token = hc_cancel.clone();
-                        health_check_cancel.store(Some(Arc::new(hc_cancel)));
+                        *health_check_cancel.lock().expect("health_check_cancel mutex poisoned") = hc_cancel;
                         // JoinHandle is intentionally dropped -- the task is governed
                         // by the CancellationToken stored in health_check_cancel.
                         drop(runtime.spawn(rs_dapi_client::health_check::run_health_check(
