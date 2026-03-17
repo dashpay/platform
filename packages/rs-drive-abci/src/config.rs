@@ -289,7 +289,7 @@ where
     let network_name = String::deserialize(deserializer)?;
 
     match network_name.as_str() {
-        "mainnet" => Ok(Network::Mainnet),
+        "dash" | "mainnet" => Ok(Network::Mainnet),
         "local" => Ok(Network::Regtest),
         _ => Network::from_str(network_name.as_str())
             .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
