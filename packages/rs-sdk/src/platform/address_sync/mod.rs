@@ -413,8 +413,9 @@ async fn incremental_catch_up<P: AddressProvider>(
     // catch-up starts from a height that's within the recent (uncompacted) zone,
     // the compacted endpoint will return nothing useful. Skip it when
     // needs_compacted is false to avoid a wasted network roundtrip.
-    while use_compacted {
-        let request = GetRecentCompactedAddressBalanceChangesRequest {
+    if use_compacted {
+        loop {
+            let request = GetRecentCompactedAddressBalanceChangesRequest {
             version: Some(
                 get_recent_compacted_address_balance_changes_request::Version::V0(
                     get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
@@ -425,94 +426,95 @@ async fn incremental_catch_up<P: AddressProvider>(
             ),
         };
 
-        let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
-            match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
-                sdk,
-                request,
-                Some(settings),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(e) if !had_successful_query => {
-                    // First query failed — server may not support incremental
-                    // RPCs or may not have data for this height. Treat as
-                    // "no incremental data available" rather than hard error.
-                    debug!(
-                        "Compacted address balance changes query failed (non-fatal): {}",
-                        e
-                    );
-                    break;
-                }
-                Err(e) => return Err(e),
+            let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
+                match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
+                    sdk,
+                    request,
+                    Some(settings),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(e) if !had_successful_query => {
+                        // First query failed — server may not support incremental
+                        // RPCs or may not have data for this height. Treat as
+                        // "no incremental data available" rather than hard error.
+                        debug!(
+                            "Compacted address balance changes query failed (non-fatal): {}",
+                            e
+                        );
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                };
+
+            let entries = match changes {
+                Some(c) => c.into_inner(),
+                None => break,
             };
 
-        let entries = match changes {
-            Some(c) => c.into_inner(),
-            None => break,
-        };
+            result.new_sync_timestamp = metadata.time_ms / 1000;
+            result.metrics.compacted_queries += 1;
+            had_successful_query = true;
+            // Track the platform's chain tip from response metadata
+            if metadata.height > observed_tip_height {
+                observed_tip_height = metadata.height;
+            }
 
-        result.new_sync_timestamp = metadata.time_ms / 1000;
-        result.metrics.compacted_queries += 1;
-        had_successful_query = true;
-        // Track the platform's chain tip from response metadata
-        if metadata.height > observed_tip_height {
-            observed_tip_height = metadata.height;
-        }
+            if entries.is_empty() {
+                break;
+            }
 
-        if entries.is_empty() {
-            break;
-        }
+            let entry_count = entries.len();
 
-        let entry_count = entries.len();
-
-        for entry in &entries {
-            for (platform_addr, credit_op) in &entry.changes {
-                let addr_bytes = platform_addr.to_bytes();
-                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
-                    let current_balance = result
-                        .found
-                        .get(&(*index, key.clone()))
-                        .map(|f| f.balance)
-                        .unwrap_or(0);
-
-                    let new_balance = match credit_op {
-                        BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                        BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                            let total_to_add: u64 = operations
-                                .iter()
-                                .filter(|(height, _)| **height >= current_height)
-                                .map(|(_, credits)| *credits)
-                                .fold(0u64, |acc, c| acc.saturating_add(c));
-                            current_balance.saturating_add(total_to_add)
-                        }
-                    };
-
-                    if new_balance != current_balance {
-                        let nonce = result
+            for entry in &entries {
+                for (platform_addr, credit_op) in &entry.changes {
+                    let addr_bytes = platform_addr.to_bytes();
+                    if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                        let current_balance = result
                             .found
                             .get(&(*index, key.clone()))
-                            .map(|f| f.nonce)
+                            .map(|f| f.balance)
                             .unwrap_or(0);
-                        let funds = AddressFunds {
-                            nonce,
-                            balance: new_balance,
+
+                        let new_balance = match credit_op {
+                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                                let total_to_add: u64 = operations
+                                    .iter()
+                                    .filter(|(height, _)| **height >= current_height)
+                                    .map(|(_, credits)| *credits)
+                                    .fold(0u64, |acc, c| acc.saturating_add(c));
+                                current_balance.saturating_add(total_to_add)
+                            }
                         };
-                        result.found.insert((*index, key.clone()), funds);
-                        provider.on_address_found(*index, key, funds);
+
+                        if new_balance != current_balance {
+                            let nonce = result
+                                .found
+                                .get(&(*index, key.clone()))
+                                .map(|f| f.nonce)
+                                .unwrap_or(0);
+                            let funds = AddressFunds {
+                                nonce,
+                                balance: new_balance,
+                            };
+                            result.found.insert((*index, key.clone()), funds);
+                            provider.on_address_found(*index, key, funds);
+                        }
                     }
+                }
+
+                if entry.end_block_height.saturating_add(1) > current_height {
+                    current_height = entry.end_block_height.saturating_add(1);
                 }
             }
 
-            if entry.end_block_height.saturating_add(1) > current_height {
-                current_height = entry.end_block_height.saturating_add(1);
+            if entry_count < COMPACTED_BATCH_LIMIT {
+                break;
             }
         }
-
-        if entry_count < COMPACTED_BATCH_LIMIT {
-            break;
-        }
-    }
+    } // if use_compacted
 
     // Phase 2 — Recent (per-block) changes
     loop {
