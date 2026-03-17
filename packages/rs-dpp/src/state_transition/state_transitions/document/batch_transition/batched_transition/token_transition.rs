@@ -213,7 +213,11 @@ pub trait TokenTransitionV0Methods {
     /// sets identity contract nonce
     fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce);
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier>;
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Option<Result<Identifier, ProtocolError>>;
 
     fn can_calculate_action_id(&self) -> bool;
     /// Historical document type name for the token history contract
@@ -279,19 +283,31 @@ impl TokenTransitionV0Methods for TokenTransition {
         self.base().data_contract_id()
     }
 
-    fn calculate_action_id(&self, owner_id: Identifier) -> Option<Identifier> {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Option<Result<Identifier, ProtocolError>> {
         match self {
-            TokenTransition::Burn(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Mint(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Freeze(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::Unfreeze(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::Burn(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Mint(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Freeze(t) => Some(t.calculate_action_id(owner_id, platform_version)),
+            TokenTransition::Unfreeze(t) => Some(t.calculate_action_id(owner_id, platform_version)),
             TokenTransition::Transfer(_) => None,
-            TokenTransition::DestroyFrozenFunds(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::DestroyFrozenFunds(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
             TokenTransition::Claim(_) => None,
-            TokenTransition::EmergencyAction(t) => Some(t.calculate_action_id(owner_id)),
-            TokenTransition::ConfigUpdate(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::EmergencyAction(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
+            TokenTransition::ConfigUpdate(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
             TokenTransition::DirectPurchase(_) => None,
-            TokenTransition::SetPriceForDirectPurchase(t) => Some(t.calculate_action_id(owner_id)),
+            TokenTransition::SetPriceForDirectPurchase(t) => {
+                Some(t.calculate_action_id(owner_id, platform_version))
+            }
         }
     }
 
