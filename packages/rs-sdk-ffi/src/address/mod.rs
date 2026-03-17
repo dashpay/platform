@@ -40,8 +40,12 @@ pub unsafe extern "C" fn dash_sdk_encode_platform_address(
     let script = std::slice::from_raw_parts(script_pubkey, script_len as usize);
 
     // Parse P2PKH script: 76 a9 14 <20-byte-hash> 88 ac
-    if script.len() != 25 || script[0] != 0x76 || script[1] != 0xa9 || script[2] != 0x14
-        || script[23] != 0x88 || script[24] != 0xac
+    if script.len() != 25
+        || script[0] != 0x76
+        || script[1] != 0xa9
+        || script[2] != 0x14
+        || script[23] != 0x88
+        || script[24] != 0xac
     {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
@@ -104,11 +108,7 @@ pub unsafe extern "C" fn dash_sdk_script_to_platform_address_key(
             let hash: [u8; 20] = hash_bytes.try_into().unwrap();
             let platform_addr = PlatformAddress::P2pkh(hash);
             let storage_bytes = platform_addr.to_bytes();
-            std::ptr::copy_nonoverlapping(
-                storage_bytes.as_ptr(),
-                out_key,
-                storage_bytes.len(),
-            );
+            std::ptr::copy_nonoverlapping(storage_bytes.as_ptr(), out_key, storage_bytes.len());
             *out_key_len = storage_bytes.len() as u32;
             return true;
         }

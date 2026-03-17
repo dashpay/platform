@@ -365,9 +365,12 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
             known_balance_keys,
             (known_balance_count as usize) * (key_size as usize),
         );
-        let kb_indices = std::slice::from_raw_parts(known_balance_indices, known_balance_count as usize);
-        let kb_nonces = std::slice::from_raw_parts(known_balance_nonces, known_balance_count as usize);
-        let kb_amounts = std::slice::from_raw_parts(known_balance_amounts, known_balance_count as usize);
+        let kb_indices =
+            std::slice::from_raw_parts(known_balance_indices, known_balance_count as usize);
+        let kb_nonces =
+            std::slice::from_raw_parts(known_balance_nonces, known_balance_count as usize);
+        let kb_amounts =
+            std::slice::from_raw_parts(known_balance_amounts, known_balance_count as usize);
 
         for i in 0..known_balance_count as usize {
             let key_start = i * key_size as usize;
