@@ -114,9 +114,6 @@ async fn health_check_loop(
     let mut expired = all_addresses;
     // Phase 2: Watch for ban expirations
     loop {
-        if stop.is_terminated() {
-            break;
-        }
         // we reloaded expired bans at the end of the last loop, so if there are any addresses here,
         // they are either unprobed or have failed probes and are currently banned.
         if !expired.is_empty() {
