@@ -79,13 +79,63 @@ impl AllowedAsMultiPartyAction for TokenSetPriceForDirectPurchaseTransition {
 }
 
 impl TokenSetPriceForDirectPurchaseTransition {
-    /// Computes the action_id by hashing the full serialized pricing schedule.
-    ///
-    /// Previous versions only hashed the minimum-tier credit price, which meant
-    /// different pricing schedules with the same minimum price (e.g.,
-    /// `SetPrices({1: 100, 10: 800})` vs `SetPrices({1: 100, 10: 9999})`)
-    /// produced identical action_ids, enabling vote-swap attacks.
     pub fn calculate_action_id_with_fields(
+        token_id: &[u8; 32],
+        owner_id: &[u8; 32],
+        identity_contract_nonce: IdentityNonce,
+        price_per_token: Option<&TokenPricingSchedule>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version
+            .dpp
+            .token_versions
+            .token_set_price_action_id_version
+        {
+            0 => Ok(Self::calculate_action_id_with_fields_v0(
+                token_id,
+                owner_id,
+                identity_contract_nonce,
+                price_per_token,
+            )),
+            1 => Self::calculate_action_id_with_fields_v1(
+                token_id,
+                owner_id,
+                identity_contract_nonce,
+                price_per_token,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "calculate_action_id_with_fields".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// v0: hashes only minimum_purchase_amount_and_price().1 (kept for backward compat).
+    fn calculate_action_id_with_fields_v0(
+        token_id: &[u8; 32],
+        owner_id: &[u8; 32],
+        identity_contract_nonce: IdentityNonce,
+        price_per_token: Option<&TokenPricingSchedule>,
+    ) -> Identifier {
+        let mut bytes = b"action_token_set_price_for_direct_purchase".to_vec();
+        bytes.extend_from_slice(token_id);
+        bytes.extend_from_slice(owner_id);
+        bytes.extend_from_slice(&identity_contract_nonce.to_be_bytes());
+        if let Some(price_per_token) = price_per_token {
+            bytes.extend_from_slice(
+                &price_per_token
+                    .minimum_purchase_amount_and_price()
+                    .1
+                    .to_be_bytes(),
+            );
+        }
+
+        hash_double(bytes).into()
+    }
+
+    /// v1: hashes the full serialized TokenPricingSchedule, preventing schedule swap.
+    fn calculate_action_id_with_fields_v1(
         token_id: &[u8; 32],
         owner_id: &[u8; 32],
         identity_contract_nonce: IdentityNonce,
@@ -222,6 +272,58 @@ mod tests {
                 .calculate_action_id(owner_id, pv)
                 .expect("expected action id"),
             "None price and Some price must produce different action_ids"
+        );
+    }
+
+    #[test]
+    fn v0_same_minimum_produces_same_id_vulnerability() {
+        // Documents the v0 vulnerability: different schedules with the same
+        // minimum-tier price produce identical action_ids.
+        let owner_id = Identifier::new([3u8; 32]);
+        let pv = PlatformVersion::first();
+
+        let t_cheap = make_transition(Some(TokenPricingSchedule::SetPrices(BTreeMap::from([
+            (1, 100),
+            (10, 800),
+        ]))));
+        let t_expensive = make_transition(Some(TokenPricingSchedule::SetPrices(BTreeMap::from([
+            (1, 100),
+            (10, 9999),
+        ]))));
+
+        let id_cheap = t_cheap
+            .calculate_action_id(owner_id, pv)
+            .expect("expected action id");
+        let id_expensive = t_expensive
+            .calculate_action_id(owner_id, pv)
+            .expect("expected action id");
+
+        // v0: these are EQUAL -- the vulnerability
+        assert_eq!(
+            id_cheap, id_expensive,
+            "v0 should produce the same action_id for different schedules with same min price"
+        );
+    }
+
+    #[test]
+    fn v0_and_v1_produce_different_ids_for_same_input() {
+        let owner_id = Identifier::new([3u8; 32]);
+
+        let t = make_transition(Some(TokenPricingSchedule::SetPrices(BTreeMap::from([
+            (1, 100),
+            (10, 800),
+        ]))));
+
+        let id_v0 = t
+            .calculate_action_id(owner_id, PlatformVersion::first())
+            .expect("expected action id");
+        let id_v1 = t
+            .calculate_action_id(owner_id, PlatformVersion::latest())
+            .expect("expected action id");
+
+        assert_ne!(
+            id_v0, id_v1,
+            "v0 and v1 should produce different action_ids for the same schedule"
         );
     }
 }
