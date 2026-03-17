@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connection_pool::ConnectionPool;
 use crate::request_settings::AppliedRequestSettings;
-use crate::transport::{TransportClient, TransportRequest};
+use crate::transport::{TransportClient, TransportError, TransportRequest};
 use crate::{Address, AddressList, RequestSettings};
 
 use dapi_grpc::tonic::transport::Certificate;
@@ -153,12 +153,12 @@ async fn probe_and_update_batch(
                                 tracing::debug!(%address, "health check: node is healthy, unbanned");
                             }
                         }
-                        Err(reason) => {
+                        Err(error) => {
                             // Ban the unhealthy node. If already banned (e.g., during Phase 2 re-probe),
                             // this increments ban_count and extends banned_until with exponential backoff,
                             // effectively escalating the ban duration for persistently dead nodes.
                             address_list.ban(address);
-                            tracing::debug!(%address, %reason, "health check: node is unhealthy, banned");
+                            tracing::debug!(%address, error = %error, "health check: node is unhealthy, banned");
                         }
                     }
                 }
@@ -170,20 +170,13 @@ async fn probe_node(
     address: &Address,
     pool: &ConnectionPool,
     settings: &AppliedRequestSettings,
-) -> Result<(), String> {
-    let client_result =
+) -> Result<(), TransportError> {
+    let mut client =
         <platform_proto::GetStatusRequest as TransportRequest>::Client::with_uri_and_settings(
             address.uri().clone(),
             settings,
             pool,
-        );
-
-    let mut client = match client_result {
-        Ok(client) => client,
-        Err(e) => {
-            return Err(format!("failed to create transport client: {e}"));
-        }
-    };
+        )?;
 
     let request = platform_proto::GetStatusRequest {
         version: Some(platform_proto::get_status_request::Version::V0(
@@ -195,7 +188,6 @@ async fn probe_node(
         .execute_transport(&mut client, settings)
         .await
         .map(|_| ())
-        .map_err(|e| format!("probe failed: {e}"))
 }
 
 #[cfg(test)]
@@ -237,7 +229,7 @@ mod tests {
 
         let addr: Address = "http://192.0.2.1:1".parse().unwrap();
         let result = probe_node(&addr, &pool, &settings).await;
-        assert!(!result);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
