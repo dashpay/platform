@@ -55,7 +55,7 @@ use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::version as platform_version,
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
