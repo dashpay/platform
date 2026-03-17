@@ -120,7 +120,7 @@ async fn health_check_loop(
         // we reloaded expired bans at the end of the last loop, so if there are any addresses here,
         // they are either unprobed or have failed probes and are currently banned.
         if !expired.is_empty() {
-            tracing::debug!(
+            tracing::trace!(
                 count = expired.len(),
                 "re-probing addresses with expired bans"
             );
@@ -133,11 +133,6 @@ async fn health_check_loop(
                 &mut stop,
             )
             .await;
-            if stop.is_terminated() {
-                tracing::debug!("health check cancelled");
-                break;
-            }
-            continue;
         }
 
         let sleep_duration = match address_list.get_next_ban_expiry() {
