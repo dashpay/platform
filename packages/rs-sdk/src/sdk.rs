@@ -463,7 +463,6 @@ impl Sdk {
     /// If a health check is already running, it is stopped first.
     /// All `Sdk` clones share the same state, so starting from any clone
     /// starts it for all of them.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn start_health_check(&self, config: rs_dapi_client::HealthCheckConfig) {
         self.stop_health_check();
 
@@ -472,25 +471,44 @@ impl Sdk {
         if let SdkInstance::Dapi { dapi, .. } = &self.inner {
             let hc_address_list = dapi.address_list().clone();
             let hc_pool = dapi.connection_pool().clone();
-            let hc_ca_cert = dapi.ca_certificate.clone();
             let hc_token = new_cancel.clone();
 
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                *self
-                    .health_check_cancel
-                    .lock()
-                    .expect("health_check_cancel mutex poisoned") = new_cancel;
-                drop(
-                    runtime.spawn(rs_dapi_client::health_check::run_health_check(
-                        hc_address_list,
-                        hc_pool,
-                        config,
-                        hc_token,
-                        hc_ca_cert,
-                    )),
-                );
-            } else {
-                tracing::warn!("no Tokio runtime found, cannot start health check");
+            #[cfg(not(target_arch = "wasm32"))]
+            let hc_ca_cert = dapi.ca_certificate.clone();
+            #[cfg(target_arch = "wasm32")]
+            let hc_ca_cert: Option<()> = None;
+
+            *self
+                .health_check_cancel
+                .lock()
+                .expect("health_check_cancel mutex poisoned") = new_cancel;
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                    drop(
+                        runtime.spawn(rs_dapi_client::health_check::run_health_check(
+                            hc_address_list,
+                            hc_pool,
+                            config,
+                            hc_token,
+                            hc_ca_cert,
+                        )),
+                    );
+                } else {
+                    tracing::warn!("no Tokio runtime found, cannot start health check");
+                }
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                wasm_bindgen_futures::spawn_local(rs_dapi_client::health_check::run_health_check(
+                    hc_address_list,
+                    hc_pool,
+                    config,
+                    hc_token,
+                    hc_ca_cert,
+                ));
             }
         }
     }
@@ -671,7 +689,6 @@ pub struct SdkBuilder {
     ca_certificate: Option<Certificate>,
 
     /// Health check configuration. `Some` = enabled, `None` = disabled. Default: enabled.
-    #[cfg(not(target_arch = "wasm32"))]
     health_check_config: Option<rs_dapi_client::HealthCheckConfig>,
 }
 
@@ -711,7 +728,6 @@ impl Default for SdkBuilder {
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
-            #[cfg(not(target_arch = "wasm32"))]
             health_check_config: Some(rs_dapi_client::HealthCheckConfig::default()),
 
             #[cfg(feature = "mocks")]
@@ -866,8 +882,7 @@ impl SdkBuilder {
     /// ban expirations to re-probe nodes before making them available again.
     /// Set to `None` to disable health checks.
     ///
-    /// Enabled by default on non-WASM targets. Not available on WASM.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Enabled by default.
     pub fn with_health_check_config(
         mut self,
         config: Option<rs_dapi_client::HealthCheckConfig>,
@@ -960,7 +975,6 @@ impl SdkBuilder {
             None => DEFAULT_REQUEST_SETTINGS,
         };
 
-        #[cfg(not(target_arch = "wasm32"))]
         let health_check_config = self.health_check_config;
 
         let pre_cancelled = self.cancel_token.child_token();
@@ -1028,7 +1042,6 @@ impl SdkBuilder {
                         .to_string()));
                 };
 
-                #[cfg(not(target_arch = "wasm32"))]
                 if let Some(hc_config) = health_check_config {
                     sdk.start_health_check(hc_config);
                 }

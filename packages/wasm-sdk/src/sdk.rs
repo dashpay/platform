@@ -320,6 +320,25 @@ impl WasmSdkBuilder {
         }
     }
 
+    /// Enable or disable the background health check.
+    ///
+    /// When enabled, the SDK will probe all DAPI nodes on startup and monitor
+    /// ban expirations to re-probe nodes before making them available again.
+    ///
+    /// Enabled by default.
+    #[wasm_bindgen(js_name = "withHealthCheck")]
+    pub fn with_health_check(self, enabled: bool) -> Self {
+        let config = if enabled {
+            Some(rs_dapi_client::HealthCheckConfig::default())
+        } else {
+            None
+        };
+        Self {
+            inner: self.inner.with_health_check_config(config),
+            trusted_context: self.trusted_context,
+        }
+    }
+
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
         let sdk = self.inner.build().map_err(WasmSdkError::from)?;
         Ok(WasmSdk {
