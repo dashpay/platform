@@ -104,41 +104,20 @@ async fn health_check_loop(
     // Phase 1: Startup probe
     let all_addresses = address_list.get_all_addresses();
     if !all_addresses.is_empty() {
-        tracing::info!(
+        tracing::debug!(
             total = all_addresses.len(),
-            "starting health check probe of all addresses"
-        );
-        probe_and_update_batch(
-            &all_addresses,
-            &address_list,
-            &pool,
-            &probe_settings,
-            &config,
-            &mut stop,
-        )
-        .await;
-        let banned_count = all_addresses
-            .iter()
-            .filter(|a| address_list.is_banned(a))
-            .count();
-        tracing::info!(
-            total = all_addresses.len(),
-            banned = banned_count,
-            healthy = all_addresses.len() - banned_count,
-            "startup health check complete"
+            "starting health check for all addresses"
         );
     }
 
+    let mut expired = all_addresses;
     // Phase 2: Watch for ban expirations
     loop {
         if stop.is_terminated() {
             break;
         }
-
-        // Check for already-expired bans before sleeping, so we re-probe them
-        // immediately rather than waiting for `no_ban_idle_period` when
-        // `get_next_ban_expiry()` returns None (all bans expired).
-        let expired = address_list.get_expired_ban_addresses();
+        // we reloaded expired bans at the end of the last loop, so if there are any addresses here,
+        // they are either unprobed or have failed probes and are currently banned.
         if !expired.is_empty() {
             tracing::debug!(
                 count = expired.len(),
@@ -168,6 +147,7 @@ async fn health_check_loop(
             None => config.no_ban_idle_period,
         };
 
+        // sleep
         let sleep_fut = sleep(sleep_duration).fuse();
         futures::pin_mut!(sleep_fut);
 
@@ -177,7 +157,11 @@ async fn health_check_loop(
                 break;
             }
             _ = sleep_fut => {}
-        }
+        };
+
+        // After waking, get expired bans to re-probe. If `get_next_ban_expiry()` returned None,
+        // this will get all bans (if any exist) since they are all expired.
+        expired = address_list.get_expired_ban_addresses();
     }
 }
 
