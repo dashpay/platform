@@ -107,7 +107,7 @@ impl TokenConfigUpdateTransition {
                     owner_id,
                     identity_contract_nonce,
                     token_configuration_change_item.u8_item_index(),
-                    payload.as_ref().map(|a| a.as_slice()),
+                    payload.as_deref(),
                 ))
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
