@@ -62,7 +62,7 @@ where
     let config = &app.platform().config;
 
     #[allow(clippy::collapsible_if)]
-    if !(config.network == Network::Dash
+    if !(config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
         && request.height < 33000)
     {

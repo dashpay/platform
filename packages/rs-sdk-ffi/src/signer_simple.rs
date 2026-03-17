@@ -38,7 +38,7 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     key_array.copy_from_slice(key_slice);
 
     // network won't matter here
-    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), Network::Dash) {
+    let signer = match SingleKeySigner::new_from_slice(key_array.as_slice(), Network::Mainnet) {
         Ok(s) => s,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(DashSDKErrorCode::InvalidParameter, e));

@@ -87,3 +87,14 @@ opt-level = 3
 
 version = "3.1.0-dev.1"
 rust-version = "1.92"
+
+# Redirect rust-dashcore git deps to local checkout so we pick up the
+# `&Wallet` (immutable) fix in check_core_transaction and other changes.
+[patch."https://github.com/dashpay/rust-dashcore"]
+dashcore = { path = "../rust-dashcore/dash" }
+dash-spv = { path = "../rust-dashcore/dash-spv" }
+dash-spv-ffi = { path = "../rust-dashcore/dash-spv-ffi" }
+key-wallet = { path = "../rust-dashcore/key-wallet" }
+key-wallet-manager = { path = "../rust-dashcore/key-wallet-manager" }
+dashcore-rpc = { path = "../rust-dashcore/rpc-client" }
+dashcore-rpc-json = { path = "../rust-dashcore/rpc-json" }

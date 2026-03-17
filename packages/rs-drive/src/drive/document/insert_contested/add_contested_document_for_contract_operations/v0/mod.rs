@@ -53,7 +53,7 @@ impl Drive {
         )?;
 
         let poll_time = match self.config.network {
-            Network::Dash => {
+            Network::Mainnet => {
                 platform_version
                     .dpp
                     .voting_versions
