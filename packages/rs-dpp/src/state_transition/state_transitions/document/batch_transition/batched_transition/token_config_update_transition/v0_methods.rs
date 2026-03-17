@@ -340,4 +340,79 @@ mod tests {
             "v1 should produce the same action_id for identical config items"
         );
     }
+
+    #[test]
+    fn v1_authorized_action_takers_variant_differentiates_values() {
+        // Exercises payload_serialization() for AuthorizedActionTakers-based
+        // variants, which use to_bytes() internally. A regression in
+        // AuthorizedActionTakers::to_bytes() or payload_serialization()
+        // would be caught here.
+        use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+
+        let owner_id = Identifier::new([3u8; 32]);
+        let platform_version = PlatformVersion::latest();
+
+        let t_group5 = make_transition(TokenConfigurationChangeItem::ManualMinting(
+            AuthorizedActionTakers::Group(5),
+        ));
+        let t_group9 = make_transition(TokenConfigurationChangeItem::ManualMinting(
+            AuthorizedActionTakers::Group(9),
+        ));
+        let t_no_one = make_transition(TokenConfigurationChangeItem::ManualMinting(
+            AuthorizedActionTakers::NoOne,
+        ));
+
+        let id_group5 = t_group5
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id_group9 = t_group9
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id_no_one = t_no_one
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+
+        assert_ne!(
+            id_group5, id_group9,
+            "ManualMinting(Group(5)) and ManualMinting(Group(9)) must differ"
+        );
+        assert_ne!(
+            id_group5, id_no_one,
+            "ManualMinting(Group(5)) and ManualMinting(NoOne) must differ"
+        );
+    }
+
+    #[test]
+    fn v1_none_payload_variants_still_differentiated_by_discriminant() {
+        // MaxSupply(None), NewTokensDestinationIdentity(None),
+        // PerpetualDistribution(None), and MainControlGroup(None) all
+        // return None from payload_serialization(). They must still produce
+        // different action_ids because of their different u8 discriminants.
+        let owner_id = Identifier::new([3u8; 32]);
+        let platform_version = PlatformVersion::latest();
+
+        let t_max = make_transition(TokenConfigurationChangeItem::MaxSupply(None));
+        let t_dest =
+            make_transition(TokenConfigurationChangeItem::NewTokensDestinationIdentity(None));
+        let t_dist = make_transition(TokenConfigurationChangeItem::PerpetualDistribution(None));
+        let t_ctrl = make_transition(TokenConfigurationChangeItem::MainControlGroup(None));
+
+        let ids: Vec<_> = [t_max, t_dest, t_dist, t_ctrl]
+            .iter()
+            .map(|t| {
+                t.calculate_action_id(owner_id, platform_version)
+                    .expect("expected action id")
+            })
+            .collect();
+
+        // All 4 must be unique
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(
+                    ids[i], ids[j],
+                    "None-payload variants at indices {i} and {j} must have different action_ids"
+                );
+            }
+        }
+    }
 }

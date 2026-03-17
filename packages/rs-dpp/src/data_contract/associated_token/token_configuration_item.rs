@@ -117,10 +117,9 @@ impl TokenConfigurationChangeItem {
                 bincode::encode_to_vec(mode, bincode::config::standard())
                     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
             ),
-            TokenConfigurationChangeItem::MainControlGroup(position) => match position {
-                Some(pos) => Some(pos.to_be_bytes().to_vec()),
-                None => Some(vec![]),
-            },
+            TokenConfigurationChangeItem::MainControlGroup(position) => {
+                position.map(|pos| pos.to_be_bytes().to_vec())
+            }
         })
     }
     pub fn u8_item_index(&self) -> u8 {
