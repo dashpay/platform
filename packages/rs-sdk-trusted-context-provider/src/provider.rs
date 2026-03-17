@@ -306,7 +306,7 @@ impl TrustedHttpContextProvider {
         }
 
         let default_dapi_port = match self.network {
-            Network::Dash => 443,
+            Network::Mainnet => 443,
             Network::Testnet => 1443,
             _ => 443,
         };
@@ -802,7 +802,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         // Return the L1 locked height for each network
         match self.network {
-            Network::Dash => Ok(2132092),    // Mainnet L1 locked height
+            Network::Mainnet => Ok(2132092),    // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
             Network::Devnet => Ok(1),        // Devnet activation height
             _ => Err(ContextProviderError::Generic(
@@ -819,7 +819,7 @@ mod tests {
     #[test]
     fn test_get_quorum_base_url() {
         assert_eq!(
-            get_quorum_base_url(Network::Dash, None).unwrap(),
+            get_quorum_base_url(Network::Mainnet, None).unwrap(),
             "https://quorums.mainnet.networks.dash.org"
         );
 

@@ -23,7 +23,7 @@ pub fn get_quorum_base_url(
     devnet_name: Option<&str>,
 ) -> Result<String, TrustedContextProviderError> {
     match network {
-        Network::Dash => Ok("https://quorums.mainnet.networks.dash.org".to_string()),
+        Network::Mainnet => Ok("https://quorums.mainnet.networks.dash.org".to_string()),
         Network::Testnet => Ok("https://quorums.testnet.networks.dash.org".to_string()),
         Network::Devnet => {
             if let Some(name) = devnet_name {

@@ -225,7 +225,7 @@ impl WasmSdkBuilder {
         let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
 
         let network = match network.to_lowercase().as_str() {
-            "mainnet" => Network::Dash,
+            "mainnet" => Network::Mainnet,
             "testnet" => Network::Testnet,
             "local" => Network::Regtest,
             _ => {
@@ -251,7 +251,7 @@ impl WasmSdkBuilder {
     pub fn new_mainnet() -> Self {
         let address_list = dash_sdk::sdk::AddressList::from_iter(default_mainnet_addresses());
         let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Dash)
+            .with_network(dash_sdk::dpp::dashcore::Network::Mainnet)
             .with_context_provider(WasmContext {});
 
         Self {
