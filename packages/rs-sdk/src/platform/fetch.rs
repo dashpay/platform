@@ -158,47 +158,8 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
-
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = request
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|execution_error| execution_error.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
-
-            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-                .parse_proof_with_metadata_and_proof(request.clone(), response)
-                .await
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    address: Some(address.clone()),
-                    retries,
-                })?;
-
-            match object {
-                Some(item) => Ok((item.into(), response_metadata, proof)),
-                None => Ok((None, response_metadata, proof)),
-            }
-            .map(|x| ExecutionResponse {
-                inner: x,
-                address,
-                retries,
-            })
-        };
-
-        let settings = sdk
-            .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
-
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+        let request = query.query(sdk.prove())?;
+        fetch_with_metadata_and_proof_impl(sdk, request, settings).await
     }
 
     /// Fetch single object from Platform.
@@ -247,6 +208,67 @@ where
     {
         Self::fetch(sdk, id).await
     }
+}
+
+/// Standalone helper for the default `Fetch::fetch_with_metadata_and_proof`.
+///
+/// Extracting the retry + closure logic into a free `async fn` breaks the
+/// HRTB Send inference chain that prevents `tokio::spawn` from proving the
+/// resulting future is Send.
+async fn fetch_with_metadata_and_proof_impl<T, R>(
+    sdk: &Sdk,
+    request: R,
+    settings: Option<RequestSettings>,
+) -> Result<(Option<T>, ResponseMetadata, Proof), Error>
+where
+    T: Sized
+        + Debug
+        + MockResponse
+        + Send
+        + FromProof<R, Request = R, Response = <R as DapiRequest>::Response>,
+    R: TransportRequest + Into<<T as FromProof<R>>::Request>,
+{
+    let request = &request;
+
+    let fut = |settings: RequestSettings| async move {
+        let ExecutionResponse {
+            address,
+            retries,
+            inner: response,
+        } = request
+            .clone()
+            .execute(sdk, settings)
+            .await
+            .map_err(|execution_error| execution_error.inner_into())?;
+
+        let object_type = std::any::type_name::<T>().to_string();
+        tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
+
+        let (object, response_metadata, proof): (Option<T>, ResponseMetadata, Proof) = sdk
+            .parse_proof_with_metadata_and_proof(request.clone(), response)
+            .await
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })?;
+
+        match object {
+            Some(item) => Ok((item.into(), response_metadata, proof)),
+            None => Ok((None, response_metadata, proof)),
+        }
+        .map(|x| ExecutionResponse {
+            inner: x,
+            address,
+            retries,
+        })
+    };
+
+    let settings = sdk
+        .dapi_client_settings
+        .override_by(settings.unwrap_or_default());
+
+    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 impl Fetch for Identity {

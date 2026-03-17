@@ -70,46 +70,65 @@ where
             Response = <<Self as FetchUnproved>::Request as TransportRequest>::Response,
         >,
     {
-        // Default implementation
-        let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
-        let closure = move |local_settings: RequestSettings| async move {
-            // Execute the request using the Sdk instance
-            let ExecutionResponse {
-                inner: response,
-                address,
-                retries,
-            } = request
-                .clone()
-                .execute(sdk, local_settings)
-                .await
-                .map_err(|e| e.inner_into())?;
-
-            // Parse the response into the appropriate type along with metadata
-            let (object, metadata): (Option<Self>, platform_proto::ResponseMetadata) =
-                Self::maybe_from_unproved_with_metadata(
-                    request.clone(),
-                    response,
-                    sdk.network,
-                    sdk.version(),
-                )
-                .map_err(|e| ExecutionError {
-                    inner: e.into(),
-                    address: Some(address.clone()),
-                    retries,
-                })?;
-
-            Ok(ExecutionResponse {
-                inner: (object, metadata),
-                address,
-                retries,
-            })
-        };
-
-        let settings = sdk.dapi_client_settings.override_by(settings);
-        retry(sdk.address_list(), settings, closure)
-            .await
-            .into_inner()
+        let request = query.query(false)?;
+        fetch_unproved_with_settings_impl(sdk, request, settings).await
     }
+}
+
+/// Standalone helper for the default `FetchUnproved::fetch_unproved_with_settings`.
+///
+/// Extracting the retry + closure logic into a free `async fn` breaks the
+/// HRTB Send inference chain that prevents `tokio::spawn` from proving the
+/// resulting future is Send.
+async fn fetch_unproved_with_settings_impl<T, R>(
+    sdk: &Sdk,
+    request: R,
+    settings: RequestSettings,
+) -> Result<(Option<T>, ResponseMetadata), Error>
+where
+    T: Sized
+        + Debug
+        + Send
+        + FromUnproved<R, Request = R, Response = <R as TransportRequest>::Response>,
+    R: TransportRequest,
+{
+    let request = &request;
+
+    let closure = move |local_settings: RequestSettings| async move {
+        let ExecutionResponse {
+            inner: response,
+            address,
+            retries,
+        } = request
+            .clone()
+            .execute(sdk, local_settings)
+            .await
+            .map_err(|e| e.inner_into())?;
+
+        let (object, metadata): (Option<T>, platform_proto::ResponseMetadata) =
+            T::maybe_from_unproved_with_metadata(
+                request.clone(),
+                response,
+                sdk.network,
+                sdk.version(),
+            )
+            .map_err(|e| ExecutionError {
+                inner: e.into(),
+                address: Some(address.clone()),
+                retries,
+            })?;
+
+        Ok(ExecutionResponse {
+            inner: (object, metadata),
+            address,
+            retries,
+        })
+    };
+
+    let settings = sdk.dapi_client_settings.override_by(settings);
+    retry(sdk.address_list(), settings, closure)
+        .await
+        .into_inner()
 }
 
 impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
