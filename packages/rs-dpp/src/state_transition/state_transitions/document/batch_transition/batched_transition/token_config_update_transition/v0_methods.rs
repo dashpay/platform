@@ -165,10 +165,6 @@ mod tests {
     use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
 
-    fn serialize_item(item: &TokenConfigurationChangeItem) -> Vec<u8> {
-        bincode::encode_to_vec(item, bincode::config::standard()).expect("expected to encode item")
-    }
-
     fn make_transition(item: TokenConfigurationChangeItem) -> TokenConfigUpdateTransition {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
@@ -211,30 +207,25 @@ mod tests {
     }
 
     #[test]
-    fn v1_action_id_same_discriminant_different_values_produces_different_ids() {
-        // After the fix, the full serialized config item is included in the
-        // hash, so different values produce different action_ids.
-        let token_id = [2u8; 32];
-        let owner_id = [3u8; 32];
-        let nonce = 1u64;
+    fn v1_same_discriminant_different_values_produces_different_ids_through_production_path() {
+        // This is the core regression test for the vote-swap fix.
+        // Uses the full production calculate_action_id path on the latest
+        // platform version (v1) to prove that different MaxSupply values
+        // produce different action_ids.
+        let owner_id = Identifier::new([3u8; 32]);
+        let platform_version = PlatformVersion::latest();
 
-        let item_small = TokenConfigurationChangeItem::MaxSupply(Some(100));
-        let item_large = TokenConfigurationChangeItem::MaxSupply(Some(999_999_999_999));
+        let t_small = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
+        let t_large = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(
+            999_999_999_999,
+        )));
 
-        let id_small = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item_small.u8_item_index(),
-            Some(&serialize_item(&item_small)),
-        );
-        let id_large = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item_large.u8_item_index(),
-            Some(&serialize_item(&item_large)),
-        );
+        let id_small = t_small
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id_large = t_large
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
 
         // v1: these must be DIFFERENT -- the fix
         assert_ne!(
@@ -244,28 +235,20 @@ mod tests {
     }
 
     #[test]
-    fn v1_action_id_different_item_types_produces_different_ids() {
-        let token_id = [2u8; 32];
-        let owner_id = [3u8; 32];
-        let nonce = 1u64;
+    fn v1_different_item_types_produces_different_ids_through_production_path() {
+        let owner_id = Identifier::new([3u8; 32]);
+        let platform_version = PlatformVersion::latest();
 
-        let item_max_supply = TokenConfigurationChangeItem::MaxSupply(Some(100));
-        let item_allow_dest = TokenConfigurationChangeItem::MintingAllowChoosingDestination(true);
+        let t_max = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
+        let t_dest =
+            make_transition(TokenConfigurationChangeItem::MintingAllowChoosingDestination(true));
 
-        let id_max = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item_max_supply.u8_item_index(),
-            Some(&serialize_item(&item_max_supply)),
-        );
-        let id_dest = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item_allow_dest.u8_item_index(),
-            Some(&serialize_item(&item_allow_dest)),
-        );
+        let id_max = t_max
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id_dest = t_dest
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
 
         assert_ne!(
             id_max, id_dest,
@@ -275,26 +258,18 @@ mod tests {
 
     #[test]
     fn v0_and_v1_produce_different_ids_for_same_input() {
-        // Verify v0 and v1 are not accidentally identical (they hash
-        // different payloads).
-        let token_id = [2u8; 32];
-        let owner_id = [3u8; 32];
-        let nonce = 1u64;
-        let item = TokenConfigurationChangeItem::MaxSupply(Some(100));
+        // Verify v0 (first platform version) and v1 (latest) produce
+        // different action_ids for the same config item.
+        let owner_id = Identifier::new([3u8; 32]);
 
-        let id_v0 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v0(
-            &token_id,
-            &owner_id,
-            nonce,
-            item.u8_item_index(),
-        );
-        let id_v1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item.u8_item_index(),
-            Some(&serialize_item(&item)),
-        );
+        let t = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(100)));
+
+        let id_v0 = t
+            .calculate_action_id(owner_id, PlatformVersion::first())
+            .expect("expected action id");
+        let id_v1 = t
+            .calculate_action_id(owner_id, PlatformVersion::latest())
+            .expect("expected action id");
 
         assert_ne!(
             id_v0, id_v1,
@@ -344,30 +319,21 @@ mod tests {
     }
 
     #[test]
-    fn v1_action_id_identical_items_produces_same_id() {
+    fn v1_identical_items_produces_same_id_through_production_path() {
         // Sanity check: identical config items should produce the same
-        // action_id under v1.
-        let token_id = [2u8; 32];
-        let owner_id = [3u8; 32];
-        let nonce = 1u64;
+        // action_id under v1, through the production path.
+        let owner_id = Identifier::new([3u8; 32]);
+        let platform_version = PlatformVersion::latest();
 
-        let item1 = TokenConfigurationChangeItem::MaxSupply(Some(42));
-        let item2 = TokenConfigurationChangeItem::MaxSupply(Some(42));
+        let t1 = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(42)));
+        let t2 = make_transition(TokenConfigurationChangeItem::MaxSupply(Some(42)));
 
-        let id1 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item1.u8_item_index(),
-            Some(&serialize_item(&item1)),
-        );
-        let id2 = TokenConfigUpdateTransition::calculate_action_id_with_fields_v1(
-            &token_id,
-            &owner_id,
-            nonce,
-            item2.u8_item_index(),
-            Some(&serialize_item(&item2)),
-        );
+        let id1 = t1
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
+        let id2 = t2
+            .calculate_action_id(owner_id, platform_version)
+            .expect("expected action id");
 
         assert_eq!(
             id1, id2,
