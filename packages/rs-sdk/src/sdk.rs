@@ -980,14 +980,6 @@ impl SdkBuilder {
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
-                // Extract clones needed for health check before dapi is moved
-                #[cfg(not(target_arch = "wasm32"))]
-                let hc_address_list = dapi.address_list().clone();
-                #[cfg(not(target_arch = "wasm32"))]
-                let hc_pool = dapi.connection_pool().clone();
-                #[cfg(not(target_arch = "wasm32"))]
-                let hc_ca_cert = dapi.ca_certificate.clone();
-
                 #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
                 let mut sdk= Sdk{
                     network: self.network,
@@ -1038,22 +1030,7 @@ impl SdkBuilder {
 
                 #[cfg(not(target_arch = "wasm32"))]
                 if let Some(hc_config) = health_check_config {
-                    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                        let hc_cancel = sdk.cancel_token.child_token();
-                        let hc_token = hc_cancel.clone();
-                        *health_check_cancel.lock().expect("health_check_cancel mutex poisoned") = hc_cancel;
-                        // JoinHandle is intentionally dropped -- the task is governed
-                        // by the CancellationToken stored in health_check_cancel.
-                        drop(runtime.spawn(rs_dapi_client::health_check::run_health_check(
-                            hc_address_list,
-                            hc_pool,
-                            hc_config,
-                            hc_token,
-                            hc_ca_cert,
-                        )));
-                    } else {
-                        tracing::warn!("no Tokio runtime found, health check disabled");
-                    }
+                    sdk.start_health_check(hc_config);
                 }
 
                 sdk
