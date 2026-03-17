@@ -43,8 +43,10 @@ struct DashAddress {
             }
         }
 
-        // 2. Try base58 (Core address) - P2PKH
-        if let script = coreAddressToOutputScript(input) {
+        // 2. Try Core address — validate via Rust FFI (Base58Check + network)
+        let keyWalletNetwork: KeyWalletNetwork = (network == .mainnet) ? .mainnet : .testnet
+        if Address.validate(input, network: keyWalletNetwork),
+           let script = coreAddressToOutputScript(input) {
             return DashAddress(type: .core(script), displayString: input)
         }
 
@@ -70,16 +72,15 @@ struct DashAddress {
     }
 
     /// Convert a base58check Core address to P2PKH output script.
-    /// Returns nil if the address is invalid.
+    ///
+    /// Caller must validate the address first via `Address.validate()` (Rust FFI)
+    /// which handles Base58Check decoding, checksum verification, and network matching.
+    /// This method only extracts the pubkey hash and builds the script.
     static func coreAddressToOutputScript(_ address: String) -> Data? {
-        guard let decoded = Base58Check.decode(address) else { return nil }
-        // decoded = version(1 byte) + payload(20 bytes for P2PKH)
-        guard decoded.count == 21 else { return nil }
-        let versionByte = decoded[0]
-        let pubkeyHash = decoded.dropFirst()
-
-        // P2PKH version bytes: 0x4c (mainnet), 0x8c (testnet/regtest/devnet)
-        guard versionByte == 0x4c || versionByte == 0x8c else { return nil }
+        guard let decoded = Base58Decode.decode(address) else { return nil }
+        // decoded = version(1 byte) + payload(20 bytes for P2PKH) + checksum(4 bytes)
+        guard decoded.count == 25 else { return nil }
+        let pubkeyHash = decoded[1..<21]
 
         // Build P2PKH script: OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG
         var script = Data()
@@ -93,21 +94,20 @@ struct DashAddress {
     }
 }
 
-// MARK: - Base58Check
+// MARK: - Base58 Decode (raw)
 
-/// Minimal Base58Check decoder for Core address parsing
-enum Base58Check {
+/// Minimal Base58 decoder — only decodes the raw bytes.
+/// Checksum and network validation is done by Rust via Address.validate().
+private enum Base58Decode {
     private static let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
     static func decode(_ string: String) -> Data? {
-        // Decode base58
         var bigNum: [UInt8] = [0]
 
         for char in string {
             guard let index = alphabet.firstIndex(of: char) else { return nil }
             let digit = UInt8(alphabet.distance(from: alphabet.startIndex, to: index))
 
-            // Multiply bigNum by 58 and add digit
             var carry = UInt32(digit)
             for i in (0..<bigNum.count).reversed() {
                 let value = UInt32(bigNum[i]) * 58 + carry
@@ -120,16 +120,7 @@ enum Base58Check {
             }
         }
 
-        // Count leading '1's (zero bytes)
         let leadingZeros = string.prefix(while: { $0 == "1" }).count
-        let result = Data(repeating: 0, count: leadingZeros) + Data(bigNum)
-
-        // Verify checksum: last 4 bytes
-        guard result.count >= 4 else { return nil }
-        let payload = result.dropLast(4)
-        // Note: We skip checksum verification here for simplicity in a demo app.
-        // A production app would SHA256d the payload and compare to the checksum.
-
-        return Data(payload)
+        return Data(repeating: 0, count: leadingZeros) + Data(bigNum)
     }
 }
