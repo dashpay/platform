@@ -44,6 +44,9 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Sync height used for incremental resume (passed back to FFI).
     @Published var lastSyncHeight: UInt64 = 0
 
+    /// Last block height with recent address changes (for compaction detection).
+    @Published var lastKnownRecentBlock: UInt64 = 0
+
     /// Platform block time from the most recent sync (Unix seconds).
     @Published var lastSyncBlockTime: Date?
 
@@ -125,6 +128,7 @@ class PlatformBalanceSyncService: ObservableObject {
         checkpointHeight = 0
         chainTipHeight = 0
         lastSyncHeight = 0
+        lastKnownRecentBlock = 0
         lastSyncBlockTime = nil
         lastFoundAddresses = []
         lastMetrics = nil
@@ -186,6 +190,7 @@ class PlatformBalanceSyncService: ObservableObject {
             lastSyncHeight = result.newSyncHeight
             persistedSyncHeight = result.newSyncHeight
             if result.lastKnownRecentBlock > 0 {
+                lastKnownRecentBlock = result.lastKnownRecentBlock
                 persistedLastKnownRecentBlock = result.lastKnownRecentBlock
             }
             if result.checkpointHeight > 0 {

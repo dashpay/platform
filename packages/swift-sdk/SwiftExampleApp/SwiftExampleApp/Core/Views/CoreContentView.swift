@@ -194,6 +194,19 @@ var body: some View {
                         }
                     }
 
+                    // Last known recent block (for compaction detection)
+                    if platformBalanceSyncService.lastKnownRecentBlock > 0 {
+                        HStack {
+                            Text("Last Recent Block")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Block time
                     if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
                         HStack {
