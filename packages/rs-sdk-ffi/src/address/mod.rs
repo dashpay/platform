@@ -12,6 +12,7 @@ pub use transitions::*;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::blockdata::script::Script;
+use dash_sdk::drive::grovedb::operations::proof::GroveDBProof;
 use std::ffi::CString;
 
 /// Encode a P2PKH script pubkey as a bech32m platform address string (DIP-18).
@@ -126,4 +127,52 @@ pub unsafe extern "C" fn dash_sdk_script_to_platform_address_key(
     }
 
     false
+}
+
+/// Format a raw GroveDB proof as a human-readable string.
+///
+/// Decodes the proof bytes and uses GroveDBProof's Display implementation
+/// to produce a tree-structured visualization of the proof contents.
+///
+/// # Safety
+/// - `proof_bytes` must point to `proof_len` bytes
+/// - Returns a DashSDKResult whose `data` field is a heap-allocated C string.
+///   Free it with `dash_sdk_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_format_grovedb_proof(
+    proof_bytes: *const u8,
+    proof_len: u32,
+) -> DashSDKResult {
+    if proof_bytes.is_null() || proof_len == 0 {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "proof_bytes is null or empty".to_string(),
+        ));
+    }
+
+    let bytes = std::slice::from_raw_parts(proof_bytes, proof_len as usize);
+
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<{ 256 * 1024 * 1024 }>();
+
+    let grovedb_proof: GroveDBProof = match bincode::decode_from_slice(bytes, config) {
+        Ok((proof, _)) => proof,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Failed to decode GroveDB proof: {}", e),
+            ));
+        }
+    };
+
+    let formatted = format!("{}", grovedb_proof);
+
+    match CString::new(formatted) {
+        Ok(c_str) => DashSDKResult::success(c_str.into_raw() as *mut std::os::raw::c_void),
+        Err(_) => DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InternalError,
+            "Failed to create C string from formatted proof".to_string(),
+        )),
+    }
 }

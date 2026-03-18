@@ -606,6 +606,12 @@ private struct QueryCountBadge: View {
 
 struct ProofDetailView: View {
     let proofData: Data
+    @State private var formattedProof: String = "Decoding..."
+    @State private var copiedText: String?
+
+    private var proofHex: String {
+        proofData.map { String(format: "%02x", $0) }.joined()
+    }
 
     var body: some View {
         ScrollView {
@@ -619,24 +625,73 @@ struct ProofDetailView: View {
                         .font(.subheadline)
                 }
 
-                Text("Raw Hex")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                if !proofData.isEmpty {
+                    Text("Decoded Proof")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
 
-                Text(proofData.map { String(format: "%02x", $0) }.joined())
-                    .font(.system(.caption2, design: .monospaced))
-                    .textSelection(.enabled)
+                    Text(formattedProof)
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                } else {
+                    Text("No proof data available")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
             }
             .padding()
         }
         .navigationTitle("Recent Query Proof")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Copy") {
-                    UIPasteboard.general.string = proofData.map { String(format: "%02x", $0) }.joined()
+                Menu {
+                    Button("Copy Formatted") {
+                        UIPasteboard.general.string = formattedProof
+                    }
+                    Button("Copy Hex") {
+                        UIPasteboard.general.string = proofHex
+                    }
+                } label: {
+                    Image(systemName: "doc.on.doc")
                 }
             }
         }
+        .onAppear {
+            formatProof()
+        }
+    }
+
+    private func formatProof() {
+        guard !proofData.isEmpty else {
+            formattedProof = "No proof data"
+            return
+        }
+
+        // Call Rust FFI to format the GroveDB proof
+        let result = proofData.withUnsafeBytes { buffer -> DashSDKResult in
+            guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return DashSDKResult()
+            }
+            return dash_sdk_format_grovedb_proof(base, UInt32(proofData.count))
+        }
+
+        if let error = result.error {
+            let msg = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            formattedProof = "Failed to decode: \(msg)\n\nRaw hex:\n\(proofHex)"
+            return
+        }
+
+        guard let dataPtr = result.data else {
+            formattedProof = "No formatted output\n\nRaw hex:\n\(proofHex)"
+            return
+        }
+
+        let cStr = dataPtr.assumingMemoryBound(to: CChar.self)
+        formattedProof = String(cString: cStr)
+        dash_sdk_string_free(UnsafeMutablePointer(mutating: cStr))
     }
 }
 
