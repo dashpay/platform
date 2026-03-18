@@ -2,9 +2,14 @@ name: Book Preview (PR)
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - 'book/**'
       - '.github/workflows/book-preview.yml'
+
+  # Clean up when PR is closed/merged
+  pull_request_target:
+    types: [closed]
 
 permissions:
   contents: read
@@ -17,8 +22,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Deploy preview ─────────────────────────────────────────────────
   preview:
     name: Build & deploy book preview
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     environment:
       name: github-pages
@@ -50,7 +57,6 @@ jobs:
 
           # Copy current site if available
           if [ -d /tmp/current-site ]; then
-            # Extract the tar archive that GitHub Pages uses
             if [ -f /tmp/current-site/artifact.tar ]; then
               tar -xf /tmp/current-site/artifact.tar -C _site/ 2>/dev/null || true
             else
@@ -60,15 +66,6 @@ jobs:
 
           # Place the PR book in the preview subdirectory
           cp -r book/book/. _site/pr/${PR_NUM}/
-
-          # Create an index page for PR previews
-          cat > _site/pr/index.html << 'INDEXEOF'
-          <!DOCTYPE html>
-          <html><head><title>Book PR Previews</title></head>
-          <body><h1>Book PR Previews</h1>
-          <p>Preview deployments are available at <code>/pr/{number}/</code></p>
-          </body></html>
-          INDEXEOF
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -87,7 +84,6 @@ jobs:
             const pagesUrl = '${{ steps.deployment.outputs.page_url }}';
             const previewUrl = `${pagesUrl}pr/${prNumber}/`;
 
-            // Check if we already posted a preview comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -113,3 +109,50 @@ jobs:
                 body,
               });
             }
+
+  # ── Clean up on PR close/merge ─────────────────────────────────────
+  cleanup:
+    name: Remove preview on PR close
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+    steps:
+      - name: Download current Pages site
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: /tmp/current-site
+        continue-on-error: true
+
+      - name: Remove PR preview directory
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          mkdir -p _site
+
+          # Extract current site
+          if [ -d /tmp/current-site ]; then
+            if [ -f /tmp/current-site/artifact.tar ]; then
+              tar -xf /tmp/current-site/artifact.tar -C _site/ 2>/dev/null || true
+            else
+              cp -r /tmp/current-site/. _site/ 2>/dev/null || true
+            fi
+          fi
+
+          # Remove the PR preview
+          rm -rf _site/pr/${PR_NUM}
+          echo "Removed preview for PR #${PR_NUM}"
+
+          # If no more previews, remove the pr directory
+          if [ -d _site/pr ] && [ -z "$(ls -A _site/pr 2>/dev/null)" ]; then
+            rm -rf _site/pr
+            echo "Removed empty pr/ directory"
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
