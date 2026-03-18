@@ -232,8 +232,11 @@ mod tests {
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::BasicError(
-                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
-            )]
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 100);
+            }
         );
     }
 
@@ -246,8 +249,11 @@ mod tests {
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::BasicError(
-                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
-            )]
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 300);
+            }
         );
     }
 
@@ -260,8 +266,11 @@ mod tests {
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::BasicError(
-                BasicError::ShieldedEncryptedNoteSizeMismatchError(_)
-            )]
+                BasicError::ShieldedEncryptedNoteSizeMismatchError(e)
+            )] => {
+                assert_eq!(e.expected_size(), ENCRYPTED_NOTE_SIZE as u32);
+                assert_eq!(e.actual_size(), 0);
+            }
         );
     }
 
