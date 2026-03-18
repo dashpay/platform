@@ -52,6 +52,21 @@ ignore:
   - "packages/rs-platform-version/**"
   # Simple signer — thin test-only wrapper
   - "packages/simple-signer/src/**"
+  # gRPC service handler wrapping Core RPC calls — requires a running Dash
+  # Core node, not unit-testable
+  - "packages/rs-dapi/src/services/core_service.rs"
+  # Proof-verifier boilerplate — response type constructors, conversion impls,
+  # and unproved response handling
+  - "packages/rs-drive-proof-verifier/src/types.rs"
+  - "packages/rs-drive-proof-verifier/src/unproved.rs"
+  # SDK mock infrastructure — test-only scaffolding, not production logic
+  - "packages/rs-sdk/src/mock/**"
+  # Document-type property accessors — pure getter/setter trait implementations,
+  # same category as the state-transition accessors excluded above
+  - "packages/rs-dpp/src/data_contract/document_type/accessors/**"
+  # Core chain type wrappers — masternode entry structs, deserialization
+  # boilerplate, thin type aliases
+  - "packages/rs-dpp/src/core_types/**"
   # Infrastructure and glue code — binary entrypoints, gRPC/HTTP server setup,
   # external client wrappers, streaming plumbing, runtime context providers,
   # and replay/debugging tooling that are not unit-testable
