@@ -58,12 +58,12 @@ use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
     get_recent_address_balance_changes_request,
     get_recent_compacted_address_balance_changes_request, GetAddressesBranchStateRequest,
-    GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest, Proof,
 };
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
+use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, GroveBranchQueryResult, GroveTrunkQueryResult};
 use drive_proof_verifier::types::{
     PlatformAddressTrunkState, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
@@ -76,6 +76,11 @@ use tracing::{debug, trace};
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
+
+/// The subtree key for recent (per-block) address balances storage.
+/// Mirrors `drive::drive::saved_block_transactions::queries::ADDRESS_BALANCES_KEY_U8`
+/// which is gated behind the `server` feature.
+const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 
 // ── Context type for the shared algorithm ────────────────────────────
 
@@ -361,9 +366,9 @@ pub async fn sync_address_balances<P: AddressProvider>(
     };
 
     // Incremental catch-up from catch_up_from to chain tip.
-    // Always runs compacted + recent — compacted is needed when the gap
-    // exceeds 64 blocks (the platform compaction threshold), which can happen
-    // if the wallet resumes after hours/days within the 7-day full-rescan window.
+    // Queries recent first to get a proof, then checks if start_height still
+    // exists as a boundary in the recent tree. If it does, compacted is skipped.
+    // If not (compaction detected), compacted is fetched first, then recent applied.
     incremental_catch_up(
         sdk,
         &key_to_index,
@@ -382,26 +387,30 @@ pub async fn sync_address_balances<P: AddressProvider>(
 
 // ── Incremental catch-up (address-specific) ──────────────────────────
 
-/// Perform incremental block-based catch-up using compacted + recent address
-/// balance changes RPCs.
+/// Perform incremental block-based catch-up using recent + (optionally) compacted
+/// address balance changes RPCs.
 ///
-/// Always runs both phases:
+/// The function queries recent changes **first** to obtain a GroveDB proof, then
+/// uses [`Drive::verify_key_exists_as_boundary`] to check whether `start_height`
+/// still exists as a boundary key in the recent address balances tree. If it does,
+/// the compacted phase is skipped entirely — this is the common hot path for
+/// frequent 15-second re-syncs where only the recent zone has changed.
 ///
-/// - **Phase 1 (compacted)**: Paginated query (25-entry batches) covering the
-///   compacted range. If start_height is already in the recent zone the server
-///   returns empty and we exit immediately with one wasted round-trip. This is
-///   acceptable for correctness — the wallet may have been offline for hours but
-///   still within the 7-day full-rescan window, meaning compacted entries could
-///   exist between start_height and the recent zone.
+/// When the boundary check indicates that `start_height` has been compacted away
+/// (or when `start_height == 0`, indicating a first incremental after a tree scan),
+/// the compacted phase runs first with paginated queries (25-entry batches), then
+/// the already-fetched recent results are applied.
 ///
-/// - **Phase 2 (recent)**: Single non-paginated query. The recent (uncompacted)
-///   zone covers at most 64 blocks, which is well under the server limit of 100
-///   entries per request, so pagination is unnecessary.
+/// - **Phase 1 (recent, always first)**: Single non-paginated query via
+///   `fetch_with_metadata_and_proof`. The recent (uncompacted) zone covers at
+///   most 64 blocks, well under the server limit of 100 entries per request.
 ///
-/// **Planned optimization**: In a future PR, compaction detection via
-/// `key_exists_as_boundary` on the proof will allow skipping the compacted phase
-/// when the start_height is known to be within the recent zone (the common case
-/// for frequent 15-second re-syncs).
+/// - **Phase 2 (compacted, conditional)**: Paginated query (25-entry batches)
+///   covering the compacted range. Only runs when the boundary check detects that
+///   `start_height` was compacted away.
+///
+/// - **Phase 3 (apply recent)**: The recent results fetched in Phase 1 are applied
+///   after the (optional) compacted phase.
 ///
 /// Updates `result.found` with new balance values and sets `result.new_sync_height`.
 async fn incremental_catch_up<P: AddressProvider>(
@@ -421,157 +430,141 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     let mut current_height = start_height;
     let mut observed_tip_height = start_height;
-    let mut had_successful_query = false;
 
-    // Phase 1 — Compacted (historical) catch-up
-    // Platform compacts per-block entries every 64 blocks. We always query
-    // compacted first for correctness: if the wallet was offline for hours
-    // within the 7-day window, compacted entries may bridge the gap between
-    // start_height and the recent zone. When start_height is already in the
-    // recent zone the server returns empty and we exit after one round-trip.
-    loop {
-        let request = GetRecentCompactedAddressBalanceChangesRequest {
-            version: Some(
-                get_recent_compacted_address_balance_changes_request::Version::V0(
-                    get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
-                        start_block_height: current_height,
-                        prove: true,
-                    },
-                ),
-            ),
+    // Phase 1 — Query recent changes first (with proof for compaction detection)
+    //
+    // We query recent first so we can inspect the proof to determine whether
+    // the compacted phase is needed. The results are held and applied after
+    // the (optional) compacted phase to maintain correct ordering.
+    let recent_request = GetRecentAddressBalanceChangesRequest {
+        version: Some(get_recent_address_balance_changes_request::Version::V0(
+            get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                start_height,
+                prove: true,
+            },
+        )),
+    };
+
+    let (recent_changes, recent_metadata, recent_proof) =
+        match RecentAddressBalanceChanges::fetch_with_metadata_and_proof(
+            sdk,
+            recent_request,
+            Some(settings),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                // First query failed — server may not support incremental
+                // RPCs or may not have data for this height. Treat as
+                // "no incremental data available" rather than hard error.
+                debug!(
+                    "Recent address balance changes query failed (non-fatal): {}",
+                    e
+                );
+                result.new_sync_height = current_height.max(observed_tip_height);
+                return Ok(());
+            }
         };
 
-        let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
-            match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
-                sdk,
-                request,
-                Some(settings),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(e) if !had_successful_query => {
-                    // First query failed — server may not support incremental
-                    // RPCs or may not have data for this height. Treat as
-                    // "no incremental data available" rather than hard error.
-                    debug!(
-                        "Compacted address balance changes query failed (non-fatal): {}",
-                        e
-                    );
-                    break;
-                }
-                Err(e) => return Err(e),
-            };
+    // The recent query succeeded — any subsequent query failures are real errors.
+    let had_successful_query = true;
 
-        let entries = match changes {
-            Some(c) => c.into_inner(),
-            None => break,
-        };
+    result.new_sync_timestamp = recent_metadata.time_ms / 1000;
+    result.metrics.recent_queries += 1;
 
-        result.new_sync_timestamp = metadata.time_ms / 1000;
-        result.metrics.compacted_queries += 1;
-        had_successful_query = true;
-        // Track the platform's chain tip from response metadata
-        if metadata.height > observed_tip_height {
-            observed_tip_height = metadata.height;
-        }
-
-        if entries.is_empty() {
-            break;
-        }
-
-        let entry_count = entries.len();
-
-        for entry in &entries {
-            for (platform_addr, credit_op) in &entry.changes {
-                let addr_bytes = platform_addr.to_bytes();
-                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
-                    let current_balance = result
-                        .found
-                        .get(&(*index, key.clone()))
-                        .map(|f| f.balance)
-                        .unwrap_or(0);
-
-                    let new_balance = match credit_op {
-                        BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                        BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                            let total_to_add: u64 = operations
-                                .iter()
-                                .filter(|(height, _)| **height >= current_height)
-                                .map(|(_, credits)| *credits)
-                                .fold(0u64, |acc, c| acc.saturating_add(c));
-                            current_balance.saturating_add(total_to_add)
-                        }
-                    };
-
-                    if new_balance != current_balance {
-                        let nonce = result
-                            .found
-                            .get(&(*index, key.clone()))
-                            .map(|f| f.nonce)
-                            .unwrap_or(0);
-                        let funds = AddressFunds {
-                            nonce,
-                            balance: new_balance,
-                        };
-                        result.found.insert((*index, key.clone()), funds);
-                        provider.on_address_found(*index, key, funds);
-                    }
-                }
-            }
-
-            if entry.end_block_height.saturating_add(1) > current_height {
-                current_height = entry.end_block_height.saturating_add(1);
-            }
-        }
-
-        if entry_count < COMPACTED_BATCH_LIMIT {
-            break;
-        }
+    if recent_metadata.height > observed_tip_height {
+        observed_tip_height = recent_metadata.height;
     }
 
-    // Phase 2 — Recent (per-block) changes
+    // Phase 2 — Determine whether compacted phase is needed
     //
-    // The recent zone covers at most 64 blocks, well under the server limit of
-    // 100 entries per request, so a single query suffices — no pagination loop
-    // needed. This is the common hot path for frequent 15-second re-syncs.
-    {
-        let request = GetRecentAddressBalanceChangesRequest {
-            version: Some(
-                get_recent_address_balance_changes_request::Version::V0(
-                    get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
-                        start_height: current_height,
-                        prove: true,
-                    },
-                ),
-            ),
-        };
-
-        let (changes, metadata): (Option<RecentAddressBalanceChanges>, _) =
-            match RecentAddressBalanceChanges::fetch_with_metadata(sdk, request, Some(settings))
-                .await
-            {
-                Ok(result) => result,
-                Err(e) if !had_successful_query => {
+    // Use the proof from the recent query to check if start_height still
+    // exists as a boundary key in the recent address balances tree. If it
+    // does, the compacted range is empty and we can skip it entirely.
+    let need_compacted = if start_height == 0 {
+        // First incremental after tree scan — always check compacted since
+        // we have no meaningful cursor to verify.
+        true
+    } else {
+        match check_compaction_from_proof(&recent_proof, start_height, sdk.version()) {
+            Ok(cursor_exists) => {
+                if cursor_exists {
                     debug!(
-                        "Recent address balance changes query failed (non-fatal): {}",
-                        e
+                        "Address sync: start_height {} exists as boundary in recent proof — skipping compacted phase",
+                        start_height
                     );
-                    result.new_sync_height = current_height.max(observed_tip_height);
-                    return Ok(());
+                    false
+                } else {
+                    debug!(
+                        "Address sync: start_height {} not found as boundary — running compacted phase",
+                        start_height
+                    );
+                    true
                 }
-                Err(e) => return Err(e),
+            }
+            Err(e) => {
+                // On error, be conservative and query compacted
+                debug!(
+                    "Address sync: boundary check failed ({}), falling back to compacted phase",
+                    e
+                );
+                true
+            }
+        }
+    };
+
+    // Phase 2b — Compacted (historical) catch-up (conditional)
+    if need_compacted {
+        loop {
+            let request = GetRecentCompactedAddressBalanceChangesRequest {
+                version: Some(
+                    get_recent_compacted_address_balance_changes_request::Version::V0(
+                        get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
+                            start_block_height: current_height,
+                            prove: true,
+                        },
+                    ),
+                ),
             };
 
-        if let Some(changes) = changes {
-            let entries = changes.into_inner();
+            let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
+                match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
+                    sdk,
+                    request,
+                    Some(settings),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(e) if !had_successful_query => {
+                        // First compacted query failed — treat as non-fatal.
+                        debug!(
+                            "Compacted address balance changes query failed (non-fatal): {}",
+                            e
+                        );
+                        break;
+                    }
+                    Err(e) => return Err(e),
+                };
+
+            let entries = match changes {
+                Some(c) => c.into_inner(),
+                None => break,
+            };
 
             result.new_sync_timestamp = metadata.time_ms / 1000;
-            result.metrics.recent_queries += 1;
+            result.metrics.compacted_queries += 1;
             // Track the platform's chain tip from response metadata
             if metadata.height > observed_tip_height {
                 observed_tip_height = metadata.height;
             }
+
+            if entries.is_empty() {
+                break;
+            }
+
+            let entry_count = entries.len();
 
             for entry in &entries {
                 for (platform_addr, credit_op) in &entry.changes {
@@ -584,9 +577,14 @@ async fn incremental_catch_up<P: AddressProvider>(
                             .unwrap_or(0);
 
                         let new_balance = match credit_op {
-                            CreditOperation::SetCredits(credits) => *credits,
-                            CreditOperation::AddToCredits(credits) => {
-                                current_balance.saturating_add(*credits)
+                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                                let total_to_add: u64 = operations
+                                    .iter()
+                                    .filter(|(height, _)| **height >= current_height)
+                                    .map(|(_, credits)| *credits)
+                                    .fold(0u64, |acc, c| acc.saturating_add(c));
+                                current_balance.saturating_add(total_to_add)
                             }
                         };
 
@@ -606,15 +604,90 @@ async fn incremental_catch_up<P: AddressProvider>(
                     }
                 }
 
-                if entry.block_height.saturating_add(1) > current_height {
-                    current_height = entry.block_height.saturating_add(1);
+                if entry.end_block_height.saturating_add(1) > current_height {
+                    current_height = entry.end_block_height.saturating_add(1);
                 }
+            }
+
+            if entry_count < COMPACTED_BATCH_LIMIT {
+                break;
+            }
+        }
+    }
+
+    // Phase 3 — Apply held recent results
+    //
+    // The recent results were fetched in Phase 1 but held back so that
+    // compacted entries (if any) are applied first in correct height order.
+    if let Some(changes) = recent_changes {
+        let entries = changes.into_inner();
+
+        for entry in &entries {
+            for (platform_addr, credit_op) in &entry.changes {
+                let addr_bytes = platform_addr.to_bytes();
+                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                    let current_balance = result
+                        .found
+                        .get(&(*index, key.clone()))
+                        .map(|f| f.balance)
+                        .unwrap_or(0);
+
+                    let new_balance = match credit_op {
+                        CreditOperation::SetCredits(credits) => *credits,
+                        CreditOperation::AddToCredits(credits) => {
+                            current_balance.saturating_add(*credits)
+                        }
+                    };
+
+                    if new_balance != current_balance {
+                        let nonce = result
+                            .found
+                            .get(&(*index, key.clone()))
+                            .map(|f| f.nonce)
+                            .unwrap_or(0);
+                        let funds = AddressFunds {
+                            nonce,
+                            balance: new_balance,
+                        };
+                        result.found.insert((*index, key.clone()), funds);
+                        provider.on_address_found(*index, key, funds);
+                    }
+                }
+            }
+
+            if entry.block_height.saturating_add(1) > current_height {
+                current_height = entry.block_height.saturating_add(1);
             }
         }
     }
 
     result.new_sync_height = current_height.max(observed_tip_height);
     Ok(())
+}
+
+/// Check whether `start_height` still exists as a boundary key in the recent
+/// address balances tree by inspecting the GroveDB proof.
+///
+/// Returns `true` if the key exists as a boundary element (meaning it has NOT
+/// been compacted away), `false` if it has been compacted away or was never
+/// present.
+fn check_compaction_from_proof(
+    proof: &Proof,
+    start_height: u64,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    let path: [&[u8]; 2] = [
+        &[RootTree::SavedBlockTransactions as u8],
+        &[ADDRESS_BALANCES_KEY_U8],
+    ];
+
+    Drive::verify_key_exists_as_boundary(
+        &proof.grovedb_proof,
+        &path,
+        &start_height.to_be_bytes(),
+        platform_version,
+    )
+    .map_err(Error::Drive)
 }
 
 // ── Branch query helper (address-specific) ───────────────────────────
