@@ -142,10 +142,13 @@ flowchart TD
 
     Incremental --> Recent
 
-    Recent["<b>Query Recent</b><br/>Single query - no pagination needed<br/>Recent tree max 64 blocks < 100 limit<br/><b>Hold results</b> - do not apply yet<br/>Record observed_tip from metadata"] --> CompCheck{"<b>Compaction Check</b><br/>key_exists_as_boundary<br/>on start_height in proof"}
+    Recent["<b>Query Recent</b><br/>Single query - no pagination needed<br/>Recent tree max 64 blocks < 100 limit<br/><b>Hold results</b> - do not apply yet<br/>Record observed_tip from metadata"] --> CompCheck{"<b>Compaction Check</b><br/>Has last_known_recent_block?"}
 
-    CompCheck -->|"Key exists as boundary<br/>No compaction happened"| ApplyRecent
-    CompCheck -->|"Key missing or<br/>start_height = 0"| Compacted
+    CompCheck -->|"Yes: use RangeAfter<br/>key_exists_as_boundary<br/>on last_known_recent_block"| BoundaryCheck{"Boundary exists<br/>in proof?"}
+    CompCheck -->|"No: first sync or<br/>empty recent tree"| Compacted
+
+    BoundaryCheck -->|"Yes: not compacted"| ApplyRecent
+    BoundaryCheck -->|"No: compacted away"| Compacted
 
     Compacted["<b>Query Compacted</b><br/>Paginated: 25 ranges per batch<br/>Aggregated block ranges with<br/>SetCredits or AddToCreditsOperations<br/>Apply immediately, advance height"] --> ApplyRecent
 
@@ -422,30 +425,34 @@ after compacted data if compaction occurred.
 
 ### Step 2: Detect Compaction via Proof
 
-The proof returned by the recent query contains Merkle boundary nodes. The wallet
-uses `key_exists_as_boundary` to check whether the `start_height` key still exists
-in the recent tree:
+The wallet tracks `last_known_recent_block` — the highest block height from the
+entries returned by the previous recent query. This is a block that was *actually
+present* in the recent tree.
+
+When `last_known_recent_block > 0`, the recent query uses **exclusive start**
+(`RangeAfter`) with that height. This causes the height to appear as a **boundary
+node** in the proof. The wallet then uses `key_exists_as_boundary` to check whether
+the block is still in the recent tree:
 
 ```rust
 let cursor_exists = Drive::verify_key_exists_as_boundary(
     proof,
-    &recent_tree_path,
-    start_height_key,
+    &[SavedBlockTransactions, ADDRESS_BALANCES_KEY],
+    &last_known_recent_block.to_be_bytes(),
     platform_version,
 )?;
 ```
 
-This works because the recent query uses an exclusive range (`RangeAfter`) where
-`start_height` appears as a boundary node in the proof, not as a result entry.
-
 | `cursor_exists` | Meaning | Action |
 |-----------------|---------|--------|
-| `true` | `start_height` still in recent tree — no compaction happened | Apply held recent results directly (Step 4) |
-| `false` | `start_height` was compacted away | Query compacted first (Step 3), then apply recent |
+| `true` | Block still in recent tree — no compaction happened | Apply held recent results directly (Step 4) |
+| `false` | Block was compacted away | Query compacted first (Step 3), then apply recent |
 
-**Special case:** On the first incremental catch-up after a tree scan (`start_height`
-comes from the checkpoint, not from a previous recent sync), always query compacted
-because there is no prior recent key to validate.
+**When `last_known_recent_block == 0`:** This occurs on the first sync after a tree
+scan, or when the recent tree had no entries (no platform address activity on chain).
+In this case, the query falls back to inclusive start (`RangeFrom`) and the compacted
+phase always runs. This is the safe default — the compacted query returns empty quickly
+if there is no compacted data.
 
 ### Step 3: Query Compacted (only if needed)
 
