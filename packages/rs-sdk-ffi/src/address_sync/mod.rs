@@ -383,11 +383,10 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         );
         let indices_slice = std::slice::from_raw_parts(address_indices, address_count as usize);
 
-        for i in 0..address_count as usize {
+        for (i, &index) in indices_slice.iter().enumerate() {
             let key_start = i * key_size as usize;
             let key_end = key_start + key_size as usize;
             let key = keys_slice[key_start..key_end].to_vec();
-            let index = indices_slice[i];
             pending.insert(index, key);
         }
     }
@@ -411,12 +410,12 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         let kb_amounts =
             std::slice::from_raw_parts(known_balance_amounts, known_balance_count as usize);
 
-        for i in 0..known_balance_count as usize {
+        for (i, &index) in kb_indices.iter().enumerate() {
             let key_start = i * key_size as usize;
             let key_end = key_start + key_size as usize;
             let key = kb_keys_slice[key_start..key_end].to_vec();
             known_balances.push((
-                kb_indices[i],
+                index,
                 key,
                 AddressFunds {
                     nonce: kb_nonces[i],
