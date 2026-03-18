@@ -10,7 +10,7 @@ pub use block_time::BlockTime;
 pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
 pub use manager::PlatformWalletManager;
-pub use wallet::core::CoreWallet;
+pub use wallet::core::{CoreAccountSummary, CoreAddressInfo, CoreWallet};
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
 pub use wallet::identity::IdentityManager;

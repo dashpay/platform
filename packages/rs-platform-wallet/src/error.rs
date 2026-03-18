@@ -47,4 +47,7 @@ pub enum PlatformWalletError {
         network: Network,
         account_index: u32,
     },
+
+    #[error("Asset lock transaction failed: {0}")]
+    AssetLockTransaction(String),
 }

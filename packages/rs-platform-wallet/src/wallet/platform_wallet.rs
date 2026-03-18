@@ -111,6 +111,7 @@ impl PlatformWallet {
             sdk: sdk.clone(),
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
+            network,
         };
 
         Self {
