@@ -130,6 +130,14 @@ async fn health_check_loop(
                 &mut stop,
             )
             .await;
+
+            // FIX 1: If cancellation was consumed inside probe_and_update_batch,
+            // the fused future is now terminated and the outer select_biased!
+            // would skip it, making the loop unkillable. Break explicitly.
+            if stop.is_terminated() {
+                tracing::debug!("health check cancelled during probing");
+                break;
+            }
         }
 
         let sleep_duration = match address_list.get_next_ban_expiry() {
@@ -186,7 +194,14 @@ async fn probe_and_update_batch(
                         }
                     }
                     Err(error) => {
-                        address_list.ban(address);
+                        // Only ban on first failure; don't escalate already-banned nodes.
+                        // The health check re-probes on every cycle, and each ban() call
+                        // increments ban_count with exponential backoff. Without this guard,
+                        // deterministic re-probing drives ban duration to absurd levels
+                        // (e.g. 112 days after 12 cycles).
+                        if !address_list.is_banned(address) {
+                            address_list.ban(address);
+                        }
                         tracing::debug!(%address, error = %error, "health check: node is unhealthy, banned");
                     }
                 }
@@ -397,6 +412,47 @@ mod tests {
             probe_settings.retries, 0,
             "probe settings must have retries=0 for fast failure detection"
         );
+    }
+
+    /// FIX-1: Verify that cancellation during active probing (not just during sleep)
+    /// actually stops the loop. Before the fix, FusedFuture termination inside
+    /// probe_and_update_batch made the outer loop skip the stop branch, running forever.
+    #[tokio::test]
+    async fn test_cancel_during_active_probing_stops_loop() {
+        let mut address_list = AddressList::new();
+        // Use multiple slow-to-probe addresses so probing takes a while
+        for port in 1..=5 {
+            let addr: Address = format!("http://192.0.2.1:{}", port).parse().unwrap();
+            address_list.add(addr);
+        }
+
+        let pool = ConnectionPool::new(10);
+        let config = HealthCheckConfig {
+            // Long timeout so probing is still in-flight when we cancel
+            probe_timeout: Duration::from_secs(10),
+            max_concurrent_probes: 1,
+            no_ban_idle_period: Duration::from_secs(300),
+        };
+        let cancel_token = CancellationToken::new();
+
+        let ct = cancel_token.clone();
+        let al = address_list.clone();
+
+        let handle = tokio::spawn(async move {
+            run_health_check(al, pool, config, cancel_token, None).await;
+        });
+
+        // Cancel while probing is in-flight (not during the sleep phase)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        ct.cancel();
+
+        // If the fix is missing, the loop becomes a zombie and this will timeout
+        let result = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        assert!(
+            result.is_ok(),
+            "health check must stop within 5s when cancelled during active probing"
+        );
+        result.unwrap().unwrap();
     }
 
     /// QA-004: Verify cancel_token stops the loop even when addresses have active bans

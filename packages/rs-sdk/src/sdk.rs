@@ -463,8 +463,17 @@ impl Sdk {
     /// If a health check is already running, it is stopped first.
     /// All `Sdk` clones share the same state, so starting from any clone
     /// starts it for all of them.
+    ///
+    /// The mutex is held for the entire operation to prevent concurrent calls
+    /// from orphaning tasks.
     pub fn start_health_check(&self, config: rs_dapi_client::HealthCheckConfig) {
-        self.stop_health_check();
+        let mut cancel_guard = self
+            .health_check_cancel
+            .lock()
+            .expect("health_check_cancel mutex poisoned");
+
+        // Stop existing health check (atomic: no mutex release between stop and start)
+        cancel_guard.cancel();
 
         let new_cancel = self.cancel_token.child_token();
 
@@ -478,14 +487,11 @@ impl Sdk {
             #[cfg(target_arch = "wasm32")]
             let hc_ca_cert: Option<()> = None;
 
-            *self
-                .health_check_cancel
-                .lock()
-                .expect("health_check_cancel mutex poisoned") = new_cancel;
-
             #[cfg(not(target_arch = "wasm32"))]
             {
                 if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                    *cancel_guard = new_cancel;
+                    drop(cancel_guard);
                     drop(
                         runtime.spawn(rs_dapi_client::health_check::run_health_check(
                             hc_address_list,
@@ -496,12 +502,17 @@ impl Sdk {
                         )),
                     );
                 } else {
+                    // No runtime: don't store the token so is_health_check_running()
+                    // correctly returns false.
+                    drop(cancel_guard);
                     tracing::warn!("no Tokio runtime found, cannot start health check");
                 }
             }
 
             #[cfg(target_arch = "wasm32")]
             {
+                *cancel_guard = new_cancel;
+                drop(cancel_guard);
                 wasm_bindgen_futures::spawn_local(rs_dapi_client::health_check::run_health_check(
                     hc_address_list,
                     hc_pool,
