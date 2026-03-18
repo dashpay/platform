@@ -36,6 +36,11 @@ pub struct HealthCheckConfig {
     pub max_concurrent_probes: usize,
     /// How long to sleep when no bans exist to watch. Default: 59 seconds
     /// (1 second less than the default base ban period, so the watcher wakes before bans expire).
+    ///
+    /// **Important:** This value must be less than the effective ban duration for the
+    /// re-probe-before-reuse guarantee to hold. If you use a custom `AddressList` base ban
+    /// period shorter than this value, nodes may re-enter rotation before the health check
+    /// can re-probe them. Adjust accordingly.
     pub no_ban_idle_period: Duration,
 }
 

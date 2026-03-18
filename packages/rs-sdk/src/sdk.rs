@@ -492,15 +492,26 @@ impl Sdk {
                 if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                     *cancel_guard = new_cancel;
                     drop(cancel_guard);
-                    drop(
-                        runtime.spawn(rs_dapi_client::health_check::run_health_check(
-                            hc_address_list,
-                            hc_pool,
-                            config,
-                            hc_token,
-                            hc_ca_cert,
-                        )),
-                    );
+                    let hc_cancel_for_monitor = hc_token.clone();
+                    let handle = runtime.spawn(rs_dapi_client::health_check::run_health_check(
+                        hc_address_list,
+                        hc_pool,
+                        config,
+                        hc_token,
+                        hc_ca_cert,
+                    ));
+                    // Monitor task: logs panics and cancels the token so
+                    // is_health_check_running() reflects the actual state.
+                    drop(runtime.spawn(async move {
+                        if let Err(e) = handle.await {
+                            if e.is_panic() {
+                                tracing::error!("health check task panicked: {:?}", e);
+                            } else {
+                                tracing::warn!("health check task failed: {:?}", e);
+                            }
+                            hc_cancel_for_monitor.cancel();
+                        }
+                    }));
                 } else {
                     // No runtime: don't store the token so is_health_check_running()
                     // correctly returns false.
