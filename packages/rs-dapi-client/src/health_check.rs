@@ -199,15 +199,13 @@ async fn probe_and_update_batch(
                         }
                     }
                     Err(error) => {
-                        // Only ban on first failure; don't escalate already-banned nodes.
-                        // The health check re-probes on every cycle, and each ban() call
-                        // increments ban_count with exponential backoff. Without this guard,
-                        // deterministic re-probing drives ban duration to absurd levels
-                        // (e.g. 112 days after 12 cycles).
-                        if !address_list.is_banned(address) {
-                            address_list.ban(address);
-                        }
-                        tracing::debug!(%address, error = %error, "health check: node is unhealthy, banned");
+                        // Reset ban without escalating: unban() clears ban_count to 0,
+                        // then ban() sets ban_count=1 with a fresh base-period duration.
+                        // This prevents deterministic re-probing from driving exponential
+                        // backoff to absurd levels, while still keeping dead nodes banned.
+                        address_list.unban(address);
+                        address_list.ban(address);
+                        tracing::debug!(%address, error = %error, "health check: node is unhealthy, re-banned");
                     }
                 }
             }
@@ -497,5 +495,51 @@ mod tests {
             "health check should have stopped within 5s after cancel"
         );
         result.unwrap().unwrap();
+    }
+
+    /// FIX-1 regression test: After a Phase 2 re-probe fails, the node must remain banned.
+    /// Before the fix, `!is_banned()` was always false for Phase 2 candidates (they all
+    /// have ban_count > 0), so `ban()` was never called and `banned_until` stayed at the
+    /// old expired timestamp -- making dead nodes live again.
+    #[tokio::test]
+    async fn test_phase2_reprobe_failure_rebans_node() {
+        let base_ban = Duration::from_millis(200);
+        let mut address_list = AddressList::with_settings(base_ban);
+        let addr: Address = "http://192.0.2.1:1".parse().unwrap();
+        address_list.add(addr.clone());
+
+        let pool = ConnectionPool::new(10);
+        let config = HealthCheckConfig {
+            probe_timeout: Duration::from_millis(100),
+            // Must be shorter than base_ban so the watcher wakes before the ban expires.
+            no_ban_idle_period: Duration::from_millis(50),
+            max_concurrent_probes: 10,
+        };
+        let cancel_token = CancellationToken::new();
+
+        let ct = cancel_token.clone();
+        let al = address_list.clone();
+
+        let handle = tokio::spawn(async move {
+            run_health_check(al, pool, config, cancel_token, None).await;
+        });
+
+        // Wait long enough for:
+        // - Phase 1 to probe and ban (~100ms timeout + overhead)
+        // - Ban to expire (~200ms base ban)
+        // - Phase 2 to re-probe the expired ban and re-ban (~100ms timeout + overhead)
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        ct.cancel();
+        handle.await.unwrap();
+
+        // The node must still be banned after the failed re-probe.
+        assert!(
+            address_list.is_banned(&addr),
+            "node must remain banned after failed Phase 2 re-probe"
+        );
+        assert!(
+            address_list.get_live_addresses().is_empty(),
+            "dead node must not appear in live addresses after Phase 2 re-probe"
+        );
     }
 }

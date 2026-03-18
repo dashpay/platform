@@ -138,6 +138,10 @@ pub struct Sdk {
     /// This is always a child of `cancel_token`, so SDK shutdown automatically cancels it.
     /// All clones share the same `Mutex` instance via `Arc`.
     health_check_cancel: Arc<std::sync::Mutex<CancellationToken>>,
+
+    /// Shared reference for tracking clone count.
+    /// When the last `Sdk` clone is dropped, background tasks are cancelled.
+    _shared_ref: Arc<()>,
 }
 impl Clone for Sdk {
     fn clone(&self) -> Self {
@@ -155,6 +159,18 @@ impl Clone for Sdk {
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
             health_check_cancel: Arc::clone(&self.health_check_cancel),
+            _shared_ref: Arc::clone(&self._shared_ref),
+        }
+    }
+}
+
+impl Drop for Sdk {
+    fn drop(&mut self) {
+        // Only cancel background tasks when the last Sdk instance is dropped.
+        // Arc::strong_count is not perfectly atomic, but for best-effort cleanup
+        // of background tasks this is sufficient.
+        if Arc::strong_count(&self._shared_ref) == 1 {
+            self.cancel_token.cancel();
         }
     }
 }
@@ -1032,6 +1048,7 @@ impl SdkBuilder {
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                     health_check_cancel: Arc::clone(&health_check_cancel),
+                    _shared_ref: Arc::new(()),
                 };
                 // if context provider is not set correctly (is None), it means we need to fall back to core wallet
                 if  sdk.context_provider.load().is_none() {
@@ -1103,6 +1120,7 @@ impl SdkBuilder {
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     health_check_cancel: Arc::clone(&health_check_cancel),
+                    _shared_ref: Arc::new(()),
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());
