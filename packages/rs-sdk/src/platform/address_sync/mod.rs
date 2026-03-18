@@ -76,8 +76,6 @@ use tracing::{debug, trace};
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
-/// Server limit for recent address balance changes per request.
-const RECENT_BATCH_LIMIT: usize = 100;
 
 // ── Context type for the shared algorithm ────────────────────────────
 
@@ -363,14 +361,13 @@ pub async fn sync_address_balances<P: AddressProvider>(
     };
 
     // Incremental catch-up from catch_up_from to chain tip.
-    // Always attempt compacted + recent — compacted is needed when the gap
+    // Always runs compacted + recent — compacted is needed when the gap
     // exceeds 64 blocks (the platform compaction threshold), which can happen
     // if the wallet resumes after hours/days within the 7-day full-rescan window.
     incremental_catch_up(
         sdk,
         &key_to_index,
         catch_up_from,
-        true, // use_compacted: always try, server returns empty if not needed
         provider,
         &mut result,
         config.request_settings,
@@ -388,12 +385,29 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// Perform incremental block-based catch-up using compacted + recent address
 /// balance changes RPCs.
 ///
+/// Always runs both phases:
+///
+/// - **Phase 1 (compacted)**: Paginated query (25-entry batches) covering the
+///   compacted range. If start_height is already in the recent zone the server
+///   returns empty and we exit immediately with one wasted round-trip. This is
+///   acceptable for correctness — the wallet may have been offline for hours but
+///   still within the 7-day full-rescan window, meaning compacted entries could
+///   exist between start_height and the recent zone.
+///
+/// - **Phase 2 (recent)**: Single non-paginated query. The recent (uncompacted)
+///   zone covers at most 64 blocks, which is well under the server limit of 100
+///   entries per request, so pagination is unnecessary.
+///
+/// **Planned optimization**: In a future PR, compaction detection via
+/// `key_exists_as_boundary` on the proof will allow skipping the compacted phase
+/// when the start_height is known to be within the recent zone (the common case
+/// for frequent 15-second re-syncs).
+///
 /// Updates `result.found` with new balance values and sets `result.new_sync_height`.
 async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
     key_to_index: &HashMap<AddressKey, AddressIndex>,
     start_height: u64,
-    use_compacted: bool,
     provider: &mut P,
     result: &mut AddressSyncResult,
     settings: RequestSettings,
@@ -410,13 +424,13 @@ async fn incremental_catch_up<P: AddressProvider>(
     let mut had_successful_query = false;
 
     // Phase 1 — Compacted (historical) catch-up
-    // Platform compacts per-block entries every 64 blocks. If the incremental
-    // catch-up starts from a height that's within the recent (uncompacted) zone,
-    // the compacted endpoint will return nothing useful. Skip it when
-    // needs_compacted is false to avoid a wasted network roundtrip.
-    if use_compacted {
-        loop {
-            let request = GetRecentCompactedAddressBalanceChangesRequest {
+    // Platform compacts per-block entries every 64 blocks. We always query
+    // compacted first for correctness: if the wallet was offline for hours
+    // within the 7-day window, compacted entries may bridge the gap between
+    // start_height and the recent zone. When start_height is already in the
+    // recent zone the server returns empty and we exit after one round-trip.
+    loop {
+        let request = GetRecentCompactedAddressBalanceChangesRequest {
             version: Some(
                 get_recent_compacted_address_balance_changes_request::Version::V0(
                     get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
@@ -427,117 +441,21 @@ async fn incremental_catch_up<P: AddressProvider>(
             ),
         };
 
-            let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
-                match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
-                    sdk,
-                    request,
-                    Some(settings),
-                )
-                .await
-                {
-                    Ok(result) => result,
-                    Err(e) if !had_successful_query => {
-                        // First query failed — server may not support incremental
-                        // RPCs or may not have data for this height. Treat as
-                        // "no incremental data available" rather than hard error.
-                        debug!(
-                            "Compacted address balance changes query failed (non-fatal): {}",
-                            e
-                        );
-                        break;
-                    }
-                    Err(e) => return Err(e),
-                };
-
-            let entries = match changes {
-                Some(c) => c.into_inner(),
-                None => break,
-            };
-
-            result.new_sync_timestamp = metadata.time_ms / 1000;
-            result.metrics.compacted_queries += 1;
-            had_successful_query = true;
-            // Track the platform's chain tip from response metadata
-            if metadata.height > observed_tip_height {
-                observed_tip_height = metadata.height;
-            }
-
-            if entries.is_empty() {
-                break;
-            }
-
-            let entry_count = entries.len();
-
-            for entry in &entries {
-                for (platform_addr, credit_op) in &entry.changes {
-                    let addr_bytes = platform_addr.to_bytes();
-                    if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
-                        let current_balance = result
-                            .found
-                            .get(&(*index, key.clone()))
-                            .map(|f| f.balance)
-                            .unwrap_or(0);
-
-                        let new_balance = match credit_op {
-                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                                let total_to_add: u64 = operations
-                                    .iter()
-                                    .filter(|(height, _)| **height >= current_height)
-                                    .map(|(_, credits)| *credits)
-                                    .fold(0u64, |acc, c| acc.saturating_add(c));
-                                current_balance.saturating_add(total_to_add)
-                            }
-                        };
-
-                        if new_balance != current_balance {
-                            let nonce = result
-                                .found
-                                .get(&(*index, key.clone()))
-                                .map(|f| f.nonce)
-                                .unwrap_or(0);
-                            let funds = AddressFunds {
-                                nonce,
-                                balance: new_balance,
-                            };
-                            result.found.insert((*index, key.clone()), funds);
-                            provider.on_address_found(*index, key, funds);
-                        }
-                    }
-                }
-
-                if entry.end_block_height.saturating_add(1) > current_height {
-                    current_height = entry.end_block_height.saturating_add(1);
-                }
-            }
-
-            if entry_count < COMPACTED_BATCH_LIMIT {
-                break;
-            }
-        }
-    } // if use_compacted
-
-    // Phase 2 — Recent (per-block) changes
-    loop {
-        let request = GetRecentAddressBalanceChangesRequest {
-            version: Some(
-                get_recent_address_balance_changes_request::Version::V0(
-                    get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
-                        start_height: current_height,
-                        prove: true,
-                    },
-                ),
-            ),
-        };
-
-        let (changes, metadata): (Option<RecentAddressBalanceChanges>, _) =
-            match RecentAddressBalanceChanges::fetch_with_metadata(sdk, request, Some(settings))
-                .await
+        let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
+            match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
+                sdk,
+                request,
+                Some(settings),
+            )
+            .await
             {
                 Ok(result) => result,
                 Err(e) if !had_successful_query => {
+                    // First query failed — server may not support incremental
+                    // RPCs or may not have data for this height. Treat as
+                    // "no incremental data available" rather than hard error.
                     debug!(
-                        "Recent address balance changes query failed (non-fatal): {}",
+                        "Compacted address balance changes query failed (non-fatal): {}",
                         e
                     );
                     break;
@@ -551,7 +469,7 @@ async fn incremental_catch_up<P: AddressProvider>(
         };
 
         result.new_sync_timestamp = metadata.time_ms / 1000;
-        result.metrics.recent_queries += 1;
+        result.metrics.compacted_queries += 1;
         had_successful_query = true;
         // Track the platform's chain tip from response metadata
         if metadata.height > observed_tip_height {
@@ -575,9 +493,14 @@ async fn incremental_catch_up<P: AddressProvider>(
                         .unwrap_or(0);
 
                     let new_balance = match credit_op {
-                        CreditOperation::SetCredits(credits) => *credits,
-                        CreditOperation::AddToCredits(credits) => {
-                            current_balance.saturating_add(*credits)
+                        BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                        BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                            let total_to_add: u64 = operations
+                                .iter()
+                                .filter(|(height, _)| **height >= current_height)
+                                .map(|(_, credits)| *credits)
+                                .fold(0u64, |acc, c| acc.saturating_add(c));
+                            current_balance.saturating_add(total_to_add)
                         }
                     };
 
@@ -597,13 +520,96 @@ async fn incremental_catch_up<P: AddressProvider>(
                 }
             }
 
-            if entry.block_height.saturating_add(1) > current_height {
-                current_height = entry.block_height.saturating_add(1);
+            if entry.end_block_height.saturating_add(1) > current_height {
+                current_height = entry.end_block_height.saturating_add(1);
             }
         }
 
-        if entry_count < RECENT_BATCH_LIMIT {
+        if entry_count < COMPACTED_BATCH_LIMIT {
             break;
+        }
+    }
+
+    // Phase 2 — Recent (per-block) changes
+    //
+    // The recent zone covers at most 64 blocks, well under the server limit of
+    // 100 entries per request, so a single query suffices — no pagination loop
+    // needed. This is the common hot path for frequent 15-second re-syncs.
+    {
+        let request = GetRecentAddressBalanceChangesRequest {
+            version: Some(
+                get_recent_address_balance_changes_request::Version::V0(
+                    get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                        start_height: current_height,
+                        prove: true,
+                    },
+                ),
+            ),
+        };
+
+        let (changes, metadata): (Option<RecentAddressBalanceChanges>, _) =
+            match RecentAddressBalanceChanges::fetch_with_metadata(sdk, request, Some(settings))
+                .await
+            {
+                Ok(result) => result,
+                Err(e) if !had_successful_query => {
+                    debug!(
+                        "Recent address balance changes query failed (non-fatal): {}",
+                        e
+                    );
+                    result.new_sync_height = current_height.max(observed_tip_height);
+                    return Ok(());
+                }
+                Err(e) => return Err(e),
+            };
+
+        if let Some(changes) = changes {
+            let entries = changes.into_inner();
+
+            result.new_sync_timestamp = metadata.time_ms / 1000;
+            result.metrics.recent_queries += 1;
+            // Track the platform's chain tip from response metadata
+            if metadata.height > observed_tip_height {
+                observed_tip_height = metadata.height;
+            }
+
+            for entry in &entries {
+                for (platform_addr, credit_op) in &entry.changes {
+                    let addr_bytes = platform_addr.to_bytes();
+                    if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                        let current_balance = result
+                            .found
+                            .get(&(*index, key.clone()))
+                            .map(|f| f.balance)
+                            .unwrap_or(0);
+
+                        let new_balance = match credit_op {
+                            CreditOperation::SetCredits(credits) => *credits,
+                            CreditOperation::AddToCredits(credits) => {
+                                current_balance.saturating_add(*credits)
+                            }
+                        };
+
+                        if new_balance != current_balance {
+                            let nonce = result
+                                .found
+                                .get(&(*index, key.clone()))
+                                .map(|f| f.nonce)
+                                .unwrap_or(0);
+                            let funds = AddressFunds {
+                                nonce,
+                                balance: new_balance,
+                            };
+                            result.found.insert((*index, key.clone()), funds);
+                            provider.on_address_found(*index, key, funds);
+                        }
+                    }
+                }
+
+                if entry.block_height.saturating_add(1) > current_height {
+                    current_height = entry.block_height.saturating_add(1);
+                }
+            }
         }
     }
 

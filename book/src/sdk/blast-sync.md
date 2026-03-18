@@ -223,28 +223,118 @@ tree.
 ## Phase 2: Incremental Catch-Up
 
 After the tree scan produces a snapshot at some checkpoint height, the wallet needs to
-catch up to the chain tip. This is done with two sub-phases:
+catch up to the chain tip. The incremental phase also runs on its own for frequent
+re-syncs (when the elapsed time since the last sync is within `full_rescan_after_time_s`,
+default 7 days).
 
-**Compacted changes** -- Historical balance/nullifier changes aggregated across block
-ranges. These cover the gap between the checkpoint height and recent history. Each
-response covers a range of blocks and contains the net changes.
+Platform stores per-block address balance changes in a "recent" tree. Every **64 blocks**
+(or 2048 address entries), these per-block entries are compacted into aggregated range
+entries covering the merged block span. The compacted entries have an expiration TTL
+and are eventually cleaned up. This means:
 
-**Recent changes** -- Per-block changes for the most recent blocks. These provide
-granular updates from where compacted changes left off to the chain tip.
+- The **recent tree** never has more than 64 block entries at any time.
+- The **compacted tree** contains historical aggregated ranges for blocks that were
+  compacted away from the recent tree.
 
 ```
   checkpoint_height                              chain_tip
         │                                            │
         ▼                                            ▼
   ──────┬────────────────────────────┬───────────────┤
-        │   Compacted changes        │ Recent changes│
-        │   (block ranges)           │ (per-block)   │
+        │   Compacted ranges         │ Recent blocks │
+        │   (aggregated, ≤25/page)   │ (per-block,   │
+        │   Only exist after         │  always ≤64)  │
+        │   compaction events        │               │
         └────────────────────────────┴───────────────┘
 ```
 
-On subsequent syncs, if the elapsed time since the last sync is within
-`full_rescan_after_time_s` (default: 7 days), the tree scan is skipped entirely and
-only the incremental catch-up runs. This makes frequent re-syncs very fast.
+### Step 1: Query Recent First
+
+The wallet always queries recent changes first:
+
+```rust
+GetRecentAddressBalanceChanges { start_height, prove: true }
+```
+
+Since the recent tree can never exceed 64 entries and the server limit is 100 per
+request, **one query always covers the entire uncompacted range**. No pagination is
+needed for recent changes.
+
+The response contains `Vec<BlockAddressBalanceChanges>`, where each entry has a
+`block_height` and a map of `PlatformAddress → CreditOperation` (either `SetCredits`
+or `AddToCredits`).
+
+**Important:** The results are held but not applied yet. They may need to be applied
+after compacted data if compaction occurred.
+
+### Step 2: Detect Compaction via Proof
+
+The proof returned by the recent query contains Merkle boundary nodes. The wallet
+uses `key_exists_as_boundary` to check whether the `start_height` key still exists
+in the recent tree:
+
+```rust
+let cursor_exists = Drive::verify_key_exists_as_boundary(
+    proof,
+    &recent_tree_path,
+    start_height_key,
+    platform_version,
+)?;
+```
+
+This works because the recent query uses an exclusive range (`RangeAfter`) where
+`start_height` appears as a boundary node in the proof, not as a result entry.
+
+| `cursor_exists` | Meaning | Action |
+|-----------------|---------|--------|
+| `true` | `start_height` still in recent tree — no compaction happened | Apply held recent results directly (Step 4) |
+| `false` | `start_height` was compacted away | Query compacted first (Step 3), then apply recent |
+
+**Special case:** On the first incremental catch-up after a tree scan (`start_height`
+comes from the checkpoint, not from a previous recent sync), always query compacted
+because there is no prior recent key to validate.
+
+### Step 3: Query Compacted (only if needed)
+
+Only runs when compaction is detected or on the first catch-up after a tree scan:
+
+```rust
+GetRecentCompactedAddressBalanceChanges { start_block_height, prove: true }
+```
+
+Returns `Vec<CompactedBlockAddressBalanceChanges>`, where each entry has:
+- `start_block_height` and `end_block_height` (the compacted range)
+- `changes: BTreeMap<PlatformAddress, BlockAwareCreditOperation>`
+  - `SetCredits(u64)` — absolute balance
+  - `AddToCreditsOperations(Vec<(height, credits)>)` — deltas by height
+
+The server returns up to 25 ranges per request. If the response contains exactly 25
+entries, the client paginates by setting `start_block_height = last_end_height + 1`
+and querying again.
+
+Compacted changes are applied to the result immediately, updating balances and
+advancing the pagination cursor.
+
+### Step 4: Apply Held Recent Results
+
+After compacted data (if any) is applied, the held recent results from Step 1 are
+processed:
+
+- For each `BlockAddressBalanceChanges` entry, for each address change, if the address
+  matches one of the wallet's target addresses, update the balance and call
+  `provider.on_address_found()`.
+- Advance `current_height` to `block_height + 1` for each processed entry.
+
+### Finalization
+
+```rust
+result.new_sync_height = max(current_height, observed_tip_height);
+result.new_sync_timestamp = latest_metadata.time_ms / 1000;
+```
+
+The caller persists `new_sync_height` and `new_sync_timestamp` for the next sync call.
+On the next incremental sync, `new_sync_height` becomes `start_height` for the recent
+query, and `new_sync_timestamp` determines whether a full tree rescan is needed.
 
 ## The TrunkBranchSyncOps Trait
 
