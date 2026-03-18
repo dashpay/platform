@@ -503,48 +503,44 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     // Phase 2 — Determine whether compacted phase is needed
     //
-    // When we used exclusive start (RangeAfter), the boundary height
-    // (last_known_recent_block) appears as a boundary node in the proof.
-    // We can check if it still exists to determine if compaction happened.
+    // Based on three values:
+    // 1. checkpoint_height: the tree scan snapshot height
+    // 2. last_recent_block: highest boundary in the recent proof (the actual
+    //    last block in the recent tree)
+    // 3. Whether boundaries exist at all
     //
-    // When we used inclusive start (RangeFrom) or start_height == 0,
-    // we cannot perform the boundary check — always run compacted.
-    let need_compacted = if !use_exclusive_start {
-        // No prior boundary to check (first sync, or recent tree was empty
-        // on previous sync). Use boundaries() to check if there's anything
-        // to compact. If the recent tree is empty, skip compacted.
-        match can_skip_compacted_from_proof(
-            &recent_proof,
-            0, // no specific key to check
-            result.checkpoint_height,
-            sdk.version(),
-        ) {
-            Ok(can_skip) => !can_skip,
-            Err(e) => {
+    // If last_recent_block >= checkpoint_height → recent covers the full range,
+    //   no compacted data can exist in the gap. Skip compacted.
+    // If last_recent_block < checkpoint_height → there's a gap that may contain
+    //   compacted data. Query compacted.
+    // If no boundaries → recent tree is empty, nothing to compact. Skip.
+    let need_compacted = match get_last_recent_block_from_proof(&recent_proof) {
+        Ok(Some(last_recent_block)) => {
+            if last_recent_block >= result.checkpoint_height {
                 debug!(
-                    "Address sync: boundary check failed ({}), falling back to compacted phase",
-                    e
+                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
+                    last_recent_block, result.checkpoint_height
+                );
+                false
+            } else {
+                debug!(
+                    "Address sync: last recent block {} < checkpoint {} — need compacted",
+                    last_recent_block, result.checkpoint_height
                 );
                 true
             }
         }
-    } else {
-        // Have a prior boundary key — check it specifically, with fallback
-        // to boundaries() for smarter detection.
-        match can_skip_compacted_from_proof(
-            &recent_proof,
-            last_known_recent_block,
-            result.checkpoint_height,
-            sdk.version(),
-        ) {
-            Ok(can_skip) => !can_skip,
-            Err(e) => {
-                debug!(
-                    "Address sync: boundary check failed ({}), falling back to compacted phase",
-                    e
-                );
-                true
-            }
+        Ok(None) => {
+            // No boundaries in recent tree → empty, nothing to compact
+            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
+            false
+        }
+        Err(e) => {
+            debug!(
+                "Address sync: boundary extraction failed ({}), running compacted to be safe",
+                e
+            );
+            true
         }
     };
 
@@ -717,31 +713,18 @@ async fn incremental_catch_up<P: AddressProvider>(
     Ok(())
 }
 
-/// Determine whether compaction has occurred by inspecting the GroveDB proof
-/// boundaries from the recent address balance changes query.
+/// Extract the highest block height from the recent tree boundaries in the proof.
 ///
-/// Uses a three-step check:
-/// 1. If `last_known_recent_block` exists as a boundary → no compaction, skip compacted.
-/// 2. If not, get ALL boundaries at the recent tree path using `boundaries()`.
-///    - If no boundaries → recent tree is empty, skip compacted.
-///    - If the highest boundary is before `checkpoint_height` → no compaction
-///      could have affected us, skip compacted.
-///    - If the highest boundary is >= `checkpoint_height` → compaction may have
-///      happened, need compacted query.
-///
-/// Returns `true` if compacted phase can be skipped, `false` if it should run.
-fn can_skip_compacted_from_proof(
-    proof: &Proof,
-    last_known_recent_block: u64,
-    checkpoint_height: u64,
-    _platform_version: &PlatformVersion,
-) -> Result<bool, Error> {
+/// Returns:
+/// - `Ok(Some(height))` — the highest block height found as a boundary
+/// - `Ok(None)` — no boundaries found (recent tree is empty)
+/// - `Err(...)` — proof decoding failed
+fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error> {
     let path: [&[u8]; 2] = [
         &[RootTree::SavedBlockTransactions as u8],
         &[ADDRESS_BALANCES_KEY_U8],
     ];
 
-    // Decode the GroveDB proof for boundary inspection
     let config = dpp::bincode::config::standard()
         .with_big_endian()
         .with_limit::<{ 256 * 1024 * 1024 }>();
@@ -749,41 +732,21 @@ fn can_skip_compacted_from_proof(
     let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
         dpp::bincode::decode_from_slice(&proof.grovedb_proof, config).map_err(|e| {
             Error::Protocol(dpp::ProtocolError::DecodingError(format!(
-                "Failed to decode GroveDB proof for boundaries: {}",
+                "Failed to decode GroveDB proof: {}",
                 e
             )))
         })?;
 
-    let path_refs: &[&[u8]] = &[path[0], path[1]];
-
-    // Step 1: If we have a specific boundary key, check it first
-    if last_known_recent_block > 0 {
-        let cursor_exists = grovedb_proof
-            .key_exists_as_boundary(path_refs, &last_known_recent_block.to_be_bytes())
-            .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
-
-        if cursor_exists {
-            debug!(
-                "Address sync: last_known_recent_block {} exists as boundary — skipping compacted",
-                last_known_recent_block
-            );
-            return Ok(true);
-        }
-    }
-
-    // Step 2: Get all boundaries at the recent tree path
     let all_boundaries = grovedb_proof
-        .boundaries(path_refs)
+        .boundaries(&[path[0], path[1]])
         .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
 
-    // No boundaries at all → recent tree is empty, nothing to compact
     if all_boundaries.is_empty() {
-        debug!("Address sync: no boundaries in recent tree — skipping compacted");
-        return Ok(true);
+        return Ok(None);
     }
 
     // Parse boundary keys as block heights (big-endian u64)
-    let max_boundary_height = all_boundaries
+    let max_height = all_boundaries
         .iter()
         .filter_map(|key| {
             if key.len() == 8 {
@@ -792,22 +755,9 @@ fn can_skip_compacted_from_proof(
                 None
             }
         })
-        .max()
-        .unwrap_or(0);
+        .max();
 
-    if max_boundary_height > 0 && max_boundary_height < checkpoint_height {
-        debug!(
-            "Address sync: highest boundary {} < checkpoint {} — no compaction could affect us, skipping compacted",
-            max_boundary_height, checkpoint_height
-        );
-        return Ok(true);
-    }
-
-    debug!(
-        "Address sync: highest boundary {} >= checkpoint {} — compaction may have occurred, running compacted",
-        max_boundary_height, checkpoint_height
-    );
-    Ok(false)
+    Ok(max_height)
 }
 
 // ── Branch query helper (address-specific) ───────────────────────────
