@@ -1,0 +1,115 @@
+name: Book Preview (PR)
+
+on:
+  pull_request:
+    paths:
+      - 'book/**'
+      - '.github/workflows/book-preview.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: book-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Build & deploy book preview
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build book
+        run: mdbook build book
+
+      - name: Download current Pages site
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: /tmp/current-site
+        continue-on-error: true
+
+      - name: Assemble preview site
+        run: |
+          PR_NUM=${{ github.event.pull_request.number }}
+          mkdir -p _site/pr/${PR_NUM}
+
+          # Copy current site if available
+          if [ -d /tmp/current-site ]; then
+            # Extract the tar archive that GitHub Pages uses
+            if [ -f /tmp/current-site/artifact.tar ]; then
+              tar -xf /tmp/current-site/artifact.tar -C _site/ 2>/dev/null || true
+            else
+              cp -r /tmp/current-site/. _site/ 2>/dev/null || true
+            fi
+          fi
+
+          # Place the PR book in the preview subdirectory
+          cp -r book/book/. _site/pr/${PR_NUM}/
+
+          # Create an index page for PR previews
+          cat > _site/pr/index.html << 'INDEXEOF'
+          <!DOCTYPE html>
+          <html><head><title>Book PR Previews</title></head>
+          <body><h1>Book PR Previews</h1>
+          <p>Preview deployments are available at <code>/pr/{number}/</code></p>
+          </body></html>
+          INDEXEOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Post preview link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const pagesUrl = '${{ steps.deployment.outputs.page_url }}';
+            const previewUrl = `${pagesUrl}pr/${prNumber}/`;
+
+            // Check if we already posted a preview comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const marker = '<!-- book-preview -->';
+            const existing = comments.find(c => c.body.includes(marker));
+            const body = `${marker}\n📖 **Book Preview:** ${previewUrl}\n\nUpdated at ${new Date().toISOString()}`;
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
