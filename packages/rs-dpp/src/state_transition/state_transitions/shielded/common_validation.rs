@@ -8,7 +8,7 @@ use crate::validation::SimpleConsensusValidationResult;
 
 /// Expected size of the encrypted_note field in each SerializedAction.
 /// This is epk (32) + enc_ciphertext (104) + out_ciphertext (80) = 216 bytes.
-/// Matches the ENCRYPTED_NOTE_SIZE constant in drive-abci's shielded_common module.
+/// Canonical source of truth — drive-abci imports this constant.
 pub const ENCRYPTED_NOTE_SIZE: usize = 216;
 
 /// Validate that the actions list is not empty and does not exceed the maximum.
