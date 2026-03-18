@@ -689,6 +689,10 @@ async fn incremental_catch_up<P: AddressProvider>(
     result.new_sync_height = current_height.max(observed_tip_height);
     // Store the highest block from the recent entries so the next sync can
     // use RangeAfter(this_height) for compaction detection.
+    // This MUST be a block that was actually in the recent tree entries —
+    // not the metadata tip — because the boundary check needs the key to
+    // exist in the tree. When the recent tree is empty (no address activity),
+    // this stays at 0 and the next sync falls back to RangeFrom (inclusive).
     result.last_known_recent_block = highest_recent_block;
     Ok(())
 }
