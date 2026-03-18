@@ -506,19 +506,9 @@ async fn incremental_catch_up<P: AddressProvider>(
     //
     // When we used inclusive start (RangeFrom) or start_height == 0,
     // we cannot perform the boundary check — always run compacted.
-    let need_compacted = if start_height == 0 {
-        // First incremental after tree scan — always check compacted
-        // to catch any gap between checkpoint and current tip.
-        true
-    } else if recent_entry_count == 0 && !use_exclusive_start {
-        // Subsequent sync: recent tree is empty AND we have no prior
-        // boundary. If the recent tree has zero address activity,
-        // compacted won't have anything newer either. Skip it.
-        debug!("Address sync: recent tree empty, no prior boundary — skipping compacted");
-        false
-    } else if !use_exclusive_start {
-        // Have a start_height but no boundary to check — run compacted
-        // to be safe (could have missed compacted entries).
+    let need_compacted = if !use_exclusive_start {
+        // No prior boundary to check (first sync, or recent tree was empty
+        // on previous sync). Run compacted to be safe.
         true
     } else {
         match check_compaction_from_proof(&recent_proof, last_known_recent_block, sdk.version()) {
