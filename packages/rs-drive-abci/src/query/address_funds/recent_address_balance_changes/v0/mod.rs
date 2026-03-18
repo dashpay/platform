@@ -21,6 +21,7 @@ impl<C> Platform<C> {
         GetRecentAddressBalanceChangesRequestV0 {
             start_height,
             prove,
+            start_height_exclusive,
         }: GetRecentAddressBalanceChangesRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
@@ -29,12 +30,21 @@ impl<C> Platform<C> {
         let limit = Some(100u16);
 
         let response = if prove {
-            let proof = self.drive.prove_recent_address_balance_changes(
-                start_height,
-                limit,
-                None,
-                platform_version,
-            )?;
+            let proof = if start_height_exclusive {
+                self.drive.prove_recent_address_balance_changes_after(
+                    start_height,
+                    limit,
+                    None,
+                    platform_version,
+                )?
+            } else {
+                self.drive.prove_recent_address_balance_changes(
+                    start_height,
+                    limit,
+                    None,
+                    platform_version,
+                )?
+            };
 
             let (grovedb_used, proof) =
                 self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
@@ -44,12 +54,21 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            let address_balance_changes = self.drive.fetch_recent_address_balance_changes(
-                start_height,
-                limit,
-                None,
-                platform_version,
-            )?;
+            let address_balance_changes = if start_height_exclusive {
+                self.drive.fetch_recent_address_balance_changes_after(
+                    start_height,
+                    limit,
+                    None,
+                    platform_version,
+                )?
+            } else {
+                self.drive.fetch_recent_address_balance_changes(
+                    start_height,
+                    limit,
+                    None,
+                    platform_version,
+                )?
+            };
 
             // Convert the fetched data to proto format
             let block_changes: Vec<BlockAddressBalanceChanges> = address_balance_changes
@@ -131,6 +150,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -170,6 +190,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -214,6 +235,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -259,6 +281,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -301,6 +324,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 200,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -332,6 +356,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: true,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -358,6 +383,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: true,
+            start_height_exclusive: false,
         };
 
         let result = platform
@@ -385,6 +411,7 @@ mod tests {
         let request = GetRecentAddressBalanceChangesRequestV0 {
             start_height: 0,
             prove: false,
+            start_height_exclusive: false,
         };
 
         let result = platform

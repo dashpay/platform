@@ -154,6 +154,13 @@ pub struct DashSDKAddressSyncResult {
     /// `dash_sdk_sync_address_balances`.
     pub new_sync_timestamp: u64,
 
+    /// The highest block height from the most recent per-block balance changes.
+    ///
+    /// Store this value and pass it as `last_known_recent_block` on the next
+    /// call to enable efficient compaction detection via boundary checks.
+    /// A value of 0 means no recent block was observed.
+    pub last_known_recent_block: u64,
+
     /// Metrics about the sync process
     pub metrics: DashSDKAddressSyncMetrics,
 }

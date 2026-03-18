@@ -207,6 +207,8 @@ struct BatchAddressProvider {
     known_balances: Vec<(AddressIndex, AddressKey, AddressFunds)>,
     /// Last sync height from the previous sync (for incremental catch-up resume).
     sync_height: u64,
+    /// Last known recent block height from the previous sync (for compaction detection).
+    last_known_recent_block: u64,
 }
 
 // SAFETY: BatchAddressProvider only contains owned data (no raw pointers or shared references)
@@ -247,6 +249,10 @@ impl AddressProvider for BatchAddressProvider {
     fn last_sync_height(&self) -> u64 {
         self.sync_height
     }
+
+    fn last_known_recent_block_height(&self) -> u64 {
+        self.last_known_recent_block
+    }
 }
 
 /// Synchronize address balances using a flat array of addresses (no callbacks).
@@ -270,6 +276,8 @@ impl AddressProvider for BatchAddressProvider {
 /// - `config`: Optional sync config (NULL for defaults)
 /// - `last_sync_height`: Height from previous sync result (0 if first sync)
 /// - `last_sync_timestamp`: 0 for full scan, or timestamp from previous sync
+/// - `last_known_recent_block`: Highest block from previous recent entries (0 if first sync).
+///   Enables compaction detection via boundary checks on the hot path.
 ///
 /// # Returns
 /// DashSDKResult containing DashSDKAddressSyncResult on success
@@ -295,6 +303,7 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
     config: *const DashSDKAddressSyncConfig,
     last_sync_height: u64,
     last_sync_timestamp: u64,
+    last_known_recent_block: u64,
 ) -> DashSDKResult {
     info!(
         "dash_sdk_sync_addresses_batch_with_result: called with {} addresses, key_size={}",
@@ -444,6 +453,7 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         highest_found: initial_highest_found,
         known_balances,
         sync_height: last_sync_height,
+        last_known_recent_block,
     };
 
     // Build request settings with shorter timeouts for mobile
@@ -571,6 +581,7 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         checkpoint_height: result.checkpoint_height,
         new_sync_height: result.new_sync_height,
         new_sync_timestamp: result.new_sync_timestamp,
+        last_known_recent_block: result.last_known_recent_block,
         metrics,
     }
 }

@@ -138,6 +138,10 @@ public struct AddressSyncResult: Sendable {
     public let newSyncHeight: UInt64
     /// New sync timestamp to persist for the next sync call.
     public let newSyncTimestamp: UInt64
+    /// Highest block from the most recent per-block balance changes.
+    /// Pass this back as `lastKnownRecentBlock` on the next sync call
+    /// to enable efficient compaction detection (0 if no recent blocks).
+    public let lastKnownRecentBlock: UInt64
     /// Sync metrics.
     public let metrics: AddressSyncMetrics
 
@@ -203,6 +207,7 @@ public struct AddressSyncResult: Sendable {
         self.checkpointHeight = ffi.checkpoint_height
         self.newSyncHeight = ffi.new_sync_height
         self.newSyncTimestamp = ffi.new_sync_timestamp
+        self.lastKnownRecentBlock = ffi.last_known_recent_block
         self.metrics = AddressSyncMetrics(ffi: ffi.metrics)
     }
 }

@@ -279,6 +279,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -421,6 +422,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: true,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1282,6 +1284,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1543,6 +1546,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1917,6 +1921,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -2581,6 +2586,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -2766,6 +2772,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -3147,6 +3154,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -4008,6 +4016,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: phase1_height + 1, // from where we left off
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -4236,6 +4245,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: compacted_max_end_height + 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -4308,6 +4318,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: phase3_height + 1, // beyond current tip
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -4478,6 +4489,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: phase5_height + 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };

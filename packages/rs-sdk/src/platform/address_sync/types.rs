@@ -124,6 +124,19 @@ pub struct AddressSyncResult {
     /// call to [`sync_address_balances`](super::sync_address_balances). The function compares it against the
     /// current wall-clock time to decide whether a full tree rescan is needed.
     pub new_sync_timestamp: u64,
+
+    /// The highest block height that was actually present in the most recent
+    /// batch of per-block address balance changes.
+    ///
+    /// On subsequent syncs, this height is used as the exclusive start for the
+    /// recent query (`RangeAfter`), causing it to appear as a boundary node in
+    /// the GroveDB proof. This enables `key_exists_as_boundary` to detect
+    /// whether the height has been compacted away.
+    ///
+    /// Store this value and return it from
+    /// [`AddressProvider::last_known_recent_block_height`] on the next call.
+    /// A value of `0` means no recent block has been observed yet.
+    pub last_known_recent_block: u64,
 }
 
 impl AddressSyncResult {
@@ -137,6 +150,7 @@ impl AddressSyncResult {
             checkpoint_height: 0,
             new_sync_height: 0,
             new_sync_timestamp: 0,
+            last_known_recent_block: 0,
         }
     }
 

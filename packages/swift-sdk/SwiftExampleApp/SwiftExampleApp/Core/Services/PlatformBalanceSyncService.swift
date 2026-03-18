@@ -85,6 +85,12 @@ class PlatformBalanceSyncService: ObservableObject {
         set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_blockTime") }
     }
 
+    /// Persisted last known recent block height (for compaction detection).
+    private var persistedLastKnownRecentBlock: UInt64 {
+        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_lastKnownRecent")) }
+        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_lastKnownRecent") }
+    }
+
     /// UserDefaults key prefix scoped to network.
     private var keyPrefix: String {
         "platformAddressSync_\(networkName)"
@@ -161,6 +167,7 @@ class PlatformBalanceSyncService: ObservableObject {
         lastSyncTimestamp = 0
         persistedSyncHeight = 0
         persistedBlockTime = 0
+        persistedLastKnownRecentBlock = 0
     }
 
     /// Trigger a manual sync (e.g. pull-to-refresh). No-op if already syncing.
@@ -198,7 +205,8 @@ class PlatformBalanceSyncService: ObservableObject {
                 addresses: addresses,
                 knownBalances: lastFoundAddresses,
                 lastSyncHeight: lastSyncHeight,
-                lastSyncTimestamp: lastSyncTimestamp
+                lastSyncTimestamp: lastSyncTimestamp,
+                lastKnownRecentBlock: persistedLastKnownRecentBlock
             )
 
             // Update published state
@@ -217,6 +225,9 @@ class PlatformBalanceSyncService: ObservableObject {
             lastFoundAddresses = result.found
             lastSyncHeight = result.newSyncHeight
             persistedSyncHeight = result.newSyncHeight
+            if result.lastKnownRecentBlock > 0 {
+                persistedLastKnownRecentBlock = result.lastKnownRecentBlock
+            }
             if result.checkpointHeight > 0 {
                 checkpointHeight = result.checkpointHeight
             }

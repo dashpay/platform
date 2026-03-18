@@ -366,13 +366,15 @@ pub async fn sync_address_balances<P: AddressProvider>(
     };
 
     // Incremental catch-up from catch_up_from to chain tip.
-    // Queries recent first to get a proof, then checks if start_height still
-    // exists as a boundary in the recent tree. If it does, compacted is skipped.
+    // Queries recent first to get a proof, then checks if the boundary height
+    // still exists in the recent tree. If it does, compacted is skipped.
     // If not (compaction detected), compacted is fetched first, then recent applied.
+    let last_known_recent_block = provider.last_known_recent_block_height();
     incremental_catch_up(
         sdk,
         &key_to_index,
         catch_up_from,
+        last_known_recent_block,
         provider,
         &mut result,
         config.request_settings,
@@ -391,15 +393,17 @@ pub async fn sync_address_balances<P: AddressProvider>(
 /// address balance changes RPCs.
 ///
 /// The function queries recent changes **first** to obtain a GroveDB proof, then
-/// uses [`Drive::verify_key_exists_as_boundary`] to check whether `start_height`
-/// still exists as a boundary key in the recent address balances tree. If it does,
-/// the compacted phase is skipped entirely — this is the common hot path for
+/// uses [`Drive::verify_key_exists_as_boundary`] to check whether the boundary
+/// height still exists in the recent address balances tree. If it does, the
+/// compacted phase is skipped entirely -- this is the common hot path for
 /// frequent 15-second re-syncs where only the recent zone has changed.
 ///
-/// When the boundary check indicates that `start_height` has been compacted away
-/// (or when `start_height == 0`, indicating a first incremental after a tree scan),
-/// the compacted phase runs first with paginated queries (25-entry batches), then
-/// the already-fetched recent results are applied.
+/// When `last_known_recent_block > 0`, the recent query uses **exclusive start**
+/// (`RangeAfter`) with that height. This causes the height to appear as a
+/// **boundary node** in the proof, which `key_exists_as_boundary` can detect.
+/// When `last_known_recent_block == 0`, the query falls back to inclusive start
+/// (`RangeFrom` on `start_height`) and the boundary check is skipped (compacted
+/// phase always runs).
 ///
 /// - **Phase 1 (recent, always first)**: Single non-paginated query via
 ///   `fetch_with_metadata_and_proof`. The recent (uncompacted) zone covers at
@@ -407,16 +411,18 @@ pub async fn sync_address_balances<P: AddressProvider>(
 ///
 /// - **Phase 2 (compacted, conditional)**: Paginated query (25-entry batches)
 ///   covering the compacted range. Only runs when the boundary check detects that
-///   `start_height` was compacted away.
+///   the cursor height was compacted away.
 ///
 /// - **Phase 3 (apply recent)**: The recent results fetched in Phase 1 are applied
 ///   after the (optional) compacted phase.
 ///
-/// Updates `result.found` with new balance values and sets `result.new_sync_height`.
+/// Updates `result.found` with new balance values and sets `result.new_sync_height`
+/// and `result.last_known_recent_block`.
 async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
     key_to_index: &HashMap<AddressKey, AddressIndex>,
     start_height: u64,
+    last_known_recent_block: u64,
     provider: &mut P,
     result: &mut AddressSyncResult,
     settings: RequestSettings,
@@ -433,14 +439,22 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     // Phase 1 — Query recent changes first (with proof for compaction detection)
     //
-    // We query recent first so we can inspect the proof to determine whether
-    // the compacted phase is needed. The results are held and applied after
-    // the (optional) compacted phase to maintain correct ordering.
+    // When we have a last_known_recent_block from a previous sync, use
+    // exclusive start (RangeAfter) so the boundary node appears in the proof.
+    // Otherwise fall back to inclusive start (RangeFrom) on start_height.
+    let use_exclusive_start = last_known_recent_block > 0;
+    let recent_query_height = if use_exclusive_start {
+        last_known_recent_block
+    } else {
+        start_height
+    };
+
     let recent_request = GetRecentAddressBalanceChangesRequest {
         version: Some(get_recent_address_balance_changes_request::Version::V0(
             get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
-                start_height,
+                start_height: recent_query_height,
                 prove: true,
+                start_height_exclusive: use_exclusive_start,
             },
         )),
     };
@@ -479,26 +493,28 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     // Phase 2 — Determine whether compacted phase is needed
     //
-    // Use the proof from the recent query to check if start_height still
-    // exists as a boundary key in the recent address balances tree. If it
-    // does, the compacted range is empty and we can skip it entirely.
-    let need_compacted = if start_height == 0 {
-        // First incremental after tree scan — always check compacted since
-        // we have no meaningful cursor to verify.
+    // When we used exclusive start (RangeAfter), the boundary height
+    // (last_known_recent_block) appears as a boundary node in the proof.
+    // We can check if it still exists to determine if compaction happened.
+    //
+    // When we used inclusive start (RangeFrom) or start_height == 0,
+    // we cannot perform the boundary check — always run compacted.
+    let need_compacted = if !use_exclusive_start || start_height == 0 {
+        // No prior recent block or first incremental — always check compacted
         true
     } else {
-        match check_compaction_from_proof(&recent_proof, start_height, sdk.version()) {
+        match check_compaction_from_proof(&recent_proof, last_known_recent_block, sdk.version()) {
             Ok(cursor_exists) => {
                 if cursor_exists {
                     debug!(
-                        "Address sync: start_height {} exists as boundary in recent proof — skipping compacted phase",
-                        start_height
+                        "Address sync: last_known_recent_block {} exists as boundary in recent proof — skipping compacted phase",
+                        last_known_recent_block
                     );
                     false
                 } else {
                     debug!(
-                        "Address sync: start_height {} not found as boundary — running compacted phase",
-                        start_height
+                        "Address sync: last_known_recent_block {} not found as boundary — running compacted phase",
+                        last_known_recent_block
                     );
                     true
                 }
@@ -619,10 +635,19 @@ async fn incremental_catch_up<P: AddressProvider>(
     //
     // The recent results were fetched in Phase 1 but held back so that
     // compacted entries (if any) are applied first in correct height order.
+    // We also track the highest block_height from recent entries to set
+    // last_known_recent_block for the next sync.
+    let mut highest_recent_block: u64 = 0;
+
     if let Some(changes) = recent_changes {
         let entries = changes.into_inner();
 
         for entry in &entries {
+            // Track the highest block height in recent entries
+            if entry.block_height > highest_recent_block {
+                highest_recent_block = entry.block_height;
+            }
+
             for (platform_addr, credit_op) in &entry.changes {
                 let addr_bytes = platform_addr.to_bytes();
                 if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
@@ -662,18 +687,24 @@ async fn incremental_catch_up<P: AddressProvider>(
     }
 
     result.new_sync_height = current_height.max(observed_tip_height);
+    // Store the highest block from the recent entries so the next sync can
+    // use RangeAfter(this_height) for compaction detection.
+    result.last_known_recent_block = highest_recent_block;
     Ok(())
 }
 
-/// Check whether `start_height` still exists as a boundary key in the recent
-/// address balances tree by inspecting the GroveDB proof.
+/// Check whether a boundary height still exists as a boundary key in the
+/// recent address balances tree by inspecting the GroveDB proof.
+///
+/// The `boundary_height` must have been used as the exclusive start of a
+/// `RangeAfter` query, so it appears as a boundary node in the proof.
 ///
 /// Returns `true` if the key exists as a boundary element (meaning it has NOT
 /// been compacted away), `false` if it has been compacted away or was never
 /// present.
 fn check_compaction_from_proof(
     proof: &Proof,
-    start_height: u64,
+    boundary_height: u64,
     platform_version: &PlatformVersion,
 ) -> Result<bool, Error> {
     let path: [&[u8]; 2] = [
@@ -684,7 +715,7 @@ fn check_compaction_from_proof(
     Drive::verify_key_exists_as_boundary(
         &proof.grovedb_proof,
         &path,
-        &start_height.to_be_bytes(),
+        &boundary_height.to_be_bytes(),
         platform_version,
     )
     .map_err(Error::Drive)

@@ -29,6 +29,8 @@ extension SDK {
     ///   - config: Sync configuration. Pass nil for defaults.
     ///   - lastSyncHeight: Height from the previous sync result (0 for first sync).
     ///   - lastSyncTimestamp: Timestamp from previous sync (0 for full scan).
+    ///   - lastKnownRecentBlock: Highest block from previous recent entries (0 for first sync).
+    ///     Enables efficient compaction detection via boundary checks.
     /// - Returns: AddressSyncResult with found/absent addresses and sync checkpoint.
     /// - Throws: SDKError on failure.
     public func syncAddressBalances(
@@ -37,7 +39,8 @@ extension SDK {
         knownBalances: [FoundAddress] = [],
         config: AddressSyncConfig? = nil,
         lastSyncHeight: UInt64 = 0,
-        lastSyncTimestamp: UInt64 = 0
+        lastSyncTimestamp: UInt64 = 0,
+        lastKnownRecentBlock: UInt64 = 0
     ) async throws -> AddressSyncResult {
         guard let sdkHandle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -97,6 +100,7 @@ extension SDK {
         let kbAmounts = tmpKbAmounts
         let syncHeight = lastSyncHeight
         let syncTimestamp = lastSyncTimestamp
+        let recentBlock = lastKnownRecentBlock
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
@@ -118,7 +122,7 @@ extension SDK {
                                         UnsafePointer(sdkPtr.ptr),
                                         keysBase, indicesBase, count, keySizeU32, gapLimit,
                                         kbKeysPtr, kbIndPtr, kbNonPtr, kbAmtPtr, kbCount,
-                                        cfgPtr, syncHeight, syncTimestamp
+                                        cfgPtr, syncHeight, syncTimestamp, recentBlock
                                     )
                                 }
                             } else {
@@ -126,7 +130,7 @@ extension SDK {
                                     UnsafePointer(sdkPtr.ptr),
                                     keysBase, indicesBase, count, keySizeU32, gapLimit,
                                     kbKeysPtr, kbIndPtr, kbNonPtr, kbAmtPtr, kbCount,
-                                    nil, syncHeight, syncTimestamp
+                                    nil, syncHeight, syncTimestamp, recentBlock
                                 )
                             }
                         }
