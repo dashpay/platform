@@ -107,7 +107,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
     // Parse configuration
     let network = match config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
     // Parse configuration
     let network = match base_config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
     // Parse configuration
     let network = match config.network {
-        DashSDKNetwork::SDKMainnet => Network::Dash,
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
         DashSDKNetwork::SDKTestnet => Network::Testnet,
         DashSDKNetwork::SDKRegtest => Network::Regtest,
         DashSDKNetwork::SDKDevnet => Network::Devnet,
@@ -383,7 +383,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
                 };
                 SdkBuilder::new(address_list).with_network(network)
             }
-            Network::Dash => {
+            Network::Mainnet => {
                 // Use mainnet addresses from WASM SDK
                 let default_addresses = [
                     "https://149.28.241.190:443",
@@ -631,7 +631,7 @@ pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashS
 
     let wrapper = &*(handle as *const SDKWrapper);
     match wrapper.sdk.network {
-        Network::Dash => DashSDKNetwork::SDKMainnet,
+        Network::Mainnet => DashSDKNetwork::SDKMainnet,
         Network::Testnet => DashSDKNetwork::SDKTestnet,
         Network::Regtest => DashSDKNetwork::SDKRegtest,
         Network::Devnet => DashSDKNetwork::SDKDevnet,
