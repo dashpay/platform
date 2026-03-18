@@ -239,8 +239,8 @@ var body: some View {
                             HStack(spacing: 12) {
                                 QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
                                 QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
-                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, color: .orange)
-                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, color: .green)
+                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
+                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
                             }
                         }
                     }
@@ -565,14 +565,22 @@ struct WalletRowView: View {
 private struct QueryCountBadge: View {
     let label: String
     let count: UInt32
+    var detail: UInt32 = 0
     let color: Color
 
     var body: some View {
         VStack(spacing: 2) {
-            Text("\(count)")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(count > 0 ? color : .secondary)
+            if detail > 0 {
+                Text("\(count)/\(detail)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(count > 0 ? color : .secondary)
+            } else {
+                Text("\(count)")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(count > 0 ? color : .secondary)
+            }
             Text(label)
                 .font(.caption2)
                 .foregroundColor(.secondary)

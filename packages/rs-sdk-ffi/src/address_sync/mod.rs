@@ -569,6 +569,8 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         iterations: result.metrics.iterations as u32,
         compacted_queries: result.metrics.compacted_queries as u32,
         recent_queries: result.metrics.recent_queries as u32,
+        recent_entries_returned: result.metrics.recent_entries_returned as u32,
+        compacted_entries_returned: result.metrics.compacted_entries_returned as u32,
     };
 
     DashSDKAddressSyncResult {

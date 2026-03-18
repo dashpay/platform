@@ -79,6 +79,12 @@ pub struct DashSDKAddressSyncMetrics {
 
     /// Number of recent incremental queries (per-block changes)
     pub recent_queries: u32,
+
+    /// Total block entries returned by recent queries (all addresses, not just ours)
+    pub recent_entries_returned: u32,
+
+    /// Total block entries returned by compacted queries
+    pub compacted_entries_returned: u32,
 }
 
 /// A found address with its balance (FFI-compatible)

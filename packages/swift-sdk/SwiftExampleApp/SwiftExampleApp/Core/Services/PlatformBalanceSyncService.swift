@@ -61,6 +61,8 @@ class PlatformBalanceSyncService: ObservableObject {
     @Published var totalBranchQueries: UInt32 = 0
     @Published var totalCompactedQueries: UInt32 = 0
     @Published var totalRecentQueries: UInt32 = 0
+    @Published var totalRecentEntries: UInt32 = 0
+    @Published var totalCompactedEntries: UInt32 = 0
 
     /// Last error message, cleared on successful sync.
     @Published var lastError: String?
@@ -139,6 +141,8 @@ class PlatformBalanceSyncService: ObservableObject {
         totalBranchQueries = 0
         totalCompactedQueries = 0
         totalRecentQueries = 0
+        totalRecentEntries = 0
+        totalCompactedEntries = 0
         // Clear persisted state so next sync does a full tree scan
         lastSyncTimestamp = 0
         persistedSyncHeight = 0
@@ -209,6 +213,8 @@ class PlatformBalanceSyncService: ObservableObject {
             totalBranchQueries += result.metrics.branchQueries
             totalCompactedQueries += result.metrics.compactedQueries
             totalRecentQueries += result.metrics.recentQueries
+            totalRecentEntries += result.metrics.recentEntriesReturned
+            totalCompactedEntries += result.metrics.compactedEntriesReturned
 
             // Persist sync checkpoint for incremental mode
             if result.newSyncTimestamp > 0 {

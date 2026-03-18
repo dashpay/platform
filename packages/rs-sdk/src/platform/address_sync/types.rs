@@ -200,6 +200,12 @@ pub struct AddressSyncMetrics {
 
     /// Number of recent incremental queries.
     pub recent_queries: usize,
+
+    /// Total block entries returned by recent queries (all addresses, not just ours).
+    pub recent_entries_returned: usize,
+
+    /// Total block entries returned by compacted queries.
+    pub compacted_entries_returned: usize,
 }
 
 impl AddressSyncMetrics {

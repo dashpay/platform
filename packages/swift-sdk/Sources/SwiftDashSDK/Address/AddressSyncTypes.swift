@@ -112,6 +112,10 @@ public struct AddressSyncMetrics: Sendable {
     public let compactedQueries: UInt32
     /// Number of recent incremental queries (per-block changes).
     public let recentQueries: UInt32
+    /// Total block entries returned by recent queries (all addresses, not just ours).
+    public let recentEntriesReturned: UInt32
+    /// Total block entries returned by compacted queries.
+    public let compactedEntriesReturned: UInt32
 
     init(ffi: FFIAddressSyncMetrics) {
         self.trunkQueries = ffi.trunk_queries
@@ -121,6 +125,8 @@ public struct AddressSyncMetrics: Sendable {
         self.iterations = ffi.iterations
         self.compactedQueries = ffi.compacted_queries
         self.recentQueries = ffi.recent_queries
+        self.recentEntriesReturned = ffi.recent_entries_returned
+        self.compactedEntriesReturned = ffi.compacted_entries_returned
     }
 }
 

@@ -581,6 +581,7 @@ async fn incremental_catch_up<P: AddressProvider>(
             }
 
             let entry_count = entries.len();
+            result.metrics.compacted_entries_returned += entry_count;
 
             for entry in &entries {
                 for (platform_addr, credit_op) in &entry.changes {
@@ -641,6 +642,7 @@ async fn incremental_catch_up<P: AddressProvider>(
 
     if let Some(changes) = recent_changes {
         let entries = changes.into_inner();
+        result.metrics.recent_entries_returned += entries.len();
 
         for entry in &entries {
             // Track the highest block height in recent entries
