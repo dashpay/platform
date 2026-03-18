@@ -249,6 +249,14 @@ pub fn validate_nullifiers(
         }
     }
     // Phase 2: Check against state via Drive method
+    //
+    // SAFETY: No cross-transaction double-spend risk within a block. State
+    // transitions are processed sequentially: each transition's nullifier
+    // insertions are applied to the GroveDB transaction (via apply_batch)
+    // before the next transition's validation runs. GroveDB supports
+    // read-your-own-writes, so this lookup sees nullifiers from all prior
+    // transitions in the same block. The insert_only_known_to_not_already_exist_op
+    // provides an additional safety net at batch application time.
     for nullifier in nullifiers {
         let exists = drive
             .has_nullifier(nullifier, transaction, drive_operations, platform_version)

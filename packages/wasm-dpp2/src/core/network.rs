@@ -113,7 +113,7 @@ impl TryFrom<&JsValue> for NetworkWasm {
 impl From<NetworkWasm> for Network {
     fn from(network: NetworkWasm) -> Self {
         match network {
-            NetworkWasm::Mainnet => Network::Dash,
+            NetworkWasm::Mainnet => Network::Mainnet,
             NetworkWasm::Testnet => Network::Testnet,
             NetworkWasm::Devnet => Network::Devnet,
             NetworkWasm::Regtest => Network::Regtest,
@@ -124,7 +124,7 @@ impl From<NetworkWasm> for Network {
 impl From<Network> for NetworkWasm {
     fn from(network: Network) -> Self {
         match network {
-            Network::Dash => NetworkWasm::Mainnet,
+            Network::Mainnet => NetworkWasm::Mainnet,
             Network::Testnet => NetworkWasm::Testnet,
             Network::Devnet => NetworkWasm::Devnet,
             Network::Regtest => NetworkWasm::Regtest,

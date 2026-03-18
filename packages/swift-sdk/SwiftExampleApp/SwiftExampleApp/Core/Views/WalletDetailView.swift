@@ -278,7 +278,7 @@ struct WalletInfoView: View {
                         Text(wallet.createdAt, style: .date)
                             .foregroundColor(.secondary)
                     }
-                    
+
                     HStack {
                         Text("Wallet ID")
                         Spacer()
@@ -385,22 +385,18 @@ struct WalletInfoView: View {
 
     private func loadAccountCounts() async {
         // TODO: This can probably be refactored now with with single network manager?
+        let count = walletService.walletManager.getAccounts(for: wallet).count
+
         if mainnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                mainnetAccountCount = list.count
-            }
+            mainnetAccountCount = count
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                testnetAccountCount = list.count
-            }
+            testnetAccountCount = count
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await walletService.walletManager.getAccounts(for: wallet) {
-                devnetAccountCount = list.count
-            }
+            devnetAccountCount = count
         } else { devnetAccountCount = nil }
     }
 
@@ -464,11 +460,11 @@ struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
-    
+
     var platformBalance: UInt64 {
         // Only sum balances of identities that belong to this specific wallet
         // and are on the same network
-        
+
         return unifiedAppState.platformState.identities
             .filter { identity in
                 // Check if identity belongs to this wallet and is on the same network
@@ -493,7 +489,7 @@ struct BalanceCardView: View {
                 Text("Wallet Balance")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
+
                 Text(balance.formattedTotal)
                     .font(.system(size: 36, weight: .bold, design: .rounded))
             }

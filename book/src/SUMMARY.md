@@ -42,6 +42,10 @@
 - [Platform Serialization](serialization/platform-serialization.md)
 - [Derive Macros](serialization/derive-macros.md)
 
+# Addresses
+
+- [Platform Addresses](addresses/platform-addresses.md)
+
 # Data Model
 
 - [Data Contracts](data-model/data-contracts.md)

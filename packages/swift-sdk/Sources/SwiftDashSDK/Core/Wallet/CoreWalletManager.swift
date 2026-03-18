@@ -18,11 +18,11 @@ public class CoreWalletManager: ObservableObject {
     private let sdkWalletManager: WalletManager
     private let modelContainer: ModelContainer
     private let storage = WalletStorage()
-    
+
     /// Initialize with a valid SPVClient instance
     init(spvClient: SPVClient, modelContainer: ModelContainer) throws {
         print("=== WalletManager.init START ===")
-        
+
         self.sdkWalletManager = try spvClient.getWalletManager()
         self.modelContainer = modelContainer
 
@@ -36,7 +36,7 @@ public class CoreWalletManager: ObservableObject {
     // MARK: - Wallet Management
     public func createWallet(label: String, mnemonic: String, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
-        
+
         print("Validating provided mnemonic...")
         guard SwiftDashSDK.Mnemonic.validate(mnemonic) else {
             print("Mnemonic validation failed")
@@ -80,7 +80,7 @@ public class CoreWalletManager: ObservableObject {
         // Create HDWallet model for SwiftUI
         let network = AppNetwork(network: sdkWalletManager.network)
         let wallet = HDWallet(walletId: walletId, serializedWalletBytes: serializedBytes, label: label, network: network, isImported: isImport)
-        
+
         do {
             let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonic)
             _ = try storage.storeSeed(seed, pin: pin)
@@ -88,14 +88,14 @@ public class CoreWalletManager: ObservableObject {
             print("Failed to store seed: \(error)")
             // Continue anyway - wallet is already created
         }
-        
+
         // Insert wallet into context ans save it
         modelContainer.mainContext.insert(wallet)
         try modelContainer.mainContext.save()
-        
+
         return wallet
-    } 
-    
+    }
+
     public func deleteWallet(_ wallet: HDWallet) async throws {
         let walletId = wallet.id
 
@@ -112,14 +112,14 @@ public class CoreWalletManager: ObservableObject {
         try modelContainer.mainContext.save()
         return wallet
     }
-    
+
     public func decryptSeed(_ encryptedSeed: Data?) -> Data? {
         // This method is used internally by other services
         // In a real implementation, this would decrypt using the current PIN
         // For now, return nil to indicate manual unlock is needed
         return nil
     }
-    
+
     public func changeWalletPIN(currentPIN: String, newPIN: String) async throws {
         // Retrieve seed with current PIN
         let seed = try storage.retrieveSeed(pin: currentPIN)
@@ -139,7 +139,7 @@ public class CoreWalletManager: ObservableObject {
     public func unlockWithBiometric() async throws -> Data {
         return try storage.retrieveSeedWithBiometric()
     }
-    
+
     // MARK: - Account Management
 
     /// Get transactions for a wallet
@@ -155,33 +155,45 @@ public class CoreWalletManager: ObservableObject {
             accountType: .standardBIP44
         )
 
-        // Get current height (TODO: get from SPV client when available)
-        let currentHeight: UInt32 = 0
-
-        return try! managedAccount.getTransactions(currentHeight: currentHeight)
+        return managedAccount.getTransactions()
     }
 
-    public func getBalance(for wallet: HDWallet, accountIndex: UInt32 = 0) -> Balance {
-        let managedAccount = try! sdkWalletManager.getManagedAccount(
-            walletId: wallet.walletId,
-            accountIndex: accountIndex,
-            accountType: .standardBIP44
+    public func getBalance(for wallet: HDWallet) -> Balance {
+        let accounts = self.getAccounts(for: wallet)
+
+        var confirmed: UInt64 = 0
+        var unconfirmed: UInt64 = 0
+        var immature: UInt64 = 0
+        var locked: UInt64 = 0
+
+        for account in accounts {
+            confirmed += account.balance.confirmed
+            unconfirmed += account.balance.unconfirmed
+            immature += account.balance.immature
+            locked += account.balance.locked
+        }
+
+        return Balance(
+            confirmed: confirmed,
+            unconfirmed: unconfirmed,
+            immature: immature,
+            locked: locked
         )
-        
-        return try! managedAccount.getBalance()
     }
-    
+
     public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
         return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
     }
-    
+
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
     ///   - accountInfo: The account info to get details for
     /// - Returns: Detailed account information
-    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) -> AccountDetailInfo? {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+
+        guard let collection else { return nil }
 
         // Resolve managed account from category and optional index
         var managed: ManagedAccount?
@@ -334,8 +346,11 @@ public class CoreWalletManager: ObservableObject {
     /// - Parameters:
     ///   - wallet: The wallet model
     /// - Returns: Account information including balances and address counts
-    public func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    public func getAccounts(for wallet: HDWallet) -> [AccountInfo] {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+
+        guard let collection else { return [] }
+
         var list: [AccountInfo] = []
 
         func counts(_ m: ManagedAccount) -> (Int, Int) {
@@ -348,63 +363,63 @@ public class CoreWalletManager: ObservableObject {
         // BIP44
         for idx in collection.getBIP44Indices() {
             if let m = collection.getBIP44Account(at: idx) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: b, addressCount: c))
             }
         }
         // BIP32 (5000+)
         for raw in collection.getBIP32Indices() {
             if let m = collection.getBIP32Account(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: b, addressCount: c))
             }
         }
         // CoinJoin (1000+)
         for raw in collection.getCoinJoinIndices() {
             if let m = collection.getCoinJoinAccount(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 var total = 0
                 if let p = m.getAddressPool(type: .single), let infos = try? p.getAddresses(from: 0, to: 1000) { total = infos.count }
-                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (total, 0), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: b, addressCount: (total, 0)))
             }
         }
         // Identity accounts
         if let m = collection.getIdentityRegistrationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityInvitationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityTopUpNotBoundAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: b, addressCount: (0, 0)))
         }
         for raw in collection.getIdentityTopUpIndices() {
             if let m = collection.getIdentityTopUpAccount(registrationIndex: raw) {
-                let b = try? m.getBalance()
-                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+                let b = m.getBalance()
+                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: b, addressCount: (0, 0)))
             }
         }
         // Provider
         if let m = collection.getProviderVotingKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOwnerKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOperatorKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderPlatformKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: b, addressCount: (0, 0)))
         }
 
         // Sort BIP44 by index first, then other types below
@@ -416,7 +431,7 @@ public class CoreWalletManager: ObservableObject {
         }
         return list
     }
-    
+
     // MARK: - Private Methods
 
     private func loadWallets() async {
@@ -428,9 +443,9 @@ public class CoreWalletManager: ObservableObject {
             self.error = WalletError.databaseError(error.localizedDescription)
             return
         }
-            
+
         // Try to import each wallet into the FFI wallet manager
-        // If it succeeds, we store the HDWallet for later querying. If it fails, 
+        // If it succeeds, we store the HDWallet for later querying. If it fails,
         // we log the error and remove that wallet from the database.
         for wallet in wallets {
             do {
@@ -443,7 +458,7 @@ public class CoreWalletManager: ObservableObject {
                 }
 
                 self.wallets.append(wallet)
-                
+
                 print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
             } catch {
                 modelContainer.mainContext.delete(wallet)
