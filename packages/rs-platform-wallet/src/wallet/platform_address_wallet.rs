@@ -44,34 +44,44 @@ impl PlatformAddressWallet {
 
         let target = PlatformP2PKHAddress::new(*hash);
 
-        let wallet_info = self.wallet_info.blocking_read();
-        let wallet = self.wallet.blocking_read();
-
-        // Search through all platform payment accounts for a matching address
-        for account in wallet_info.accounts.platform_payment_accounts.values() {
-            for addr_info in account.addresses.addresses.values() {
-                let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address) else {
-                    continue;
-                };
-                if pool_addr == target {
-                    // Found the matching address — derive the private key
-                    let secret_key = wallet
-                        .derive_private_key(&addr_info.path)
-                        .map_err(|e| {
-                            ProtocolError::Generic(format!(
-                                "Failed to derive private key for platform address: {}",
-                                e
-                            ))
-                        })?;
-                    return Ok(secret_key);
+        // Step 1: find the derivation path (only needs wallet_info lock)
+        let derivation_path = {
+            let wallet_info = self.wallet_info.blocking_read();
+            let mut found_path = None;
+            for account in wallet_info.accounts.platform_payment_accounts.values() {
+                for addr_info in account.addresses.addresses.values() {
+                    let Ok(pool_addr) =
+                        PlatformP2PKHAddress::from_address(&addr_info.address)
+                    else {
+                        continue;
+                    };
+                    if pool_addr == target {
+                        found_path = Some(addr_info.path.clone());
+                        break;
+                    }
+                }
+                if found_path.is_some() {
+                    break;
                 }
             }
-        }
+            found_path
+        }; // wallet_info lock dropped here
 
-        Err(ProtocolError::Generic(format!(
-            "Platform address {:?} not found in wallet",
-            platform_address
-        )))
+        let path = derivation_path.ok_or_else(|| {
+            ProtocolError::Generic(format!(
+                "Platform address {:?} not found in wallet",
+                platform_address
+            ))
+        })?;
+
+        // Step 2: derive the private key (only needs wallet lock)
+        let wallet = self.wallet.blocking_read();
+        wallet.derive_private_key(&path).map_err(|e| {
+            ProtocolError::Generic(format!(
+                "Failed to derive private key for platform address: {}",
+                e
+            ))
+        })
     }
 }
 

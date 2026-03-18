@@ -50,4 +50,13 @@ pub enum PlatformWalletError {
 
     #[error("Asset lock transaction failed: {0}")]
     AssetLockTransaction(String),
+
+    #[error("Transaction broadcast failed: {0}")]
+    TransactionBroadcast(String),
+
+    #[error("Transaction building failed: {0}")]
+    TransactionBuild(String),
+
+    #[error("Asset lock proof waiting failed: {0}")]
+    AssetLockProofWait(String),
 }

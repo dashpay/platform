@@ -67,9 +67,38 @@ date: 2026-03-13
 - PR #3375: dashcore rev update + `Network::Dash` → `Network::Mainnet` rename
 - PR #3376: Extract fetch helpers to fix HRTB Send inference
 
+---
+
+## PR-2 Status: Complete
+
+### What was delivered
+
+**Platform-wallet library** (`rs-platform-wallet`):
+- `CoreAddressInfo`, `CoreAccountSummary` types (`wallet/core/types.rs`)
+- Per-address methods: `all_address_info()`, `address_info()`, `account_summaries()`, `utxos_by_address()`
+- `Signer<PlatformAddress>` on `PlatformAddressWallet` — `blocking_read()` bridge with sequential lock acquisition (no dual-lock window), cached `network` field
+- Asset lock tx building: `build_registration_asset_lock_transaction()`, `build_topup_asset_lock_transaction()`, `build_asset_lock_transaction()` — DIP-9 key derivation, greedy UTXO selection, two-pass fee calc, `AssetLockPayload`, P2PKH signing
+- `broadcast_transaction()` via DAPI `BroadcastTransactionRequest`
+- `send_transaction()` — full payment flow (UTXO select with correct output count, overflow-safe amount sum, build, sign, broadcast)
+- `create_registration_asset_lock_proof()`, `create_topup_asset_lock_proof()` — build + broadcast + wait for proof via `Sdk::wait_for_asset_lock_proof_for_transaction()`
+- `build_and_broadcast_*` convenience methods
+- Error variants: `AssetLockTransaction`, `TransactionBroadcast`, `TransactionBuild`, `AssetLockProofWait`
+
+**Evo-tool integration** (`dash-evo-tool`):
+- 4 signing callsites migrated from old `Wallet` to `platform_wallet.platform()` as `Signer<PlatformAddress>` (transfer_platform_credits, withdraw_from_platform_address, fund_platform_address_from_asset_lock, top_up_identity_from_platform_addresses)
+- Asset lock creation tasks use CoreWallet with fallback to legacy (`try_build_registration_via_platform_wallet`, `try_build_topup_via_platform_wallet`)
+- Shared `broadcast_and_track_asset_lock` helper eliminates broadcast code duplication
+- Address table UI: cached snapshot pattern via `WalletTask::LoadAddressInfo` → `BackendTaskSuccessResult::AddressInfo` → `cached_address_info` in `WalletsBalancesScreen`
+- `CoreAddressInfo` re-exported in `platform_wallet_bridge.rs`
+
+**Review fixes applied:**
+- Fee estimation uses actual output count (not hardcoded 2)
+- `total_output` sum uses `checked_add` to prevent overflow
+- Signer drops `wallet_info` lock before acquiring `wallet` lock (no deadlock window)
+
 ### Next steps
 
-See detailed architecture in sections 1.3 (Core Wallet), 1.6 (Platform Addresses), 1.7 (Signing), and the PR Sequence section below.
+See PR-3 (IdentityWallet) in the PR Sequence section below.
 5. **Payment building**: `send_transaction()` requires coin selection, signing, broadcast via SPV or RPC.
 6. **SPV lifecycle**: `start_spv()` / `stop_spv()` are stubs — need network config wiring.
 
@@ -681,7 +710,7 @@ pub async fn create_asset_lock_proof(
 ) -> Result<(AssetLockProof, PrivateKey), CoreWalletError>
 ```
 
-`CoreWallet` method — derives the next DIP-13 funding key internally, sources UTXOs
+`CoreWallet` method — derives the next DIP-9 funding key internally, sources UTXOs
 from `wallet_info`, builds an `AssetLock` special transaction via `TransactionBuilder`,
 broadcasts it, waits for the InstantLock via SPV, returns `(AssetLockProof, funding_private_key)`.
 
@@ -694,7 +723,7 @@ broadcasts it, waits for the InstantLock via SPV, returns `(AssetLockProof, fund
 ChainLocked from Platform's perspective. The wallet must poll block confirmation before using
 a Chain proof.
 
-DIP-13 funding key paths:
+DIP-9 funding key paths:
 - Registration: `m/9'/coin'/5'/1'/identity_index` (non-hardened terminal index)
 - Top-up (unbound): `m/9'/coin'/5'/2'/topup_index` (non-hardened terminal)
 - Top-up (bound): `m/9'/coin'/5'/2'/registration_index'/topup_index`
@@ -707,8 +736,8 @@ DIP-13 funding key paths:
 **Implementation strategy** (from research — ~1,900 lines in evo-tool total):
 - **Reuse**: key-wallet `TransactionBuilder` for UTXO selection, `Sdk::wait_for_asset_lock_proof_for_transaction()` (232 lines in rs-sdk)
 - **Port ~300-400 lines**: asset lock tx construction (version-3 `Transaction` with `AssetLockPayload` special payload, OP_RETURN burn output, non-standard fee calc: `10 + inputs*148 + outputs*34 + 60` bytes, 3000-duff minimum)
-- **Port ~400 lines**: recovery scanning (scan DIP-13 funding paths for unconfirmed locks)
-- DIP-13 key derivation reuses `Wallet::derive_extended_private_key()` + identity account paths
+- **Port ~400 lines**: recovery scanning (scan DIP-9 funding paths for unconfirmed locks)
+- DIP-9 key derivation reuses `Wallet::derive_extended_private_key()` + identity account paths
 
 Additional API for top-up:
 ```rust
@@ -770,12 +799,12 @@ Steps:
 3. Build and sign `IdentityCreateTransition` via `PutIdentity::put_to_platform_and_wait_for_response()`
 4. Broadcast, wait for proof, add to `identity_manager`
 
-**DIP-13 key path note**: The full path is `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`
+**DIP-9 key path note**: The full path is `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`
 where `key_type` is: `0'` = ECDSA, `1'` = BLS. The existing `key_derivation.rs` omits the
 `key_type'` segment — this must be fixed. The `key_type'` level enables multi-algorithm keys
 under the same identity index.
 
-#### 1.4.2 — Identity Discovery (DIP-13 gap-limit scan)
+#### 1.4.2 — Identity Discovery (DIP-9 gap-limit scan)
 
 Implementation exists in the old `platform_wallet_info/identity_discovery.rs`.
 Current behaviour:
@@ -790,7 +819,7 @@ Current behaviour:
 
 - Move to `IdentityWallet::sync()`, no parameters
 - Store `last_scanned_index: u32` in `IdentityManager` — persist and resume from it
-- Gap limit hardcoded to 5 (implementation convention — DIP-13 does not specify a gap limit value; 5 matches the registration-funding bloom filter batch size and is a safe conservative choice)
+- Gap limit hardcoded to 5 (implementation convention — DIP-9 does not specify a gap limit value; 5 matches the registration-funding bloom filter batch size and is a safe conservative choice)
 - Consider scanning multiple key indices per identity index: evo-tool's `discover_identities.rs` uses `AUTH_KEY_LOOKUP_WINDOW = 12` — scanning 12 consecutive key indices per identity index provides more robust discovery for wallets with non-sequential key usage
 - Use `PublicKeyHash` (unique lookup) — correct for authentication keys, one identity per key hash
 - Surface fetch errors properly
@@ -1416,7 +1445,7 @@ pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError>
 
 Sync order:
 
-1. `self.identity.sync()` — DIP-13 gap scan for new identities
+1. `self.identity.sync()` — DIP-9 gap scan for new identities
 2. `self.dashpay.sync()` — contact requests for all known identities
 3. `self.platform.sync()` — DIP-17 address credit balances via DAPI
 
@@ -1636,9 +1665,9 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 |---|---|---|---|---|
 | Core UTXO receive | BIP44 | `m/44'/coin'/acct'/0/i` | `standard_bip44_accounts` | §1.3.2 |
 | Core UTXO change | BIP44 | `m/44'/coin'/acct'/1/i` | `standard_bip44_accounts` | §1.3.2 |
-| Identity reg. funding | DIP-13 | `m/9'/coin'/5'/1'/i` (non-hardened i) | `identity_registration` | §1.4.1 |
-| Identity top-up funding | DIP-13 | `m/9'/coin'/5'/2'/i` (non-hardened i) | `identity_topup_not_bound` | §1.4.4 |
-| Identity auth keys | DIP-13 | `m/9'/coin'/5'/0'/key_type'/id'/key'` | — | §1.4.1 |
+| Identity reg. funding | DIP-9 | `m/9'/coin'/5'/1'/i` (non-hardened i) | `identity_registration` | §1.4.1 |
+| Identity top-up funding | DIP-9 | `m/9'/coin'/5'/2'/i` (non-hardened i) | `identity_topup_not_bound` | §1.4.4 |
+| Identity auth keys | DIP-9 | `m/9'/coin'/5'/0'/key_type'/id'/key'` | — | §1.4.1 |
 | Auto-accept proof key | DIP-15 | `m/9'/coin'/16'/timestamp'` | — | §1.5.11 |
 | DashPay receive from contact | DIP-15 | `m/9'/coin'/15'/0'/(self)/(friend)/i` | `dashpay_receival_accounts` | §1.5.3 |
 | DashPay send to contact | DIP-15 | contact xpub + index | `dashpay_external_accounts` | §1.5.4 |
@@ -1653,7 +1682,7 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 | `IdentityManager` fields not yet `Arc<RwLock<_>>`-wrapped | Refactor in PR-1; add `last_scanned_index` field; confirm tests pass |
 | `AddressProvider` API mismatch — actual trait uses push-based callbacks, not `apply_balance()` | Use confirmed trait definition from `rs-sdk/src/platform/address_sync/provider.rs`; implement `pending_addresses`/`on_address_found`/`on_address_absent` |
 | AES decryption bug in `add_incoming_contact_request` | Fix in PR-3 — `decrypt_extended_public_key` before `ExtendedPubKey::decode`; add unit test proving plaintext roundtrip |
-| DIP-13 auth key path missing `key_type'` segment | Fix in PR-2 — use full path `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`; note: existing deployed wallets may have used the old path (key_type' omitted = effectively key_type'=0') — document deviation |
+| DIP-9 auth key path missing `key_type'` segment | Fix in PR-2 — use full path `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`; note: existing deployed wallets may have used the old path (key_type' omitted = effectively key_type'=0') — document deviation |
 | DIP-14 `ser_256(i)` endianness | Add unit test against DIP-14 Appendix A vectors before any contact request is submitted |
 | BLS key derivation semantics | Use raw 32-byte seed from BIP32 derivation as BLS secret key (not scalar addition mod bls12381 group order) — matches DashSync iOS |
 | DB migration corrupts existing wallets | Version byte in DB; fallback read → convert; test against real DB fixture |

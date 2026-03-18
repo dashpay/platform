@@ -5,7 +5,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::WalletCoreBalance;
 
 /// Per-address info for UI consumption.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CoreAddressInfo {
     /// The address itself.
     pub address: Address,
