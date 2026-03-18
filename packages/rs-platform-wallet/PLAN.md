@@ -21,11 +21,11 @@ date: 2026-03-13
 **PR sequence** (each PR = library feature + evo-tool integration + old code deleted):
 
 1. **PR-1** ✅: Project scaffold + `PlatformWallet` + `PlatformWalletManager` + `CoreWallet` + evo-tool bridge
-2. **PR-2**: `CoreWallet` deep integration — signing, per-address data, asset locks, payment building + migrate evo-tool backend tasks fully
-3. **PR-3**: `IdentityWallet` (register, discover, top-up, withdraw, transfer) → replace identity backend tasks
-4. **PR-4**: `DashPayWallet` (DIP-14, DIP-15, contact requests, payments, sync) → replace dashpay backend tasks
-5. **PR-5**: `PlatformAddressWallet` (DIP-17 sync, send, withdraw) → replace platform address backend task
-6. **PR-6**: Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` (dashcore) — both are mutable and always used together, having them as separate types behind separate locks adds unnecessary complexity. Single `Arc<RwLock<Wallet>>` containing all state.
+2. **PR-2**: CoreWallet deep integration — `Signer<PlatformAddress>`, per-address data, asset locks, transaction sending + migrate evo-tool backend tasks
+3. **PR-3**: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner` + replace identity backend tasks
+4. **PR-4**: `DashPayWallet` — DIP-14, DIP-15, contact requests, payments, sync + replace dashpay backend tasks
+5. **PR-5**: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + replace platform address backend task
+6. **PR-6**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 7. **PR-7**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
 
 ---
@@ -67,12 +67,9 @@ date: 2026-03-13
 - PR #3375: dashcore rev update + `Network::Dash` → `Network::Mainnet` rename
 - PR #3376: Extract fetch helpers to fix HRTB Send inference
 
-### Blockers for deeper migration (PR-2 scope)
+### Next steps
 
-1. **Signing**: `Signer<PlatformAddress>` only implemented for the old `Wallet` model. PlatformWallet needs its own signing capability.
-2. **Per-address data**: CoreWallet exposes aggregate balance and flat UTXO lists. Old model tracks per-address balances, derivation metadata, asset locks, platform address info.
-3. **Sync/async mismatch**: UI runs synchronously (egui immediate mode), CoreWallet methods are async. Needs caching layer or backend-task-based data flow.
-4. **Asset lock transactions**: `create_asset_lock_proof()` requires porting ~600 lines of transaction building from evo-tool.
+See detailed architecture in sections 1.3 (Core Wallet), 1.6 (Platform Addresses), 1.7 (Signing), and the PR Sequence section below.
 5. **Payment building**: `send_transaction()` requires coin selection, signing, broadcast via SPV or RPC.
 6. **SPV lifecycle**: `start_spv()` / `stop_spv()` are stubs — need network config wiring.
 
@@ -557,6 +554,26 @@ pub fn immature_transactions(&self) -> Vec<TransactionRecord>
 
 All delegate to `WalletInfoInterface` on `wallet_info`.
 
+**Per-address data** (research finding): `ManagedWalletInfo` already tracks richer per-address data
+than the evo-tool model via `AddressPool::AddressInfo` (balance, total_received, total_sent, tx_count,
+derivation_path, used status, label, metadata). CoreWallet needs methods to surface this:
+
+```rust
+pub async fn all_address_info(&self) -> Vec<CoreAddressInfo>
+pub async fn address_info(&self, address: &Address) -> Option<CoreAddressInfo>
+pub async fn account_summaries(&self) -> Vec<CoreAccountSummary>
+pub async fn utxos_by_address(&self) -> BTreeMap<Address, Vec<Utxo>>
+pub async fn derivation_path_for_address(&self, address: &Address) -> Option<(DerivationPath, AccountType)>
+```
+
+Platform credits/nonces are NOT in key-wallet — they come from Platform state queries and
+stay in a separate cache (populated by `PlatformAddressWallet::sync()`).
+
+**UI sync/async bridge**: Cached snapshot pattern — screen holds `Vec<CoreAddressInfo>`,
+background task calls `core_wallet.all_address_info().await`, sends snapshot via `TaskResult`,
+screen renders from cache. Matches existing evo-tool `AppAction::BackendTask` /
+`display_task_result` pattern.
+
 #### 1.3.4 — Transaction Send
 
 key-wallet only **builds** transactions — it has no send method. Broadcasting is a
@@ -686,6 +703,21 @@ DIP-13 funding key paths:
 `identity_registration: Option<ManagedCoreAccount>`,
 `identity_topup: BTreeMap<u32, ManagedCoreAccount>`,
 `identity_topup_not_bound: Option<ManagedCoreAccount>`.
+
+**Implementation strategy** (from research — ~1,900 lines in evo-tool total):
+- **Reuse**: key-wallet `TransactionBuilder` for UTXO selection, `Sdk::wait_for_asset_lock_proof_for_transaction()` (232 lines in rs-sdk)
+- **Port ~300-400 lines**: asset lock tx construction (version-3 `Transaction` with `AssetLockPayload` special payload, OP_RETURN burn output, non-standard fee calc: `10 + inputs*148 + outputs*34 + 60` bytes, 3000-duff minimum)
+- **Port ~400 lines**: recovery scanning (scan DIP-13 funding paths for unconfirmed locks)
+- DIP-13 key derivation reuses `Wallet::derive_extended_private_key()` + identity account paths
+
+Additional API for top-up:
+```rust
+pub async fn create_topup_asset_lock_proof(
+    &self,
+    amount_duffs: u64,
+    identity_index: u32,
+) -> Result<(AssetLockProof, PrivateKey), CoreWalletError>
+```
 
 #### 1.3.7 — Asset Lock Recovery
 
@@ -1274,10 +1306,15 @@ pub fn platform_address_signer(
 ) -> Result<PlatformAddressSigner, PlatformWalletError>
 ```
 
+**Implementation notes** (from research):
+- Alternative: implement `Signer<PlatformAddress>` directly on `PlatformAddressWallet` instead of a separate struct. Pros: simpler API (`platform_wallet.platform()` as signer). Cons: PlatformAddressWallet needs to cache address→path mapping.
+- Sync/async bridge: `Signer::sign()` is sync, wallet is behind `tokio::sync::RwLock`. Use `blocking_read()` — safe because SDK calls `sign()` from blocking context.
+- Add `network: Network` field to `PlatformAddressWallet` (cached at construction, like CoreWallet).
+- 4 evo-tool callsites to migrate: `transfer_platform_credits`, `withdraw_from_platform_address`, `fund_platform_address_from_asset_lock`, `top_up_identity_from_platform_addresses`.
+
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/platform_addresses.rs` (new)
-- `packages/rs-platform-wallet/src/platform_wallet/platform_address_signer.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/platform_address_wallet.rs` (extend)
 
 ---
 
@@ -1307,9 +1344,15 @@ pub fn signer_for_identity(
 ) -> Result<IdentitySigner, PlatformWalletError>
 ```
 
+**Implementation notes** (from research):
+- Derives keys at `m/9'/coin_type'/5'/0'/identity_index'/key_index'` (identity authentication paths)
+- Signs based on key type: ECDSA (`secp256k1`), BLS (`bls-signatures`), EdDSA (`ed25519-dalek`)
+- Sync/async bridge: same `blocking_read()` pattern as `PlatformAddressSigner`
+- Replaces evo-tool's `QualifiedIdentity::sign()` long-term — that impl resolves keys from `KeyStorage.private_keys` and falls back to `associated_wallets` for HD-derived keys
+
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/signer.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/signer.rs` (extend existing stub)
 
 ---
 
@@ -1437,11 +1480,37 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 - If old format: deserialize as old `Wallet`, convert to `PlatformWallet`, re-save
 - On first run after migration: `IdentityManager` starts empty — identities re-discovered in PR-2
 
-**Done when**: evo-tool builds with `PlatformWalletManager`; SPV sync works via `WalletInterface` impl; `send_transaction` works; `WalletHandle` provides sync access to sub-wallets.
+**Done when**: evo-tool builds with `PlatformWalletManager`; SPV sync works via `WalletInterface` impl; `send_transaction` works; PlatformWallet clone provides sync access to sub-wallets.
+
+**PR-1 status**: ✅ Complete. Scaffold in place, bridge working, 7 backend tasks validating via bridge.
 
 ---
 
-### PR-2: IdentityWallet
+### PR-2: CoreWallet Deep Integration
+
+**Library** (`rs-platform-wallet`):
+
+- Per-address data methods on CoreWallet (§1.3.3): `all_address_info()`, `account_summaries()`, `utxos_by_address()`, `derivation_path_for_address()`
+- `CoreAddressInfo` and `CoreAccountSummary` structs
+- `Signer<PlatformAddress>` on `PlatformAddressWallet` (§1.6) with `blocking_read()` bridge
+- Asset lock proof creation on CoreWallet (§1.3.6): `create_asset_lock_proof()`, `create_topup_asset_lock_proof()`
+- Asset lock recovery (§1.3.7): `recover_asset_locks()`
+- Transaction sending: `send_transaction()` on CoreWallet (§1.3.4)
+- Add `network: Network` to `PlatformAddressWallet`
+
+**evo-tool integration**:
+
+- Migrate 4 signing callsites from old `Wallet` to `platform_wallet.platform()` as `Signer<PlatformAddress>`
+- Migrate `generate_receive_address` from diagnostic to primary path
+- Add `WalletTask::LoadAddressTable` backend task using `CoreWallet::all_address_info()`
+- Update address table UI to render from cached `CoreAddressInfo` snapshot
+- Migrate `create_asset_lock` tasks to use `CoreWallet::create_asset_lock_proof()`
+
+**Done when**: All backend tasks that touch balance/UTXOs/addresses use CoreWallet; signing uses PlatformAddressWallet; asset lock creation works through platform-wallet.
+
+---
+
+### PR-3: IdentityWallet
 
 **Library** (`rs-platform-wallet`):
 
@@ -1471,7 +1540,7 @@ All signing replaced with `wallet.identity.signer_for_identity(identity_id)`.
 
 ---
 
-### PR-3: DashPayWallet (DIP-14 + DIP-15 + Sync)
+### PR-4: DashPayWallet (DIP-14 + DIP-15 + Sync)
 
 **Library** (`rs-platform-wallet`):
 
@@ -1508,7 +1577,7 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 
 ---
 
-### PR-4: PlatformAddressWallet (DIP-17)
+### PR-5: PlatformAddressWallet (DIP-17)
 
 **Library** (`rs-platform-wallet`):
 
@@ -1526,7 +1595,24 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 
 ---
 
-### PR-5: Serialization + Final Cleanup
+### PR-6: Merge Wallet + ManagedWalletInfo (dashcore)
+
+Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` — both are mutable and always used
+together. Single `Arc<RwLock<Wallet>>` containing all state.
+
+**Why**: The original split assumed `Wallet` was immutable (key store) while `ManagedWalletInfo`
+was mutable (UTXO state). In practice, `Wallet` is also mutable — accounts are added during
+DashPay contact establishment and sync. Having them behind separate `RwLock`s creates:
+1. Lock ordering risk (must always acquire wallet before wallet_info)
+2. Read starvation during block processing (SPV holds write locks on both for entire block)
+3. Non-atomic updates when operations touch both structs (crash = inconsistent state)
+
+**Investigation needed**: read starvation mitigation (per-tx lock release vs snapshot/MVCC vs
+accept latency), atomic multi-struct update strategy (merge vs journaling vs eventual consistency).
+
+---
+
+### PR-7: Serialization + Final Cleanup
 
 **Library** (`rs-platform-wallet`):
 
@@ -1574,6 +1660,9 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 | Asset lock proof: InstantLock timeout | Implement 60s timeout before falling back to ChainLock polling — confirm ChainLocked height is known to Platform before using Chain proof |
 | `PlatformWallet` not `Send+Sync` | Add `static_assertions::assert_impl_all!(PlatformWallet: Send, Sync)` |
 | `Arc<RwLock<ManagedWalletInfo>>` write starvation under concurrent SPV + Platform sync | SPV writes are short (tx update); Platform sync holds read lock briefly for balance reads — test under load |
+| **Wallet + ManagedWalletInfo separation** — both are mutable (Wallet: accounts added during contact establishment; MWI: UTXOs/balances during sync). Original design assumed Wallet was immutable but it isn't. Two separate `RwLock`s create lock ordering risk and prevent atomic state updates. | Investigate merging in PR-6. Consider single struct behind one `RwLock`. |
+| **Read starvation during block processing** — SPV `process_block()` holds write lock on both Wallet and ManagedWalletInfo for the entire block. During this time, CoreWallet read methods (`balance()`, `utxos()`, `all_address_info()`) are blocked. UI shows stale data until the block is fully processed. | Consider: (a) process transactions individually (release lock between txs), (b) use snapshot/MVCC pattern (clone state, process, swap), (c) accept the latency for now (blocks process in ms). |
+| **Non-atomic state updates across structs** — Wallet, ManagedWalletInfo, and IdentityManager are separate structs behind separate locks. Operations that touch multiple (e.g., adding a DashPay account to Wallet + updating MWI addresses + updating IdentityManager contacts) cannot be atomic. A crash mid-operation leaves inconsistent state. | Investigate: (a) merge structs (PR-6), (b) WAL/journaling for multi-struct updates, (c) accept eventual consistency with recovery on restart. |
 | `contactRequest` documents are immutable | Do not expose update/delete API; note in `send_contact_request` docs that retries create new documents |
 
 ---
