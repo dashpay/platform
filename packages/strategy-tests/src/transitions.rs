@@ -1215,7 +1215,7 @@ where
                 .unwrap();
             let secret_key = SecretKey::from_str(hex::encode(pk).as_str()).unwrap();
             let asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-                PrivateKey::new(secret_key, Network::Dash),
+                PrivateKey::new(secret_key, Network::Mainnet),
                 amount_range,
                 rng,
             );

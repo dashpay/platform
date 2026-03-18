@@ -14,6 +14,8 @@ pub mod system;
 
 /// Address funds proof verification module
 pub mod address_funds;
+/// Boundary key existence verification in proofs (pagination cursor checks)
+pub mod boundary;
 /// Group proof verification module
 pub mod group;
 /// Shielded pool proof verification module

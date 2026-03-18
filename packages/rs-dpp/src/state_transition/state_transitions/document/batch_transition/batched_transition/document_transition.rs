@@ -309,3 +309,313 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransitionV0;
+    use crate::state_transition::batch_transition::batched_transition::document_update_price_transition::DocumentUpdatePriceTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use platform_value::Value;
+
+    fn make_base() -> DocumentBaseTransition {
+        DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::default(),
+            identity_contract_nonce: 1,
+            document_type_name: "test_doc".to_string(),
+            data_contract_id: Identifier::default(),
+        })
+    }
+
+    fn make_create_transition(data: BTreeMap<String, Value>) -> DocumentTransition {
+        DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+            base: make_base(),
+            entropy: [0u8; 32],
+            data,
+            prefunded_voting_balance: None,
+        }))
+    }
+
+    fn make_replace_transition(data: BTreeMap<String, Value>) -> DocumentTransition {
+        DocumentTransition::Replace(DocumentReplaceTransition::V0(DocumentReplaceTransitionV0 {
+            base: make_base(),
+            revision: 2,
+            data,
+        }))
+    }
+
+    fn make_delete_transition() -> DocumentTransition {
+        DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+            base: make_base(),
+        }))
+    }
+
+    fn make_transfer_transition() -> DocumentTransition {
+        DocumentTransition::Transfer(DocumentTransferTransition::V0(
+            DocumentTransferTransitionV0 {
+                base: make_base(),
+                revision: 3,
+                recipient_owner_id: Identifier::from([5u8; 32]),
+            },
+        ))
+    }
+
+    fn make_update_price_transition() -> DocumentTransition {
+        DocumentTransition::UpdatePrice(DocumentUpdatePriceTransition::V0(
+            DocumentUpdatePriceTransitionV0 {
+                base: make_base(),
+                revision: 4,
+                price: 100,
+            },
+        ))
+    }
+
+    fn make_purchase_transition() -> DocumentTransition {
+        DocumentTransition::Purchase(DocumentPurchaseTransition::V0(
+            DocumentPurchaseTransitionV0 {
+                base: make_base(),
+                revision: 5,
+                price: 200,
+            },
+        ))
+    }
+
+    // -----------------------------------------------------------------------
+    // get_dynamic_property
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn get_dynamic_property_returns_value_for_create() {
+        let mut data = BTreeMap::new();
+        data.insert("myField".to_string(), Value::Text("hello".to_string()));
+        let transition = make_create_transition(data);
+
+        let result = transition.get_dynamic_property("myField");
+        assert_eq!(result, Some(&Value::Text("hello".to_string())));
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_value_for_replace() {
+        let mut data = BTreeMap::new();
+        data.insert("count".to_string(), Value::U64(42));
+        let transition = make_replace_transition(data);
+
+        let result = transition.get_dynamic_property("count");
+        assert_eq!(result, Some(&Value::U64(42)));
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_none_for_missing_key_on_create() {
+        let transition = make_create_transition(BTreeMap::new());
+        assert!(transition.get_dynamic_property("nonexistent").is_none());
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_none_for_delete() {
+        let transition = make_delete_transition();
+        assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_none_for_transfer() {
+        let transition = make_transfer_transition();
+        assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_none_for_update_price() {
+        let transition = make_update_price_transition();
+        assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    #[test]
+    fn get_dynamic_property_returns_none_for_purchase() {
+        let transition = make_purchase_transition();
+        assert!(transition.get_dynamic_property("anything").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // entropy
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn entropy_returns_some_for_create() {
+        let transition = make_create_transition(BTreeMap::new());
+        let entropy = transition.entropy();
+        assert!(entropy.is_some());
+        assert_eq!(entropy.unwrap().len(), 32);
+    }
+
+    #[test]
+    fn entropy_returns_none_for_replace() {
+        let transition = make_replace_transition(BTreeMap::new());
+        assert!(transition.entropy().is_none());
+    }
+
+    #[test]
+    fn entropy_returns_none_for_delete() {
+        let transition = make_delete_transition();
+        assert!(transition.entropy().is_none());
+    }
+
+    #[test]
+    fn entropy_returns_none_for_transfer() {
+        let transition = make_transfer_transition();
+        assert!(transition.entropy().is_none());
+    }
+
+    #[test]
+    fn entropy_returns_none_for_update_price() {
+        let transition = make_update_price_transition();
+        assert!(transition.entropy().is_none());
+    }
+
+    #[test]
+    fn entropy_returns_none_for_purchase() {
+        let transition = make_purchase_transition();
+        assert!(transition.entropy().is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // data
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn data_returns_some_for_create() {
+        let mut d = BTreeMap::new();
+        d.insert("key".to_string(), Value::Bool(true));
+        let transition = make_create_transition(d.clone());
+        assert_eq!(transition.data(), Some(&d));
+    }
+
+    #[test]
+    fn data_returns_some_for_replace() {
+        let mut d = BTreeMap::new();
+        d.insert("key2".to_string(), Value::U64(99));
+        let transition = make_replace_transition(d.clone());
+        assert_eq!(transition.data(), Some(&d));
+    }
+
+    #[test]
+    fn data_returns_none_for_delete() {
+        assert!(make_delete_transition().data().is_none());
+    }
+
+    #[test]
+    fn data_returns_none_for_transfer() {
+        assert!(make_transfer_transition().data().is_none());
+    }
+
+    #[test]
+    fn data_returns_none_for_update_price() {
+        assert!(make_update_price_transition().data().is_none());
+    }
+
+    #[test]
+    fn data_returns_none_for_purchase() {
+        assert!(make_purchase_transition().data().is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // revision
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn revision_returns_1_for_create() {
+        let transition = make_create_transition(BTreeMap::new());
+        assert_eq!(transition.revision(), Some(1));
+    }
+
+    #[test]
+    fn revision_returns_value_for_replace() {
+        let transition = make_replace_transition(BTreeMap::new());
+        assert_eq!(transition.revision(), Some(2));
+    }
+
+    #[test]
+    fn revision_returns_none_for_delete() {
+        assert!(make_delete_transition().revision().is_none());
+    }
+
+    #[test]
+    fn revision_returns_value_for_transfer() {
+        let transition = make_transfer_transition();
+        assert_eq!(transition.revision(), Some(3));
+    }
+
+    #[test]
+    fn revision_returns_value_for_update_price() {
+        let transition = make_update_price_transition();
+        assert_eq!(transition.revision(), Some(4));
+    }
+
+    #[test]
+    fn revision_returns_value_for_purchase() {
+        let transition = make_purchase_transition();
+        assert_eq!(transition.revision(), Some(5));
+    }
+
+    // -----------------------------------------------------------------------
+    // insert_dynamic_property (cfg(test) only)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn insert_dynamic_property_works_on_create() {
+        let mut transition = make_create_transition(BTreeMap::new());
+        transition.insert_dynamic_property("added".to_string(), Value::Bool(true));
+        assert_eq!(
+            transition.get_dynamic_property("added"),
+            Some(&Value::Bool(true))
+        );
+    }
+
+    #[test]
+    fn insert_dynamic_property_works_on_replace() {
+        let mut transition = make_replace_transition(BTreeMap::new());
+        transition.insert_dynamic_property("added".to_string(), Value::U64(7));
+        assert_eq!(
+            transition.get_dynamic_property("added"),
+            Some(&Value::U64(7))
+        );
+    }
+
+    #[test]
+    fn insert_dynamic_property_is_noop_on_delete() {
+        let mut transition = make_delete_transition();
+        transition.insert_dynamic_property("added".to_string(), Value::Bool(true));
+        // Should still return None because delete has no data
+        assert!(transition.get_dynamic_property("added").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // data_mut
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn data_mut_returns_some_for_create_and_replace() {
+        let mut create = make_create_transition(BTreeMap::new());
+        assert!(create.data_mut().is_some());
+
+        let mut replace = make_replace_transition(BTreeMap::new());
+        assert!(replace.data_mut().is_some());
+    }
+
+    #[test]
+    fn data_mut_returns_none_for_other_variants() {
+        let mut delete = make_delete_transition();
+        assert!(delete.data_mut().is_none());
+
+        let mut transfer = make_transfer_transition();
+        assert!(transfer.data_mut().is_none());
+
+        let mut update_price = make_update_price_transition();
+        assert!(update_price.data_mut().is_none());
+
+        let mut purchase = make_purchase_transition();
+        assert!(purchase.data_mut().is_none());
+    }
+}
