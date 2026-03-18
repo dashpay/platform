@@ -199,12 +199,10 @@ async fn probe_and_update_batch(
                         }
                     }
                     Err(error) => {
-                        // Reset ban without escalating: unban() clears ban_count to 0,
-                        // then ban() sets ban_count=1 with a fresh base-period duration.
-                        // This prevents deterministic re-probing from driving exponential
-                        // backoff to absurd levels, while still keeping dead nodes banned.
-                        address_list.unban(address);
-                        address_list.ban(address);
+                        // reset_ban atomically resets ban history and applies a fresh
+                        // base-period ban, preventing exponential backoff escalation
+                        // while closing the unban+ban race window.
+                        address_list.reset_ban(address);
                         tracing::debug!(%address, error = %error, "health check: node is unhealthy, re-banned");
                     }
                 }

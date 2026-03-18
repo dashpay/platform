@@ -166,10 +166,10 @@ impl Clone for Sdk {
 
 impl Drop for Sdk {
     fn drop(&mut self) {
-        // Only cancel background tasks when the last Sdk instance is dropped.
-        // Arc::strong_count is not perfectly atomic, but for best-effort cleanup
-        // of background tasks this is sufficient.
-        if Arc::strong_count(&self._shared_ref) == 1 {
+        // Arc::into_inner is race-free: returns Some only for the true last owner.
+        // The replacement Arc::new(()) is trivial (ZST, no heap allocation).
+        let shared = std::mem::replace(&mut self._shared_ref, Arc::new(()));
+        if Arc::into_inner(shared).is_some() {
             self.cancel_token.cancel();
         }
     }

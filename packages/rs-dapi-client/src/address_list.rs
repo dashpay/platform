@@ -165,6 +165,18 @@ impl AddressList {
         true
     }
 
+    /// Atomically resets the ban for an address: clears the ban history and applies
+    /// a fresh base-period ban. This avoids the TOCTOU gap that would exist with
+    /// separate `unban()` + `ban()` calls where a concurrent reader could observe
+    /// an unbanned state between the two operations.
+    pub fn reset_ban(&self, address: &Address) {
+        let mut guard = self.addresses.write().unwrap();
+        if let Some(status) = guard.get_mut(address) {
+            status.ban_count = 1;
+            status.banned_until = Some(chrono::Utc::now() + self.base_ban_period);
+        }
+    }
+
     /// Clears address' ban record
     /// Returns false if the address is not in the list.
     pub fn unban(&self, address: &Address) -> bool {
@@ -691,6 +703,45 @@ mod tests {
         let expired = list.get_expired_ban_addresses();
         assert!(expired.contains(&addr1));
         assert!(!expired.contains(&addr2));
+    }
+
+    #[test]
+    fn test_reset_ban_clears_history_and_applies_base_period_ban() {
+        let mut list = AddressList::with_settings(Duration::from_secs(60));
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        // Ban twice to build up ban_count
+        list.ban(&addr);
+        list.ban(&addr);
+        assert_eq!(
+            list.addresses.read().unwrap().get(&addr).unwrap().ban_count,
+            2
+        );
+
+        // reset_ban should set ban_count=1 and apply a fresh base-period ban
+        list.reset_ban(&addr);
+        let guard = list.addresses.read().unwrap();
+        let status = guard.get(&addr).unwrap();
+        assert_eq!(status.ban_count, 1, "reset_ban must set ban_count to 1");
+        assert!(
+            status.banned_until.is_some(),
+            "reset_ban must set banned_until"
+        );
+        // The address must be actively banned (not visible via get_live_address)
+        drop(guard);
+        assert!(
+            list.get_live_address().is_none(),
+            "reset_ban must keep address banned"
+        );
+    }
+
+    #[test]
+    fn test_reset_ban_on_nonexistent_address_is_noop() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        // Must not panic
+        list.reset_ban(&addr);
     }
 
     #[test]
