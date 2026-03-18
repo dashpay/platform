@@ -97,18 +97,13 @@ class PlatformBalanceSyncService: ObservableObject {
     }
 
     private var networkName: String = "testnet"
-    private var syncTimer: Timer?
-    private var syncTask: Task<Void, Never>?
-
-    /// Sync interval in seconds.
-    private let syncInterval: TimeInterval = 15.0
 
     // MARK: - Lifecycle
 
-    /// Start periodic sync. Call after SDK and wallet are initialized.
+    /// Initialize for a network. Restores persisted state.
+    /// The actual periodic loop is managed by UnifiedAppState.
     func startPeriodicSync(network: AppNetwork) {
         networkName = network.rawValue
-        stopPeriodicSync()
 
         // Restore persisted state from previous session
         let height = persistedSyncHeight
@@ -119,33 +114,10 @@ class PlatformBalanceSyncService: ObservableObject {
         if blockTs > 0 {
             lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(blockTs))
         }
-
-        // Delay the first sync to allow SDK quorum prefetch to complete.
-        // Subsequent syncs run on the 15-second timer.
-        syncTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
-            await self?.performSyncIfNeeded()
-        }
-
-        // Schedule repeating timer
-        syncTimer = Timer.scheduledTimer(withTimeInterval: syncInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.performSyncIfNeeded()
-            }
-        }
-    }
-
-    /// Stop periodic sync (e.g. on network switch or app background).
-    func stopPeriodicSync() {
-        syncTimer?.invalidate()
-        syncTimer = nil
-        syncTask?.cancel()
-        syncTask = nil
     }
 
     /// Reset all state (e.g. on wallet deletion or network switch).
     func reset() {
-        stopPeriodicSync()
         addressBalances.removeAll()
         addressNonces.removeAll()
         totalPlatformBalance = 0
@@ -176,18 +148,6 @@ class PlatformBalanceSyncService: ObservableObject {
     }
 
     // MARK: - Internal
-
-    /// Called by the timer; needs SDK + addresses injected at call site.
-    /// This is a no-op placeholder -- the real sync is triggered from UnifiedAppState
-    /// which has access to the SDK and wallet.
-    private func performSyncIfNeeded() async {
-        // The actual sync is orchestrated by UnifiedAppState which calls manualSync
-        // with the right SDK and addresses. This timer just posts a notification.
-        NotificationCenter.default.post(
-            name: .platformBalanceSyncTick,
-            object: nil
-        )
-    }
 
     /// Perform the actual BLAST address sync.
     ///
@@ -268,8 +228,3 @@ class PlatformBalanceSyncService: ObservableObject {
 
 }
 
-// MARK: - Notification
-
-extension Notification.Name {
-    static let platformBalanceSyncTick = Notification.Name("platformBalanceSyncTick")
-}

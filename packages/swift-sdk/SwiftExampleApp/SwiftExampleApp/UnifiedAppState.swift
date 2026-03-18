@@ -44,8 +44,8 @@ class UnifiedAppState: ObservableObject {
     // Transition state for temporary data
     @Published var transitionState = TransitionState()
 
-    // Observer token for platform balance sync tick (prevents duplicate observers)
-    private var syncTickObserver: NSObjectProtocol?
+    // Task for the periodic sync loop
+    private var syncLoopTask: Task<Void, Never>?
 
     // Computed property for easy SDK access
     var sdk: SDK? {
@@ -103,6 +103,8 @@ class UnifiedAppState: ObservableObject {
         // Reset services
         walletService.stopSync()
         shieldedService.reset()
+        syncLoopTask?.cancel()
+        syncLoopTask = nil
         platformBalanceSyncService.reset()
 
         // Reset platform state
@@ -130,26 +132,23 @@ class UnifiedAppState: ObservableObject {
         // The platform state handles its own network switching in AppState.switchNetwork
     }
 
-    /// Start periodic BLAST address balance sync.
-    /// Creates a provider from the wallet's known identities and syncs every 15 seconds.
+    /// Start periodic BLAST address balance sync (every 15 seconds).
     func startPlatformBalanceSync() {
-        platformBalanceSyncService.reset()
+        // Cancel any previous sync loop
+        syncLoopTask?.cancel()
 
         let network = platformState.currentNetwork
         platformBalanceSyncService.startPeriodicSync(network: network)
 
-        // Remove previous observer if any to prevent duplicate observers
-        if let observer = syncTickObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        // Run a repeating async loop
+        syncLoopTask = Task { [weak self] in
+            // Initial delay for SDK quorum prefetch
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await self?.performPlatformBalanceSync()
 
-        // Listen for sync tick notifications from the timer
-        syncTickObserver = NotificationCenter.default.addObserver(
-            forName: .platformBalanceSyncTick,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            // Repeat every 15 seconds
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
                 await self?.performPlatformBalanceSync()
             }
         }
