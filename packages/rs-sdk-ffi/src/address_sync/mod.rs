@@ -573,6 +573,16 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         compacted_entries_returned: result.metrics.compacted_entries_returned as u32,
     };
 
+    // Convert recent proof bytes
+    let (recent_proof_ptr, recent_proof_len) = if result.recent_proof.is_empty() {
+        (std::ptr::null_mut(), 0)
+    } else {
+        let proof_data = result.recent_proof.into_boxed_slice();
+        let len = proof_data.len();
+        let ptr = Box::into_raw(proof_data) as *mut u8;
+        (ptr, len)
+    };
+
     DashSDKAddressSyncResult {
         found: found_ptr,
         found_count,
@@ -585,6 +595,8 @@ fn convert_sync_result(result: AddressSyncResult) -> DashSDKAddressSyncResult {
         new_sync_timestamp: result.new_sync_timestamp,
         last_known_recent_block: result.last_known_recent_block,
         metrics,
+        recent_proof: recent_proof_ptr,
+        recent_proof_len,
     }
 }
 
@@ -627,6 +639,14 @@ pub unsafe extern "C" fn dash_sdk_address_sync_result_free(result: *mut DashSDKA
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
             result.absent,
             result.absent_count,
+        ));
+    }
+
+    // Free recent proof bytes
+    if !result.recent_proof.is_null() && result.recent_proof_len > 0 {
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            result.recent_proof,
+            result.recent_proof_len,
         ));
     }
 }

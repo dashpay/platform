@@ -484,6 +484,9 @@ async fn incremental_catch_up<P: AddressProvider>(
     // The recent query succeeded — any subsequent query failures are real errors.
     let had_successful_query = true;
 
+    // Store the raw GroveDB proof bytes for debugging/inspection.
+    result.recent_proof = recent_proof.grovedb_proof.clone();
+
     result.new_sync_timestamp = recent_metadata.time_ms / 1000;
     result.metrics.recent_queries += 1;
 

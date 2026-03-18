@@ -169,6 +169,11 @@ pub struct DashSDKAddressSyncResult {
 
     /// Metrics about the sync process
     pub metrics: DashSDKAddressSyncMetrics,
+
+    /// Pointer to the raw GroveDB proof bytes from the recent query (NULL if empty)
+    pub recent_proof: *mut u8,
+    /// Length of the recent proof bytes
+    pub recent_proof_len: usize,
 }
 
 /// A pending address entry for the provider callback

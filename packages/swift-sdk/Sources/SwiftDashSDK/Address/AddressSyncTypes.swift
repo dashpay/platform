@@ -151,6 +151,9 @@ public struct AddressSyncResult: Sendable {
     /// Sync metrics.
     public let metrics: AddressSyncMetrics
 
+    /// Raw GroveDB proof bytes from the most recent query (for debugging).
+    public let recentProof: Data
+
     /// Total balance across all found addresses.
     public var totalBalance: UInt64 {
         return found.reduce(0) { $0 + $1.balance }
@@ -215,5 +218,12 @@ public struct AddressSyncResult: Sendable {
         self.newSyncTimestamp = ffi.new_sync_timestamp
         self.lastKnownRecentBlock = ffi.last_known_recent_block
         self.metrics = AddressSyncMetrics(ffi: ffi.metrics)
+
+        // Copy recent proof bytes
+        if let ptr = ffi.recent_proof, ffi.recent_proof_len > 0 {
+            self.recentProof = Data(bytes: ptr, count: Int(ffi.recent_proof_len))
+        } else {
+            self.recentProof = Data()
+        }
     }
 }

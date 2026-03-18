@@ -205,9 +205,13 @@ var body: some View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         } else {
-                            Text("None found")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                            NavigationLink {
+                                ProofDetailView(proofData: platformBalanceSyncService.lastRecentProof)
+                            } label: {
+                                Text("None found")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
                         }
                     }
 
@@ -590,6 +594,44 @@ private struct QueryCountBadge: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Proof Detail View
+
+struct ProofDetailView: View {
+    let proofData: Data
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Proof Size")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("\(proofData.count) bytes")
+                        .font(.subheadline)
+                }
+
+                Text("Raw Hex")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Text(proofData.map { String(format: "%02x", $0) }.joined())
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            .padding()
+        }
+        .navigationTitle("Recent Query Proof")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Copy") {
+                    UIPasteboard.general.string = proofData.map { String(format: "%02x", $0) }.joined()
+                }
+            }
+        }
     }
 }
 

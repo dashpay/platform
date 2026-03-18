@@ -64,6 +64,9 @@ class PlatformBalanceSyncService: ObservableObject {
     @Published var totalRecentEntries: UInt32 = 0
     @Published var totalCompactedEntries: UInt32 = 0
 
+    /// Raw GroveDB proof from the most recent sync (for debugging).
+    @Published var lastRecentProof: Data = Data()
+
     /// Last error message, cleared on successful sync.
     @Published var lastError: String?
 
@@ -133,6 +136,7 @@ class PlatformBalanceSyncService: ObservableObject {
         lastKnownRecentBlock = 0
         lastSyncBlockTime = nil
         lastFoundAddresses = []
+        lastRecentProof = Data()
         lastMetrics = nil
         lastError = nil
         lastSyncTime = nil
@@ -188,6 +192,7 @@ class PlatformBalanceSyncService: ObservableObject {
             addressBalances = newBalances
             addressNonces = newNonces
             totalPlatformBalance = result.totalBalance
+            lastRecentProof = result.recentProof
             activeAddressCount = result.nonZeroBalanceCount
             lastMetrics = result.metrics
             lastFoundAddresses = result.found

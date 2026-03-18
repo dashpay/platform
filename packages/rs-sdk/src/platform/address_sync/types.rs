@@ -137,6 +137,10 @@ pub struct AddressSyncResult {
     /// [`AddressProvider::last_known_recent_block_height`] on the next call.
     /// A value of `0` means no recent block has been observed yet.
     pub last_known_recent_block: u64,
+
+    /// Raw GroveDB proof bytes from the most recent query (for debugging).
+    /// Empty if no proof was captured.
+    pub recent_proof: Vec<u8>,
 }
 
 impl AddressSyncResult {
@@ -151,6 +155,7 @@ impl AddressSyncResult {
             new_sync_height: 0,
             new_sync_timestamp: 0,
             last_known_recent_block: 0,
+            recent_proof: Vec::new(),
         }
     }
 
