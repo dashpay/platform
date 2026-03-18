@@ -104,5 +104,6 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     boundary: DriveVerifyBoundaryMethodVersions {
         verify_key_exists_as_boundary: 0,
+        verify_boundaries: 0,
     },
 };

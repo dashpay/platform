@@ -21,6 +21,7 @@ pub struct DriveVerifyMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyBoundaryMethodVersions {
     pub verify_key_exists_as_boundary: FeatureVersion,
+    pub verify_boundaries: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
