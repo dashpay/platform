@@ -67,6 +67,16 @@ ignore:
   # Core chain type wrappers — masternode entry structs, deserialization
   # boilerplate, thin type aliases
   - "packages/rs-dpp/src/core_types/**"
+  # Infrastructure and glue code — binary entrypoints, gRPC/HTTP server setup,
+  # external client wrappers, streaming plumbing, runtime context providers,
+  # and replay/debugging tooling that are not unit-testable
+  - "packages/rs-drive-abci/src/main.rs"
+  - "packages/rs-drive-abci/src/query/service.rs"
+  - "packages/rs-dapi/src/server/**"
+  - "packages/rs-dapi/src/clients/core_client.rs"
+  - "packages/rs-sdk-trusted-context-provider/**"
+  - "packages/rs-dapi/src/services/streaming_service/**"
+  - "packages/rs-drive-abci/src/replay/**"
 
 coverage:
   status:

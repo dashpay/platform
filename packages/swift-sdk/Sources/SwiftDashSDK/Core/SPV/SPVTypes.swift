@@ -15,12 +15,11 @@ import Foundation
 // MARK: - SPVSyncState
 
 public enum SPVSyncState: UInt32, Sendable {
-    case initializing = 0
+    case waitForEvents = 0
     case waitingForConnections = 1
-    case waitForEvents = 2
-    case syncing = 3
-    case synced = 4
-    case error = 5
+    case syncing = 2
+    case synced = 3
+    case error = 4
 
     // Custom states, not in FFI
     case idle = 998
@@ -28,18 +27,18 @@ public enum SPVSyncState: UInt32, Sendable {
 
     public func isSyncing() -> Bool {
         switch self {
-        case .waitingForConnections, .waitForEvents, .syncing:
+        case .waitForEvents, .syncing:
             return true
-        case .initializing, .synced, .unknown, .idle, .error:
+        case .waitingForConnections, .synced, .unknown, .idle, .error:
             return false
         }
     }
 
     public func isRunning() -> Bool {
         switch self {
-        case .waitingForConnections, .waitForEvents, .syncing, .synced:
+        case .waitForEvents, .syncing, .synced:
             return true
-        case .initializing, .unknown, .idle, .error:
+        case .waitingForConnections, .unknown, .idle, .error:
             return false
         }
     }
