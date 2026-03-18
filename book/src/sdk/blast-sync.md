@@ -16,140 +16,34 @@ algorithm.
 
 ## Full Sync Flowchart
 
-```
-┌─────────────────────────────────────────────────┐
-│              BLAST Address Sync                  │
-│         sync_address_balances() called           │
-└───────────────────────┬─────────────────────────┘
-                        │
-                        ▼
-              ┌───────────────────┐
-              │ last_sync_timestamp│
-              │    provided?       │
-              └────────┬──────────┘
-                       │
-              ┌────────┴────────┐
-              │                 │
-         No / 0           Yes (non-zero)
-              │                 │
-              ▼                 ▼
-     ┌──────────────┐  ┌──────────────────┐
-     │ FULL SCAN    │  │ elapsed time >    │
-     │ (first sync) │  │ full_rescan_after │
-     └──────┬───────┘  │ (7 days)?        │
-            │          └───────┬──────────┘
-            │            ┌─────┴─────┐
-            │           Yes          No
-            │            │            │
-            │            ▼            ▼
-            │   ┌──────────────┐  ┌──────────────────┐
-            │   │ FULL SCAN    │  │ INCREMENTAL ONLY  │
-            │   └──────┬───────┘  │ Seed result from  │
-            │          │          │ current_balances() │
-            │          │          │ start_height =     │
-            │          │          │ last_sync_height() │
-            │          │          └────────┬───────────┘
-            │          │                   │
-            ▼          ▼                   │
-┌───────────────────────────┐              │
-│  TRUNK/BRANCH TREE SCAN   │              │
-│                           │              │
-│ 1. TRUNK QUERY            │              │
-│    Top N levels of Merk   │              │
-│    tree. Verified against  │              │
-│    quorum-signed root.    │              │
-│                           │              │
-│ 2. CLASSIFY KEYS          │              │
-│    BST traversal:         │              │
-│    Found/Traced/Absent    │              │
-│                           │              │
-│ 3. PRIVACY ADJUST         │              │
-│    Small leaves → query   │              │
-│    ancestor (min 32)      │              │
-│                           │              │
-│ 4. BRANCH QUERIES         │              │
-│    Parallel, iterative    │              │
-│    Until all resolved     │              │
-│    (max 10 concurrent,    │              │
-│     max 50 iterations)    │              │
-│                           │              │
-│ Sets checkpoint_height    │              │
-└───────────┬───────────────┘              │
-            │                              │
-            │  catch_up_from =             │
-            │  checkpoint_height           │
-            │                              │
-            ▼                              ▼
-┌─────────────────────────────────────────────────┐
-│          INCREMENTAL CATCH-UP                    │
-└───────────────────────┬─────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│ Step 1: QUERY RECENT (single query)              │
-│                                                  │
-│ Recent tree has max 64 blocks (compaction        │
-│ threshold). Server limit is 100. So one query    │
-│ always covers the entire uncompacted range.      │
-│                                                  │
-│ HOLD results — don't apply yet.                  │
-│ Record observed_tip from metadata.               │
-└───────────────────────┬─────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│ Step 2: CHECK FOR COMPACTION                     │
-│                                                  │
-│ Use key_exists_as_boundary on the proof to       │
-│ check if start_height still exists in the        │
-│ recent tree.                                     │
-│                                                  │
-│ start_height key EXISTS as boundary?             │
-│                                                  │
-│   YES ──→ No compaction. Go to Step 4.           │
-│                                                  │
-│   NO  ──→ Compaction happened. Go to Step 3.     │
-│                                                  │
-│ start_height == 0 (first catch-up after scan)?   │
-│   Always go to Step 3.                           │
-└───────────────────────┬─────────────────────────┘
-                        │
-          ┌─────────────┴──────────────┐
-          │ (only if compaction        │
-          │  detected or first sync)   │
-          ▼                            │
-┌─────────────────────────────┐        │
-│ Step 3: QUERY COMPACTED     │        │
-│                             │        │
-│ Paginated (25 per batch).   │        │
-│ Returns aggregated ranges   │        │
-│ with merged balance ops.    │        │
-│                             │        │
-│ APPLY immediately.          │        │
-│ Advance current_height.     │        │
-└─────────────┬───────────────┘        │
-              │                        │
-              └────────┬───────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────┐
-│ Step 4: APPLY HELD RECENT RESULTS                │
-│                                                  │
-│ Process per-block entries from Step 1.           │
-│ Update balances, call on_address_found().        │
-│ Advance current_height.                          │
-└───────────────────────┬─────────────────────────┘
-                        │
-                        ▼
-┌─────────────────────────────────────────────────┐
-│ FINALIZE                                         │
-│                                                  │
-│ new_sync_height = max(current, observed_tip)     │
-│ new_sync_timestamp = latest metadata time        │
-│ checkpoint_height = trunk query height           │
-│                                                  │
-│ Caller persists for next sync.                   │
-└─────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Start[sync_address_balances called] --> CheckTS{last_sync_timestamp provided?}
+
+    CheckTS -->|No| FullScan1[FULL SCAN - first sync]
+    CheckTS -->|Yes| CheckElapsed{elapsed > 7 days?}
+
+    CheckElapsed -->|Yes| FullScan2[FULL SCAN - stale]
+    CheckElapsed -->|No| Incremental[INCREMENTAL ONLY]
+
+    FullScan1 --> Trunk
+    FullScan2 --> Trunk
+
+    Trunk[1. Trunk Query] --> Classify[2. Classify Keys]
+    Classify --> Privacy[3. Privacy Adjust]
+    Privacy --> Branch[4. Branch Queries]
+    Branch --> Recent
+
+    Incremental --> Recent
+
+    Recent[Query Recent - single query] --> CompCheck{Compaction detected?}
+
+    CompCheck -->|No| ApplyRecent[Apply Recent Results]
+    CompCheck -->|Yes| Compacted[Query Compacted]
+
+    Compacted --> ApplyRecent
+
+    ApplyRecent --> Finalize[Finalize and Persist]
 ```
 
 ## The Problem
