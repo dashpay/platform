@@ -60,7 +60,7 @@ pub unsafe extern "C" fn dash_sdk_encode_platform_address(
     let platform_addr = PlatformAddress::P2pkh(hash);
 
     let dash_network = match network {
-        0 => dash_sdk::dpp::dashcore::Network::Dash,
+        0 => dash_sdk::dpp::dashcore::Network::Mainnet,
         1 => dash_sdk::dpp::dashcore::Network::Testnet,
         2 => dash_sdk::dpp::dashcore::Network::Regtest,
         3 => dash_sdk::dpp::dashcore::Network::Devnet,
