@@ -6,6 +6,7 @@ struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @State private var showProofDetail = false
     // Progress values come from WalletService (kept in sync with SPV callbacks)
 
     // Display helpers
@@ -205,13 +206,12 @@ var body: some View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         } else {
-                            NavigationLink {
-                                ProofDetailView(proofData: platformBalanceSyncService.lastRecentProof)
-                            } label: {
-                                Text("None found")
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
-                            }
+                            Text("None found")
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                                .onTapGesture {
+                                    showProofDetail = true
+                                }
                         }
                     }
 
@@ -306,6 +306,11 @@ var body: some View {
         }
         .onDisappear {
             unifiedAppState.showWalletsSyncDetails = false
+        }
+        .sheet(isPresented: $showProofDetail) {
+            NavigationStack {
+                ProofDetailView(proofData: platformBalanceSyncService.lastRecentProof)
+            }
         }
     }
 
