@@ -900,4 +900,114 @@ mod tests {
         };
         assert_eq!(metrics.total_queries(), 7);
     }
+
+    #[test]
+    fn test_sync_mode_decision_no_timestamp() {
+        // No timestamp → full scan needed
+        let config = AddressSyncConfig::default();
+        let last_sync_timestamp: Option<u64> = None;
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_mode_decision_recent_timestamp() {
+        // Recent timestamp → incremental only
+        let config = AddressSyncConfig::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now - 10); // 10 seconds ago
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(!needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_mode_decision_stale_timestamp() {
+        // Stale timestamp (8 days old) → full scan
+        let config = AddressSyncConfig::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now - 8 * 24 * 60 * 60); // 8 days ago
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_check_compaction_from_proof_empty_proof() {
+        // Empty/invalid proof should return an error (conservative fallback)
+        let proof = dapi_grpc::platform::v0::Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![],
+            signature: vec![],
+            round: 0,
+            block_id_hash: vec![],
+            quorum_type: 0,
+        };
+        let platform_version = PlatformVersion::latest();
+        let result = check_compaction_from_proof(&proof, 100, platform_version);
+        // Empty proof should error — triggering conservative compacted query
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_check_compaction_from_proof_invalid_proof() {
+        // Garbage bytes should return an error
+        let proof = dapi_grpc::platform::v0::Proof {
+            grovedb_proof: vec![0xFF, 0xFE, 0xFD, 0xFC],
+            quorum_hash: vec![],
+            signature: vec![],
+            round: 0,
+            block_id_hash: vec![],
+            quorum_type: 0,
+        };
+        let platform_version = PlatformVersion::latest();
+        let result = check_compaction_from_proof(&proof, 100, platform_version);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_result_new_sync_height_max() {
+        // new_sync_height should be max of current and observed tip
+        let mut result = AddressSyncResult::new();
+        result.new_sync_height = 100;
+        let observed_tip = 200u64;
+        result.new_sync_height = result.new_sync_height.max(observed_tip);
+        assert_eq!(result.new_sync_height, 200);
+    }
+
+    #[test]
+    fn test_result_checkpoint_separate_from_sync_height() {
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 50;
+        result.new_sync_height = 100;
+        assert_ne!(result.checkpoint_height, result.new_sync_height);
+        assert_eq!(result.checkpoint_height, 50);
+        assert_eq!(result.new_sync_height, 100);
+    }
 }

@@ -255,9 +255,6 @@ class PlatformBalanceSyncService: ObservableObject {
         isSyncing = false
     }
 
-    nonisolated deinit {
-        // Timer is invalidated in stopPeriodicSync() / reset()
-    }
 }
 
 // MARK: - Notification
