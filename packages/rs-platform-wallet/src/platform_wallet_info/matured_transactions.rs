@@ -95,7 +95,7 @@ impl PlatformWalletInfo {
         };
 
         let base_path = match self.network() {
-            Network::Dash => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+            Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
             Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
             _ => {
                 return Err(PlatformWalletError::InvalidIdentityData(

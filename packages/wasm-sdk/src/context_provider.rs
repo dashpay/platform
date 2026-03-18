@@ -115,7 +115,7 @@ impl WasmTrustedContext {
     #[wasm_bindgen(js_name = "prefetchMainnet")]
     pub async fn prefetch_mainnet() -> Result<WasmTrustedContext, WasmSdkError> {
         let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
-            dash_sdk::dpp::dashcore::Network::Dash,
+            dash_sdk::dpp::dashcore::Network::Mainnet,
             None,
             std::num::NonZeroUsize::new(100).unwrap(),
         )

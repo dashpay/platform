@@ -34,8 +34,8 @@ struct ReceiveAddressView: View {
         // Address encoding is done in Rust via DPP's PlatformAddress::to_bech32m_string
         do {
             try walletService.walletManager.ensurePlatformPaymentAccount(for: wallet)
-            let collection = try walletService.walletManager.getManagedAccountCollection(for: wallet)
-            guard let platformAccount = collection.getPlatformPaymentAccount(accountIndex: 0, keyClass: 0) else {
+            guard let collection = walletService.walletManager.getManagedAccountCollection(for: wallet),
+                  let platformAccount = collection.getPlatformPaymentAccount(accountIndex: 0, keyClass: 0) else {
                 return nil
             }
             guard let pool = platformAccount.getAddressPool() else { return nil }

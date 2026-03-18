@@ -13,7 +13,7 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         &mut self,
         tx: &Transaction,
         context: TransactionContext,
-        wallet: &mut Wallet,
+        wallet: &Wallet,
         update_state: bool,
     ) -> TransactionCheckResult {
         // Check transaction with underlying wallet info

@@ -477,9 +477,9 @@ public class WalletManager {
     /// - Parameters:
     ///   - walletId: The wallet ID
     /// - Returns: The managed account collection
-    public func getManagedAccountCollection(walletId: Data) throws -> ManagedAccountCollection {
+    public func getManagedAccountCollection(walletId: Data) -> ManagedAccountCollection? {
         guard walletId.count == 32 else {
-            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
+            return nil
         }
 
         var error = FFIError()
@@ -496,7 +496,7 @@ public class WalletManager {
         }
 
         guard let collection = collectionHandle else {
-            throw KeyWalletError(ffiError: error)
+            return nil
         }
 
         return ManagedAccountCollection(handle: collection, manager: self)
@@ -519,7 +519,9 @@ public class WalletManager {
         }
 
         // Check if the account already exists
-        let collection = try getManagedAccountCollection(walletId: walletId)
+        guard let collection = getManagedAccountCollection(walletId: walletId) else {
+            throw KeyWalletError.notFound("Account collection not found")
+        }
         if collection.getPlatformPaymentAccount(accountIndex: accountIndex, keyClass: keyClass) != nil {
             return // Already exists
         }
@@ -543,7 +545,9 @@ public class WalletManager {
         accountIndex: UInt32 = 0,
         keyClass: UInt32 = 0
     ) throws -> [(index: UInt32, key: Data)] {
-        let collection = try getManagedAccountCollection(walletId: walletId)
+        guard let collection = getManagedAccountCollection(walletId: walletId) else {
+            return []
+        }
 
         guard let platformAccount = collection.getPlatformPaymentAccount(
             accountIndex: accountIndex, keyClass: keyClass
