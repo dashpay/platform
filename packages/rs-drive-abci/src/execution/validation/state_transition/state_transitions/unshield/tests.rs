@@ -463,10 +463,13 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // DPP structure validation now catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }
