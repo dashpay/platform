@@ -560,7 +560,7 @@ public class WalletManager {
         return addresses.compactMap { info in
             // Convert scriptPubKey to GroveDB storage key via Rust FFI
             var outKey = Data(count: 21)
-            var outKeyLen: UInt32 = 0
+            var outKeyLen: UInt32 = 21 // capacity of outKey buffer
             let success = info.scriptPubKey.withUnsafeBytes { scriptBuffer -> Bool in
                 guard let scriptBase = scriptBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                     return false

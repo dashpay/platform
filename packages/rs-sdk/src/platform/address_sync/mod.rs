@@ -363,13 +363,14 @@ pub async fn sync_address_balances<P: AddressProvider>(
     };
 
     // Incremental catch-up from catch_up_from to chain tip.
-    // Skip the compacted phase in incremental-only mode — the gap is typically
-    // small (seconds), so only recent per-block queries are needed.
+    // Always attempt compacted + recent — compacted is needed when the gap
+    // exceeds 64 blocks (the platform compaction threshold), which can happen
+    // if the wallet resumes after hours/days within the 7-day full-rescan window.
     incremental_catch_up(
         sdk,
         &key_to_index,
         catch_up_from,
-        needs_full_scan, // use_compacted: only after a full tree scan
+        true, // use_compacted: always try, server returns empty if not needed
         provider,
         &mut result,
         config.request_settings,
