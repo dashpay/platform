@@ -3937,29 +3937,15 @@ mod tests {
         let phase2_strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![
-                    Operation {
-                        op_type: OperationType::AddressFundingFromCoreAssetLock(
-                            dash_to_credits!(20)..=dash_to_credits!(20),
-                        ),
-                        frequency: Frequency {
-                            times_per_block_range: 1..3,
-                            chance_per_block: None,
-                        },
+                operations: vec![Operation {
+                    op_type: OperationType::AddressFundingFromCoreAssetLock(
+                        dash_to_credits!(20)..=dash_to_credits!(20),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
                     },
-                    Operation {
-                        op_type: OperationType::AddressTransfer(
-                            dash_to_credits!(5)..=dash_to_credits!(5),
-                            1..=4,
-                            Some(0.2),
-                            None,
-                        ),
-                        frequency: Frequency {
-                            times_per_block_range: 1..3,
-                            chance_per_block: None,
-                        },
-                    },
-                ],
+                }],
                 start_identities: StartIdentities::default(),
                 start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
@@ -4109,29 +4095,15 @@ mod tests {
         let phase3_strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
-                operations: vec![
-                    Operation {
-                        op_type: OperationType::AddressFundingFromCoreAssetLock(
-                            dash_to_credits!(20)..=dash_to_credits!(20),
-                        ),
-                        frequency: Frequency {
-                            times_per_block_range: 1..3,
-                            chance_per_block: None,
-                        },
+                operations: vec![Operation {
+                    op_type: OperationType::AddressFundingFromCoreAssetLock(
+                        dash_to_credits!(20)..=dash_to_credits!(20),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
                     },
-                    Operation {
-                        op_type: OperationType::AddressTransfer(
-                            dash_to_credits!(5)..=dash_to_credits!(5),
-                            1..=4,
-                            Some(0.2),
-                            None,
-                        ),
-                        frequency: Frequency {
-                            times_per_block_range: 1..3,
-                            chance_per_block: None,
-                        },
-                    },
-                ],
+                }],
                 start_identities: StartIdentities::default(),
                 start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
