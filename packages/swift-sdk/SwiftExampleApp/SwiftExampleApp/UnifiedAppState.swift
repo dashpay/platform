@@ -143,12 +143,16 @@ class UnifiedAppState: ObservableObject {
         // Run a repeating async loop
         syncLoopTask = Task { [weak self] in
             // Initial delay for SDK quorum prefetch
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(for: .seconds(2))
             await self?.performPlatformBalanceSync()
 
             // Repeat every 15 seconds
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                do {
+                    try await Task.sleep(for: .seconds(15))
+                } catch {
+                    break // Task was cancelled
+                }
                 await self?.performPlatformBalanceSync()
             }
         }

@@ -72,7 +72,7 @@ use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
 };
 use std::collections::HashMap;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
@@ -487,6 +487,13 @@ async fn incremental_catch_up<P: AddressProvider>(
     result.new_sync_timestamp = recent_metadata.time_ms / 1000;
     result.metrics.recent_queries += 1;
 
+    // Log what the recent query returned
+    let recent_entry_count = recent_changes.as_ref().map(|c| c.0.len()).unwrap_or(0);
+    info!(
+        "Address sync: recent query returned {} entries (use_exclusive={}, query_height={}, metadata_height={})",
+        recent_entry_count, use_exclusive_start, recent_query_height, recent_metadata.height
+    );
+
     if recent_metadata.height > observed_tip_height {
         observed_tip_height = recent_metadata.height;
     }
@@ -499,8 +506,19 @@ async fn incremental_catch_up<P: AddressProvider>(
     //
     // When we used inclusive start (RangeFrom) or start_height == 0,
     // we cannot perform the boundary check — always run compacted.
-    let need_compacted = if !use_exclusive_start || start_height == 0 {
-        // No prior recent block or first incremental — always check compacted
+    let need_compacted = if start_height == 0 {
+        // First incremental after tree scan — always check compacted
+        // to catch any gap between checkpoint and current tip.
+        true
+    } else if recent_entry_count == 0 && !use_exclusive_start {
+        // Subsequent sync: recent tree is empty AND we have no prior
+        // boundary. If the recent tree has zero address activity,
+        // compacted won't have anything newer either. Skip it.
+        debug!("Address sync: recent tree empty, no prior boundary — skipping compacted");
+        false
+    } else if !use_exclusive_start {
+        // Have a start_height but no boundary to check — run compacted
+        // to be safe (could have missed compacted entries).
         true
     } else {
         match check_compaction_from_proof(&recent_proof, last_known_recent_block, sdk.version()) {
