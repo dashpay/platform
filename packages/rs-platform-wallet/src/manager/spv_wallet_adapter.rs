@@ -45,8 +45,10 @@ impl WalletInterface for SpvWalletAdapter {
     ) -> key_wallet_manager::BlockProcessingResult {
         use key_wallet::transaction_checking::TransactionContext;
 
-        let mut wallet = self.wallet.wallet().write().await;
-        let mut wallet_info = self.wallet.core().wallet_info.write().await;
+        // Lock ordering invariant: always acquire `wallet` before `wallet_info`
+        // to prevent deadlocks when other code paths also need both locks.
+        let wallet = self.wallet.core.wallet.read().await;
+        let mut wallet_info = self.wallet.core.wallet_info.write().await;
 
         let context = TransactionContext::InBlock {
             block_hash: Some(block.header.block_hash()),
@@ -60,7 +62,7 @@ impl WalletInterface for SpvWalletAdapter {
 
         for tx in &block.txdata {
             let result = wallet_info
-                .check_core_transaction(&tx, context, &mut wallet, true)
+                .check_core_transaction(tx, context, &wallet, true)
                 .await;
             if result.is_relevant {
                 new_txids.push(tx.txid());
@@ -79,17 +81,17 @@ impl WalletInterface for SpvWalletAdapter {
     async fn process_mempool_transaction(&mut self, tx: &dashcore::Transaction) {
         use key_wallet::transaction_checking::TransactionContext;
 
-        let mut wallet = self.wallet.wallet().write().await;
-        let mut wallet_info = self.wallet.core().wallet_info.write().await;
+        let wallet = self.wallet.core.wallet.read().await;
+        let mut wallet_info = self.wallet.core.wallet_info.write().await;
 
         let context = TransactionContext::Mempool {};
         let _ = wallet_info
-            .check_core_transaction(&tx, context, &mut wallet, false)
+            .check_core_transaction(tx, context, &wallet, false)
             .await;
     }
 
     fn monitored_addresses(&self) -> Vec<DashAddress> {
-        if let Ok(wallet_info) = self.wallet.core().wallet_info.try_read() {
+        if let Ok(wallet_info) = self.wallet.core.wallet_info.try_read() {
             wallet_info.monitored_addresses()
         } else {
             Vec::new()

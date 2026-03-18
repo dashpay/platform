@@ -20,11 +20,61 @@ date: 2026-03-13
 
 **PR sequence** (each PR = library feature + evo-tool integration + old code deleted):
 
-1. **PR-1**: Project scaffold + `PlatformWallet` (standalone, sub-wallets as stored fields sharing `Arc<RwLock<MWI>>`) + `PlatformWalletManager` (multi-wallet + SPV, impls `WalletInterface` directly using `key-wallet` types, no `WalletManager<T>`) + `WalletHandle` (holds cloned sub-wallets, sync access) + `CoreWallet` (UTXO, addresses, asset lock proof) → replace evo-tool's `src/model/wallet/` and `SpvManager`
-2. **PR-2**: `IdentityWallet` (register, discover, top-up, withdraw, transfer) → replace identity backend tasks
-3. **PR-3**: `DashPayWallet` (DIP-14, DIP-15, contact requests, payments, sync) → replace dashpay backend tasks
-4. **PR-4**: `PlatformAddressWallet` (DIP-17 sync, send, withdraw) → replace platform address backend task
-5. **PR-5**: Serialization / persistence + final cleanup
+1. **PR-1** ✅: Project scaffold + `PlatformWallet` + `PlatformWalletManager` + `CoreWallet` + evo-tool bridge
+2. **PR-2**: `CoreWallet` deep integration — signing, per-address data, asset locks, payment building + migrate evo-tool backend tasks fully
+3. **PR-3**: `IdentityWallet` (register, discover, top-up, withdraw, transfer) → replace identity backend tasks
+4. **PR-4**: `DashPayWallet` (DIP-14, DIP-15, contact requests, payments, sync) → replace dashpay backend tasks
+5. **PR-5**: `PlatformAddressWallet` (DIP-17 sync, send, withdraw) → replace platform address backend task
+6. **PR-6**: Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` (dashcore) — both are mutable and always used together, having them as separate types behind separate locks adds unnecessary complexity. Single `Arc<RwLock<Wallet>>` containing all state.
+7. **PR-7**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+
+---
+
+## PR-1 Status: Complete
+
+### What was delivered
+
+**Platform-wallet library** (`rs-platform-wallet`):
+- `PlatformWallet` — standalone wallet with sub-wallets as stored fields, cheaply cloneable (all Arc fields)
+- `CoreWallet` — balance, UTXOs, spendable UTXOs, address generation, monitored addresses, transaction history, immature transactions, synced/birth height, network
+- `IdentityWallet`, `DashPayWallet`, `PlatformAddressWallet` — struct stubs sharing `wallet_info` and `wallet` Arcs
+- `IdentitySigner` — stub for state transition signing
+- `PlatformWalletManager` — multi-wallet coordinator with create/import/remove/list/get, event subscription
+- `SpvWalletAdapter` — implements `WalletInterface` for SPV integration
+- `IdentityManager` — refactored (no sdk field, added last_scanned_index)
+- Events: `PlatformWalletEvent`, `WalletEvent`, `SpvEvent`, `FinalityEvent`
+- No `WalletHandle` — `PlatformWallet.clone()` is cheap (~35 atomic ops)
+- `Wallet` stored as `Arc<RwLock<Wallet>>` (mutable — accounts added during contact establishment/sync)
+- Clean `mod.rs` files (module defs + re-exports only)
+- `Send + Sync` assertions in `tests/thread_safety.rs`
+
+**Evo-tool integration** (`dash-evo-tool`):
+- `PlatformWalletManager` added to `AppContext` with `DebugWrapper`
+- `platform_wallets` bridge map (keyed by `WalletSeedHash`) + `WalletIdMapping` (bidirectional)
+- Wallet creation/import/unlock registers with bridge via `register_with_platform_wallet_manager()`
+- Lock/remove/clear cleans up bridge
+- `get_platform_wallet()` / `require_platform_wallet()` helpers
+- 7 backend tasks validate via bridge at entry point
+- `generate_receive_address` has diagnostic logging comparing old vs new paths
+- `transfer_to_addresses` tries `platform_wallets` first with fallback
+- Migration guide documented in `platform_wallet_bridge.rs`
+
+**Dashcore** (`rust-dashcore`):
+- `&mut Wallet` → `&Wallet` in `WalletTransactionChecker::check_core_transaction`
+- All test callers cleaned up
+
+**Platform SDK** (separate PRs):
+- PR #3375: dashcore rev update + `Network::Dash` → `Network::Mainnet` rename
+- PR #3376: Extract fetch helpers to fix HRTB Send inference
+
+### Blockers for deeper migration (PR-2 scope)
+
+1. **Signing**: `Signer<PlatformAddress>` only implemented for the old `Wallet` model. PlatformWallet needs its own signing capability.
+2. **Per-address data**: CoreWallet exposes aggregate balance and flat UTXO lists. Old model tracks per-address balances, derivation metadata, asset locks, platform address info.
+3. **Sync/async mismatch**: UI runs synchronously (egui immediate mode), CoreWallet methods are async. Needs caching layer or backend-task-based data flow.
+4. **Asset lock transactions**: `create_asset_lock_proof()` requires porting ~600 lines of transaction building from evo-tool.
+5. **Payment building**: `send_transaction()` requires coin selection, signing, broadcast via SPV or RPC.
+6. **SPV lifecycle**: `start_spv()` / `stop_spv()` are stubs — need network config wiring.
 
 ---
 
@@ -402,7 +452,7 @@ to skip earlier blocks when loaded into `PlatformWalletManager`. Defaults to 0 (
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/mod.rs` (new — replaces `platform_wallet_info/mod.rs`)
+- `packages/rs-platform-wallet/src/wallet/platform_wallet.rs` (new — replaces `platform_wallet_info/mod.rs`)
 - `packages/rs-platform-wallet/src/platform_wallet_manager/mod.rs` (new)
 - `packages/rs-platform-wallet/src/wallet_handle/mod.rs` (new)
 
@@ -431,8 +481,8 @@ sub-structs call `self.sdk` internally.
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/mod.rs`
-- `packages/rs-platform-wallet/src/identity_manager/mod.rs`
+- `packages/rs-platform-wallet/src/wallet/platform_wallet.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/manager.rs`
 
 ---
 
@@ -649,7 +699,7 @@ and attempts to recover or rebroadcast them. Mirrors evo-tool's
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/core_wallet.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/core/wallet.rs` (new)
 - Depends on: `key-wallet` (`ManagedWalletInfo`, `TransactionBuilder`, `WalletInfoInterface`,
   `ManagedAccountOperations`, `FeeRate`, `SelectionStrategy`)
 - Depends on: `key-wallet-manager` (feature = "manager") — `WalletInterface` trait
@@ -794,7 +844,7 @@ pub async fn disable_identity_key(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/identity_wallet.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/identity/wallet.rs` (new)
 - Consolidates: `platform_wallet_info/identity_discovery.rs`, `platform_wallet_info/key_derivation.rs`
 
 ---
@@ -1288,10 +1338,10 @@ Still missing serialization:
 
 #### Files
 
-- `packages/rs-platform-wallet/src/identity_manager/serialization.rs` (new)
-- `packages/rs-platform-wallet/src/managed_identity/serialization.rs` (new)
-- `packages/rs-platform-wallet/src/contact_request.rs` (extend)
-- `packages/rs-platform-wallet/src/established_contact.rs` (extend)
+- `packages/rs-platform-wallet/src/wallet/identity/serialization.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/serialization.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/dashpay/contact_request.rs` (extend)
+- `packages/rs-platform-wallet/src/wallet/dashpay/established_contact.rs` (extend)
 
 ---
 
@@ -1555,9 +1605,9 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 - [packages/rs-platform-wallet/src/platform_wallet_info/identity_discovery.rs](packages/rs-platform-wallet/src/platform_wallet_info/identity_discovery.rs) — consolidate into `IdentityWallet::sync()`
 - [packages/rs-platform-wallet/src/platform_wallet_info/contact_requests.rs](packages/rs-platform-wallet/src/platform_wallet_info/contact_requests.rs) — consolidate into `DashPayWallet`; fix AES decryption bug
 - [packages/rs-platform-wallet/src/platform_wallet_info/key_derivation.rs](packages/rs-platform-wallet/src/platform_wallet_info/key_derivation.rs) — fix `key_type'` path segment
-- [packages/rs-platform-wallet/src/managed_identity/mod.rs](packages/rs-platform-wallet/src/managed_identity/mod.rs)
-- [packages/rs-platform-wallet/src/contact_request.rs](packages/rs-platform-wallet/src/contact_request.rs)
-- [packages/rs-platform-wallet/src/established_contact.rs](packages/rs-platform-wallet/src/established_contact.rs)
+- [packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs](packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs)
+- [packages/rs-platform-wallet/src/wallet/dashpay/contact_request.rs](packages/rs-platform-wallet/src/wallet/dashpay/contact_request.rs)
+- [packages/rs-platform-wallet/src/wallet/dashpay/established_contact.rs](packages/rs-platform-wallet/src/wallet/dashpay/established_contact.rs)
 
 ### SDK Transitions Used
 

@@ -66,7 +66,7 @@ impl PlatformWalletManager {
         options: WalletAccountCreationOptions,
     ) -> Result<PlatformWallet, PlatformWalletError> {
         let wallet =
-            PlatformWallet::from_extended_key(self.sdk.clone(), self.network, xprv, options)?;
+            PlatformWallet::from_extended_key(self.sdk.clone(), xprv, options)?;
         self.insert_and_return(wallet).await
     }
 

@@ -85,14 +85,14 @@ mod tests {
     use dpp::identity::v0::IdentityV0;
     use std::collections::BTreeMap;
 
-    fn create_test_identity(id_bytes: [u8; 32]) -> super::super::ManagedIdentity {
+    fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {
         let identity_v0 = IdentityV0 {
             id: Identifier::from(id_bytes),
             public_keys: BTreeMap::new(),
             balance: 1000,
             revision: 1,
         };
-        super::super::ManagedIdentity::new(dpp::identity::Identity::V0(identity_v0))
+        ManagedIdentity::new(dpp::identity::Identity::V0(identity_v0))
     }
 
     fn create_contact_request(

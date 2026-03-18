@@ -42,31 +42,61 @@ impl CoreWallet {
     }
 
     /// Get the next unused receive address for the default account.
-    pub async fn next_receive_address(&self) -> Option<DashAddress> {
-        let info = self.wallet_info.read().await;
-        let addresses = info.monitored_addresses();
-        addresses.into_iter().next()
+    pub async fn next_receive_address(
+        &self,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        self.next_receive_address_for_account(0).await
     }
 
-    /// Get the next unused receive address for a specific account index.
-    pub async fn next_receive_address_for_account(&self, _account_index: u32) -> Option<DashAddress> {
-        let info = self.wallet_info.read().await;
-        let addresses = info.monitored_addresses();
-        addresses.into_iter().next()
+    /// Get the next unused BIP-44 external (receive) address for a specific account.
+    pub async fn next_receive_address_for_account(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let xpub = self.account_xpub(account_index).await?;
+        let mut info = self.wallet_info.write().await;
+        let account = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletCreation(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+        account
+            .next_receive_address(Some(&xpub), true)
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
     /// Get the next unused change address for the default account.
-    pub async fn next_change_address(&self) -> Option<DashAddress> {
-        let info = self.wallet_info.read().await;
-        let addresses = info.monitored_addresses();
-        addresses.into_iter().last()
+    pub async fn next_change_address(
+        &self,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        self.next_change_address_for_account(0).await
     }
 
-    /// Get the next unused change address for a specific account index.
-    pub async fn next_change_address_for_account(&self, _account_index: u32) -> Option<DashAddress> {
-        let info = self.wallet_info.read().await;
-        let addresses = info.monitored_addresses();
-        addresses.into_iter().last()
+    /// Get the next unused BIP-44 internal (change) address for a specific account.
+    pub async fn next_change_address_for_account(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let xpub = self.account_xpub(account_index).await?;
+        let mut info = self.wallet_info.write().await;
+        let account = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletCreation(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+        account
+            .next_change_address(Some(&xpub), true)
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
     /// Get all monitored addresses across all account types.
@@ -113,10 +143,10 @@ impl CoreWallet {
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {
         use key_wallet::bip32::{ChildNumber, DerivationPath};
 
-        let coin_type = if self.network == Network::Testnet {
-            1u32
+        let coin_type = if self.network == Network::Mainnet {
+            5u32 // DASH mainnet
         } else {
-            5u32
+            1u32 // testnet/devnet/regtest all use coin_type 1
         };
 
         let path = DerivationPath::from(vec![

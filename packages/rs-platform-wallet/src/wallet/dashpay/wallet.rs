@@ -6,7 +6,7 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use tokio::sync::RwLock;
 
-use crate::identity_manager::IdentityManager;
+use crate::wallet::identity::IdentityManager;
 
 /// DashPay wallet providing contact request and payment functionality.
 ///

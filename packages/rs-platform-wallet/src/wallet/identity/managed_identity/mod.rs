@@ -3,17 +3,16 @@
 //! This module provides the `ManagedIdentity` struct which wraps a Platform Identity
 //! with additional metadata for wallet management.
 
-use crate::{BlockTime, ContactRequest, EstablishedContact};
-use dpp::identity::Identity;
-use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
-
-// Import implementation modules
 mod contact_requests;
 mod contacts;
 mod identity_ops;
 mod label;
 mod sync;
+
+use crate::{BlockTime, ContactRequest, EstablishedContact};
+use dpp::identity::Identity;
+use dpp::prelude::Identifier;
+use std::collections::BTreeMap;
 
 /// A managed identity that combines an Identity with wallet-specific metadata
 #[derive(Debug, Clone)]
@@ -86,7 +85,7 @@ mod tests {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity);
 
-        let block_time = super::super::BlockTime::new(100000, 900000, 1234567890);
+        let block_time = BlockTime::new(100000, 900000, 1234567890);
         managed.update_balance_block_time(block_time);
 
         assert_eq!(managed.last_updated_balance_block_time, Some(block_time));
@@ -109,7 +108,7 @@ mod tests {
         let identity = create_test_identity();
         let mut managed = ManagedIdentity::new(identity);
 
-        let block_time = super::super::BlockTime::new(50000, 450000, 9876543210);
+        let block_time = BlockTime::new(50000, 450000, 9876543210);
         managed.update_keys_sync_block_time(block_time);
 
         assert_eq!(managed.last_synced_keys_block_time, Some(block_time));
@@ -133,7 +132,7 @@ mod tests {
         assert_eq!(managed.needs_balance_update(1000, 100), true);
 
         // Just updated
-        let block_time = super::super::BlockTime::new(100, 900, 1000);
+        let block_time = BlockTime::new(100, 900, 1000);
         managed.update_balance_block_time(block_time);
         assert_eq!(managed.needs_balance_update(1050, 100), false);
 
@@ -150,7 +149,7 @@ mod tests {
         assert_eq!(managed.needs_keys_sync(1000, 100), true);
 
         // Just synced
-        let block_time = super::super::BlockTime::new(100, 900, 1000);
+        let block_time = BlockTime::new(100, 900, 1000);
         managed.update_keys_sync_block_time(block_time);
         assert_eq!(managed.needs_keys_sync(1050, 100), false);
 
@@ -167,7 +166,7 @@ mod tests {
         let our_id = Identifier::from([1u8; 32]);
 
         // First, add an incoming request from the contact
-        let incoming_request = super::super::ContactRequest::new(
+        let incoming_request = ContactRequest::new(
             contact_id,
             our_id,
             0,
@@ -184,7 +183,7 @@ mod tests {
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Now add a sent request to the same contact - should auto-establish
-        let outgoing_request = super::super::ContactRequest::new(
+        let outgoing_request = ContactRequest::new(
             our_id,
             contact_id,
             0,
@@ -212,7 +211,7 @@ mod tests {
         let our_id = Identifier::from([1u8; 32]);
 
         // First, add a sent request to the contact
-        let outgoing_request = super::super::ContactRequest::new(
+        let outgoing_request = ContactRequest::new(
             our_id,
             contact_id,
             0,
@@ -229,7 +228,7 @@ mod tests {
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Now add an incoming request from the same contact - should auto-establish
-        let incoming_request = super::super::ContactRequest::new(
+        let incoming_request = ContactRequest::new(
             contact_id,
             our_id,
             0,
@@ -257,7 +256,7 @@ mod tests {
         let our_id = Identifier::from([1u8; 32]);
 
         // Add a sent request without a reciprocal incoming request
-        let outgoing_request = super::super::ContactRequest::new(
+        let outgoing_request = ContactRequest::new(
             our_id,
             contact_id,
             0,
@@ -275,7 +274,7 @@ mod tests {
 
         // Add an incoming request from a different contact
         let other_contact_id = Identifier::from([3u8; 32]);
-        let incoming_request = super::super::ContactRequest::new(
+        let incoming_request = ContactRequest::new(
             other_contact_id,
             our_id,
             0,

@@ -9,11 +9,10 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
-use crate::identity_manager::IdentityManager;
 
-use super::core_wallet::CoreWallet;
-use super::dashpay_wallet::DashPayWallet;
-use super::identity_wallet::IdentityWallet;
+use super::core::CoreWallet;
+use super::dashpay::DashPayWallet;
+use super::identity::{IdentityManager, IdentityWallet};
 use super::platform_address_wallet::PlatformAddressWallet;
 
 /// Unique identifier for a wallet (32-byte hash).
@@ -23,15 +22,20 @@ pub type WalletId = [u8; 32];
 ///
 /// This is SPV-free. It needs only key material and an `Sdk`.
 /// For SPV support, use [`PlatformWalletManager`](crate::manager::PlatformWalletManager).
+///
+/// # Cloning
+///
+/// `PlatformWallet` is cheaply cloneable (~35 atomic ops). A clone is a **shared
+/// handle** to the same mutable state — not an independent copy. All clones see
+/// the same UTXOs, balances, and identities through shared `Arc<RwLock<...>>` fields.
 #[derive(Clone)]
 pub struct PlatformWallet {
     wallet_id: WalletId,
-    sdk: dash_sdk::Sdk,
-    wallet: Arc<RwLock<Wallet>>,
-    core: CoreWallet,
-    identity: IdentityWallet,
-    dashpay: DashPayWallet,
-    platform: PlatformAddressWallet,
+    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) core: CoreWallet,
+    pub(crate) identity: IdentityWallet,
+    pub(crate) dashpay: DashPayWallet,
+    pub(crate) platform: PlatformAddressWallet,
 }
 
 impl PlatformWallet {
@@ -63,11 +67,6 @@ impl PlatformWallet {
     /// Get the wallet ID.
     pub fn wallet_id(&self) -> WalletId {
         self.wallet_id
-    }
-
-    /// Get a reference to the underlying key-wallet.
-    pub fn wallet(&self) -> &Arc<RwLock<Wallet>> {
-        &self.wallet
     }
 
     /// Get a reference to the SDK.
@@ -117,7 +116,6 @@ impl PlatformWallet {
         Self {
             wallet_id,
             sdk,
-            wallet,
             core,
             identity,
             dashpay,
@@ -159,9 +157,10 @@ impl PlatformWallet {
     }
 
     /// Create a PlatformWallet from an extended private key string.
+    ///
+    /// The network is derived from the extended key itself (xprv encodes the network).
     pub fn from_extended_key(
         sdk: dash_sdk::Sdk,
-        network: Network,
         xprv: &str,
         options: WalletAccountCreationOptions,
     ) -> Result<Self, PlatformWalletError> {

@@ -6,7 +6,7 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use tokio::sync::RwLock;
 
-use crate::identity_manager::IdentityManager;
+use super::manager::IdentityManager;
 
 /// Identity wallet providing identity management functionality.
 #[derive(Clone)]
