@@ -278,7 +278,17 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
 /// base64-encoded CBOR or does not contain a `message` key, allowing the
 /// caller to fall back to the raw string.
 fn decode_data_message(data: &str) -> Option<String> {
-    let decoded_bytes = base64_decode(data)?;
+    // Silently try base64 — failure is expected for plain-text data fields,
+    // so we intentionally avoid `base64_decode()` which logs at debug level.
+    let decoded_bytes = engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        engine::GeneralPurposeConfig::new()
+            .with_decode_allow_trailing_bits(true)
+            .with_decode_padding_mode(engine::DecodePaddingMode::Indifferent),
+    )
+    .decode(data)
+    .ok()?;
+
     let raw_value: ciborium::Value = ciborium::de::from_reader(decoded_bytes.as_slice())
         .inspect_err(|e| {
             tracing::trace!("data field is not CBOR: {}", e);
@@ -310,7 +320,6 @@ impl From<serde_json::Value> for TenderdashStatus {
                 object
                     .get("data")
                     .and_then(|d| d.as_str())
-                    .filter(|s| s.is_ascii())
                     .map(|s| decode_data_message(s).unwrap_or_else(|| s.to_string()))
             } else {
                 raw_message.map(|s| s.to_string())
@@ -697,8 +706,9 @@ mod tests {
     // -- decode_data_message tests --
 
     #[test]
-    fn decode_data_message_plain_text_passthrough() {
-        // Plain ASCII text that is not base64 CBOR should be returned as-is
+    fn decode_data_message_plain_text_returns_none() {
+        // Plain text that is not base64 CBOR → returns None so the caller
+        // can fall back to using the raw string.
         assert!(super::decode_data_message("just plain text").is_none());
     }
 
@@ -838,5 +848,22 @@ mod tests {
 
         let status = TenderdashStatus::from(value);
         assert_eq!(status.message.as_deref(), Some("plain text error detail"));
+    }
+
+    #[test]
+    fn from_json_value_preserves_base64_non_cbor_data() {
+        // data field that is valid base64 but decodes to non-CBOR bytes.
+        // decode_data_message should return None → fall back to raw string.
+        let raw_bytes = b"this is not CBOR at all";
+        let b64 = base64::prelude::BASE64_STANDARD.encode(raw_bytes);
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": b64
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.message.as_deref(), Some(b64.as_str()));
     }
 }
