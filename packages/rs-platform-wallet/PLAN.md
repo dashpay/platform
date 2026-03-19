@@ -793,11 +793,18 @@ pub async fn register_identity(
 
 Steps:
 
-1. `self.core.create_asset_lock_proof(amount_duffs)` → `(AssetLockProof, funding_private_key)`
-   (next identity index tracked internally, derives `m/9'/coin'/5'/1'/identity_index`)
-2. Derive auth keys from `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'` via `self.wallet`
-3. Build and sign `IdentityCreateTransition` via `PutIdentity::put_to_platform_and_wait_for_response()`
-4. Broadcast, wait for proof, add to `identity_manager`
+1. `core_wallet.create_registration_asset_lock_proof(amount, index)` → `(AssetLockProof, PrivateKey)`
+2. Derive auth keys at DIP-9 paths, build `IdentityPublicKey` entries
+3. Build `Identity` object with keys
+4. `identity.put_to_platform_and_wait_for_response(&sdk, proof, &key, &signer, None)` → confirmed `Identity`
+5. Add to `identity_manager`
+
+SDK traits used:
+- `PutIdentity::put_to_platform_and_wait_for_response` — takes `&Identity`, `AssetLockProof`, `&PrivateKey`, `&impl Signer<IdentityPublicKey>`, returns confirmed `Identity`
+- `TopUpIdentity::top_up_identity` — takes `AssetLockProof`, `&PrivateKey`, returns `u64` (new balance). No signer needed.
+- `WithdrawFromIdentity::withdraw` — takes `Option<Address>`, amount, signer **by value**, returns `u64`
+- `TransferToIdentity::transfer_credits` — takes `Identifier`, amount, signer **by value**, returns `(u64, u64)`
+- Key update: no SDK trait — build `IdentityUpdateTransition` via DPP, broadcast with `BroadcastStateTransition`
 
 **DIP-9 key path note**: The full path is `m/9'/coin'/5'/0'/key_type'/identity_index'/key_index'`
 where `key_type` is: `0'` = ECDSA, `1'` = BLS. The existing `key_derivation.rs` omits the

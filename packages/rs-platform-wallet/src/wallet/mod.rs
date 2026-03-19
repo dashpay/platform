@@ -10,3 +10,4 @@ pub use dashpay::DashPayWallet;
 pub use identity::IdentityWallet;
 pub use platform_address_wallet::PlatformAddressWallet;
 pub use platform_wallet::{PlatformWallet, WalletId};
+pub use signer::IdentitySigner;
