@@ -34,7 +34,7 @@ const IDENTITY_GAP_LIMIT: u32 = 5;
 /// Derive the 20-byte RIPEMD160(SHA256) hash of the public key at the given
 /// identity authentication path.
 ///
-/// Path format: `base_path / identity_index' / key_index'`
+/// Path format: `base_path / key_type' / identity_index' / key_index'`
 /// where `base_path` is `m/9'/COIN_TYPE'/5'/0'` (mainnet or testnet).
 fn derive_identity_auth_key_hash(
     wallet: &Wallet,
@@ -44,23 +44,23 @@ fn derive_identity_auth_key_hash(
 ) -> Result<[u8; 20], PlatformWalletError> {
     use dashcore::secp256k1::Secp256k1;
     use dpp::util::hash::ripemd160_sha256;
-    use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey};
+    use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey, KeyDerivationType};
     use key_wallet::dip9::{
         IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
     };
 
     let base_path = match network {
         key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-        key_wallet::Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        _ => {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "Unsupported network for identity derivation".to_string(),
-            ));
-        }
+        _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
     };
+
+    let key_type_index: u32 = KeyDerivationType::ECDSA.into();
 
     let mut full_path = DerivationPath::from(base_path);
     full_path = full_path.extend([
+        ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("Invalid key type index: {}", e))
+        })?,
         ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("Invalid identity index: {}", e))
         })?,
@@ -162,7 +162,7 @@ impl IdentityWallet {
         let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
         {
             use dashcore::secp256k1::Secp256k1;
-            use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey};
+            use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey, KeyDerivationType};
             use key_wallet::dip9::{
                 IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
             };
@@ -170,19 +170,22 @@ impl IdentityWallet {
             let wallet = self.wallet.read().await;
             let base_path: DerivationPath = match self.network {
                 key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-                key_wallet::Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-                _ => {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "Unsupported network for identity derivation".to_string(),
-                    ));
-                }
+                _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
             }
             .into();
+
+            let key_type_index: u32 = KeyDerivationType::ECDSA.into();
 
             let secp = Secp256k1::new();
 
             for key_index in 0..key_count {
                 let full_path = base_path.extend([
+                    ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Invalid key type index: {}",
+                            e
+                        ))
+                    })?,
                     ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
                         PlatformWalletError::InvalidIdentityData(format!(
                             "Invalid identity index: {}",
@@ -256,9 +259,9 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Step 4: Add the identity to the local manager.
+        // Step 4: Add the identity to the local manager (with its HD index).
         let mut manager = self.identity_manager.write().await;
-        manager.add_identity(identity.clone())?;
+        manager.add_identity(identity.clone(), identity_index)?;
 
         Ok(identity)
     }
@@ -283,11 +286,16 @@ impl IdentityWallet {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
 
-        let wallet = self.wallet.read().await;
-        let network = wallet.network;
-        let mut manager = self.identity_manager.write().await;
+        let network = {
+            let wallet = self.wallet.read().await;
+            wallet.network
+        };
 
-        let start_index = manager.last_scanned_index();
+        let start_index = {
+            let manager = self.identity_manager.read().await;
+            manager.last_scanned_index()
+        };
+
         let mut consecutive_misses = 0u32;
         let mut identity_index = start_index;
         let mut discovered: Vec<Identity> = Vec::new();
@@ -295,18 +303,23 @@ impl IdentityWallet {
         while consecutive_misses < IDENTITY_GAP_LIMIT {
             // Derive the authentication key hash for this identity index
             // (key_index 0 is the primary authentication key).
-            let key_hash_array =
-                derive_identity_auth_key_hash(&wallet, network, identity_index, 0)?;
+            let key_hash_array = {
+                let wallet = self.wallet.read().await;
+                derive_identity_auth_key_hash(&wallet, network, identity_index, 0)?
+            };
 
             // Query Platform for an identity registered with this key hash.
+            // No locks are held during this network call.
             match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
                 Ok(Some(identity)) => {
                     let identity_id = identity.id();
 
-                    // Add to manager if not already present.
+                    // Acquire write lock only when adding an identity.
+                    let mut manager = self.identity_manager.write().await;
                     if manager.identity(&identity_id).is_none() {
-                        manager.add_identity(identity.clone())?;
+                        manager.add_identity(identity.clone(), identity_index)?;
                     }
+                    drop(manager);
 
                     discovered.push(identity);
                     consecutive_misses = 0;
@@ -318,9 +331,10 @@ impl IdentityWallet {
                     // Log the error but treat it as a miss so scanning
                     // continues. A transient network error should not
                     // silently stop discovery.
-                    eprintln!(
+                    tracing::warn!(
                         "Failed to query identity at index {}: {}",
-                        identity_index, e
+                        identity_index,
+                        e
                     );
                     consecutive_misses += 1;
                 }
@@ -330,6 +344,7 @@ impl IdentityWallet {
         }
 
         // Update the last scanned index so the next sync resumes here.
+        let mut manager = self.identity_manager.write().await;
         manager.set_last_scanned_index(identity_index);
 
         Ok(discovered)
@@ -350,7 +365,6 @@ impl IdentityWallet {
     ///
     /// * `core_wallet` - The core wallet used to fund the top-up.
     /// * `identity_id` - The identifier of the identity to top up.
-    /// * `identity_index` - The BIP-9 identity index (used for key derivation).
     /// * `topup_index` - An incrementing index distinguishing successive
     ///   top-ups for the same identity.
     /// * `amount_duffs` - Amount of Dash (in duffs) to add.
@@ -358,17 +372,21 @@ impl IdentityWallet {
         &self,
         core_wallet: &CoreWallet,
         identity_id: &Identifier,
-        identity_index: u32,
         topup_index: u32,
         amount_duffs: u64,
     ) -> Result<(), PlatformWalletError> {
-        // Verify the identity exists in our manager.
-        {
+        // Retrieve the identity and its HD index from the manager.
+        let (identity, identity_index) = {
             let manager = self.identity_manager.read().await;
-            if manager.identity(identity_id).is_none() {
-                return Err(PlatformWalletError::IdentityNotFound(*identity_id));
-            }
-        }
+            let identity = manager
+                .identity(identity_id)
+                .cloned()
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager.identity_index(identity_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*identity_id),
+            )?;
+            (identity, index)
+        };
 
         // Step 1: Build and broadcast the top-up asset lock transaction,
         // then wait for the instant-send lock proof.
@@ -376,15 +394,7 @@ impl IdentityWallet {
             .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
             .await?;
 
-        // Step 2: Retrieve the identity and submit the top-up state transition.
-        let identity = {
-            let manager = self.identity_manager.read().await;
-            manager
-                .identity(identity_id)
-                .cloned()
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
-        };
-
+        // Step 2: Submit the top-up state transition.
         let new_balance = identity
             .top_up_identity(
                 &self.sdk,
@@ -427,23 +437,25 @@ impl IdentityWallet {
     /// # Arguments
     ///
     /// * `identity_id` - The identifier of the identity to withdraw from.
-    /// * `identity_index` - The BIP-9 identity index (used for key derivation / signing).
     /// * `amount` - Amount of credits to withdraw.
     /// * `to_address` - The Dash P2PKH address to receive the withdrawal.
     pub async fn withdraw_credits(
         &self,
         identity_id: &Identifier,
-        identity_index: u32,
         amount: u64,
         to_address: &DashAddress,
     ) -> Result<(), PlatformWalletError> {
-        // Retrieve the identity from the manager.
-        let identity = {
+        // Retrieve the identity and its HD index from the manager.
+        let (identity, identity_index) = {
             let manager = self.identity_manager.read().await;
-            manager
+            let identity = manager
                 .identity(identity_id)
                 .cloned()
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager.identity_index(identity_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*identity_id),
+            )?;
+            (identity, index)
         };
 
         let signer = self.signer_for_identity(identity_index);
@@ -492,24 +504,25 @@ impl IdentityWallet {
     ///
     /// * `from_id` - The identifier of the sending identity (must be owned
     ///   by this wallet).
-    /// * `identity_index` - The BIP-9 identity index of the sender (used for
-    ///   key derivation / signing).
     /// * `to_id` - The identifier of the receiving identity.
     /// * `amount` - Amount of credits to transfer.
     pub async fn transfer_credits(
         &self,
         from_id: &Identifier,
-        identity_index: u32,
         to_id: &Identifier,
         amount: u64,
     ) -> Result<(), PlatformWalletError> {
-        // Retrieve the sending identity from the manager.
-        let identity = {
+        // Retrieve the sending identity and its HD index from the manager.
+        let (identity, identity_index) = {
             let manager = self.identity_manager.read().await;
-            manager
+            let identity = manager
                 .identity(from_id)
                 .cloned()
-                .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
+                .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?;
+            let index = manager.identity_index(from_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*from_id),
+            )?;
+            (identity, index)
         };
 
         let signer = self.signer_for_identity(identity_index);

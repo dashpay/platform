@@ -106,6 +106,7 @@ impl PlatformWallet {
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
+            network,
         };
 
         let platform = PlatformAddressWallet {

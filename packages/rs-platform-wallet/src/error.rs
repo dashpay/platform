@@ -28,6 +28,9 @@ pub enum PlatformWalletError {
     #[error("Contact request not found: {0}")]
     ContactRequestNotFound(Identifier),
 
+    #[error("Identity index not set for identity {0} — register or discover the identity first")]
+    IdentityIndexNotSet(Identifier),
+
     #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
     )]

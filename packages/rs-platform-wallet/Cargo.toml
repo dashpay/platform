@@ -29,8 +29,14 @@ indexmap = "2.0"
 # Async runtime
 tokio = { version = "1", features = ["sync"] }
 
+# Logging
+tracing = "0.1"
+
 # Encoding
 hex = "0.4"
+
+# Security
+zeroize = "1"
 
 [dev-dependencies]
 rand = "0.8"

@@ -20,6 +20,13 @@ pub struct ManagedIdentity {
     /// The Platform identity
     pub identity: Identity,
 
+    /// The BIP-9 HD identity index used during registration or discovery.
+    ///
+    /// This is the index in the derivation path `m/9'/coin'/5'/0'/key_type'/identity_index'/key_id'`.
+    /// Recorded during identity registration or gap-limit discovery so that
+    /// subsequent operations (signing, ECDH) can derive the correct keys.
+    pub identity_index: u32,
+
     /// Last block time when balance was updated for this identity
     pub last_updated_balance_block_time: Option<BlockTime>,
 
@@ -58,7 +65,7 @@ mod tests {
     #[test]
     fn test_managed_identity_creation() {
         let identity = create_test_identity();
-        let managed = ManagedIdentity::new(identity);
+        let managed = ManagedIdentity::new(identity, 0);
 
         assert_eq!(managed.id(), Identifier::from([1u8; 32]));
         assert_eq!(managed.balance(), 1000);
@@ -71,7 +78,7 @@ mod tests {
     #[test]
     fn test_label_management() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         managed.set_label("Test Identity".to_string());
         assert_eq!(managed.label, Some("Test Identity".to_string()));
@@ -83,7 +90,7 @@ mod tests {
     #[test]
     fn test_balance_block_time() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         let block_time = BlockTime::new(100000, 900000, 1234567890);
         managed.update_balance_block_time(block_time);
@@ -106,7 +113,7 @@ mod tests {
     #[test]
     fn test_keys_sync_block_time() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         let block_time = BlockTime::new(50000, 450000, 9876543210);
         managed.update_keys_sync_block_time(block_time);
@@ -126,7 +133,7 @@ mod tests {
     #[test]
     fn test_needs_balance_update() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         // Never updated - needs update
         assert_eq!(managed.needs_balance_update(1000, 100), true);
@@ -143,7 +150,7 @@ mod tests {
     #[test]
     fn test_needs_keys_sync() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         // Never synced - needs sync
         assert_eq!(managed.needs_keys_sync(1000, 100), true);
@@ -160,7 +167,7 @@ mod tests {
     #[test]
     fn test_auto_establish_on_sent_request() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
@@ -205,7 +212,7 @@ mod tests {
     #[test]
     fn test_auto_establish_on_incoming_request() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
@@ -250,7 +257,7 @@ mod tests {
     #[test]
     fn test_no_auto_establish_without_reciprocal() {
         let identity = create_test_identity();
-        let mut managed = ManagedIdentity::new(identity);
+        let mut managed = ManagedIdentity::new(identity, 0);
 
         let contact_id = Identifier::from([2u8; 32]);
         let our_id = Identifier::from([1u8; 32]);

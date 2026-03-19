@@ -6,10 +6,11 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 
 impl ManagedIdentity {
-    /// Create a new managed identity
-    pub fn new(identity: Identity) -> Self {
+    /// Create a new managed identity with its BIP-9 HD identity index.
+    pub fn new(identity: Identity, identity_index: u32) -> Self {
         Self {
             identity,
+            identity_index,
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
             label: None,

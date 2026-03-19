@@ -41,15 +41,22 @@ impl IdentityManager {
         Self::default()
     }
 
-    /// Add an identity to the manager
-    pub fn add_identity(&mut self, identity: Identity) -> Result<(), PlatformWalletError> {
+    /// Add an identity to the manager with its BIP-9 HD identity index.
+    ///
+    /// Every identity in this wallet must have its HD index so that signing
+    /// and ECDH derivation can locate the correct keys.
+    pub fn add_identity(
+        &mut self,
+        identity: Identity,
+        identity_index: u32,
+    ) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
 
         if self.identities.contains_key(&identity_id) {
             return Err(PlatformWalletError::IdentityAlreadyExists(identity_id));
         }
 
-        let managed_identity = ManagedIdentity::new(identity);
+        let managed_identity = ManagedIdentity::new(identity, identity_index);
         self.identities.insert(identity_id, managed_identity);
 
         // If this is the first identity, make it primary
@@ -58,6 +65,15 @@ impl IdentityManager {
         }
 
         Ok(())
+    }
+
+    /// Get the BIP-9 HD identity index for a given identity ID.
+    ///
+    /// Returns `None` if the identity is not managed or its index was not recorded.
+    pub fn identity_index(&self, identity_id: &Identifier) -> Option<u32> {
+        self.identities
+            .get(identity_id)
+            .map(|m| m.identity_index)
     }
 
     /// Remove an identity from the manager
@@ -209,11 +225,12 @@ mod tests {
         let identity_id = Identifier::from([1u8; 32]);
         let identity = create_test_identity(identity_id);
 
-        manager.add_identity(identity.clone()).unwrap();
+        manager.add_identity(identity.clone(), 0).unwrap();
 
         assert_eq!(manager.identities.len(), 1);
         assert!(manager.identity(&identity_id).is_some());
         assert_eq!(manager.primary_identity_id, Some(identity_id));
+        assert_eq!(manager.identity_index(&identity_id), Some(0));
     }
 
     #[test]
@@ -222,7 +239,7 @@ mod tests {
         let identity_id = Identifier::from([1u8; 32]);
         let identity = create_test_identity(identity_id);
 
-        manager.add_identity(identity).unwrap();
+        manager.add_identity(identity, 0).unwrap();
         let removed = manager.remove_identity(&identity_id).unwrap();
 
         assert_eq!(removed.id(), identity_id);
@@ -237,8 +254,8 @@ mod tests {
         let id1 = Identifier::from([1u8; 32]);
         let id2 = Identifier::from([2u8; 32]);
 
-        manager.add_identity(create_test_identity(id1)).unwrap();
-        manager.add_identity(create_test_identity(id2)).unwrap();
+        manager.add_identity(create_test_identity(id1), 0).unwrap();
+        manager.add_identity(create_test_identity(id2), 1).unwrap();
 
         assert_eq!(manager.primary_identity_id, Some(id1));
 
@@ -252,7 +269,7 @@ mod tests {
         let identity_id = Identifier::from([1u8; 32]);
 
         manager
-            .add_identity(create_test_identity(identity_id))
+            .add_identity(create_test_identity(identity_id), 0)
             .unwrap();
 
         manager

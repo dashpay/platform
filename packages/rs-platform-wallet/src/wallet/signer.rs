@@ -16,6 +16,7 @@ use key_wallet::dip9::{
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use tokio::sync::RwLock;
+use zeroize::Zeroizing;
 
 /// A signer that uses wallet-derived keys to sign identity state transitions.
 pub struct IdentitySigner {
@@ -40,13 +41,13 @@ impl IdentitySigner {
 
     /// Get the identity index this signer is associated with.
     #[allow(dead_code)]
-    pub fn identity_index(&self) -> u32 {
+    pub(crate) fn identity_index(&self) -> u32 {
         self.identity_index
     }
 
     /// Get a reference to the wallet.
     #[allow(dead_code)]
-    pub fn wallet(&self) -> &Arc<RwLock<Wallet>> {
+    pub(crate) fn wallet(&self) -> &Arc<RwLock<Wallet>> {
         &self.wallet
     }
 
@@ -60,12 +61,7 @@ impl IdentitySigner {
     ) -> Result<DerivationPath, ProtocolError> {
         let base_path: DerivationPath = match self.network {
             Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-            Network::Testnet => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-            _ => {
-                return Err(ProtocolError::Generic(
-                    "Unsupported network for identity derivation".to_string(),
-                ));
-            }
+            _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
         }
         .into();
 
@@ -86,11 +82,14 @@ impl IdentitySigner {
 
     /// Derive the raw private key bytes for a given identity public key.
     ///
+    /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
+    /// wiped from memory when the value is dropped.
+    ///
     /// The wallet lock is acquired and released within this method.
     fn derive_private_key_bytes(
         &self,
         identity_public_key: &IdentityPublicKey,
-    ) -> Result<[u8; 32], ProtocolError> {
+    ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
         let key_id = identity_public_key.id();
         let key_derivation_type = match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
@@ -115,7 +114,7 @@ impl IdentitySigner {
             ))
         })?;
 
-        Ok(secret_key.secret_bytes())
+        Ok(Zeroizing::new(secret_key.secret_bytes()))
     }
 }
 
@@ -129,8 +128,11 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
 
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature = dashcore::signer::sign(data, &private_key_bytes)
-                    .map_err(|e| ProtocolError::Generic(format!("ECDSA signing failed: {}", e)))?;
+                let signature =
+                    dashcore::signer::sign(data, private_key_bytes.as_ref())
+                        .map_err(|e| {
+                            ProtocolError::Generic(format!("ECDSA signing failed: {}", e))
+                        })?;
                 Ok(BinaryData::new(signature.to_vec()))
             }
             #[cfg(feature = "bls")]
@@ -139,7 +141,7 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
 
                 let secret_key =
                     dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                        &private_key_bytes,
+                        &*private_key_bytes,
                     )
                     .into_option()
                     .ok_or_else(|| {
@@ -166,7 +168,7 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
                 use dashcore::ed25519_dalek::Signer as _;
 
                 let signing_key =
-                    dashcore::ed25519_dalek::SigningKey::from_bytes(&private_key_bytes);
+                    dashcore::ed25519_dalek::SigningKey::from_bytes(&*private_key_bytes);
                 let signature = signing_key.sign(data);
                 Ok(BinaryData::new(signature.to_vec()))
             }

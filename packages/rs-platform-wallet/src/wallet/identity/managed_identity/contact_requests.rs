@@ -92,7 +92,7 @@ mod tests {
             balance: 1000,
             revision: 1,
         };
-        ManagedIdentity::new(dpp::identity::Identity::V0(identity_v0))
+        ManagedIdentity::new(dpp::identity::Identity::V0(identity_v0), 0)
     }
 
     fn create_contact_request(

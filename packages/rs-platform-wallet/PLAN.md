@@ -376,7 +376,7 @@ Call sites — standalone `PlatformWallet`:
 ```rust
 let wallet = PlatformWallet::from_mnemonic(sdk, network, "word1 ...", "", 1_500_000, options)?;
 wallet.identity().register_identity(amount, keys).await?;
-wallet.dashpay().send_contact_request(sender, recipient).await?;
+wallet.dashpay().send_contact_request(&sender_id, &recipient_id).await?;
 wallet.core().balance();
 ```
 
@@ -1021,32 +1021,37 @@ let xpub = decrypt_extended_public_key(&contact_request.encrypted_public_key, &s
 
 #### 1.5.3 — Send Contact Request
 
-Consolidate from `platform_wallet_info/contact_requests.rs::send_contact_request()`:
+Simplified API — all parameters resolved internally by the wallet:
 
 ```rust
 pub async fn send_contact_request(
-    &mut self,
+    &self,
     sender_identity_id: &Identifier,
-    recipient_identity: &Identity,
-    account_index: u32,
-    auto_accept_proof: Option<Vec<u8>>,
-    signing_key_index: u32,
-) -> Result<Identifier, PlatformWalletError>  // document id
+    recipient_identity_id: &Identifier,
+) -> Result<(), PlatformWalletError>
 ```
+
+Internally resolved:
+- **identity_index**: looked up from `ManagedIdentity.identity_index` (set during registration or discovery)
+- **sender_key_index**: first key with `Purpose::ENCRYPTION` on the sender identity
+- **recipient_key_index**: first key with `Purpose::DECRYPTION` on the recipient identity (fetched from Platform)
+- **account_index**: defaults to `0`
+- **ECDH**: performed SDK-side using `EcdhProvider::SdkSide` with the sender's derived encryption private key
 
 Steps:
 
-1. Find sender ENCRYPTION key at `signing_key_index`
-2. Find recipient first DECRYPTION key (purpose = `DECRYPTION`, not `ENCRYPTION`)
-3. Derive contact xpub via DIP-14: `derive_dashpay_contact_xpub(..., sender_id, recipient_id)`
-4. ECDH shared key: `derive_shared_key_ecdh(sender_privkey, recipient_pubkey)`
-5. Encrypt xpub: `encrypt_extended_public_key(&xpub, &shared_key)` → 96 bytes
-6. Compute `accountReference` via `compute_account_reference(account, sender_key_bytes, xpub_bytes, version=0)`
-7. Submit via `sdk.send_contact_request()` (SDK method with `EcdhProvider` closure)
+1. Retrieve sender identity and its HD index from `IdentityManager`
+2. Fetch recipient identity from Platform
+3. Find sender ENCRYPTION key (first match)
+4. Find recipient DECRYPTION key (first match)
+5. Derive DashPay receiving-account xpub
+6. Derive ECDH private key from wallet using `m/9'/coin'/5'/0'/0'/identity_index'/key_id'`
+7. Submit via `sdk.send_contact_request()` with `EcdhProvider::SdkSide`
 8. Store in `ManagedIdentity.sent_contact_requests`
-9. Add `DashpayReceivingFunds` account to `ManagedAccountCollection`
 
 **Note**: `contactRequest` documents are immutable — no retry/update API. If submission fails, it's a new request.
+
+**Note**: `ManagedIdentity.identity_index` is populated during `register_identity()` and `sync()` (gap-limit discovery). If the identity was added without an index, `send_contact_request` returns `IdentityIndexNotSet`.
 
 #### 1.5.4 — Decrypt Incoming Contact Request
 
