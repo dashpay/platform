@@ -44,7 +44,6 @@ use dpp::{
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
-    ProtocolError,
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
@@ -56,7 +55,7 @@ use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::version as platform_version,
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
@@ -364,7 +363,10 @@ impl FromIterator<ContestedResource> for ContestedResources {
     derive(PlatformSerialize, PlatformDeserialize, Encode, Decode),
     platform_serialize(unversioned)
 )]
-pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
+pub struct ContestedVote(
+    pub ContestedDocumentResourceVotePoll,
+    pub ResourceVoteChoice,
+);
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;

@@ -720,3 +720,510 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
         )]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    // ---------------------------------------------------------------
+    // Serialize primitives
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_bool() {
+        assert_eq!(to_value(true).unwrap(), Value::Bool(true));
+        assert_eq!(to_value(false).unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn serialize_i8() {
+        assert_eq!(to_value(-42i8).unwrap(), Value::I8(-42));
+    }
+
+    #[test]
+    fn serialize_i16() {
+        assert_eq!(to_value(-1000i16).unwrap(), Value::I16(-1000));
+    }
+
+    #[test]
+    fn serialize_i32() {
+        assert_eq!(to_value(-100_000i32).unwrap(), Value::I32(-100_000));
+    }
+
+    #[test]
+    fn serialize_i64() {
+        assert_eq!(
+            to_value(-10_000_000_000i64).unwrap(),
+            Value::I64(-10_000_000_000)
+        );
+    }
+
+    #[test]
+    fn serialize_i128() {
+        assert_eq!(to_value(i128::MIN).unwrap(), Value::I128(i128::MIN));
+    }
+
+    #[test]
+    fn serialize_u8() {
+        assert_eq!(to_value(42u8).unwrap(), Value::U8(42));
+    }
+
+    #[test]
+    fn serialize_u16() {
+        assert_eq!(to_value(1000u16).unwrap(), Value::U16(1000));
+    }
+
+    #[test]
+    fn serialize_u32() {
+        assert_eq!(to_value(100_000u32).unwrap(), Value::U32(100_000));
+    }
+
+    #[test]
+    fn serialize_u64() {
+        assert_eq!(
+            to_value(10_000_000_000u64).unwrap(),
+            Value::U64(10_000_000_000)
+        );
+    }
+
+    #[test]
+    fn serialize_u128() {
+        assert_eq!(to_value(u128::MAX).unwrap(), Value::U128(u128::MAX));
+    }
+
+    #[test]
+    fn serialize_f32() {
+        let val = to_value(3.14f32).unwrap();
+        match val {
+            Value::Float(f) => assert!((f - 3.14f32 as f64).abs() < 1e-6),
+            _ => panic!("expected Float"),
+        }
+    }
+
+    #[test]
+    fn serialize_f64() {
+        assert_eq!(to_value(2.718f64).unwrap(), Value::Float(2.718));
+    }
+
+    #[test]
+    fn serialize_char() {
+        let val = to_value('A').unwrap();
+        assert_eq!(val, Value::Text("A".to_string()));
+    }
+
+    #[test]
+    fn serialize_str() {
+        assert_eq!(to_value("hello").unwrap(), Value::Text("hello".to_string()));
+    }
+
+    #[test]
+    fn serialize_string() {
+        assert_eq!(
+            to_value("world".to_string()).unwrap(),
+            Value::Text("world".to_string())
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize unit / None / Some
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_unit() {
+        assert_eq!(to_value(()).unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn serialize_none() {
+        let val: Option<u32> = None;
+        assert_eq!(to_value(val).unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn serialize_some() {
+        let val: Option<u32> = Some(42);
+        assert_eq!(to_value(val).unwrap(), Value::U32(42));
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize sequences and tuples
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_vec() {
+        let val = to_value(vec![1u32, 2, 3]).unwrap();
+        assert_eq!(
+            val,
+            Value::Array(vec![Value::U32(1), Value::U32(2), Value::U32(3)])
+        );
+    }
+
+    #[test]
+    fn serialize_empty_vec() {
+        let val = to_value(Vec::<u32>::new()).unwrap();
+        assert_eq!(val, Value::Array(vec![]));
+    }
+
+    #[test]
+    fn serialize_tuple() {
+        let val = to_value((1u32, "hello")).unwrap();
+        assert_eq!(
+            val,
+            Value::Array(vec![Value::U32(1), Value::Text("hello".into())])
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize maps
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_hashmap() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("key", 42u32);
+        let val = to_value(map).unwrap();
+        match val {
+            Value::Map(entries) => {
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].0, Value::Text("key".into()));
+                assert_eq!(entries[0].1, Value::U32(42));
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize structs
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_struct() {
+        #[derive(Serialize)]
+        struct Point {
+            x: i32,
+            y: i32,
+        }
+        let val = to_value(Point { x: 10, y: 20 }).unwrap();
+        match val {
+            Value::Map(entries) => {
+                assert_eq!(entries.len(), 2);
+                assert_eq!(entries[0].0, Value::Text("x".into()));
+                assert_eq!(entries[0].1, Value::I32(10));
+                assert_eq!(entries[1].0, Value::Text("y".into()));
+                assert_eq!(entries[1].1, Value::I32(20));
+            }
+            _ => panic!("expected Map"),
+        }
+    }
+
+    #[test]
+    fn serialize_unit_struct() {
+        #[derive(Serialize)]
+        struct Empty;
+        assert_eq!(to_value(Empty).unwrap(), Value::Null);
+    }
+
+    #[test]
+    fn serialize_newtype_struct() {
+        #[derive(Serialize)]
+        struct Wrapper(u32);
+        assert_eq!(to_value(Wrapper(42)).unwrap(), Value::U32(42));
+    }
+
+    #[test]
+    fn serialize_tuple_struct() {
+        #[derive(Serialize)]
+        struct Pair(u32, String);
+        let val = to_value(Pair(1, "two".into())).unwrap();
+        assert_eq!(
+            val,
+            Value::Array(vec![Value::U32(1), Value::Text("two".into())])
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize enums
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_unit_variant() {
+        #[derive(Serialize)]
+        enum Color {
+            Red,
+        }
+        assert_eq!(
+            to_value(Color::Red).unwrap(),
+            Value::Text("Red".to_string())
+        );
+    }
+
+    #[test]
+    fn serialize_newtype_variant() {
+        #[derive(Serialize)]
+        enum Wrapper {
+            Count(u32),
+        }
+        let val = to_value(Wrapper::Count(42)).unwrap();
+        assert_eq!(
+            val,
+            Value::Map(vec![(Value::Text("Count".into()), Value::U32(42))])
+        );
+    }
+
+    #[test]
+    fn serialize_tuple_variant() {
+        #[derive(Serialize)]
+        enum Pair {
+            Coords(i32, i32),
+        }
+        let val = to_value(Pair::Coords(10, 20)).unwrap();
+        assert_eq!(
+            val,
+            Value::Map(vec![(
+                Value::Text("Coords".into()),
+                Value::Array(vec![Value::I32(10), Value::I32(20)])
+            )])
+        );
+    }
+
+    #[test]
+    fn serialize_struct_variant() {
+        #[derive(Serialize)]
+        enum Shape {
+            Circle { radius: u32 },
+        }
+        let val = to_value(Shape::Circle { radius: 5 }).unwrap();
+        assert_eq!(
+            val,
+            Value::Map(vec![(
+                Value::Text("Circle".into()),
+                Value::Map(vec![(Value::Text("radius".into()), Value::U32(5))])
+            )])
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize bytes (non-human-readable mode)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_bytes_32_becomes_bytes32() {
+        // Exactly 32 bytes should become Bytes32
+        let data = [1u8; 32];
+        use serde::Serializer;
+        let val = Serializer.serialize_bytes(&data).unwrap();
+        assert_eq!(val, Value::Bytes32(data));
+    }
+
+    #[test]
+    fn serialize_bytes_20_becomes_bytes20() {
+        let data = [2u8; 20];
+        use serde::Serializer;
+        let val = Serializer.serialize_bytes(&data).unwrap();
+        assert_eq!(val, Value::Bytes20(data));
+    }
+
+    #[test]
+    fn serialize_bytes_36_becomes_bytes36() {
+        let data = [3u8; 36];
+        use serde::Serializer;
+        let val = Serializer.serialize_bytes(&data).unwrap();
+        assert_eq!(val, Value::Bytes36(data));
+    }
+
+    #[test]
+    fn serialize_bytes_other_len_becomes_bytes() {
+        let data = vec![4u8; 10];
+        use serde::Serializer;
+        let val = Serializer.serialize_bytes(&data).unwrap();
+        assert_eq!(val, Value::Bytes(data));
+    }
+
+    // ---------------------------------------------------------------
+    // Serialize Value (the Serialize impl for Value)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_value_null() {
+        let val = Value::Null;
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, Value::Null);
+    }
+
+    #[test]
+    fn serialize_value_bool() {
+        let val = Value::Bool(true);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, Value::Bool(true));
+    }
+
+    #[test]
+    fn serialize_value_integer_types() {
+        let cases = vec![
+            Value::U8(1),
+            Value::I8(-1),
+            Value::U16(100),
+            Value::I16(-100),
+            Value::U32(1000),
+            Value::I32(-1000),
+            Value::U64(10000),
+            Value::I64(-10000),
+            Value::U128(100000),
+            Value::I128(-100000),
+        ];
+        for val in cases {
+            let serialized = to_value(&val).unwrap();
+            assert_eq!(serialized, val);
+        }
+    }
+
+    #[test]
+    fn serialize_value_float() {
+        let val = Value::Float(3.14);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, Value::Float(3.14));
+    }
+
+    #[test]
+    fn serialize_value_text() {
+        let val = Value::Text("hello".into());
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, Value::Text("hello".into()));
+    }
+
+    #[test]
+    fn serialize_value_array() {
+        let val = Value::Array(vec![Value::U8(1), Value::U8(2)]);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_map() {
+        let val = Value::Map(vec![(Value::Text("k".into()), Value::U32(42))]);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_bytes() {
+        let val = Value::Bytes(vec![1, 2, 3, 4, 5]);
+        let serialized = to_value(&val).unwrap();
+        // Non-human-readable serializer: serialized as bytes
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_bytes20() {
+        let val = Value::Bytes20([1u8; 20]);
+        let serialized = to_value(&val).unwrap();
+        // serialize_bytes with len=20 -> Bytes20
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_bytes32() {
+        let val = Value::Bytes32([2u8; 32]);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_bytes36() {
+        let val = Value::Bytes36([3u8; 36]);
+        let serialized = to_value(&val).unwrap();
+        assert_eq!(serialized, val);
+    }
+
+    #[test]
+    fn serialize_value_identifier() {
+        let val = Value::Identifier([4u8; 32]);
+        let serialized = to_value(&val).unwrap();
+        // Non-human-readable: identifier serialized as bytes (32 bytes -> Bytes32)
+        assert_eq!(serialized, Value::Bytes32([4u8; 32]));
+    }
+
+    // ---------------------------------------------------------------
+    // MapKeySerializer error cases
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn map_key_bool_errors() {
+        let mut map = std::collections::HashMap::new();
+        map.insert(true, "value");
+        let result = to_value(map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn map_key_string_works() {
+        let mut map = std::collections::HashMap::new();
+        map.insert("key".to_string(), 42u32);
+        let result = to_value(map);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn map_key_integer_works() {
+        let mut map = std::collections::HashMap::new();
+        map.insert(42u32, "value");
+        let result = to_value(map);
+        assert!(result.is_ok());
+    }
+
+    // ---------------------------------------------------------------
+    // Round-trip tests: Rust -> Value -> Rust
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn round_trip_complex_struct() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Complex {
+            name: String,
+            count: u64,
+            active: bool,
+            score: f64,
+            tags: Vec<String>,
+            metadata: Option<String>,
+        }
+
+        let original = Complex {
+            name: "test".into(),
+            count: 42,
+            active: true,
+            score: 3.14,
+            tags: vec!["a".into(), "b".into()],
+            metadata: Some("info".into()),
+        };
+        let val = to_value(&original).unwrap();
+        let recovered: Complex = crate::from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_nested() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Inner {
+            x: i32,
+        }
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Outer {
+            inner: Inner,
+        }
+
+        let original = Outer {
+            inner: Inner { x: -5 },
+        };
+        let val = to_value(&original).unwrap();
+        let recovered: Outer = crate::from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn collect_str_produces_text() {
+        use serde::Serializer;
+        let val = Serializer.collect_str(&42).unwrap();
+        assert_eq!(val, Value::Text("42".to_string()));
+    }
+}

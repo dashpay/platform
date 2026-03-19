@@ -163,7 +163,7 @@ impl KeyType {
                 let secp = Secp256k1::new();
                 let mut rng = EcdsaRng::from_rng(rng).unwrap();
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
                 private_key.public_key(&secp).to_bytes()
             }
             KeyType::BLS12_381 => {
@@ -269,7 +269,7 @@ impl KeyType {
                 let secp = Secp256k1::new();
                 let mut rng = EcdsaRng::from_rng(rng).unwrap();
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
                 (
                     private_key.public_key(&secp).to_bytes(),
                     private_key.inner.secret_bytes(),
@@ -284,7 +284,7 @@ impl KeyType {
                 let secp = Secp256k1::new();
                 let mut rng = EcdsaRng::from_rng(rng).unwrap();
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
                 (
                     ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
                     private_key.inner.secret_bytes(),
@@ -302,7 +302,7 @@ impl KeyType {
                 let secp = Secp256k1::new();
                 let mut rng = EcdsaRng::from_rng(rng).unwrap();
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
-                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Mainnet);
                 (
                     ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
                     private_key.inner.secret_bytes(),

@@ -99,7 +99,6 @@ struct GlobalSyncIndicator: View {
     // Helpers
     private var phaseTitle: String {
         switch walletService.syncProgress.state {
-        case .initializing: return "Initializing"
         case .waitingForConnections: return "Waiting for Connection"
         case .waitForEvents: return "Waiting for Events"
         case .syncing: return "Syncing"

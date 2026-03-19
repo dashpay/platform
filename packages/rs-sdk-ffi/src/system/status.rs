@@ -30,7 +30,7 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
 
     // Get network
     let network_str = match wrapper.sdk.network {
-        dash_sdk::dpp::dashcore::Network::Dash => "mainnet",
+        dash_sdk::dpp::dashcore::Network::Mainnet => "mainnet",
         dash_sdk::dpp::dashcore::Network::Testnet => "testnet",
         dash_sdk::dpp::dashcore::Network::Devnet => "devnet",
         dash_sdk::dpp::dashcore::Network::Regtest => "regtest",
