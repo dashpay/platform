@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
 use crate::platform_address::{
     PlatformAddressInputWasm, PlatformAddressOutputWasm, fee_strategy_from_js_options,
@@ -242,7 +242,7 @@ impl IdentityTopUpFromAddressesTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_serde!(
     IdentityTopUpFromAddressesTransitionWasm,
     IdentityTopUpFromAddressesTransition,
     IdentityTopUpFromAddressesTransitionObjectJs,
