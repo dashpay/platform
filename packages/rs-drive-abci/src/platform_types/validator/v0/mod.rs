@@ -37,6 +37,7 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
             return None;
         };
         let platform_node_id = (*platform_node_id)?;
+        let service = (*service)?;
         Some(ValidatorV0 {
             pro_tx_hash,
             public_key,

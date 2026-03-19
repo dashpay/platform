@@ -610,7 +610,7 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: None,
-            network: Network::Dash,
+            network: Network::Mainnet,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string().into(),
@@ -705,7 +705,7 @@ impl SdkBuilder {
 
     /// Configure network type.
     ///
-    /// Defaults to Network::Dash which is mainnet.
+    /// Defaults to Network::Mainnet which is mainnet.
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self

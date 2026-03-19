@@ -531,7 +531,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -608,7 +608,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -668,7 +668,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -741,7 +741,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -818,7 +818,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -879,7 +879,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -967,7 +967,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -1097,7 +1097,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -1198,7 +1198,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -1259,7 +1259,7 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                service: Some(SocketAddr::from_str("1.0.1.1:1234").unwrap()),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,

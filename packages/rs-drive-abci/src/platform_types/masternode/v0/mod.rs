@@ -98,7 +98,7 @@ impl From<MasternodeV0> for MasternodeListItem {
 pub struct MasternodeStateV0 {
     /// Masternode's network service address.
     #[bincode(with_serde)]
-    pub service: SocketAddr,
+    pub service: Option<SocketAddr>,
 
     /// Block height when the masternode was registered.
     pub registered_height: u32,

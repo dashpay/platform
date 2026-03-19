@@ -64,7 +64,7 @@ where
                         // the ban_height was changed
                         validator.is_banned = maybe_ban_height.is_some();
                     }
-                    if let Some(address) = dmn_state_diff.service {
+                    if let Some(Some(address)) = dmn_state_diff.service {
                         validator.node_ip = address.ip().to_string();
                     }
 

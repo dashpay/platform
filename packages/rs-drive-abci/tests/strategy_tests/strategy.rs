@@ -2011,7 +2011,7 @@ impl NetworkStrategy {
         let sk: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::new(secret_key, Network::Dash),
+            PrivateKey::new(secret_key, Network::Mainnet),
             amount_range,
             rng,
         );
@@ -2075,7 +2075,7 @@ impl NetworkStrategy {
         let sk_bytes: [u8; 32] = pk.try_into().unwrap();
         let secret_key = SecretKey::from_str(hex::encode(sk_bytes).as_str()).unwrap();
         let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
-            PrivateKey::new(secret_key, Network::Dash),
+            PrivateKey::new(secret_key, Network::Mainnet),
             amount_range,
             rng,
         );
@@ -2545,7 +2545,7 @@ fn create_signed_instant_asset_lock_proofs_for_identities(
 
             let pk_fixed: [u8; 32] = pk.try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(pk_fixed).as_str()).unwrap();
-            let private_key = PrivateKey::new(secret_key, Network::Dash);
+            let private_key = PrivateKey::new(secret_key, Network::Mainnet);
 
             let mut asset_lock_proof = instant_asset_lock_proof_fixture_with_dynamic_range(
                 private_key,

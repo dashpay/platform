@@ -15,11 +15,12 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         context: TransactionContext,
         wallet: &mut Wallet,
         update_state: bool,
+        update_balance: bool,
     ) -> TransactionCheckResult {
         // Check transaction with underlying wallet info
         let result = self
             .wallet_info
-            .check_core_transaction(tx, context, wallet, update_state)
+            .check_core_transaction(tx, context, wallet, update_state, update_balance)
             .await;
 
         // If the transaction is relevant, and it's an asset lock, automatically fetch identities

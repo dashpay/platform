@@ -104,8 +104,10 @@ mod tests {
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
-                    .unwrap(),
+                service: Some(
+                    SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
+                        .unwrap(),
+                ),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,

@@ -1,6 +1,6 @@
 use crate::platform_wallet_info::PlatformWalletInfo;
 use crate::IdentityManager;
-use dashcore::{Address as DashAddress, Network, Transaction};
+use dashcore::{Address as DashAddress, Network, Transaction, Txid};
 use dpp::prelude::CoreBlockHeight;
 use key_wallet::account::{ManagedAccountCollection, TransactionRecord};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -110,5 +110,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_synced_height(&mut self, current_height: u32) {
         self.wallet_info.update_synced_height(current_height)
+    }
+
+    fn mark_instant_send_utxos(&mut self, txid: &Txid) -> bool {
+        self.wallet_info.mark_instant_send_utxos(txid)
     }
 }
