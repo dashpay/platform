@@ -32,6 +32,9 @@ class UnifiedAppState: ObservableObject {
     // Platform address balance sync service (BLAST sync)
     let platformBalanceSyncService = PlatformBalanceSyncService()
 
+    // ZK shielded pool sync service
+    let zkSyncService = ZKSyncService()
+
     // State from Platform
     let platformState: AppState
 
@@ -46,6 +49,9 @@ class UnifiedAppState: ObservableObject {
 
     // Task for the periodic sync loop
     private var syncLoopTask: Task<Void, Never>?
+
+    // Task for the periodic ZK sync loop
+    private var zkSyncLoopTask: Task<Void, Never>?
 
     // Computed property for easy SDK access
     var sdk: SDK? {
@@ -93,6 +99,9 @@ class UnifiedAppState: ObservableObject {
         // Start periodic BLAST address sync
         startPlatformBalanceSync()
 
+        // Start periodic ZK shielded sync
+        startZKSync()
+
         isInitialized = true
     }
 
@@ -106,6 +115,9 @@ class UnifiedAppState: ObservableObject {
         syncLoopTask?.cancel()
         syncLoopTask = nil
         platformBalanceSyncService.reset()
+        zkSyncLoopTask?.cancel()
+        zkSyncLoopTask = nil
+        zkSyncService.reset()
 
         // Reset platform state
         platformState.sdk = nil
@@ -128,6 +140,9 @@ class UnifiedAppState: ObservableObject {
 
         // Restart BLAST sync for the new network
         startPlatformBalanceSync()
+
+        // Restart ZK sync for the new network
+        startZKSync()
 
         // The platform state handles its own network switching in AppState.switchNetwork
     }
@@ -187,6 +202,42 @@ class UnifiedAppState: ObservableObject {
                 minimumLevel: .medium
             )
         }
+    }
+
+    /// Start periodic ZK shielded sync (every 30 seconds).
+    func startZKSync() {
+        // Cancel any previous sync loop
+        zkSyncLoopTask?.cancel()
+
+        let network = platformState.currentNetwork
+        zkSyncService.startPeriodicSync(network: network)
+
+        // Run a repeating async loop
+        zkSyncLoopTask = Task { [weak self] in
+            // Initial delay to allow SDK and shielded service to initialize
+            try? await Task.sleep(for: .seconds(5))
+            await self?.performZKSync()
+
+            // Repeat every 30 seconds
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                } catch {
+                    break // Task was cancelled
+                }
+                await self?.performZKSync()
+            }
+        }
+    }
+
+    /// Perform a single ZK shielded sync. Skips silently if no SDK or pool client.
+    func performZKSync() async {
+        guard let sdk = platformState.sdk else { return }
+
+        // Skip silently if shielded pool client is not initialized
+        guard shieldedService.poolClient != nil else { return }
+
+        await zkSyncService.performSync(sdk: sdk, shieldedService: shieldedService)
     }
 
     /// Initialize the shielded service using the first wallet's seed.

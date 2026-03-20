@@ -50,6 +50,7 @@ struct SwiftExampleAppApp: App {
                     .environmentObject(unifiedState.unifiedState)
                     .environmentObject(unifiedState.shieldedService)
                     .environmentObject(unifiedState.platformBalanceSyncService)
+                    .environmentObject(unifiedState.zkSyncService)
                     .environment(\.modelContext, unifiedState.modelContainer.mainContext)
                     .task {
                         SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)

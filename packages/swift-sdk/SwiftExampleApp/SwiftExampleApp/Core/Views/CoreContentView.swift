@@ -6,6 +6,7 @@ struct CoreContentView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var zkSyncService: ZKSyncService
     @State private var showProofDetail = false
     // Progress values come from WalletService (kept in sync with SPV callbacks)
 
@@ -297,6 +298,145 @@ var body: some View {
                 .padding(.vertical, 4)
             } header: {
                 Text("Platform Sync Status")
+            }
+
+            // Section 3: ZK Shielded Sync Status
+            Section {
+                VStack(spacing: 8) {
+                    // Sync state row
+                    HStack {
+                        if zkSyncService.isSyncing {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Syncing...")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else if let lastSync = zkSyncService.lastSyncTime {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("Last sync: \(lastSync, style: .relative)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+
+                    // Shielded balance
+                    HStack {
+                        Text("Shielded Balance")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if zkSyncService.shieldedBalance > 0 {
+                            Text(formatCredits(zkSyncService.shieldedBalance))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        } else {
+                            Text("0")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Orchard address (truncated)
+                    if let address = zkSyncService.orchardAddress {
+                        HStack {
+                            Text("Orchard Address")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(address.prefix(12)) + "..." + String(address.suffix(6)))
+                                .foregroundColor(.secondary)
+                                .font(.system(.caption, design: .monospaced))
+                        }
+                    }
+
+                    // Last sync stats
+                    HStack {
+                        Text("Last Sync")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(zkSyncService.notesSynced) notes, \(zkSyncService.nullifiersSpent) spent")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Cumulative totals
+                    HStack {
+                        Text("Total Synced")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(zkSyncService.totalNotesSynced) notes, \(zkSyncService.totalNullifiersSpent) spent")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Sync count
+                    HStack {
+                        Text("Sync Count")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(zkSyncService.syncCountSinceLaunch)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Error display
+                    if let error = zkSyncService.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .lineLimit(2)
+                    }
+
+                    // Action buttons
+                    HStack {
+                        Spacer()
+
+                        Button {
+                            Task {
+                                await unifiedAppState.performZKSync()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Sync Now")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                        .controlSize(.mini)
+                        .disabled(zkSyncService.isSyncing)
+
+                        Button {
+                            zkSyncService.reset()
+                        } label: {
+                            Text("Clear")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.mini)
+                        .disabled(zkSyncService.isSyncing)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("ZK Shielded Sync")
             }
 
         }
