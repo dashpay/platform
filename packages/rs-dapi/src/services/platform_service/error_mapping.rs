@@ -851,6 +851,45 @@ mod tests {
     }
 
     #[test]
+    fn from_json_value_decodes_cbor_data_field_identity_unique_key() {
+        setup_tracing();
+        // Real fixture from gRPC status: duplicate identity key registration attempt.
+        // The base64 decodes to CBOR with message:
+        //   "storage: identity: a unique key with that hash already exists:
+        //    the key already exists in the non unique set [70, 101, 149, ...]"
+        let data_b64 = concat!(
+            "oWdtZXNzYWdleMtzdG9yYWdlOiBpZGVudGl0eTogYSB1bmlxdWUga2V5IH",
+            "dpdGggdGhhdCBoYXNoIGFscmVhZHkgZXhpc3RzOiB0aGUga2V5IGFscmVh",
+            "ZHkgZXhpc3RzIGluIHRoZSBub24gdW5pcXVlIHNldCBbNzAsIDEwMSwgMT",
+            "Q5LCAxNTcsIDcyLCAxMjksIDE1NSwgMjQyLCAxNjgsIDQ4LCAxMSwgMTQ1",
+            "LCAxODAsIDI1MiwgMTIyLCAxMzQsIDE1MiwgNTUsIDEzNSwgMjQyXQ==",
+        );
+
+        let value = serde_json::json!({
+            "code": 13,
+            "message": "Internal error",
+            "data": data_b64,
+            "info": ""
+        });
+
+        let status = TenderdashStatus::from(value);
+        assert_eq!(status.code, 13);
+        let msg = status
+            .message
+            .as_deref()
+            .expect("message should be decoded from CBOR data field");
+        assert!(
+            msg.contains("unique key"),
+            "expected 'unique key' in message, got: {msg}"
+        );
+        assert!(
+            msg.contains("already exists"),
+            "expected 'already exists' in message, got: {msg}"
+        );
+        assert!(status.consensus_error.is_none());
+    }
+
+    #[test]
     fn from_json_value_preserves_base64_non_cbor_data() {
         // data field that is valid base64 but decodes to non-CBOR bytes.
         // decode_data_message should return None → fall back to raw string.
