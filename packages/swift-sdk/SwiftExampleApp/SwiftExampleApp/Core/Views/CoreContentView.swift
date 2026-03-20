@@ -8,6 +8,8 @@ struct CoreContentView: View {
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var zkSyncService: ZKSyncService
     @State private var showProofDetail = false
+    @State private var showPlatformDetails = false
+    @State private var showZKDetails = false
     // Progress values come from WalletService (kept in sync with SPV callbacks)
 
     // Display helpers
@@ -140,6 +142,15 @@ var body: some View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
+                        // Expand/collapse chevron
+                        Button {
+                            showPlatformDetails.toggle()
+                        } label: {
+                            Image(systemName: showPlatformDetails ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     // Balance summary
@@ -159,140 +170,143 @@ var body: some View {
                         }
                     }
 
-                    // Active addresses
-                    HStack {
-                        Text("Active Addresses")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(platformBalanceSyncService.activeAddressCount)")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-
-                    // Chain tip height
-                    if platformBalanceSyncService.chainTipHeight > 0 {
+                    // Expanded details
+                    if showPlatformDetails {
+                        // Active addresses
                         HStack {
-                            Text("Chain Tip Height")
+                            Text("Active Addresses")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.chainTipHeight)))
+                            Text("\(platformBalanceSyncService.activeAddressCount)")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                         }
-                    }
 
-                    // Sync checkpoint (from tree scan)
-                    if platformBalanceSyncService.checkpointHeight > 0 {
-                        HStack {
-                            Text("Sync Checkpoint")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Last known recent block (for compaction detection)
-                    HStack {
-                        Text("Last Recent Block")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if platformBalanceSyncService.lastKnownRecentBlock > 0 {
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("None found")
-                                .font(.subheadline)
-                                .foregroundColor(.blue)
-                                .onTapGesture {
-                                    showProofDetail = true
-                                }
-                        }
-                    }
-
-                    // Block time
-                    if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
-                        HStack {
-                            Text("Block Time")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(blockTime, style: .date)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(blockTime, style: .time)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Query counts since launch
-                    if platformBalanceSyncService.syncCountSinceLaunch > 0 {
-                        let svc = platformBalanceSyncService
-                        VStack(spacing: 4) {
+                        // Chain tip height
+                        if platformBalanceSyncService.chainTipHeight > 0 {
                             HStack {
-                                Text("Queries Since Launch")
+                                Text("Chain Tip Height")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text("\(svc.syncCountSinceLaunch) syncs")
+                                Text(formattedHeight(UInt32(platformBalanceSyncService.chainTipHeight)))
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
+                        }
+
+                        // Sync checkpoint (from tree scan)
+                        if platformBalanceSyncService.checkpointHeight > 0 {
+                            HStack {
+                                Text("Sync Checkpoint")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        // Last known recent block (for compaction detection)
+                        HStack {
+                            Text("Last Recent Block")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            if platformBalanceSyncService.lastKnownRecentBlock > 0 {
+                                Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text("None found")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                                    .onTapGesture {
+                                        showProofDetail = true
+                                    }
+                            }
+                        }
+
+                        // Block time
+                        if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
+                            HStack {
+                                Text("Block Time")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(blockTime, style: .date)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text(blockTime, style: .time)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
-                            HStack(spacing: 12) {
-                                QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
-                                QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
-                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
-                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+                        }
+
+                        // Query counts since launch
+                        if platformBalanceSyncService.syncCountSinceLaunch > 0 {
+                            let svc = platformBalanceSyncService
+                            VStack(spacing: 4) {
+                                HStack {
+                                    Text("Queries Since Launch")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(svc.syncCountSinceLaunch) syncs")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                HStack(spacing: 12) {
+                                    QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
+                                    QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
+                                    QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
+                                    QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+                                }
                             }
+                        }
+
+                        // Action buttons
+                        HStack {
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    await unifiedAppState.performPlatformBalanceSync()
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.clockwise")
+                                    Text("Sync Now")
+                                }
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .controlSize(.mini)
+                            .disabled(platformBalanceSyncService.isSyncing)
+
+                            Button {
+                                platformBalanceSyncService.reset()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.mini)
                         }
                     }
 
-                    // Error display
+                    // Error display (always visible)
                     if let error = platformBalanceSyncService.lastError {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
                             .lineLimit(2)
-                    }
-
-                    // Action buttons
-                    HStack {
-                        Spacer()
-
-                        Button {
-                            Task {
-                                await unifiedAppState.performPlatformBalanceSync()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Sync Now")
-                            }
-                            .font(.caption)
-                            .fontWeight(.medium)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .controlSize(.mini)
-                        .disabled(platformBalanceSyncService.isSyncing)
-
-                        Button {
-                            platformBalanceSyncService.reset()
-                        } label: {
-                            Text("Clear")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .controlSize(.mini)
                     }
                 }
                 .padding(.vertical, 4)
@@ -327,6 +341,15 @@ var body: some View {
                                 .foregroundColor(.secondary)
                         }
                         Spacer()
+                        // Expand/collapse chevron
+                        Button {
+                            showZKDetails.toggle()
+                        } label: {
+                            Image(systemName: showZKDetails ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     // Shielded balance
@@ -346,92 +369,95 @@ var body: some View {
                         }
                     }
 
-                    // Orchard address (truncated)
-                    if let address = zkSyncService.orchardAddress {
+                    // Expanded details
+                    if showZKDetails {
+                        // Orchard address (truncated)
+                        if let address = zkSyncService.orchardAddress {
+                            HStack {
+                                Text("Orchard Address")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(address.prefix(12)) + "..." + String(address.suffix(6)))
+                                    .foregroundColor(.secondary)
+                                    .font(.system(.caption, design: .monospaced))
+                            }
+                        }
+
+                        // Last sync stats
                         HStack {
-                            Text("Orchard Address")
+                            Text("Last Sync")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(String(address.prefix(12)) + "..." + String(address.suffix(6)))
+                            Text("\(zkSyncService.notesSynced) notes, \(zkSyncService.nullifiersSpent) spent")
+                                .font(.caption)
                                 .foregroundColor(.secondary)
-                                .font(.system(.caption, design: .monospaced))
+                        }
+
+                        // Cumulative totals
+                        HStack {
+                            Text("Total Synced")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(zkSyncService.totalNotesSynced) notes, \(zkSyncService.totalNullifiersSpent) spent")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        // Sync count
+                        HStack {
+                            Text("Sync Count")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(zkSyncService.syncCountSinceLaunch)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        // Action buttons
+                        HStack {
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    await unifiedAppState.performZKSync()
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.clockwise")
+                                    Text("Sync Now")
+                                }
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .controlSize(.mini)
+                            .disabled(zkSyncService.isSyncing)
+
+                            Button {
+                                zkSyncService.reset()
+                            } label: {
+                                Text("Clear")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.mini)
+                            .disabled(zkSyncService.isSyncing)
                         }
                     }
 
-                    // Last sync stats
-                    HStack {
-                        Text("Last Sync")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(zkSyncService.notesSynced) notes, \(zkSyncService.nullifiersSpent) spent")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    // Cumulative totals
-                    HStack {
-                        Text("Total Synced")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(zkSyncService.totalNotesSynced) notes, \(zkSyncService.totalNullifiersSpent) spent")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    // Sync count
-                    HStack {
-                        Text("Sync Count")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(zkSyncService.syncCountSinceLaunch)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    // Error display
+                    // Error display (always visible)
                     if let error = zkSyncService.lastError {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
                             .lineLimit(2)
-                    }
-
-                    // Action buttons
-                    HStack {
-                        Spacer()
-
-                        Button {
-                            Task {
-                                await unifiedAppState.performZKSync()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Sync Now")
-                            }
-                            .font(.caption)
-                            .fontWeight(.medium)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .controlSize(.mini)
-                        .disabled(zkSyncService.isSyncing)
-
-                        Button {
-                            zkSyncService.reset()
-                        } label: {
-                            Text("Clear")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .controlSize(.mini)
-                        .disabled(zkSyncService.isSyncing)
                     }
                 }
                 .padding(.vertical, 4)
