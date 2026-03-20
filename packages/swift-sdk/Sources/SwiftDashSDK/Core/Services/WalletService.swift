@@ -111,9 +111,14 @@ public class WalletService: ObservableObject {
         LoggingPreferences.configure()
         
         let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
-        
+
+        // Ensure the data directory exists before initializing the SPV client
+        if let dataDir = dataDir {
+            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+        }
+
         // For simplicity, lets unwrap the error. This can only fail due to
-        // IO errors when working with the internal storage system, I don't 
+        // IO errors when working with the internal storage system, I don't
         // see how we can recover from that right now easily
         let spvClient = try! SPVClient(
             network: network.sdkNetwork,
@@ -142,13 +147,18 @@ public class WalletService: ObservableObject {
       SDKLogger.log("Initializing SPV Client for \(self.self.network.rawValue)...", minimumLevel: .medium)
       
       let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.network.rawValue).path
-      
+
+      // Ensure the data directory exists before initializing the SPV client
+      if let dataDir = dataDir {
+          try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+      }
+
       // This ensures no memory leaks when creating a new client
       // and unlocks the storage in case we are about to use the same (we probably are)
       self.spvClient.destroy()
-      
+
       // For simplicity, lets unwrap the error. This can only fail due to
-      // IO errors when working with the internal storage system, I don't 
+      // IO errors when working with the internal storage system, I don't
       // see how we can recover from that right now easily
       self.spvClient = try! SPVClient(
           network: self.self.network.sdkNetwork,
