@@ -26,10 +26,16 @@ import DashSDKFFI
 /// The underlying Rust handle is thread-safe. This class is marked
 /// `@unchecked Sendable` so it can be passed across actor boundaries.
 /// The handle is freed automatically on `deinit`.
+/// Sendable wrapper for the pool client handle pointer.
+private final class SendablePoolHandle: @unchecked Sendable {
+    let ptr: UnsafeMutablePointer<DashSDKFFI.ShieldedPoolClient>
+    init(_ p: UnsafeMutablePointer<DashSDKFFI.ShieldedPoolClient>) { self.ptr = p }
+}
+
 public final class ShieldedPoolClient: @unchecked Sendable {
 
-    /// Opaque pointer to the Rust `ShieldedPoolClient`.
-    private let handle: OpaquePointer
+    /// Pointer to the Rust `ShieldedPoolClient`.
+    private let handle: UnsafeMutablePointer<DashSDKFFI.ShieldedPoolClient>
 
     // MARK: - Lifecycle
 
@@ -68,7 +74,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.internalError("No handle returned from ShieldedPoolClient create")
         }
 
-        self.handle = OpaquePointer(dataPtr)
+        self.handle = dataPtr.assumingMemoryBound(to: DashSDKFFI.ShieldedPoolClient.self)
     }
 
     deinit {
@@ -127,13 +133,13 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidState("SDK not initialized")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let sdkPtr = PoolClientSendableSdkPtr(sdkHandle)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let result = dash_sdk_shielded_pool_client_sync_notes(
-                    poolHandle,
+                    poolHandle.ptr,
                     UnsafePointer(sdkPtr.ptr)
                 )
 
@@ -165,13 +171,13 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidState("SDK not initialized")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let sdkPtr = PoolClientSendableSdkPtr(sdkHandle)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let result = dash_sdk_shielded_pool_client_sync_nullifiers(
-                    poolHandle,
+                    poolHandle.ptr,
                     UnsafePointer(sdkPtr.ptr)
                 )
 
@@ -209,7 +215,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidParameter("Memo must be exactly 36 bytes, got \(memo.count)")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let memoCopy = memo
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -218,7 +224,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
 
                 let result = withUnsafePointer(to: &memoTuple) { memoPtr in
                     dash_sdk_shielded_pool_client_build_shield_bundle(
-                        poolHandle,
+                        poolHandle.ptr,
                         amount,
                         memoPtr
                     )
@@ -258,7 +264,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidParameter("Memo must be exactly 36 bytes, got \(memo.count)")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let addrCopy = recipientAddress
         let memoCopy = memo
 
@@ -272,7 +278,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                     }
                     return withUnsafePointer(to: &memoTuple) { memoPtr in
                         dash_sdk_shielded_pool_client_build_transfer_bundle(
-                            poolHandle,
+                            poolHandle.ptr,
                             addrBase,
                             UInt(addrCopy.count),
                             amount,
@@ -314,7 +320,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidParameter("Memo must be exactly 36 bytes, got \(memo.count)")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let addrCopy = outputAddress
         let memoCopy = memo
 
@@ -328,7 +334,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                     }
                     return withUnsafePointer(to: &memoTuple) { memoPtr in
                         dash_sdk_shielded_pool_client_build_unshield_bundle(
-                            poolHandle,
+                            poolHandle.ptr,
                             addrBase,
                             UInt(addrCopy.count),
                             amount,
@@ -375,7 +381,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
             throw SDKError.invalidParameter("Memo must be exactly 36 bytes, got \(memo.count)")
         }
 
-        let poolHandle = self.handle
+        let poolHandle = SendablePoolHandle(self.handle)
         let scriptCopy = outputScript
         let memoCopy = memo
 
@@ -389,7 +395,7 @@ public final class ShieldedPoolClient: @unchecked Sendable {
                     }
                     return withUnsafePointer(to: &memoTuple) { memoPtr in
                         dash_sdk_shielded_pool_client_build_withdrawal_bundle(
-                            poolHandle,
+                            poolHandle.ptr,
                             scriptBase,
                             UInt(scriptCopy.count),
                             amount,

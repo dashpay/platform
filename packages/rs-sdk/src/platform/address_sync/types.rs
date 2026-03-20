@@ -75,7 +75,7 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
-            full_rescan_after_time_s: 7 * 24 * 60 * 60, // 7 days
+            full_rescan_after_time_s: 6 * 24 * 3600 + 23 * 3600 + 45 * 60, // 6 days 23 hours 45 minutes
             request_settings: RequestSettings::default(),
         }
     }
@@ -124,6 +124,23 @@ pub struct AddressSyncResult {
     /// call to [`sync_address_balances`](super::sync_address_balances). The function compares it against the
     /// current wall-clock time to decide whether a full tree rescan is needed.
     pub new_sync_timestamp: u64,
+
+    /// The highest block height that was actually present in the most recent
+    /// batch of per-block address balance changes.
+    ///
+    /// On subsequent syncs, this height is used as the exclusive start for the
+    /// recent query (`RangeAfter`), causing it to appear as a boundary node in
+    /// the GroveDB proof. This enables `key_exists_as_boundary` to detect
+    /// whether the height has been compacted away.
+    ///
+    /// Store this value and return it from
+    /// [`AddressProvider::last_known_recent_block_height`] on the next call.
+    /// A value of `0` means no recent block has been observed yet.
+    pub last_known_recent_block: u64,
+
+    /// Raw GroveDB proof bytes from the most recent query (for debugging).
+    /// Empty if no proof was captured.
+    pub recent_proof: Vec<u8>,
 }
 
 impl AddressSyncResult {
@@ -137,6 +154,8 @@ impl AddressSyncResult {
             checkpoint_height: 0,
             new_sync_height: 0,
             new_sync_timestamp: 0,
+            last_known_recent_block: 0,
+            recent_proof: Vec::new(),
         }
     }
 
@@ -186,6 +205,12 @@ pub struct AddressSyncMetrics {
 
     /// Number of recent incremental queries.
     pub recent_queries: usize,
+
+    /// Total block entries returned by recent queries (all addresses, not just ours).
+    pub recent_entries_returned: usize,
+
+    /// Total block entries returned by compacted queries.
+    pub compacted_entries_returned: usize,
 }
 
 impl AddressSyncMetrics {

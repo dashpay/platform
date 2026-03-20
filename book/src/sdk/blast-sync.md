@@ -14,6 +14,162 @@ BLAST is used for two distinct sync tasks:
 Both follow the same trunk/branch tree-scan pattern, extracted into a shared generic
 algorithm.
 
+## Why BLAST Preserves Privacy
+
+The naive approach to syncing — querying each address individually — leaks the wallet's
+full key set to the server. Even batching all keys into a single request reveals the
+exact set. The server learns which addresses belong to the same wallet, enabling
+transaction graph analysis and balance tracking.
+
+BLAST solves this by never querying individual keys. Instead, the wallet queries
+**subtrees** of the Merkle tree. Each query returns a chunk of the tree containing
+the target key alongside many other unrelated keys. The server sees a request for a
+region of the tree but cannot determine which specific key within that region the
+wallet cares about.
+
+The privacy guarantee comes from three mechanisms:
+
+1. **Trunk query hides intent entirely.** The initial trunk query fetches the top
+   levels of the entire tree — the same request regardless of which keys the wallet
+   holds. The server learns nothing from this query.
+
+2. **Branch queries request subtrees, not keys.** When the wallet needs to resolve a
+   key that traced to a truncated leaf, it requests the subtree rooted at that leaf.
+   The response contains all keys in that subtree, not just the target. The server
+   knows the wallet is interested in *some* key in the subtree, but not which one.
+
+3. **Privacy adjustment enlarges small subtrees.** If a leaf's subtree contains fewer
+   than `min_privacy_count` elements (default: 32), the wallet queries an ancestor
+   subtree instead — one that contains at least 32 keys. This prevents the server
+   from narrowing down the target when a subtree is too small. For example, if the
+   target key's leaf subtree has only 3 elements, querying it would reveal the target
+   with ~33% probability. By querying an ancestor with 50+ elements, the probability
+   drops to ~2%.
+
+4. **Incremental catch-up queries block ranges, not addresses.** The recent and
+   compacted change queries ask "what changed since block height X?" — they return
+   all address balance changes for all addresses in those blocks, not just the
+   wallet's addresses. The server sees a generic block-range query identical to what
+   any other wallet would send. The wallet filters the results client-side, discarding
+   changes for addresses it doesn't own.
+
+The result: for each sync, the server sees a trunk query (identical for all wallets)
+plus a small number of branch queries for subtrees containing 32+ keys each, plus
+block-range queries that reveal no address-specific information. It cannot distinguish
+which specific keys the wallet owns, how many keys it has, or whether two branch
+queries target different keys or are privacy-adjusted queries for the same key.
+
+## Performance
+
+BLAST sync scales **logarithmically** with the total number of addresses in the
+platform state tree. A wallet with 20 addresses performs roughly the same number of
+queries whether the tree contains 1,000 or 1,000,000,000 addresses.
+
+### Estimated Performance for 20 Wallet Addresses
+
+The total query count is `Q = 1 (trunk) + 2k × iterations + 1 (recent)` where each
+key requires 2 branch queries (left + right child) per iteration. See the
+[Appendix: Query Count Analysis](#appendix-query-count-analysis) for the full derivation.
+
+```mermaid
+xychart-beta
+    title "Total Queries (full scan, 20 wallet addresses)"
+    x-axis "Total addresses in tree" ["1K", "10K", "100K", "1M", "10M", "100M", "1B"]
+    y-axis "Queries" 0 --> 100
+    bar [42, 42, 42, 62, 72, 82, 82]
+```
+
+```mermaid
+xychart-beta
+    title "Estimated Sync Time (10 concurrent, ~330ms/round)"
+    x-axis "Total addresses in tree" ["1K", "10K", "100K", "1M", "10M", "100M", "1B"]
+    y-axis "Seconds" 0 --> 7
+    line [2.0, 2.0, 2.0, 4.0, 4.6, 5.3, 5.3]
+```
+
+| Total addresses | Tree depth | d_trunk | d_branch | Branch iters | Branch queries | Total queries | Parallel rounds | Est. sync time |
+|-----------------|------------|---------|----------|--------------|----------------|---------------|-----------------|----------------|
+| 1,000 | 10 | 9 | 9 | 1 | 40 | 42 | 6 | ~2.0s |
+| 10,000 | 14 | 9 | 9 | 1 | 40 | 42 | 6 | ~2.0s |
+| 100,000 | 17 | 9 | 9 | 1 | 40 | 42 | 6 | ~2.0s |
+| 1,000,000 | 20 | 9 | 9 | 2 | 60 | 62 | 8 | ~4.0s |
+| 10,000,000 | 23 | 9 | 9 | 2 | 70 | 72 | 9 | ~4.6s |
+| 100,000,000 | 27 | 9 | 9 | 3 | 80 | 82 | 10 | ~5.3s |
+| 1,000,000,000 | 30 | 9 | 9 | 3 | 80 | 82 | 10 | ~5.3s |
+
+**How to read the table**: At 100K addresses (depth 17), the trunk covers 9 levels and
+one branch iteration covers up to 9 more levels (total 18 > 17). All 20 keys resolve
+in a single round of 40 branch queries. At 1M (depth 20), trunk + one iteration covers
+18 levels — 2 levels short, so ~50% of keys need a second round, adding ~20 queries.
+
+**Assumptions**: `d_trunk = 9`, `d_branch = 9` (platform version max_depth), `P = 32`,
+**2 branch queries per key per iteration** (left + right child), 10 concurrent branch
+queries, ~330ms per parallel round (measured empirically: ~4s for 1M addresses).
+Sync time = `rounds × 330ms` where `rounds = 1 (trunk) + ⌈branch_queries / 10⌉ + 1 (recent)`.
+Note: iteration transitions add overhead, so multi-iteration syncs are slightly slower
+than the formula suggests.
+
+**Incremental sync** (subsequent 15-second re-syncs): **1 query, ~330ms** — only the
+recent changes query, no trunk/branch. If compaction occurred: +1 compacted query.
+
+### Key Insight
+
+Going from 1,000 to 1,000,000,000 addresses — a **million-fold increase** — adds only
+~40 queries and ~2.6 seconds. The query count grows as `O(k · ⌈log₂(N) / d_branch⌉)`
+where each step up in tree depth beyond `d_trunk + d_branch` adds one iteration of
+~20 queries (diminishing as keys resolve). With 10-way parallelism, each additional
+iteration costs only ~2 extra parallel rounds (~660ms).
+
+## Full Sync Flowchart
+
+```mermaid
+flowchart TD
+    Start["<b>sync_address_balances</b><br/>called by wallet"] --> CheckTS{"last_sync_timestamp<br/>provided?"}
+
+    CheckTS -->|"No / zero"| FullScan1["<b>FULL SCAN</b><br/>First sync ever"]
+    CheckTS -->|"Yes"| CheckElapsed{"Elapsed time ><br/>full_rescan_after?<br/><i>default: 7 days</i>"}
+
+    CheckElapsed -->|"Yes - stale"| FullScan2["<b>FULL SCAN</b><br/>Data too old"]
+    CheckElapsed -->|"No - recent"| Incremental["<b>INCREMENTAL ONLY</b><br/>Seed from current_balances<br/>start_height = last_sync_height"]
+
+    FullScan1 --> Trunk
+    FullScan2 --> Trunk
+
+    Trunk["<b>Trunk Query</b><br/>Fetch top N levels of Merk tree<br/>Verify proof against quorum-signed root<br/>Sets checkpoint_height from metadata"] --> Classify["<b>Classify Keys</b><br/>BST traversal for each target address<br/><i>Found</i> → record balance<br/><i>Traced to leaf</i> → add to tracker<br/><i>Absent</i> → proven not in tree"]
+    Classify --> Privacy["<b>Privacy Adjust</b><br/>Leaves with count < 32:<br/>query ancestor subtree instead<br/>Dedup: multiple keys → one query"]
+    Privacy --> Branch["<b>Branch Queries</b><br/>Parallel: up to 10 concurrent<br/>Iterative: up to 50 rounds<br/>Each round resolves deeper leaves<br/>Gap limit extension after each round"]
+    Branch -->|"catch_up_from =<br/>checkpoint_height"| Recent
+
+    Incremental --> Recent
+
+    Recent["<b>Query Recent</b><br/>Single query - no pagination needed<br/>Recent tree max 64 blocks < 100 limit<br/><b>Hold results</b> - do not apply yet<br/>Record observed_tip from metadata"] --> CompCheck{"<b>Compaction Check</b><br/>Has last_known_recent_block?"}
+
+    CompCheck -->|"Yes: use RangeAfter<br/>key_exists_as_boundary<br/>on last_known_recent_block"| BoundaryCheck{"Boundary exists<br/>in proof?"}
+    CompCheck -->|"No: first sync or<br/>empty recent tree"| Compacted
+
+    BoundaryCheck -->|"Yes: not compacted"| ApplyRecent
+    BoundaryCheck -->|"No: compacted away"| Compacted
+
+    Compacted["<b>Query Compacted</b><br/>Paginated: 25 ranges per batch<br/>Aggregated block ranges with<br/>SetCredits or AddToCreditsOperations<br/>Apply immediately, advance height"] --> ApplyRecent
+
+    ApplyRecent["<b>Apply Held Recent</b><br/>Process per-block entries from recent query<br/>Update balances, call on_address_found<br/>Advance current_height per block"] --> Finalize
+
+    Finalize["<b>Finalize</b><br/>new_sync_height = max of current and observed_tip<br/>new_sync_timestamp = latest metadata time<br/>checkpoint_height = trunk query height<br/><i>Caller persists for next sync</i>"]
+
+    style FullScan1 fill:#c53030,color:#fff
+    style FullScan2 fill:#c53030,color:#fff
+    style Incremental fill:#2b6cb0,color:#fff
+    style Trunk fill:#1a365d,color:#e2e8f0
+    style Classify fill:#1a365d,color:#e2e8f0
+    style Privacy fill:#1a365d,color:#e2e8f0
+    style Branch fill:#1a365d,color:#e2e8f0
+    style Recent fill:#1a3a2a,color:#e2e8f0
+    style CompCheck fill:#744210,color:#fff
+    style Compacted fill:#c05621,color:#fff
+    style ApplyRecent fill:#1a3a2a,color:#e2e8f0
+    style Finalize fill:#2d3748,color:#e2e8f0
+```
+
 ## The Problem
 
 A wallet holds a set of keys (addresses or nullifiers) and needs to learn which ones
@@ -223,28 +379,122 @@ tree.
 ## Phase 2: Incremental Catch-Up
 
 After the tree scan produces a snapshot at some checkpoint height, the wallet needs to
-catch up to the chain tip. This is done with two sub-phases:
+catch up to the chain tip. The incremental phase also runs on its own for frequent
+re-syncs (when the elapsed time since the last sync is within `full_rescan_after_time_s`,
+default 7 days).
 
-**Compacted changes** -- Historical balance/nullifier changes aggregated across block
-ranges. These cover the gap between the checkpoint height and recent history. Each
-response covers a range of blocks and contains the net changes.
+Platform stores per-block address balance changes in a "recent" tree. Every **64 blocks**
+(or 2048 address entries), these per-block entries are compacted into aggregated range
+entries covering the merged block span. The compacted entries have an expiration TTL
+and are eventually cleaned up. This means:
 
-**Recent changes** -- Per-block changes for the most recent blocks. These provide
-granular updates from where compacted changes left off to the chain tip.
+- The **recent tree** never has more than 64 block entries at any time.
+- The **compacted tree** contains historical aggregated ranges for blocks that were
+  compacted away from the recent tree.
 
 ```
   checkpoint_height                              chain_tip
         │                                            │
         ▼                                            ▼
   ──────┬────────────────────────────┬───────────────┤
-        │   Compacted changes        │ Recent changes│
-        │   (block ranges)           │ (per-block)   │
+        │   Compacted ranges         │ Recent blocks │
+        │   (aggregated, ≤25/page)   │ (per-block,   │
+        │   Only exist after         │  always ≤64)  │
+        │   compaction events        │               │
         └────────────────────────────┴───────────────┘
 ```
 
-On subsequent syncs, if the elapsed time since the last sync is within
-`full_rescan_after_time_s` (default: 7 days), the tree scan is skipped entirely and
-only the incremental catch-up runs. This makes frequent re-syncs very fast.
+### Step 1: Query Recent First
+
+The wallet always queries recent changes first:
+
+```rust
+GetRecentAddressBalanceChanges { start_height, prove: true }
+```
+
+Since the recent tree can never exceed 64 entries and the server limit is 100 per
+request, **one query always covers the entire uncompacted range**. No pagination is
+needed for recent changes.
+
+The response contains `Vec<BlockAddressBalanceChanges>`, where each entry has a
+`block_height` and a map of `PlatformAddress → CreditOperation` (either `SetCredits`
+or `AddToCredits`).
+
+**Important:** The results are held but not applied yet. They may need to be applied
+after compacted data if compaction occurred.
+
+### Step 2: Detect Compaction via Proof
+
+The wallet tracks `last_known_recent_block` — the highest block height from the
+entries returned by the previous recent query. This is a block that was *actually
+present* in the recent tree.
+
+When `last_known_recent_block > 0`, the recent query uses **exclusive start**
+(`RangeAfter`) with that height. This causes the height to appear as a **boundary
+node** in the proof. The wallet then uses `key_exists_as_boundary` to check whether
+the block is still in the recent tree:
+
+```rust
+let cursor_exists = Drive::verify_key_exists_as_boundary(
+    proof,
+    &[SavedBlockTransactions, ADDRESS_BALANCES_KEY],
+    &last_known_recent_block.to_be_bytes(),
+    platform_version,
+)?;
+```
+
+| `cursor_exists` | Meaning | Action |
+|-----------------|---------|--------|
+| `true` | Block still in recent tree — no compaction happened | Apply held recent results directly (Step 4) |
+| `false` | Block was compacted away | Query compacted first (Step 3), then apply recent |
+
+**When `last_known_recent_block == 0`:** This occurs on the first sync after a tree
+scan, or when the recent tree had no entries (no platform address activity on chain).
+In this case, the query falls back to inclusive start (`RangeFrom`) and the compacted
+phase always runs. This is the safe default — the compacted query returns empty quickly
+if there is no compacted data.
+
+### Step 3: Query Compacted (only if needed)
+
+Only runs when compaction is detected or on the first catch-up after a tree scan:
+
+```rust
+GetRecentCompactedAddressBalanceChanges { start_block_height, prove: true }
+```
+
+Returns `Vec<CompactedBlockAddressBalanceChanges>`, where each entry has:
+- `start_block_height` and `end_block_height` (the compacted range)
+- `changes: BTreeMap<PlatformAddress, BlockAwareCreditOperation>`
+  - `SetCredits(u64)` — absolute balance
+  - `AddToCreditsOperations(Vec<(height, credits)>)` — deltas by height
+
+The server returns up to 25 ranges per request. If the response contains exactly 25
+entries, the client paginates by setting `start_block_height = last_end_height + 1`
+and querying again.
+
+Compacted changes are applied to the result immediately, updating balances and
+advancing the pagination cursor.
+
+### Step 4: Apply Held Recent Results
+
+After compacted data (if any) is applied, the held recent results from Step 1 are
+processed:
+
+- For each `BlockAddressBalanceChanges` entry, for each address change, if the address
+  matches one of the wallet's target addresses, update the balance and call
+  `provider.on_address_found()`.
+- Advance `current_height` to `block_height + 1` for each processed entry.
+
+### Finalization
+
+```rust
+result.new_sync_height = max(current_height, observed_tip_height);
+result.new_sync_timestamp = latest_metadata.time_ms / 1000;
+```
+
+The caller persists `new_sync_height` and `new_sync_timestamp` for the next sync call.
+On the next incremental sync, `new_sync_height` becomes `start_height` for the recent
+query, and `new_sync_timestamp` determines whether a full tree rescan is needed.
 
 ## The TrunkBranchSyncOps Trait
 
@@ -468,3 +718,48 @@ packages/rs-sdk/src/platform/
 - Skip the incremental catch-up phase -- the tree scan snapshot may be slightly stale
   (the trunk is captured at a specific block height), and the catch-up brings it
   current.
+
+## Appendix: Query Count Analysis
+
+Let `N` = total addresses in the tree, `k` = wallet addresses (e.g. 20), `d_trunk` =
+trunk depth (levels expanded), `d_branch` = levels per branch query, and `P` = privacy
+minimum (default 32).
+
+The Merk tree is a balanced BST with depth `D = ⌈log₂(N)⌉`.
+
+**Trunk query**: Always exactly **1 query**. Returns the top `d_trunk` levels,
+where `d_trunk` is between `min_depth` (6) and `max_depth` (9) depending on tree
+size. Exposes `~2^d_trunk` nodes. Cost is independent of `k` or `N`.
+
+**Key classification**: After the trunk, each of the `k` target keys is classified
+by BST traversal (local computation, no queries). Keys found directly in trunk
+elements are resolved immediately.
+
+**Branch queries per iteration**: Unresolved keys trace to trunk leaves. With
+privacy adjustment, keys mapping to subtrees smaller than `P` are promoted to
+ancestor subtrees. Multiple keys may share an ancestor, reducing the query count.
+Expected unique leaves after deduplication:
+
+`L ≈ min(k, 2^d_trunk) · (1 - e^(-k / 2^d_trunk))`
+
+**Total branch queries**: Each target key that traces to a leaf requires **2 branch
+queries** per iteration — one for the left child subtree and one for the right child —
+to determine which side the key falls on. With `k = 20` wallet keys, the first
+iteration produces `2k = 40` branch queries. If the tree is deeper than
+`d_trunk + d_branch`, some keys trace to deeper leaves and require a second iteration
+with fewer keys (typically ~50% resolve per round).
+
+**Iterations needed**: `I = ⌈(D - d_trunk) / d_branch⌉` where `D = ⌈log₂(N)⌉`.
+Both `d_trunk` and `d_branch` range from 6 to 9 (configured per platform version).
+For trees up to depth ~18 (N ≤ ~260K), one iteration suffices with max depth 9.
+Deeper trees need additional iterations.
+
+**Incremental catch-up**: 1 recent query + 0–1 compacted queries.
+
+**Total**:
+
+`Q_total = 1 (trunk) + 2k × I_eff + Q_incremental`
+
+where `I_eff` accounts for decreasing keys per iteration (not all keys need every
+round). In practice, `I_eff ≈ I × 0.7` because ~50% of keys resolve per iteration
+and later rounds have progressively fewer queries.

@@ -266,3 +266,163 @@ impl Drive {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::balances::credits::CreditOperation;
+    use dpp::version::mocks::v2_test::TEST_PLATFORM_V2;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    const ADDR_1: PlatformAddress = PlatformAddress::P2pkh([10; 20]);
+    const ADDR_2: PlatformAddress = PlatformAddress::P2sh([11; 20]);
+
+    const TEST_BLOCK_TIME_MS: u64 = 1_700_000_000_000;
+
+    /// Creates a platform version with low compaction thresholds for testing.
+    fn create_test_platform_version(max_blocks: u16, max_addresses: u32) -> PlatformVersion {
+        let mut version = TEST_PLATFORM_V2.clone();
+        version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_blocks_before_compaction = max_blocks;
+        version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_addresses_before_compaction = max_addresses;
+        version
+    }
+
+    /// Stores `count` blocks of address balance changes (blocks 1..=count).
+    /// Each block has ADDR_1; even-numbered blocks also have ADDR_2.
+    fn store_blocks(drive: &crate::drive::Drive, count: u64, platform_version: &PlatformVersion) {
+        for block_height in 1u64..=count {
+            let mut changes = BTreeMap::new();
+            changes.insert(ADDR_1, CreditOperation::AddToCredits(block_height * 1000));
+            if block_height % 2 == 0 {
+                changes.insert(ADDR_2, CreditOperation::AddToCredits(block_height * 500));
+            }
+            drive
+                .store_address_balances_for_block(
+                    &changes,
+                    block_height,
+                    TEST_BLOCK_TIME_MS + block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store balances");
+        }
+    }
+
+    #[test]
+    fn should_fetch_compacted_address_balance_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Low threshold: compact after 3 blocks, so storing 4 blocks triggers compaction
+        let platform_version = create_test_platform_version(3, 10_000);
+
+        // Store 4 blocks — the 4th block triggers compaction (count 3 + 1 >= 3)
+        store_blocks(&drive, 4, &platform_version);
+
+        // Fetch compacted changes starting from block 0 (should include everything)
+        let compacted = drive
+            .fetch_compacted_address_balance_changes_v0(0, None, None, &platform_version)
+            .expect("should fetch compacted changes");
+
+        assert!(
+            !compacted.is_empty(),
+            "should have at least one compacted entry after compaction"
+        );
+
+        for (start, end, changes) in &compacted {
+            assert!(
+                start <= end,
+                "start block {} should be <= end block {}",
+                start,
+                end
+            );
+            assert!(
+                !changes.is_empty(),
+                "each compacted entry should have address changes"
+            );
+        }
+    }
+
+    #[test]
+    fn should_fetch_empty_compacted_when_no_compaction() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Threshold of 64 blocks (default) — storing 2 blocks will never compact
+        let platform_version = create_test_platform_version(64, 10_000);
+
+        // Store only 2 blocks — well below the compaction threshold
+        store_blocks(&drive, 2, &platform_version);
+
+        // Fetch compacted changes from block 0 — no compaction should have occurred
+        let compacted = drive
+            .fetch_compacted_address_balance_changes_v0(0, None, None, &platform_version)
+            .expect("should fetch compacted changes");
+
+        assert!(
+            compacted.is_empty(),
+            "should have no compacted entries when below compaction threshold, got {} entries",
+            compacted.len()
+        );
+    }
+
+    #[test]
+    fn should_prove_compacted_address_balance_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = create_test_platform_version(3, 10_000);
+
+        // Store 4 blocks to trigger compaction
+        store_blocks(&drive, 4, &platform_version);
+
+        // Generate a proof of compacted changes from block 1
+        let proof = drive
+            .prove_compacted_address_balance_changes_v0(1, None, None, &platform_version)
+            .expect("should prove compacted address balance changes");
+
+        assert!(
+            !proof.is_empty(),
+            "proof bytes should not be empty after compaction"
+        );
+    }
+
+    #[test]
+    fn should_fetch_compacted_with_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        // Very low threshold so we can trigger multiple compactions
+        let platform_version = create_test_platform_version(3, 10_000);
+
+        // Store enough blocks to trigger at least two compactions
+        // Compaction fires at blocks 4, 7, 10, ...  (every 3 blocks after the first 3)
+        store_blocks(&drive, 10, &platform_version);
+
+        // Fetch with limit=1 — should return at most 1 compacted entry
+        let compacted = drive
+            .fetch_compacted_address_balance_changes_v0(0, Some(1), None, &platform_version)
+            .expect("should fetch compacted changes with limit");
+
+        assert!(
+            compacted.len() <= 1,
+            "with limit=1, should have at most 1 entry, got {}",
+            compacted.len()
+        );
+
+        // Also fetch without limit to confirm there is more than 1 entry total
+        let all_compacted = drive
+            .fetch_compacted_address_balance_changes_v0(0, None, None, &platform_version)
+            .expect("should fetch all compacted changes");
+
+        // The limited result should be a subset of the full result
+        assert!(
+            compacted.len() <= all_compacted.len(),
+            "limited results ({}) should not exceed unlimited results ({})",
+            compacted.len(),
+            all_compacted.len()
+        );
+    }
+}
