@@ -156,7 +156,7 @@ impl From<DMNState> for MasternodeStateV0 {
         } = value;
 
         Self {
-            service,
+            service: service.expect("TODO: idk what created this"),
             registered_height,
             pose_revived_height,
             pose_ban_height,
@@ -192,7 +192,7 @@ impl From<MasternodeStateV0> for DMNState {
         } = value;
 
         Self {
-            service,
+            service: Some(service),
             registered_height,
             pose_revived_height,
             pose_ban_height,

@@ -65,7 +65,10 @@ where
                         validator.is_banned = maybe_ban_height.is_some();
                     }
                     if let Some(address) = dmn_state_diff.service {
-                        validator.node_ip = address.ip().to_string();
+                        validator.node_ip = address
+                            .expect("TODO: idk what created this")
+                            .ip()
+                            .to_string();
                     }
 
                     if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {

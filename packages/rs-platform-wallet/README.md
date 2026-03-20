@@ -105,12 +105,10 @@ The package is structured as follows:
 ### Compatibility
 - Works with `WalletManager<PlatformWalletInfo>` for standard wallet management
 - Works with `SPVWalletManager<PlatformWalletInfo>` for SPV/light client functionality
-- Fully compatible with existing `key-wallet-manager` infrastructure
 
 ## Dependencies
 
-- `key-wallet`: Core wallet functionality
-- `key-wallet-manager`: Wallet management and SPV support
+- `key-wallet`: Core wallet functionality, wallet management and SPV support
 - `dpp`: Dash Platform Protocol types and identity definitions
 - `dashcore`: Core blockchain types
 

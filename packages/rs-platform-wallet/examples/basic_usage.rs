@@ -1,5 +1,6 @@
 //! Example demonstrating basic usage of PlatformWalletInfo
 
+use key_wallet::manager::WalletManager;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::Network;
 use platform_wallet::error::PlatformWalletError;
@@ -22,14 +23,8 @@ fn main() -> Result<(), PlatformWalletError> {
         platform_wallet.identities().len()
     );
 
-    // The platform wallet can be used with WalletManager (requires "manager" feature)
-    #[cfg(feature = "manager")]
-    {
-        use key_wallet_manager::wallet_manager::WalletManager;
-
-        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new(network);
-        println!("Platform wallet successfully integrated with wallet managers!");
-    }
+    let _wallet_manager = WalletManager::<PlatformWalletInfo>::new(network);
+    println!("Platform wallet successfully integrated with wallet managers!");
 
     Ok(())
 }

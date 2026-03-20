@@ -14,7 +14,6 @@ platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
-key-wallet-manager = { workspace = true, optional = true }
 
 # Core dependencies
 dashcore = { workspace = true }
@@ -31,7 +30,6 @@ rand = "0.8"
 
 
 [features]
-default = ["bls", "eddsa", "manager"]
+default = ["bls", "eddsa"]
 bls = ["key-wallet/bls"]
 eddsa = ["key-wallet/eddsa"]
-manager = ["key-wallet-manager"]
