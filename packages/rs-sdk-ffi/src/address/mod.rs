@@ -155,10 +155,7 @@ pub unsafe extern "C" fn dash_sdk_script_to_platform_address_key(
 
         false
     }));
-    match result {
-        Ok(result) => result,
-        Err(_) => false,
-    }
+    result.unwrap_or_default()
 }
 
 /// Format a raw GroveDB proof as a human-readable string.
