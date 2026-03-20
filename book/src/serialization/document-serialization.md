@@ -165,17 +165,17 @@ All numeric values use **big-endian** byte order.
 
 ## Worked example: withdrawal document
 
-The withdrawals contract defines a `withdrawal` document type with these properties (listed here in schema position order):
+The withdrawals contract defines a `withdrawal` document type with these properties (in schema position order):
 
-| Property | Type | Required |
-|----------|------|----------|
-| `amount` | integer (i64) | yes |
-| `coreFeePerByte` | integer (i64) | yes |
-| `outputScript` | byteArray (23–25 bytes, variable) | yes |
-| `pooling` | integer (i64) | yes |
-| `status` | integer (i64) | yes |
-| `transactionIndex` | integer (i64) | no |
-| `transactionSignHeight` | integer (i64) | no |
+| Position | Property | Type | Required |
+|----------|----------|------|----------|
+| 0 | `transactionIndex` | integer (i64) | no |
+| 1 | `transactionSignHeight` | integer (i64) | no |
+| 2 | `amount` | integer (i64) | yes |
+| 3 | `coreFeePerByte` | integer (i64) | yes |
+| 4 | `pooling` | integer (i64) | yes |
+| 5 | `outputScript` | byteArray (23–25 bytes, variable) | yes |
+| 6 | `status` | integer (i64) | yes |
 
 The document type requires `$createdAt`, `$updatedAt`, and `$revision`.
 
@@ -250,7 +250,7 @@ See `packages/rs-scripts/README.md` for full usage details.
 
 3. **The time fields bitfield is variable-length data.** The 2-byte bitfield tells you how many time fields follow. If you assume a fixed number of time fields, any document with a different set of time fields (e.g., one that includes `$transferredAt` or block heights) will be misaligned.
 
-4. **Property order is alphabetical (BTreeMap order), not declaration order.** If you hard-code field offsets based on the JSON schema declaration order rather than alphabetical order, fields will be read from the wrong positions.
+4. **Property order is schema position order, not alphabetical.** Each property in the data contract schema has a `position` field. Properties are serialized in ascending position order (stored in an `IndexMap`). If you assume alphabetical order or JSON declaration order, fields will be read from the wrong positions.
 
 5. **Optional fields have a presence byte.** If you forget to read the `0x00`/`0x01` prefix for optional fields, every subsequent field will be shifted by one byte.
 
