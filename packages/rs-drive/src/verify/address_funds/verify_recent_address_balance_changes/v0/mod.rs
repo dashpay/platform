@@ -311,4 +311,172 @@ mod tests {
         assert_eq!(changes[0].0, 100);
         assert_eq!(changes[1].0, 101);
     }
+
+    #[test]
+    fn should_prove_and_verify_recent_address_balance_changes_after() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address = PlatformAddress::P2pkh([10; 20]);
+
+        // Store balance changes for blocks 100, 200, 300
+        for &block_height in &[100u64, 200, 300] {
+            let mut changes = BTreeMap::new();
+            changes.insert(address, CreditOperation::AddToCredits(block_height * 1000));
+            drive
+                .store_address_balances_for_block(
+                    &changes,
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store balances");
+        }
+
+        // Prove after block 100 (exclusive — should return 200, 300)
+        let proof = drive
+            .prove_recent_address_balance_changes_after(100, Some(100), None, platform_version)
+            .expect("should prove recent address balance changes after");
+
+        // Verify the proof
+        let (root_hash, changes) = Drive::verify_recent_address_balance_changes_after(
+            proof.as_slice(),
+            100,
+            Some(100),
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(changes.len(), 2, "should have blocks 200 and 300");
+        assert_eq!(changes[0].0, 200);
+        assert_eq!(
+            changes[0].1.get(&address),
+            Some(&CreditOperation::AddToCredits(200_000))
+        );
+        assert_eq!(changes[1].0, 300);
+        assert_eq!(
+            changes[1].1.get(&address),
+            Some(&CreditOperation::AddToCredits(300_000))
+        );
+    }
+
+    #[test]
+    fn should_prove_and_verify_recent_address_balance_changes_after_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address = PlatformAddress::P2pkh([10; 20]);
+
+        // Store balance changes only for block 300
+        let mut changes = BTreeMap::new();
+        changes.insert(address, CreditOperation::SetCredits(500_000));
+        drive
+            .store_address_balances_for_block(&changes, 300, 300_000, None, platform_version)
+            .expect("should store balances");
+
+        // Prove after block 300 (exclusive — nothing should come after)
+        let proof = drive
+            .prove_recent_address_balance_changes_after(300, Some(100), None, platform_version)
+            .expect("should prove after max height");
+
+        // Verify the proof — should return empty
+        let (root_hash, changes) = Drive::verify_recent_address_balance_changes_after(
+            proof.as_slice(),
+            300,
+            Some(100),
+            false,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(
+            changes.is_empty(),
+            "should have no changes after the last block"
+        );
+    }
+
+    #[test]
+    fn should_prove_and_verify_with_subset_flag() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address_1 = PlatformAddress::P2pkh([10; 20]);
+        let address_2 = PlatformAddress::P2sh([11; 20]);
+
+        // Store balance changes for blocks 100 and 200
+        let mut block_100_changes = BTreeMap::new();
+        block_100_changes.insert(address_1, CreditOperation::SetCredits(500_000));
+        block_100_changes.insert(address_2, CreditOperation::AddToCredits(200_000));
+        drive
+            .store_address_balances_for_block(
+                &block_100_changes,
+                100,
+                100_000,
+                None,
+                platform_version,
+            )
+            .expect("should store block 100 balances");
+
+        let mut block_200_changes = BTreeMap::new();
+        block_200_changes.insert(address_1, CreditOperation::AddToCredits(100_000));
+        drive
+            .store_address_balances_for_block(
+                &block_200_changes,
+                200,
+                200_000,
+                None,
+                platform_version,
+            )
+            .expect("should store block 200 balances");
+
+        // Prove from block 100 (inclusive, no limit)
+        let proof = drive
+            .prove_recent_address_balance_changes(100, None, None, platform_version)
+            .expect("should prove");
+
+        // Verify with verify_subset_of_proof = true (inclusive variant)
+        let (root_hash, changes) = Drive::verify_recent_address_balance_changes(
+            proof.as_slice(),
+            100,
+            None,
+            true,
+            platform_version,
+        )
+        .expect("should verify with subset flag");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(changes.len(), 2, "should have 2 blocks of changes");
+        assert_eq!(changes[0].0, 100);
+        assert_eq!(changes[1].0, 200);
+
+        // Also test subset flag with the _after variant
+        let proof_after = drive
+            .prove_recent_address_balance_changes_after(100, None, None, platform_version)
+            .expect("should prove after");
+
+        let (root_hash_after, changes_after) = Drive::verify_recent_address_balance_changes_after(
+            proof_after.as_slice(),
+            100,
+            None,
+            true,
+            platform_version,
+        )
+        .expect("should verify after with subset flag");
+
+        assert!(!root_hash_after.is_empty(), "root hash should not be empty");
+        assert_eq!(
+            changes_after.len(),
+            1,
+            "should have only block 200 (after 100, exclusive)"
+        );
+        assert_eq!(changes_after[0].0, 200);
+        assert_eq!(
+            changes_after[0].1.get(&address_1),
+            Some(&CreditOperation::AddToCredits(100_000))
+        );
+    }
 }

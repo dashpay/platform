@@ -1116,4 +1116,243 @@ mod tests {
             "Should skip compacted when recent covers checkpoint"
         );
     }
+
+    #[test]
+    fn test_address_funds_from_item_with_sum_item() {
+        // Valid: nonce=5 (4 bytes big-endian) with balance=1000
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 5], 1000, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse valid element");
+        assert_eq!(funds.nonce, 5);
+        assert_eq!(funds.balance, 1000);
+
+        // Invalid: nonce bytes too short (only 2 bytes instead of 4)
+        let short_nonce = Element::ItemWithSumItem(vec![0, 5], 500, None);
+        let err = AddressFunds::try_from(&short_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Invalid: nonce bytes too long (5 bytes instead of 4)
+        let long_nonce = Element::ItemWithSumItem(vec![0, 0, 0, 0, 1], 100, None);
+        let err = AddressFunds::try_from(&long_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Invalid: empty nonce bytes
+        let empty_nonce = Element::ItemWithSumItem(vec![], 0, None);
+        let err = AddressFunds::try_from(&empty_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Wrong variant: Item should fail
+        let item = Element::Item(vec![1, 2, 3], None);
+        let err = AddressFunds::try_from(&item).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("unexpected element type")),
+            "expected element type error for Item, got: {err:?}"
+        );
+
+        // Wrong variant: Tree should fail
+        let tree = Element::empty_tree();
+        let err = AddressFunds::try_from(&tree).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("unexpected element type")),
+            "expected element type error for Tree, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_address_funds_zero_values() {
+        // Zero nonce and zero balance via ItemWithSumItem
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 0], 0, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse zero-value element");
+        assert_eq!(funds.nonce, 0);
+        assert_eq!(funds.balance, 0);
+    }
+
+    #[test]
+    fn test_sync_result_new_defaults() {
+        let result = AddressSyncResult::new();
+        assert!(result.found.is_empty());
+        assert!(result.absent.is_empty());
+        assert_eq!(result.highest_found_index, None);
+        assert_eq!(result.checkpoint_height, 0);
+        assert_eq!(result.new_sync_height, 0);
+        assert_eq!(result.new_sync_timestamp, 0);
+        assert_eq!(result.last_known_recent_block, 0);
+        assert!(result.recent_proof.is_empty());
+        assert_eq!(result.total_balance(), 0);
+        assert_eq!(result.non_zero_count(), 0);
+    }
+
+    #[test]
+    fn test_sync_result_default_matches_new() {
+        let from_new = AddressSyncResult::new();
+        let from_default = AddressSyncResult::default();
+        assert_eq!(from_new.found.len(), from_default.found.len());
+        assert_eq!(from_new.absent.len(), from_default.absent.len());
+        assert_eq!(
+            from_new.highest_found_index,
+            from_default.highest_found_index
+        );
+        assert_eq!(from_new.checkpoint_height, from_default.checkpoint_height);
+        assert_eq!(from_new.new_sync_height, from_default.new_sync_height);
+        assert_eq!(from_new.new_sync_timestamp, from_default.new_sync_timestamp);
+        assert_eq!(
+            from_new.last_known_recent_block,
+            from_default.last_known_recent_block
+        );
+    }
+
+    #[test]
+    fn test_metrics_default_all_zero() {
+        let m = AddressSyncMetrics::default();
+        assert_eq!(m.trunk_queries, 0);
+        assert_eq!(m.branch_queries, 0);
+        assert_eq!(m.total_elements_seen, 0);
+        assert_eq!(m.total_proof_bytes, 0);
+        assert_eq!(m.iterations, 0);
+        assert_eq!(m.compacted_queries, 0);
+        assert_eq!(m.recent_queries, 0);
+        assert_eq!(m.recent_entries_returned, 0);
+        assert_eq!(m.compacted_entries_returned, 0);
+        assert_eq!(m.total_queries(), 0);
+        assert_eq!(m.average_proof_bytes(), 0.0);
+    }
+
+    #[test]
+    fn test_metrics_total_queries_sum() {
+        let m = AddressSyncMetrics {
+            trunk_queries: 2,
+            branch_queries: 5,
+            compacted_queries: 3,
+            recent_queries: 4,
+            total_elements_seen: 100,
+            total_proof_bytes: 5000,
+            iterations: 10,
+            recent_entries_returned: 20,
+            compacted_entries_returned: 30,
+        };
+        assert_eq!(m.total_queries(), 2 + 5 + 3 + 4);
+    }
+
+    #[test]
+    fn test_metrics_average_proof_bytes() {
+        let m = AddressSyncMetrics {
+            trunk_queries: 1,
+            branch_queries: 1,
+            compacted_queries: 1,
+            recent_queries: 1,
+            total_proof_bytes: 4000,
+            ..Default::default()
+        };
+        // total_queries = 4, so average = 4000/4 = 1000.0
+        assert_eq!(m.total_queries(), 4);
+        assert!((m.average_proof_bytes() - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_metrics_average_proof_bytes_zero_queries() {
+        let m = AddressSyncMetrics::default();
+        assert_eq!(m.average_proof_bytes(), 0.0);
+    }
+
+    #[test]
+    fn test_config_custom_values() {
+        let config = AddressSyncConfig {
+            min_privacy_count: 64,
+            max_concurrent_requests: 20,
+            max_iterations: 100,
+            full_rescan_after_time_s: 3 * 24 * 3600, // 3 days
+            request_settings: RequestSettings::default(),
+        };
+        assert_eq!(config.min_privacy_count, 64);
+        assert_eq!(config.max_concurrent_requests, 20);
+        assert_eq!(config.max_iterations, 100);
+        assert_eq!(config.full_rescan_after_time_s, 259200);
+    }
+
+    #[test]
+    fn test_config_full_rescan_zero_always_rescans() {
+        let config = AddressSyncConfig {
+            full_rescan_after_time_s: 0,
+            ..Default::default()
+        };
+        // With full_rescan_after_time_s = 0, any timestamp should trigger full rescan
+        // because elapsed >= 0 is always true
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now); // just synced
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            Some(_) => {
+                // full_rescan_after_time_s == 0 means always rescan
+                config.full_rescan_after_time_s == 0
+            }
+            None => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_result_total_balance_and_non_zero_count() {
+        let mut result = AddressSyncResult::new();
+
+        // Insert three addresses with varying balances
+        result.found.insert(
+            (0, vec![1; 32]),
+            AddressFunds {
+                nonce: 0,
+                balance: 500,
+            },
+        );
+        result.found.insert(
+            (1, vec![2; 32]),
+            AddressFunds {
+                nonce: 1,
+                balance: 0,
+            },
+        );
+        result.found.insert(
+            (2, vec![3; 32]),
+            AddressFunds {
+                nonce: 2,
+                balance: 1500,
+            },
+        );
+
+        assert_eq!(result.total_balance(), 2000);
+        assert_eq!(result.non_zero_count(), 2);
+    }
+
+    #[test]
+    fn test_address_funds_max_nonce_and_balance() {
+        // Maximum valid nonce (u32::MAX) and large balance
+        let max_nonce_bytes = u32::MAX.to_be_bytes().to_vec();
+        let elem = Element::ItemWithSumItem(max_nonce_bytes, i64::MAX, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse max values");
+        assert_eq!(funds.nonce, u32::MAX);
+        assert_eq!(funds.balance, i64::MAX as u64);
+    }
+
+    #[test]
+    fn test_address_funds_negative_balance_errors() {
+        // Negative sum_item value should fail conversion to u64
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 1], -100, None);
+        let err = AddressFunds::try_from(&elem).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("balance")),
+            "expected balance conversion error, got: {err:?}"
+        );
+    }
 }
