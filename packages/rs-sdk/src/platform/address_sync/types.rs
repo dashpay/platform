@@ -75,7 +75,7 @@ impl Default for AddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
-            full_rescan_after_time_s: 7 * 24 * 60 * 60, // 7 days
+            full_rescan_after_time_s: 6 * 24 * 3600 + 23 * 3600 + 45 * 60, // 6 days 23 hours 45 minutes
             request_settings: RequestSettings::default(),
         }
     }

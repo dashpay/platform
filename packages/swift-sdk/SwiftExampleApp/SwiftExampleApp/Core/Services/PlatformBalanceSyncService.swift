@@ -99,6 +99,22 @@ class PlatformBalanceSyncService: ObservableObject {
         set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_lastKnownRecent") }
     }
 
+    /// Persisted found addresses (JSON-encoded) for balance restoration across launches.
+    private var persistedFoundAddresses: [FoundAddress] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "\(keyPrefix)_foundAddresses"),
+                  let addresses = try? JSONDecoder().decode([FoundAddress].self, from: data) else {
+                return []
+            }
+            return addresses
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: "\(keyPrefix)_foundAddresses")
+            }
+        }
+    }
+
     /// UserDefaults key prefix scoped to network.
     private var keyPrefix: String {
         "platformAddressSync_\(networkName)"
@@ -121,6 +137,30 @@ class PlatformBalanceSyncService: ObservableObject {
         let blockTs = persistedBlockTime
         if blockTs > 0 {
             lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(blockTs))
+        }
+        let recentBlock = persistedLastKnownRecentBlock
+        if recentBlock > 0 {
+            lastKnownRecentBlock = recentBlock
+        }
+
+        // Restore found addresses so balances show immediately on launch
+        let saved = persistedFoundAddresses
+        if !saved.isEmpty {
+            lastFoundAddresses = saved
+            var restoredBalances: [UInt32: UInt64] = [:]
+            var restoredNonces: [UInt32: UInt32] = [:]
+            var total: UInt64 = 0
+            var nonZero = 0
+            for addr in saved {
+                restoredBalances[addr.index] = addr.balance
+                restoredNonces[addr.index] = addr.nonce
+                total += addr.balance
+                if addr.balance > 0 { nonZero += 1 }
+            }
+            addressBalances = restoredBalances
+            addressNonces = restoredNonces
+            totalPlatformBalance = total
+            activeAddressCount = nonZero
         }
     }
 
@@ -152,6 +192,7 @@ class PlatformBalanceSyncService: ObservableObject {
         persistedSyncHeight = 0
         persistedBlockTime = 0
         persistedLastKnownRecentBlock = 0
+        persistedFoundAddresses = []
     }
 
     /// Trigger a manual sync (e.g. pull-to-refresh). No-op if already syncing.
@@ -225,6 +266,9 @@ class PlatformBalanceSyncService: ObservableObject {
             if result.newSyncTimestamp > 0 {
                 lastSyncTimestamp = result.newSyncTimestamp
             }
+
+            // Persist found addresses for balance restoration across launches
+            persistedFoundAddresses = result.found
 
             SDKLogger.log(
                 "BLAST sync complete: \(result.found.count) found, \(result.absent.count) absent, total balance: \(result.totalBalance)",

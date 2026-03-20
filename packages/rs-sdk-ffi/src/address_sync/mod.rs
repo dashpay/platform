@@ -97,7 +97,7 @@ pub unsafe extern "C" fn dash_sdk_sync_address_balances(
 
     match result {
         Ok(sync_result) => {
-            info!(
+            debug!(
                 "dash_sdk_sync_address_balances: success - found {} addresses, {} absent",
                 sync_result.found.len(),
                 sync_result.absent.len()
@@ -495,13 +495,34 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
             .await
     });
 
+    // Build set of previously known indices for change detection
+    let known_indices: std::collections::BTreeSet<u32> = provider
+        .known_balances
+        .iter()
+        .map(|(index, _, _)| *index)
+        .collect();
+
     match result {
         Ok(sync_result) => {
-            info!(
-                "dash_sdk_sync_addresses_batch_with_result: success - found {} addresses, {} absent",
-                sync_result.found.len(),
-                sync_result.absent.len()
-            );
+            let newly_found = sync_result
+                .found
+                .keys()
+                .filter(|(index, _)| !known_indices.contains(index))
+                .count();
+            if newly_found > 0 {
+                info!(
+                    "dash_sdk_sync_addresses_batch_with_result: {} newly found addresses ({} total found, {} absent)",
+                    newly_found,
+                    sync_result.found.len(),
+                    sync_result.absent.len()
+                );
+            } else {
+                debug!(
+                    "dash_sdk_sync_addresses_batch_with_result: no new addresses ({} known, {} absent)",
+                    sync_result.found.len(),
+                    sync_result.absent.len()
+                );
+            }
             let ffi_result = Box::new(convert_sync_result(sync_result));
             DashSDKResult::success(Box::into_raw(ffi_result) as *mut std::os::raw::c_void)
         }

@@ -947,7 +947,7 @@ mod tests {
     #[test]
     fn test_default_config_values() {
         let config = AddressSyncConfig::default();
-        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
+        assert_eq!(config.full_rescan_after_time_s, 6 * 24 * 3600 + 23 * 3600 + 45 * 60);
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_iterations, 50);
     }

@@ -67,7 +67,7 @@ public struct AddressSyncConfig: Sendable {
 }
 
 /// An address found in the tree with its balance and nonce.
-public struct FoundAddress: Sendable {
+public struct FoundAddress: Sendable, Codable {
     /// The derivation index for this address.
     public let index: UInt32
     /// Address key bytes.
