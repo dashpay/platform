@@ -62,4 +62,16 @@ pub enum PlatformWalletError {
 
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
+
+    #[error("SDK error: {0}")]
+    Sdk(#[from] dash_sdk::Error),
+
+    #[error("Address sync failed: {0}")]
+    AddressSync(String),
+
+    #[error("Address operation failed: {0}")]
+    AddressOperation(String),
+
+    #[error("Wallet is locked — unlock it before performing this operation")]
+    WalletLocked,
 }

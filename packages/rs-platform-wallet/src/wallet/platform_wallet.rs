@@ -13,7 +13,7 @@ use crate::error::PlatformWalletError;
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
-use super::platform_address_wallet::PlatformAddressWallet;
+use super::platform_addresses::PlatformAddressWallet;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -109,12 +109,12 @@ impl PlatformWallet {
             network,
         };
 
-        let platform = PlatformAddressWallet {
-            sdk: sdk.clone(),
-            wallet: wallet.clone(),
-            wallet_info: wallet_info.clone(),
+        let platform = PlatformAddressWallet::new(
+            sdk.clone(),
+            wallet.clone(),
+            wallet_info.clone(),
             network,
-        };
+        );
 
         Self {
             wallet_id,
