@@ -184,19 +184,6 @@ impl From<DapiClientError> for Error {
                         Self::Generic(format!("Invalid consensus error encoding: {e}"))
                     });
             }
-            // Check drive-error-data-bin for CBOR-encoded error details.
-            // This covers cases where Drive returns a raw storage error (e.g.
-            // duplicate identity key) without a serialized ConsensusError.
-            if let Some(drive_error_value) = status.metadata().get_bin("drive-error-data-bin") {
-                if let Ok(bytes) = drive_error_value.to_bytes() {
-                    if let Some(message) = extract_drive_error_message(&bytes) {
-                        if message.contains("unique key") && message.contains("already exists") {
-                            return Self::AlreadyExists(message);
-                        }
-                    }
-                }
-            }
-
             // Otherwise we parse the error code and act accordingly
             if status.code() == Code::AlreadyExists {
                 return Self::AlreadyExists(status.message().to_string());
@@ -274,26 +261,6 @@ where
         // Fallback to a generic string representation
         Self::Generic(value.to_string())
     }
-}
-
-/// Extract the human-readable `message` field from a CBOR-encoded
-/// `drive-error-data-bin` metadata value (a serialized `TenderdashStatus`).
-fn extract_drive_error_message(bytes: &[u8]) -> Option<String> {
-    let value: ciborium::Value = ciborium::de::from_reader(bytes)
-        .inspect_err(|e| {
-            tracing::trace!("drive-error-data-bin is not valid CBOR: {}", e);
-        })
-        .ok()?;
-
-    let map = value.as_map()?;
-    for (k, v) in map {
-        if let ciborium::Value::Text(key) = k {
-            if key == "message" {
-                return v.as_text().map(|s| s.to_string());
-            }
-        }
-    }
-    None
 }
 
 impl CanRetry for Error {
@@ -425,72 +392,6 @@ mod tests {
                     BasicError::IdentityAssetLockProofLockedTransactionMismatchError(_)
                 ))
             );
-        }
-
-        #[test]
-        fn test_drive_error_data_bin_duplicate_identity_key() {
-            // Simulate a gRPC error where Drive returns a raw GroveDB storage error
-            // for a duplicate identity key, without a serialized ConsensusError.
-            // The drive-error-data-bin metadata contains CBOR with a human-readable message.
-            let message = "storage: identity: a unique key with that hash already exists: \
-                the key already exists in the non unique set \
-                [70, 101, 149, 157, 72, 129, 155, 242, 168, 48, 11, 145, 180, 252, 122, 134, 152, 55, 135, 242]";
-
-            let mut cbor_buf = Vec::new();
-            ciborium::ser::into_writer(
-                &ciborium::Value::Map(vec![
-                    (
-                        ciborium::Value::Text("code".to_string()),
-                        ciborium::Value::Integer(13.into()),
-                    ),
-                    (
-                        ciborium::Value::Text("message".to_string()),
-                        ciborium::Value::Text(message.to_string()),
-                    ),
-                ]),
-                &mut cbor_buf,
-            )
-            .expect("CBOR serialize");
-
-            let mut metadata = MetadataMap::new();
-            metadata.insert_bin("drive-error-data-bin", MetadataValue::from_bytes(&cbor_buf));
-
-            let status =
-                dapi_grpc::tonic::Status::with_metadata(Code::Internal, "Internal error", metadata);
-
-            let error = DapiClientError::Transport(TransportError::Grpc(status));
-            let sdk_error = Error::from(error);
-
-            assert_matches!(sdk_error, Error::AlreadyExists(msg) => {
-                assert!(msg.contains("unique key"), "expected 'unique key' in: {msg}");
-                assert!(msg.contains("already exists"), "expected 'already exists' in: {msg}");
-            });
-        }
-
-        #[test]
-        fn test_drive_error_data_bin_unrelated_message_falls_through() {
-            // When drive-error-data-bin contains a message that does NOT match
-            // the identity key pattern, the error should fall through to DapiClientError.
-            let mut cbor_buf = Vec::new();
-            ciborium::ser::into_writer(
-                &ciborium::Value::Map(vec![(
-                    ciborium::Value::Text("message".to_string()),
-                    ciborium::Value::Text("some other storage error".to_string()),
-                )]),
-                &mut cbor_buf,
-            )
-            .expect("CBOR serialize");
-
-            let mut metadata = MetadataMap::new();
-            metadata.insert_bin("drive-error-data-bin", MetadataValue::from_bytes(&cbor_buf));
-
-            let status =
-                dapi_grpc::tonic::Status::with_metadata(Code::Internal, "Internal error", metadata);
-
-            let error = DapiClientError::Transport(TransportError::Grpc(status));
-            let sdk_error = Error::from(error);
-
-            assert_matches!(sdk_error, Error::DapiClientError(_));
         }
     }
 }
