@@ -126,7 +126,7 @@ If the document type's `trade_mode` allows seller-set pricing:
 
 ### User-defined properties
 
-Properties are serialized **in the order defined by the document type's schema** (`document_type.properties()` returns a `BTreeMap`, so properties are in alphabetical order by field name).
+Properties are serialized **in schema position order** — each property in the data contract schema has a `position` field, and `document_type.properties()` returns an `IndexMap` sorted by that position. This is *not* alphabetical order.
 
 Each property is encoded based on its type and whether it is required:
 
@@ -135,6 +135,8 @@ Each property is encoded based on its type and whether it is required:
 **Optional fields**: A 1-byte presence flag is written first:
 - `0x01` followed by the encoded value — field is present
 - `0x00` — field is absent
+
+**Transient fields**: Always get a presence byte, even if marked as required. The serializer checks `if !property.required || property.transient` to decide whether to write the flag.
 
 #### Value encoding by type
 
@@ -153,14 +155,17 @@ All numeric values use **big-endian** byte order.
 | `byteArray` (fixed size) | raw bytes (no length prefix if min_size == max_size) |
 | `byteArray` (variable size) | varint length prefix + raw bytes |
 | `identifier` | 32 bytes raw |
-| `date` | 8 bytes big-endian f64 |
-| `object` | Nested fields serialized recursively in their schema order |
+| `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
+| `array` | varint element count + each element encoded in sequence |
+| `object` | Nested fields serialized recursively in their schema position order |
+
+**Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.
 
 **Important**: In serialization version 0, all integer types are encoded as **i64** (8 bytes big-endian), regardless of the actual type in the schema. This means a `u8` field that should be 1 byte is encoded as 8 bytes in v0.
 
 ## Worked example: withdrawal document
 
-The withdrawals contract defines a `withdrawal` document type with these properties (in alphabetical/BTreeMap order):
+The withdrawals contract defines a `withdrawal` document type with these properties (listed here in schema position order):
 
 | Property | Type | Required |
 |----------|------|----------|
@@ -184,6 +189,8 @@ a1be 7c54
 36b3 e63b a54a ba9b 7599 4128 d124      ← $ownerId (32 bytes)
 e9e1 cebe 348c d304 15b5 098c 6052
 6de0 157e
+                                        ← no $creatorId: withdrawal document type
+                                          does not support transfers/trading
 c501                                    ← $revision (varint: 197)
 0003                                    ← time bitfield: bits 0,1 set
                                           ($createdAt + $updatedAt)
