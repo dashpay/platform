@@ -172,9 +172,15 @@ pub extern "C" fn dash_sdk_init() {
 /// Enable logging with the specified level.
 ///
 /// This function initializes a `tracing` subscriber with the given log level.
-/// It configures per-crate filter directives directly, without touching
-/// environment variables, making it safe to call from any thread context
-/// (including after a Tokio runtime has started).
+/// If the `RUST_LOG` environment variable is set, its directives take
+/// precedence (useful for ad-hoc debugging); otherwise per-crate filter
+/// directives derived from `level` are used.  The env var is only *read*,
+/// never written, so the call is safe from any thread context (including
+/// after a Tokio runtime has started).
+///
+/// The subscriber's built-in `tracing-log` bridge captures output from
+/// crates that use the `log` facade, so a separate `env_logger::init()`
+/// is not required.
 ///
 /// If a global subscriber has already been set (e.g., by a previous call),
 /// subsequent calls are a no-op and the original level is retained.
@@ -200,9 +206,10 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
          hyper={log_level},tonic={log_level}"
     );
 
-    // Create an EnvFilter directly from the string -- this never reads
-    // environment variables.
-    let filter = tracing_subscriber::EnvFilter::new(filter_string);
+    // Honour RUST_LOG when present (read-only, no data-race); fall back
+    // to the programmatic filter string otherwise.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter_string));
 
     // Initialize the global tracing subscriber.  `try_init` returns Err if a
     // subscriber is already installed; we intentionally ignore that so that
