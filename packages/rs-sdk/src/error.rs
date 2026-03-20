@@ -91,6 +91,16 @@ pub enum Error {
     #[error("Identity nonce not found on platform: {0}")]
     IdentityNonceNotFound(String),
 
+    /// Drive returned an internal error that was not classified as a consensus
+    /// error. Contains the decoded human-readable message from the
+    /// `drive-error-data-bin` gRPC metadata (CBOR → message extraction).
+    ///
+    /// This typically indicates a storage-level error (e.g., GroveDB constraint
+    /// violation) that bypassed the consensus validation layer. If pre-validation
+    /// is working correctly, these should be rare.
+    #[error("Drive internal error: {0}")]
+    DriveInternalError(String),
+
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -184,6 +194,20 @@ impl From<DapiClientError> for Error {
                         Self::Generic(format!("Invalid consensus error encoding: {e}"))
                     });
             }
+            // Check drive-error-data-bin for decoded Drive error messages
+            if status.code() == Code::Internal {
+                if let Some(drive_error_value) = status
+                    .metadata()
+                    .get_bin("drive-error-data-bin")
+                {
+                    if let Ok(bytes) = drive_error_value.to_bytes() {
+                        if let Some(message) = extract_drive_error_message(&bytes) {
+                            return Self::DriveInternalError(message);
+                        }
+                    }
+                }
+            }
+
             // Otherwise we parse the error code and act accordingly
             if status.code() == Code::AlreadyExists {
                 return Self::AlreadyExists(status.message().to_string());
@@ -193,6 +217,25 @@ impl From<DapiClientError> for Error {
         // Preserve the original DAPI client error for structured inspection
         Self::DapiClientError(value)
     }
+}
+
+/// Extract the human-readable `message` field from CBOR-encoded `drive-error-data-bin` metadata.
+///
+/// The metadata contains a CBOR map with optional fields: `code`, `message`, `consensus_error`.
+/// Returns `Some(message)` if the CBOR decodes and contains a non-empty `message` string.
+fn extract_drive_error_message(bytes: &[u8]) -> Option<String> {
+    let value: ciborium::Value = ciborium::from_reader(bytes).ok()?;
+    let map = value.as_map()?;
+    for (key, val) in map {
+        if key.as_text() == Some("message") {
+            if let Some(msg) = val.as_text() {
+                if !msg.is_empty() {
+                    return Some(msg.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 impl From<PlatformVersionError> for Error {
