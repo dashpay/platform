@@ -44,6 +44,7 @@ members = [
     "packages/rs-platform-wallet-ffi",
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
+    "packages/rs-scripts",
 ]
 
 [workspace.dependencies]

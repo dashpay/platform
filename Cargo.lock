@@ -5845,6 +5845,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs-scripts"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "data-contracts",
+ "dpp",
+ "hex",
+ "platform-version",
+ "serde_json",
+]
+
+[[package]]
 name = "rs-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
