@@ -49,6 +49,7 @@ jobs:
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
       swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
       version-changed: ${{ steps.override.outputs.version-changed || steps.filter-version.outputs.version-changed }}
+      dashmate-changed: ${{ steps.override.outputs.dashmate-changed || steps.filter-dashmate.outputs.dashmate-changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -124,6 +125,15 @@ jobs:
               - packages/rs-sdk/**
               - packages/rs-sdk-ffi/**
 
+      - name: Check for dashmate changes
+        id: filter-dashmate
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            dashmate-changed:
+              - packages/dashmate/**
+
       - name: Override all outputs for workflow_dispatch
         id: override
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -137,6 +147,7 @@ jobs:
           echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
           echo 'swift-sdk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'version-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'dashmate-changed=true' >> "$GITHUB_OUTPUT"
 
   build-js:
     name: Build JS packages
@@ -151,10 +162,10 @@ jobs:
     needs:
       - check-secrets
       - changes
-    # Build Docker images on version change, nightly schedule, or manual dispatch
+    # Build Docker images on version change, dashmate change, nightly schedule, or manual dispatch
     if: >-
       needs.check-secrets.outputs.has_ecr == 'true' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.dashmate-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -272,7 +283,7 @@ jobs:
       always() &&
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.dashmate-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
 
   test-suite:
     name: Test Suite
@@ -287,7 +298,7 @@ jobs:
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.dashmate-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -324,5 +335,5 @@ jobs:
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.dashmate-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml
