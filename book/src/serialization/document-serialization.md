@@ -8,7 +8,7 @@ Documents are **not self-describing**. The binary format does not include field 
 
 Every serialized document follows this layout:
 
-```
+```text
 ┌──────────────────────┐
 │  Serialization       │  varint (1-2 bytes)
 │  Version             │  Currently: 0, 1, or 2
@@ -80,7 +80,7 @@ The identity that currently owns the document, written as raw bytes.
 
 Present only in serialization version 2, and only if the document type supports transfers (`documents_transferable`) or trading (`trade_mode != None`).
 
-```
+```text
 0x01  [32 bytes creatorId]    — creator ID present
 0x00                           — creator ID absent
 ```
@@ -119,7 +119,7 @@ For example, if a document has `$createdAt` and `$updatedAt` set, the bitfield w
 
 If the document type's `trade_mode` allows seller-set pricing:
 
-```
+```text
 0x01  [8 bytes big-endian u64]   — price in credits
 0x00                              — no price set
 ```
@@ -176,25 +176,44 @@ The document type requires `$createdAt`, `$updatedAt`, and `$revision`.
 
 Here is a real serialized withdrawal document (hex), broken down byte by byte:
 
-```
+```text
 02                                      ← serialization version (varint: 2)
-02                                      ← (continuation of varint, actual value = 2)
-229eda94b35be55ac222ca8cc4631c0717      ← $id (32 bytes)
-c9ee4a223f2a269e06c9a1be7c5436
-b3e63ba54aba9b75994128d124e9e1ce      ← $ownerId (32 bytes)
-be348cd30415b5098c60526de0157ec5
-01                                      ← (v2: no $creatorId since withdrawals
-00                                         are not transferable — this is part
-03                                         of revision + flags region)
+0222 9eda 94b3 5be5 5ac2 22ca 8cc4      ← $id (32 bytes)
+631c 0717 c9ee 4a22 3f2a 269e 06c9
+a1be 7c54
+36b3 e63b a54a ba9b 7599 4128 d124      ← $ownerId (32 bytes)
+e9e1 cebe 348c d304 15b5 098c 6052
+6de0 157e
+c501                                    ← $revision (varint: 197)
+0003                                    ← time bitfield: bits 0,1 set
+                                          ($createdAt + $updatedAt)
 0000019cd70f3323                        ← $createdAt: 1773134623523 ms
                                           (2026-03-10 09:23:43 UTC)
 0000019d05406f0c                        ← $updatedAt: 1773909602060 ms
                                           (2026-03-19 08:40:02 UTC)
-0100000000000026                        ← amount: 9815... wait, this needs
-                                          the schema to parse correctly
+                                        ← user properties follow (schema-dependent)
 ```
 
 To properly decode the properties section, you need the document type schema — field names, types, required flags, and order. This is why the `decode-document` CLI tool (in `packages/rs-scripts`) requires the contract and document type to be specified.
+
+Using the tool on this document produces:
+
+```text
+id:         9LSAr59Fw7A1PHvX9WV1RWHCjL4PrijrHZpwhYDPkMq
+owner_id:   4gY7wFM4o53jc8PJZ9KNzqzaJhXhPVMivJREKVwihKVF
+created_at: 2026-03-10 09:23:43 UTC
+updated_at: 2026-03-19 08:40:02 UTC
+revision:   197
+
+properties:
+  amount: (i64)191000
+  coreFeePerByte: (i64)1
+  outputScript: bytes 76a914...88ac
+  pooling: (i64)0
+  status: (i64)2
+  transactionIndex: (i64)9815
+  transactionSignHeight: (i64)2440497
+```
 
 ## The `decode-document` CLI tool
 
