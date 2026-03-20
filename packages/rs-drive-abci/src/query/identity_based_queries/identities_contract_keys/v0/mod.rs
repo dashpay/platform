@@ -30,6 +30,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesContractKeysResponseV0>, Error> {
+        if identities_ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} identities contract keys, maximum is {}",
+                    identities_ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let identities_ids = check_validation_result_with_data!(identities_ids
             .into_iter()
             .map(|identity_id| {
@@ -223,6 +232,65 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::Query(QuerySyntaxError::InvalidKeyParameter(msg))] if msg.contains("purpose")
         ));
+    }
+
+    #[test]
+    fn test_identities_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
+        let max = platform_version.drive_abci.query.max_returned_elements as usize;
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query should not fail");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [crate::error::query::QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_identities_ids_at_max_limit_is_accepted() {
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
+        let max = platform_version.drive_abci.query.max_returned_elements as usize;
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query should not fail");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                crate::error::query::QueryError::Query(
+                    drive::error::query::QuerySyntaxError::InvalidLimit(_)
+                )
+            )),
+            "should not be rejected at exactly the max limit"
+        );
     }
 
     #[test]

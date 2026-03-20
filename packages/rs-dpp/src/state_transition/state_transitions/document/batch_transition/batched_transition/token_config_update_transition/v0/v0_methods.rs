@@ -1,5 +1,7 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
 use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
@@ -69,7 +71,12 @@ impl TokenConfigUpdateTransitionV0Methods for TokenConfigUpdateTransitionV0 {
 }
 
 impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    /// v0 action_id: uses only the u8 discriminant (kept for backward compat).
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenConfigUpdateTransitionV0 {
             base,
             update_token_configuration_item,
@@ -80,7 +87,8 @@ impl AllowedAsMultiPartyAction for TokenConfigUpdateTransitionV0 {
             base.token_id().as_bytes(),
             owner_id.as_bytes(),
             base.identity_contract_nonce(),
-            update_token_configuration_item.u8_item_index(),
+            update_token_configuration_item,
+            platform_version,
         )
     }
 }

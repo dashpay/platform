@@ -29,7 +29,7 @@ use dapi_grpc::platform::{
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::{EpochIndex, MAX_EPOCH};
+use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::core_subsidy::NetworkCoreSubsidy;
 use dpp::dashcore::hashes::Hash;
@@ -479,8 +479,8 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                             error: e.to_string(),
                         })?
                         .into_buffer();
-                    let limit = v0.limit.map(|i| i as u16);
-                    let offset = v0.offset.map(|i| i as u16);
+                    let limit = v0.limit.map(try_u32_to_u16).transpose()?;
+                    let offset = v0.offset.map(try_u32_to_u16).transpose()?;
                     (request_type, identity_id, limit, offset)
                 }
             };
@@ -964,20 +964,34 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let start_height = match request.version.ok_or(Error::EmptyVersion)? {
-            get_recent_address_balance_changes_request::Version::V0(v0) => v0.start_height,
-        };
+        let (start_height, start_height_exclusive) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_recent_address_balance_changes_request::Version::V0(v0) => {
+                    (v0.start_height, v0.start_height_exclusive)
+                }
+            };
 
         let limit = Some(100u16); // Same limit as in query handler
 
-        let (root_hash, verified_changes) = Drive::verify_recent_address_balance_changes(
-            &proof.grovedb_proof,
-            start_height,
-            limit,
-            false,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, verified_changes) = if start_height_exclusive {
+            Drive::verify_recent_address_balance_changes_after(
+                &proof.grovedb_proof,
+                start_height,
+                limit,
+                false,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?
+        } else {
+            Drive::verify_recent_address_balance_changes(
+                &proof.grovedb_proof,
+                start_height,
+                limit,
+                false,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?
+        };
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -1422,15 +1436,20 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        if mtd.epoch > MAX_EPOCH as u32 {
-            return Err(drive::error::Error::Proof(ProofError::InvalidMetadata(format!("platform returned an epoch {} that was higher that maximum of a 16 bit integer", mtd.epoch))).into());
-        }
+        let epoch_u16 = try_u32_to_u16(mtd.epoch).map_err(|_| {
+            Into::<Error>::into(drive::error::Error::Proof(ProofError::InvalidMetadata(
+                format!(
+                    "platform returned an epoch {} that was higher than maximum of a 16 bit integer",
+                    mtd.epoch
+                ),
+            )))
+        })?;
 
         let block_info = BlockInfo {
             time_ms: mtd.time_ms,
             height: mtd.height,
             core_height: mtd.core_chain_locked_height,
-            epoch: (mtd.epoch as u16).try_into()?,
+            epoch: epoch_u16.try_into()?,
         };
 
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
@@ -2274,11 +2293,14 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
             }
         };
 
+        let epoch_index = match epoch {
+            Some(index) => try_u32_to_u16(index)?,
+            None => try_u32_to_u16(mtd.epoch)?,
+        };
+
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
             &proof.grovedb_proof,
-            epoch
-                .map(|epoch_index| epoch_index as u16)
-                .unwrap_or_else(|| mtd.epoch as u16),
+            epoch_index,
             ProposerQueryType::ByIds(ids),
             platform_version,
         )
@@ -2336,12 +2358,16 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             }
         };
 
+        let epoch_index = match epoch {
+            Some(index) => try_u32_to_u16(index)?,
+            None => try_u32_to_u16(mtd.epoch)?,
+        };
+        let checked_limit = limit.map(try_u32_to_u16).transpose()?;
+
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
             &proof.grovedb_proof,
-            epoch
-                .map(|epoch_index| epoch_index as u16)
-                .unwrap_or_else(|| mtd.epoch as u16),
-            ProposerQueryType::ByRange(limit.map(|l| l as u16), formatted_start),
+            epoch_index,
+            ProposerQueryType::ByRange(checked_limit, formatted_start),
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -2843,5 +2869,55 @@ impl<L: Length> IntoOption for L {
         } else {
             Some(self)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn try_u32_to_u16_succeeds_for_valid_values() {
+        assert_eq!(try_u32_to_u16(0).unwrap(), 0u16);
+        assert_eq!(try_u32_to_u16(1).unwrap(), 1u16);
+        assert_eq!(try_u32_to_u16(42).unwrap(), 42u16);
+        assert_eq!(try_u32_to_u16(u16::MAX as u32).unwrap(), u16::MAX);
+    }
+
+    #[test]
+    fn try_u32_to_u16_errors_on_overflow() {
+        // This is the exact attack vector: epoch 65536 would silently truncate
+        // to 0 with `as u16`, allowing a malicious node to serve a proof for
+        // epoch 0 while claiming the metadata epoch is 65536.
+        let result = try_u32_to_u16(65536);
+        assert!(
+            result.is_err(),
+            "epoch 65536 must not silently truncate to 0"
+        );
+
+        let result = try_u32_to_u16(u32::MAX);
+        assert!(result.is_err(), "epoch u32::MAX must not silently truncate");
+
+        let result = try_u32_to_u16(100_000);
+        assert!(result.is_err(), "epoch 100000 must not silently truncate");
+    }
+
+    #[test]
+    fn u32_to_u16_opt_succeeds_for_valid_values() {
+        assert_eq!(u32_to_u16_opt(0).unwrap(), None);
+        assert_eq!(u32_to_u16_opt(1).unwrap(), Some(1u16));
+        assert_eq!(u32_to_u16_opt(u16::MAX as u32).unwrap(), Some(u16::MAX));
+    }
+
+    #[test]
+    fn u32_to_u16_opt_errors_on_overflow() {
+        let result = u32_to_u16_opt(65536);
+        assert!(
+            result.is_err(),
+            "value 65536 must not silently truncate to 0"
+        );
+
+        let result = u32_to_u16_opt(u32::MAX);
+        assert!(result.is_err(), "value u32::MAX must not silently truncate");
     }
 }

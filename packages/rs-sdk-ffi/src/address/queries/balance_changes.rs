@@ -34,7 +34,11 @@ pub unsafe extern "C" fn dash_sdk_address_fetch_recent_balance_changes(
     sdk_handle: *const SDKHandle,
     start_height: u64,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_address_fetch_recent_balance_changes_inner(sdk_handle, start_height)
     }));
@@ -92,8 +96,7 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
             for (address, operation) in block.changes.iter() {
                 let address_bytes = address.to_bytes();
                 let address_len = address_bytes.len();
-                let address_ptr = address_bytes.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes);
+                let address_ptr = Box::into_raw(address_bytes.into_boxed_slice()) as *mut u8;
 
                 let (op_type, credits) = match operation {
                     CreditOperation::SetCredits(c) => (DashSDKCreditOperationType::SetCredits, *c),
@@ -114,9 +117,8 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
             let changes_ptr = if address_changes.is_empty() {
                 std::ptr::null_mut()
             } else {
-                let ptr = address_changes.as_ptr() as *mut DashSDKAddressBalanceChange;
-                std::mem::forget(address_changes);
-                ptr
+                Box::into_raw(address_changes.into_boxed_slice())
+                    as *mut DashSDKAddressBalanceChange
             };
 
             blocks.push(DashSDKBlockBalanceChanges {
@@ -130,9 +132,7 @@ unsafe fn dash_sdk_address_fetch_recent_balance_changes_inner(
         let blocks_ptr = if blocks.is_empty() {
             std::ptr::null_mut()
         } else {
-            let ptr = blocks.as_ptr() as *mut DashSDKBlockBalanceChanges;
-            std::mem::forget(blocks);
-            ptr
+            Box::into_raw(blocks.into_boxed_slice()) as *mut DashSDKBlockBalanceChanges
         };
 
         Ok(DashSDKRecentBalanceChanges {

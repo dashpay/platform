@@ -9,7 +9,6 @@ use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -288,11 +287,14 @@ where
 {
     let network_name = String::deserialize(deserializer)?;
 
-    match network_name.as_str() {
-        "mainnet" => Ok(Network::Dash),
-        "local" => Ok(Network::Regtest),
-        _ => Network::from_str(network_name.as_str())
-            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
+    match network_name.to_lowercase().as_str() {
+        "dash" | "mainnet" | "main" => Ok(Network::Mainnet),
+        "local" | "regtest" => Ok(Network::Regtest),
+        "testnet" | "test" => Ok(Network::Testnet),
+        "devnet" | "dev" => Ok(Network::Devnet),
+        _ => Err(serde::de::Error::custom(format!(
+            "can't parse network name: unknown network '{network_name}'"
+        ))),
     }
 }
 
@@ -631,7 +633,7 @@ impl PlatformConfig {
     }
 
     fn default_network() -> Network {
-        Network::Dash
+        Network::Mainnet
     }
 
     fn default_tokio_console_address() -> String {
@@ -688,7 +690,7 @@ impl PlatformConfig {
     /// The default depending on the network
     pub fn default_for_network(network: Network) -> Self {
         match network {
-            Network::Dash => Self::default_mainnet(),
+            Network::Mainnet => Self::default_mainnet(),
             Network::Testnet => Self::default_testnet(),
             Network::Devnet => Self::default_devnet(),
             Network::Regtest => Self::default_local(),
@@ -825,7 +827,7 @@ impl PlatformConfig {
     /// The default mainnet config
     pub fn default_mainnet() -> Self {
         Self {
-            network: Network::Dash,
+            network: Network::Mainnet,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 100,

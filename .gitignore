@@ -91,3 +91,6 @@ grpc-coverage-report.txt
 
 __pycache__/
 .claude/worktrees/
+
+# Security audit reports (local-only, not committed)
+audits/

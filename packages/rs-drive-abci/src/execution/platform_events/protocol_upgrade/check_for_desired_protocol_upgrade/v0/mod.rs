@@ -14,7 +14,7 @@ impl<C> Platform<C> {
         active_hpmns: u32,
         platform_version: &PlatformVersion,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        let upgrade_percentage_needed = if (self.config.network == Network::Dash
+        let upgrade_percentage_needed = if (self.config.network == Network::Mainnet
             && platform_version.protocol_version == 1)
             || (self.config.network == Network::Testnet && platform_version.protocol_version == 2)
         {

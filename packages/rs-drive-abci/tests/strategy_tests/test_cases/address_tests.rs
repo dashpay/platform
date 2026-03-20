@@ -279,6 +279,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -421,6 +422,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: true,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1282,6 +1284,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1543,6 +1546,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -1917,6 +1921,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -2581,6 +2586,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -2766,6 +2772,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -3147,6 +3154,7 @@ mod tests {
                 GetRecentAddressBalanceChangesRequestV0 {
                     start_height: 1,
                     prove: false,
+                    start_height_exclusive: false,
                 },
             )),
         };
@@ -3706,5 +3714,824 @@ mod tests {
 
         // With 6000+ addresses across 5 blocks, compaction triggers at 2048 addresses threshold
         assert_eq!(compacted_entries, 2, "expected 2 compacted blobs");
+    }
+
+    /// BLAST (BaLance Address Sync Technology) full sync flow end-to-end test.
+    ///
+    /// This test exercises the complete lifecycle a mobile client would use to
+    /// synchronize address balances:
+    ///
+    /// Phase 1: Initial full tree scan via trunk query
+    /// Phase 2: Incremental catch-up via recent (per-block) changes
+    /// Phase 3: Compaction triggers; catch-up through compacted + recent
+    /// Phase 4: No-op query when already at tip
+    /// Phase 5: Compaction with no address activity (empty blocks)
+    #[test]
+    #[stack_size(8000000)]
+    fn run_chain_blast_sync_full_flow() {
+        use crate::execution::{continue_chain_for_strategy, GENESIS_TIME_MS};
+        use crate::strategy::{
+            ChainExecutionOutcome, ChainExecutionParameters, StrategyRandomness,
+        };
+
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
+
+        // ----------------------------------------------------------------
+        // Phase 1: Setup + Full Tree Scan
+        // Run 13 blocks with address funding and transfer operations.
+        // Checkpoints are enabled so trunk queries work.
+        // ----------------------------------------------------------------
+
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::AddressFundingFromCoreAssetLock(
+                            dash_to_credits!(20)..=dash_to_credits!(20),
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                    Operation {
+                        op_type: OperationType::AddressTransfer(
+                            dash_to_credits!(5)..=dash_to_credits!(5),
+                            1..=4,
+                            Some(0.2),
+                            None,
+                        ),
+                        frequency: Frequency {
+                            times_per_block_range: 1..3,
+                            chance_per_block: None,
+                        },
+                    },
+                ],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        let config = PlatformConfig {
+            validator_set: ValidatorSetConfig::default_100_67(),
+            chain_lock: ChainLockConfig::default_100_67(),
+            instant_lock: InstantLockConfig::default_100_67(),
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                ..Default::default()
+            },
+            block_spacing_ms: 180000, // 3 mins — triggers checkpoint every ~12 blocks
+            testing_configs: PlatformTestConfig {
+                disable_checkpoints: false,
+                ..PlatformTestConfig::default_minimal_verifications()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        let outcome = run_chain_for_strategy(
+            &mut platform,
+            13,
+            strategy.clone(),
+            config.clone(),
+            15,
+            &mut None,
+            &mut None,
+        );
+
+        // Verify some address operations executed
+        let phase1_funding_count = outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|r| r.iter())
+            .filter(|(st, res)| {
+                res.code == 0 && matches!(st, StateTransition::AddressFundingFromAssetLock(_))
+            })
+            .count();
+        assert!(
+            phase1_funding_count > 0,
+            "phase 1: expected at least one address funding"
+        );
+
+        // Query trunk state (full tree scan)
+        let platform_ref = &outcome.abci_app.platform;
+        let platform_state = platform_ref.state.load();
+        let platform_version = platform_state.current_platform_version().unwrap();
+
+        let trunk_request = GetAddressesTrunkStateRequest {
+            version: Some(RequestVersion::V0(GetAddressesTrunkStateRequestV0 {})),
+        };
+
+        let trunk_result = platform_ref
+            .query_addresses_trunk_state(trunk_request, &platform_state, platform_version)
+            .expect("phase 1: trunk query should succeed");
+
+        assert!(
+            trunk_result.errors.is_empty(),
+            "phase 1: trunk query errors: {:?}",
+            trunk_result.errors
+        );
+
+        let trunk_response = trunk_result.into_data().expect("expected trunk data");
+        let trunk_v0 = match trunk_response.version.expect("expected version") {
+            ResponseVersion::V0(v0) => v0,
+        };
+
+        // Verify proof and metadata
+        let trunk_proof = trunk_v0.proof.expect("expected trunk proof");
+        assert!(
+            !trunk_proof.grovedb_proof.is_empty(),
+            "phase 1: trunk proof should not be empty"
+        );
+
+        let trunk_metadata = trunk_v0.metadata.expect("expected trunk metadata");
+        assert_eq!(
+            trunk_metadata.height, 12,
+            "phase 1: trunk should use checkpoint at height 12"
+        );
+
+        // Verify trunk proof contents
+        let (root_hash, trunk_data) =
+            Drive::verify_address_funds_trunk_query(&trunk_proof.grovedb_proof, platform_version)
+                .expect("phase 1: trunk proof verification should succeed");
+        assert_eq!(root_hash.len(), 32, "root hash should be 32 bytes");
+        assert_eq!(
+            trunk_data.elements.len(),
+            32,
+            "phase 1: trunk should return 32 elements"
+        );
+
+        // Record addresses known so far from state transitions
+        let mut known_addresses: BTreeSet<PlatformAddress> = BTreeSet::new();
+        for results in outcome.state_transition_results_per_block.values() {
+            for (st, res) in results {
+                if res.code != 0 {
+                    continue;
+                }
+                match st {
+                    StateTransition::AddressFundingFromAssetLock(funding) => {
+                        for addr in funding.outputs().keys() {
+                            known_addresses.insert(*addr);
+                        }
+                    }
+                    StateTransition::AddressFundsTransfer(transfer) => {
+                        for addr in transfer.inputs().keys() {
+                            known_addresses.insert(*addr);
+                        }
+                        for addr in transfer.outputs().keys() {
+                            known_addresses.insert(*addr);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(
+            !known_addresses.is_empty(),
+            "phase 1: should have recorded some addresses"
+        );
+
+        // Save the height for subsequent incremental queries
+        let phase1_height = platform_state.last_committed_block_height();
+        assert_eq!(phase1_height, 13);
+
+        // Extract chain continuation parameters from outcome
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance: phase1_addresses,
+            ..
+        } = outcome;
+
+        // ----------------------------------------------------------------
+        // Phase 2: Incremental with Recent Changes
+        // Continue chain for 5 more blocks with address transfers.
+        // Query recent changes from the checkpoint height to catch up.
+        // ----------------------------------------------------------------
+
+        let phase2_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::AddressFundingFromCoreAssetLock(
+                        dash_to_credits!(20)..=dash_to_credits!(20),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        let phase2_outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: phase1_height + 1,
+                core_height_start: 1,
+                block_count: 5,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: phase1_addresses,
+            },
+            phase2_strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(42),
+        );
+
+        // Query recent (non-compacted) changes from phase1 tip
+        let platform_ref2 = &phase2_outcome.abci_app.platform;
+        let platform_state2 = platform_ref2.state.load();
+        let platform_version2 = platform_state2.current_platform_version().unwrap();
+        let phase2_height = platform_state2.last_committed_block_height();
+        assert_eq!(phase2_height, 18, "phase 2: expected height 18");
+
+        let recent_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: phase1_height + 1, // from where we left off
+                    prove: false,
+                    start_height_exclusive: false,
+                },
+            )),
+        };
+
+        let recent_result = platform_ref2
+            .query_recent_address_balance_changes(
+                recent_request,
+                &platform_state2,
+                platform_version2,
+            )
+            .expect("phase 2: recent query should succeed");
+
+        assert!(
+            recent_result.errors.is_empty(),
+            "phase 2: recent query errors: {:?}",
+            recent_result.errors
+        );
+
+        let recent_response = recent_result.into_data().expect("expected recent data");
+        match recent_response.version.expect("expected version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        assert!(
+                            !entries.block_changes.is_empty(),
+                            "phase 2: expected recent block changes after incremental blocks"
+                        );
+
+                        // Verify entries are per-block format (BlockAddressBalanceChanges)
+                        for block_change in &entries.block_changes {
+                            assert!(
+                                block_change.block_height > phase1_height,
+                                "phase 2: recent changes should be after phase 1 height {}",
+                                phase1_height
+                            );
+                            assert!(
+                                block_change.block_height <= phase2_height,
+                                "phase 2: recent changes should not exceed current height {}",
+                                phase2_height
+                            );
+                        }
+
+                        // Verify some address balance updates exist
+                        let total_changes: usize = entries
+                            .block_changes
+                            .iter()
+                            .map(|bc| bc.changes.len())
+                            .sum();
+                        assert!(
+                            total_changes > 0,
+                            "phase 2: expected at least some address balance changes"
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 2: expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Extract parameters for phase 3
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance: phase2_addresses,
+            ..
+        } = phase2_outcome;
+
+        // ----------------------------------------------------------------
+        // Phase 3: Compaction + Incremental Through Compacted
+        // Continue chain for 65+ blocks with address operations to trigger
+        // compaction (threshold is 64 blocks). Then verify compacted and
+        // recent queries cover the full range.
+        // ----------------------------------------------------------------
+
+        let phase3_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::AddressFundingFromCoreAssetLock(
+                        dash_to_credits!(20)..=dash_to_credits!(20),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo {
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                    ..Default::default()
+                },
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        let phase3_outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: phase2_height + 1,
+                core_height_start: 1,
+                block_count: 70,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: phase2_addresses,
+            },
+            phase3_strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(99),
+        );
+
+        let platform_ref3 = &phase3_outcome.abci_app.platform;
+        let platform_state3 = platform_ref3.state.load();
+        let platform_version3 = platform_state3.current_platform_version().unwrap();
+        let phase3_height = platform_state3.last_committed_block_height();
+        assert_eq!(phase3_height, 88, "phase 3: expected height 88");
+
+        // Query compacted changes from phase1 height (simulating a client that
+        // was last synced at phase1 and needs to catch up through compacted data)
+        let compacted_request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: phase1_height,
+                    prove: false,
+                },
+            )),
+        };
+
+        let compacted_result = platform_ref3
+            .query_recent_compacted_address_balance_changes(
+                compacted_request,
+                &platform_state3,
+                platform_version3,
+            )
+            .expect("phase 3: compacted query should succeed");
+
+        assert!(
+            compacted_result.errors.is_empty(),
+            "phase 3: compacted query errors: {:?}",
+            compacted_result.errors
+        );
+
+        let compacted_response = compacted_result
+            .into_data()
+            .expect("expected compacted data");
+        let mut compacted_max_end_height: u64 = 0;
+
+        match compacted_response.version.expect("expected version") {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        // Compaction should have triggered (64-block threshold exceeded)
+                        assert!(
+                            !entries.compacted_block_changes.is_empty(),
+                            "phase 3: expected compacted entries after 70+ blocks"
+                        );
+
+                        for entry in &entries.compacted_block_changes {
+                            assert!(
+                                entry.end_block_height >= entry.start_block_height,
+                                "phase 3: end_block should be >= start_block"
+                            );
+                            if entry.end_block_height > compacted_max_end_height {
+                                compacted_max_end_height = entry.end_block_height;
+                            }
+
+                            // Verify changes are structurally valid
+                            for change in &entry.changes {
+                                assert!(
+                                    !change.address.is_empty(),
+                                    "phase 3: address should not be empty"
+                                );
+                                assert!(
+                                    change.operation.is_some(),
+                                    "phase 3: operation should be present"
+                                );
+                            }
+                        }
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 3: expected compacted entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Query recent changes after the compacted range to complete the catch-up
+        let recent_after_compacted_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: compacted_max_end_height + 1,
+                    prove: false,
+                    start_height_exclusive: false,
+                },
+            )),
+        };
+
+        let recent_after_result = platform_ref3
+            .query_recent_address_balance_changes(
+                recent_after_compacted_request,
+                &platform_state3,
+                platform_version3,
+            )
+            .expect("phase 3: recent-after-compacted query should succeed");
+
+        assert!(
+            recent_after_result.errors.is_empty(),
+            "phase 3: recent-after-compacted query errors: {:?}",
+            recent_after_result.errors
+        );
+
+        let recent_after_response = recent_after_result.into_data().expect("expected data");
+        match recent_after_response.version.expect("expected version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        // There should be recent blocks after the compacted range
+                        // (the last few blocks that have not yet been compacted)
+                        for block_change in &entries.block_changes {
+                            assert!(
+                                block_change.block_height > compacted_max_end_height,
+                                "phase 3: recent blocks should come after compacted range end {}",
+                                compacted_max_end_height
+                            );
+                        }
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 3: expected recent entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Extract parameters for phase 4
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            validator_quorums: quorums,
+            current_validator_quorum_hash: current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            identity_nonce_counter,
+            identity_contract_nonce_counter,
+            instant_lock_quorums,
+            identities,
+            addresses_with_balance: phase3_addresses,
+            ..
+        } = phase3_outcome;
+
+        // ----------------------------------------------------------------
+        // Phase 4: Incremental with No New Blocks (no-op)
+        // Do not continue the chain — query again from the current tip.
+        // Recent query should return empty entries.
+        // ----------------------------------------------------------------
+
+        let platform_ref4 = &abci_app.platform;
+        let platform_state4 = platform_ref4.state.load();
+        let platform_version4 = platform_state4.current_platform_version().unwrap();
+
+        let noop_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: phase3_height + 1, // beyond current tip
+                    prove: false,
+                    start_height_exclusive: false,
+                },
+            )),
+        };
+
+        let noop_result = platform_ref4
+            .query_recent_address_balance_changes(noop_request, &platform_state4, platform_version4)
+            .expect("phase 4: no-op query should succeed");
+
+        assert!(
+            noop_result.errors.is_empty(),
+            "phase 4: no-op query errors: {:?}",
+            noop_result.errors
+        );
+
+        let noop_response = noop_result.into_data().expect("expected noop data");
+        match noop_response.version.expect("expected version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        assert!(
+                            entries.block_changes.is_empty(),
+                            "phase 4: no new blocks — expected empty recent entries, got {} blocks",
+                            entries.block_changes.len()
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 4: expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Phase 5: Compaction with Empty Recent (no address activity)
+        // Continue chain for 65+ blocks with NO address operations (empty
+        // strategy). Compaction triggers but no address changes exist.
+        // Verify sync height advances without changing balances.
+        // ----------------------------------------------------------------
+
+        let empty_strategy = NetworkStrategy {
+            strategy: Strategy {
+                start_contracts: vec![],
+                operations: vec![], // No address operations
+                start_identities: StartIdentities::default(),
+                start_addresses: StartAddresses::default(),
+                identity_inserts: IdentityInsertInfo::default(),
+                identity_contract_nonce_gaps: None,
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            validator_quorum_count: 24,
+            chain_lock_quorum_count: 24,
+            upgrading_info: None,
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            sign_instant_locks: true,
+            ..Default::default()
+        };
+
+        let phase5_outcome = continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start: phase3_height + 1,
+                core_height_start: 1,
+                block_count: 70,
+                proposers,
+                validator_quorums: quorums,
+                current_validator_quorum_hash: current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_identity_nonce_counter: identity_nonce_counter,
+                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
+                current_votes: BTreeMap::default(),
+                start_time_ms: GENESIS_TIME_MS,
+                current_time_ms: end_time_ms,
+                instant_lock_quorums,
+                current_identities: identities,
+                current_addresses_with_balance: phase3_addresses,
+            },
+            empty_strategy,
+            config.clone(),
+            StrategyRandomness::SeedEntropy(200),
+        );
+
+        let platform_ref5 = &phase5_outcome.abci_app.platform;
+        let platform_state5 = platform_ref5.state.load();
+        let platform_version5 = platform_state5.current_platform_version().unwrap();
+        let phase5_height = platform_state5.last_committed_block_height();
+        assert_eq!(phase5_height, 158, "phase 5: expected height 158");
+
+        // Verify no address state transitions were produced
+        let phase5_addr_transitions: usize = phase5_outcome
+            .state_transition_results_per_block
+            .values()
+            .flat_map(|r| r.iter())
+            .filter(|(st, res)| {
+                res.code == 0
+                    && (matches!(st, StateTransition::AddressFundingFromAssetLock(_))
+                        || matches!(st, StateTransition::AddressFundsTransfer(_)))
+            })
+            .count();
+        assert_eq!(
+            phase5_addr_transitions, 0,
+            "phase 5: expected no address state transitions with empty strategy"
+        );
+
+        // Query compacted from phase3 height — should return empty or no matching entries
+        let compacted_empty_request = GetRecentCompactedAddressBalanceChangesRequest {
+            version: Some(CompactedChangesRequestVersion::V0(
+                GetRecentCompactedAddressBalanceChangesRequestV0 {
+                    start_block_height: phase3_height,
+                    prove: false,
+                },
+            )),
+        };
+
+        let compacted_empty_result = platform_ref5
+            .query_recent_compacted_address_balance_changes(
+                compacted_empty_request,
+                &platform_state5,
+                platform_version5,
+            )
+            .expect("phase 5: compacted query should succeed");
+
+        assert!(
+            compacted_empty_result.errors.is_empty(),
+            "phase 5: compacted query errors: {:?}",
+            compacted_empty_result.errors
+        );
+
+        let compacted_empty_response = compacted_empty_result.into_data().expect("expected data");
+        match compacted_empty_response.version.expect("expected version") {
+            CompactedChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_compacted_address_balance_changes_response_v0::Result::CompactedAddressBalanceUpdateEntries(entries) => {
+                        // With no address operations during phase 5, any compacted
+                        // entries that cover the phase-5 block range should have
+                        // no address changes, or there may simply be no entries
+                        // covering this range at all.
+                        for entry in &entries.compacted_block_changes {
+                            if entry.start_block_height >= phase3_height {
+                                assert!(
+                                    entry.changes.is_empty(),
+                                    "phase 5: compacted entries covering empty-activity range \
+                                     [{}, {}] should have no changes, but found {}",
+                                    entry.start_block_height,
+                                    entry.end_block_height,
+                                    entry.changes.len()
+                                );
+                            }
+                        }
+                    }
+                    get_recent_compacted_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 5: expected compacted entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Query recent from phase5 tip — should return empty
+        let recent_empty_request = GetRecentAddressBalanceChangesRequest {
+            version: Some(RecentChangesRequestVersion::V0(
+                GetRecentAddressBalanceChangesRequestV0 {
+                    start_height: phase5_height + 1,
+                    prove: false,
+                    start_height_exclusive: false,
+                },
+            )),
+        };
+
+        let recent_empty_result = platform_ref5
+            .query_recent_address_balance_changes(
+                recent_empty_request,
+                &platform_state5,
+                platform_version5,
+            )
+            .expect("phase 5: recent query should succeed");
+
+        assert!(
+            recent_empty_result.errors.is_empty(),
+            "phase 5: recent query errors: {:?}",
+            recent_empty_result.errors
+        );
+
+        let recent_empty_response = recent_empty_result.into_data().expect("expected data");
+        match recent_empty_response.version.expect("expected version") {
+            RecentChangesResponseVersion::V0(v0) => {
+                let result = v0.result.expect("expected result");
+                match result {
+                    get_recent_address_balance_changes_response_v0::Result::AddressBalanceUpdateEntries(entries) => {
+                        assert!(
+                            entries.block_changes.is_empty(),
+                            "phase 5: querying beyond tip should return empty, got {} blocks",
+                            entries.block_changes.len()
+                        );
+                    }
+                    get_recent_address_balance_changes_response_v0::Result::Proof(_) => {
+                        panic!("phase 5: expected entries, not proof");
+                    }
+                }
+            }
+        }
+
+        // Final verification: the chain height advanced correctly
+        // through all 5 phases without errors
+        assert_eq!(
+            phase5_height, 158,
+            "final: chain should be at height 158 (13 + 5 + 70 + 0 + 70)"
+        );
     }
 }

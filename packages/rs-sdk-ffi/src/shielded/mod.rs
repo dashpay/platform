@@ -1,11 +1,19 @@
 //! Shielded pool queries and state transition FFI bindings.
 
+mod crypto;
+pub mod pool_client;
 mod queries;
 mod transitions;
 pub(crate) mod types;
 
+// Re-export pool client functions (opaque handle lifecycle, sync, bundle building)
+pub use pool_client::*;
+
 // Re-export all query functions
 pub use queries::*;
+
+// Re-export crypto functions (address derivation, bundle building, decryption)
+pub use crypto::*;
 
 // Re-export transition functions — build + broadcast combined
 pub use transitions::dash_sdk_shielded_shield_from_chain_lock;

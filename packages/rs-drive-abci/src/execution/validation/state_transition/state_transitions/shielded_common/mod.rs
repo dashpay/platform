@@ -249,6 +249,14 @@ pub fn validate_nullifiers(
         }
     }
     // Phase 2: Check against state via Drive method
+    //
+    // SAFETY: No cross-transaction double-spend risk within a block. State
+    // transitions are processed sequentially: each transition's nullifier
+    // insertions are applied to the GroveDB transaction (via apply_batch)
+    // before the next transition's validation runs. GroveDB supports
+    // read-your-own-writes, so this lookup sees nullifiers from all prior
+    // transitions in the same block. The insert_only_known_to_not_already_exist_op
+    // provides an additional safety net at batch application time.
     for nullifier in nullifiers {
         let exists = drive
             .has_nullifier(nullifier, transaction, drive_operations, platform_version)
@@ -293,4 +301,434 @@ pub fn validate_minimum_pool_notes(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        create_dummy_serialized_action, insert_anchor_into_state, insert_dummy_encrypted_notes,
+        insert_nullifier_into_state, set_pool_total_balance, setup_platform,
+    };
+    use dpp::consensus::state::state_error::StateError;
+
+    // ==========================================
+    // reconstruct_and_verify_bundle error paths
+    // ==========================================
+
+    mod reconstruct_and_verify_bundle_tests {
+        use super::*;
+
+        #[test]
+        fn test_encrypted_note_size_mismatch_returns_error() {
+            let mut action = create_dummy_serialized_action();
+            action.encrypted_note = vec![0u8; 100]; // Wrong size (should be 216)
+
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("encrypted note size mismatch"),
+                "expected encrypted note size mismatch error, got: {}",
+                err.message()
+            );
+        }
+
+        #[test]
+        fn test_empty_actions_returns_bundle_no_actions_error() {
+            let result = reconstruct_and_verify_bundle(
+                &[], // No actions
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("bundle has no actions"),
+                "expected 'bundle has no actions' error, got: {}",
+                err.message()
+            );
+        }
+
+        /// Tests that an invalid rk (spend validating key) returns an error.
+        /// The dummy serialized action uses rk: [2u8; 32] which is not a valid
+        /// RedPallas verification key encoding, triggering this error path.
+        #[test]
+        fn test_invalid_rk_returns_error() {
+            let action = create_dummy_serialized_action();
+
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("invalid spend validating key"),
+                "expected invalid spend validating key error, got: {}",
+                err.message()
+            );
+        }
+
+        /// Tests the invalid flags byte error path. With empty actions, the action
+        /// loop is skipped and `Flags::from_byte(0xFF)` returns None, triggering
+        /// the invalid flags error before the `nonempty::NonEmpty::from_vec` check.
+        #[test]
+        fn test_invalid_flags_byte_returns_error() {
+            let result = reconstruct_and_verify_bundle(
+                &[],  // No actions -- skip the action loop, hit flags check
+                0xFF, // Invalid flags byte
+                0,
+                &[42u8; 32],
+                &[0u8; 100],
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message().contains("invalid bundle flags byte"),
+                "expected invalid bundle flags error, got: {}",
+                err.message()
+            );
+        }
+    }
+
+    // ==========================================
+    // validate_nullifiers tests
+    // ==========================================
+
+    mod validate_nullifiers_tests {
+        use super::*;
+
+        #[test]
+        fn test_intra_bundle_duplicate_nullifiers_returns_error() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let nullifier = [1u8; 32];
+            // Same nullifier twice in the bundle
+            let nullifiers = vec![nullifier, nullifier];
+
+            let mut drive_operations = vec![];
+            let result = validate_nullifiers(
+                &platform.drive,
+                &nullifiers,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_some(), "should return a consensus error");
+            let consensus_result = result.unwrap();
+            assert!(!consensus_result.is_valid());
+            let errors = consensus_result.errors;
+            assert_eq!(errors.len(), 1);
+            assert!(
+                matches!(
+                    &errors[0],
+                    dpp::consensus::ConsensusError::StateError(
+                        StateError::NullifierAlreadySpentError(_)
+                    )
+                ),
+                "expected NullifierAlreadySpentError, got: {:?}",
+                errors[0]
+            );
+        }
+
+        #[test]
+        fn test_nullifier_already_in_state_returns_error() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let nullifier = [99u8; 32];
+            insert_nullifier_into_state(&platform, &nullifier);
+
+            let nullifiers = vec![nullifier];
+
+            let mut drive_operations = vec![];
+            let result = validate_nullifiers(
+                &platform.drive,
+                &nullifiers,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_some(), "should return a consensus error");
+            let consensus_result = result.unwrap();
+            assert!(!consensus_result.is_valid());
+            let errors = consensus_result.errors;
+            assert_eq!(errors.len(), 1);
+            assert!(
+                matches!(
+                    &errors[0],
+                    dpp::consensus::ConsensusError::StateError(
+                        StateError::NullifierAlreadySpentError(_)
+                    )
+                ),
+                "expected NullifierAlreadySpentError for state check, got: {:?}",
+                errors[0]
+            );
+        }
+
+        #[test]
+        fn test_unique_nullifiers_not_in_state_returns_none() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let nullifiers = vec![[10u8; 32], [20u8; 32]];
+
+            let mut drive_operations = vec![];
+            let result = validate_nullifiers(
+                &platform.drive,
+                &nullifiers,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_none(), "should return None for valid nullifiers");
+        }
+    }
+
+    // ==========================================
+    // validate_anchor_exists tests
+    // ==========================================
+
+    mod validate_anchor_exists_tests {
+        use super::*;
+
+        #[test]
+        fn test_anchor_not_in_state_returns_error() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let anchor = [77u8; 32];
+            let mut drive_operations = vec![];
+
+            let result = validate_anchor_exists(
+                &platform.drive,
+                &anchor,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_some(), "should return a consensus error");
+            let consensus_result = result.unwrap();
+            assert!(!consensus_result.is_valid());
+            let errors = consensus_result.errors;
+            assert!(
+                matches!(
+                    &errors[0],
+                    dpp::consensus::ConsensusError::StateError(StateError::InvalidAnchorError(_))
+                ),
+                "expected InvalidAnchorError, got: {:?}",
+                errors[0]
+            );
+        }
+
+        #[test]
+        fn test_anchor_in_state_returns_none() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let anchor = [77u8; 32];
+            insert_anchor_into_state(&platform, &anchor);
+
+            let mut drive_operations = vec![];
+            let result = validate_anchor_exists(
+                &platform.drive,
+                &anchor,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_none(), "should return None for existing anchor");
+        }
+    }
+
+    // ==========================================
+    // validate_minimum_pool_notes tests
+    // ==========================================
+
+    mod validate_minimum_pool_notes_tests {
+        use super::*;
+
+        #[test]
+        fn test_insufficient_notes_returns_error() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            // The platform has min_notes threshold > 0. An empty pool should fail.
+            let min_notes = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing;
+
+            if min_notes == 0 {
+                // If the platform version has no minimum, this test is not applicable.
+                return;
+            }
+
+            // Insert fewer notes than the threshold
+            let insert_count = min_notes.saturating_sub(1);
+            if insert_count > 0 {
+                insert_dummy_encrypted_notes(&platform, insert_count);
+            }
+
+            let mut drive_operations = vec![];
+            let result = validate_minimum_pool_notes(
+                &platform.drive,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_some(), "should return a consensus error");
+            let consensus_result = result.unwrap();
+            assert!(!consensus_result.is_valid());
+            let errors = consensus_result.errors;
+            assert!(
+                matches!(
+                    &errors[0],
+                    dpp::consensus::ConsensusError::StateError(
+                        StateError::InsufficientPoolNotesError(_)
+                    )
+                ),
+                "expected InsufficientPoolNotesError, got: {:?}",
+                errors[0]
+            );
+        }
+
+        #[test]
+        fn test_sufficient_notes_returns_none() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let min_notes = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing;
+
+            // Insert enough notes to meet the threshold
+            insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+            let mut drive_operations = vec![];
+            let result = validate_minimum_pool_notes(
+                &platform.drive,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should not return Error");
+
+            assert!(result.is_none(), "should return None when enough notes");
+        }
+    }
+
+    // ==========================================
+    // read_pool_total_balance tests
+    // ==========================================
+
+    mod read_pool_total_balance_tests {
+        use super::*;
+
+        #[test]
+        fn test_default_pool_balance_is_zero() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            let mut drive_operations = vec![];
+            let balance = read_pool_total_balance(
+                &platform.drive,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should read pool balance");
+
+            assert_eq!(balance, 0, "default pool balance should be 0");
+        }
+
+        #[test]
+        fn test_pool_balance_after_set() {
+            let platform = setup_platform();
+            let platform_version = PlatformVersion::latest();
+
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let mut drive_operations = vec![];
+            let balance = read_pool_total_balance(
+                &platform.drive,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("should read pool balance");
+
+            assert_eq!(balance, 500_000_000);
+        }
+    }
+
+    // ==========================================
+    // warmup_shielded_verifying_key tests
+    // ==========================================
+
+    mod warmup_tests {
+        use super::*;
+
+        #[test]
+        fn test_warmup_does_not_panic() {
+            warmup_shielded_verifying_key();
+            // Second call should be a no-op (OnceLock already initialized)
+            warmup_shielded_verifying_key();
+        }
+    }
+
+    // ==========================================
+    // FLAGS constants tests
+    // ==========================================
+
+    mod flags_constants {
+        use super::*;
+
+        #[test]
+        fn test_flags_constants_are_valid() {
+            assert!(Flags::from_byte(FLAGS_OUTPUTS_ONLY).is_some());
+            assert!(Flags::from_byte(FLAGS_SPENDS_AND_OUTPUTS).is_some());
+            assert!(FLAGS_OUTPUTS_ONLY != FLAGS_SPENDS_AND_OUTPUTS);
+        }
+    }
 }

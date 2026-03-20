@@ -295,3 +295,337 @@ impl FromUnproved<platform::GetStatusRequest> for EvoNodeStatus {
         Ok((Some(status), Default::default()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::{
+        get_current_quorums_info_response, get_status_response, ResponseMetadata,
+    };
+    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::version::PlatformVersion;
+
+    /// Generate a valid BLS public key as compressed bytes (48 bytes) from a
+    /// deterministic secret key derived from the given seed byte.
+    fn generate_valid_bls_public_key_bytes(seed: u8) -> Vec<u8> {
+        let mut secret_bytes = [0u8; 32];
+        secret_bytes[31] = seed.max(1); // ensure nonzero
+        let sk: SecretKey<Bls12381G2Impl> =
+            SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_bytes)
+                .into_option()
+                .expect("valid secret key");
+        sk.public_key().0.to_compressed().to_vec()
+    }
+
+    /// Helper: build a valid GetCurrentQuorumsInfoResponse with one quorum hash,
+    /// one validator set with one member, and metadata.
+    fn build_valid_quorums_info_response() -> platform::GetCurrentQuorumsInfoResponse {
+        let quorum_hash = vec![1u8; 32];
+        let current_quorum_hash = vec![2u8; 32];
+        let last_block_proposer = vec![3u8; 32];
+        let pro_tx_hash = vec![4u8; 32];
+        let threshold_public_key = generate_valid_bls_public_key_bytes(42);
+
+        let member = get_current_quorums_info_response::ValidatorV0 {
+            pro_tx_hash: pro_tx_hash.clone(),
+            node_ip: "127.0.0.1".to_string(),
+            is_banned: false,
+        };
+
+        let validator_set = get_current_quorums_info_response::ValidatorSetV0 {
+            quorum_hash: quorum_hash.clone(),
+            core_height: 100,
+            members: vec![member],
+            threshold_public_key,
+        };
+
+        let v0 = get_current_quorums_info_response::GetCurrentQuorumsInfoResponseV0 {
+            quorum_hashes: vec![quorum_hash],
+            current_quorum_hash,
+            validator_sets: vec![validator_set],
+            last_block_proposer,
+            metadata: Some(ResponseMetadata {
+                height: 500,
+                core_chain_locked_height: 200,
+                epoch: 10,
+                time_ms: 1234567890,
+                protocol_version: 1,
+                chain_id: "dash-testnet-1".to_string(),
+            }),
+        };
+
+        platform::GetCurrentQuorumsInfoResponse {
+            version: Some(get_current_quorums_info_response::Version::V0(v0)),
+        }
+    }
+
+    /// Helper: build a valid GetStatusResponse V0 with all inner fields populated.
+    fn build_valid_status_response() -> platform::GetStatusResponse {
+        use dapi_grpc::platform::v0::get_status_response::get_status_response_v0;
+
+        let software = get_status_response_v0::version::Software {
+            dapi: "1.0.0".to_string(),
+            drive: Some("2.0.0".to_string()),
+            tenderdash: Some("0.14.0".to_string()),
+        };
+
+        let tenderdash_protocol =
+            get_status_response_v0::version::protocol::Tenderdash { p2p: 8, block: 11 };
+
+        let drive_protocol = get_status_response_v0::version::protocol::Drive {
+            latest: 5,
+            current: 4,
+            next_epoch: 5,
+        };
+
+        let protocol = get_status_response_v0::version::Protocol {
+            tenderdash: Some(tenderdash_protocol),
+            drive: Some(drive_protocol),
+        };
+
+        let version = get_status_response_v0::Version {
+            software: Some(software),
+            protocol: Some(protocol),
+        };
+
+        let time = get_status_response_v0::Time {
+            local: 1700000000,
+            block: Some(1699999900),
+            genesis: Some(1690000000),
+            epoch: Some(42),
+        };
+
+        let node = get_status_response_v0::Node {
+            id: vec![10u8; 20],
+            pro_tx_hash: Some(vec![11u8; 32]),
+        };
+
+        let chain = get_status_response_v0::Chain {
+            catching_up: false,
+            latest_block_hash: vec![20u8; 32],
+            latest_app_hash: vec![21u8; 32],
+            latest_block_height: 1000,
+            earliest_block_hash: vec![22u8; 32],
+            earliest_app_hash: vec![23u8; 32],
+            earliest_block_height: 1,
+            max_peer_block_height: 1001,
+            core_chain_locked_height: Some(500),
+        };
+
+        let network = get_status_response_v0::Network {
+            chain_id: "dash-testnet-1".to_string(),
+            peers_count: 25,
+            listening: true,
+        };
+
+        let state_sync = get_status_response_v0::StateSync {
+            total_synced_time: 3600,
+            remaining_time: 120,
+            total_snapshots: 5,
+            chunk_process_avg_time: 50,
+            snapshot_height: 900,
+            snapshot_chunks_count: 100,
+            backfilled_blocks: 800,
+            backfill_blocks_total: 1000,
+        };
+
+        let v0 = get_status_response::GetStatusResponseV0 {
+            version: Some(version),
+            node: Some(node),
+            chain: Some(chain),
+            network: Some(network),
+            state_sync: Some(state_sync),
+            time: Some(time),
+        };
+
+        platform::GetStatusResponse {
+            version: Some(get_status_response::Version::V0(v0)),
+        }
+    }
+
+    #[test]
+    fn test_current_quorums_info_valid_response() {
+        let request = platform::GetCurrentQuorumsInfoRequest { version: None };
+        let response = build_valid_quorums_info_response();
+        let platform_version = PlatformVersion::latest();
+
+        let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let (maybe_info, metadata) = result.expect("should parse valid response");
+        let info = maybe_info.expect("should contain CurrentQuorumsInfo");
+
+        assert_eq!(info.quorum_hashes.len(), 1);
+        assert_eq!(info.quorum_hashes[0], [1u8; 32]);
+        assert_eq!(info.current_quorum_hash, [2u8; 32]);
+        assert_eq!(info.last_block_proposer, [3u8; 32]);
+        assert_eq!(info.validator_sets.len(), 1);
+        assert_eq!(info.last_platform_block_height, 500);
+        assert_eq!(info.last_core_block_height, 200);
+        assert_eq!(metadata.height, 500);
+        assert_eq!(metadata.core_chain_locked_height, 200);
+    }
+
+    #[test]
+    fn test_current_quorums_info_invalid_quorum_hash_length() {
+        let mut response = build_valid_quorums_info_response();
+
+        // Inject an invalid quorum_hash that is not 32 bytes
+        if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) = response.version {
+            v0.quorum_hashes = vec![vec![0u8; 16]]; // 16 bytes instead of 32
+        }
+
+        let request = platform::GetCurrentQuorumsInfoRequest { version: None };
+        let platform_version = PlatformVersion::latest();
+
+        let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let err = result.expect_err("should fail for invalid quorum_hash length");
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("Invalid quorum_hash length"),
+            "unexpected error: {err_string}"
+        );
+    }
+
+    #[test]
+    fn test_current_quorums_info_invalid_current_quorum_hash_length() {
+        let mut response = build_valid_quorums_info_response();
+
+        // Inject an invalid current_quorum_hash that is not 32 bytes
+        if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) = response.version {
+            v0.current_quorum_hash = vec![0u8; 10]; // 10 bytes instead of 32
+        }
+
+        let request = platform::GetCurrentQuorumsInfoRequest { version: None };
+        let platform_version = PlatformVersion::latest();
+
+        let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let err = result.expect_err("should fail for invalid current_quorum_hash length");
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("Invalid current_quorum_hash length"),
+            "unexpected error: {err_string}"
+        );
+    }
+
+    #[test]
+    fn test_current_quorums_info_invalid_last_block_proposer() {
+        let mut response = build_valid_quorums_info_response();
+
+        // Inject an invalid last_block_proposer that is not 32 bytes
+        if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) = response.version {
+            v0.last_block_proposer = vec![0u8; 5]; // 5 bytes instead of 32
+        }
+
+        let request = platform::GetCurrentQuorumsInfoRequest { version: None };
+        let platform_version = PlatformVersion::latest();
+
+        let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let err = result.expect_err("should fail for invalid last_block_proposer length");
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("Invalid last_block_proposer length"),
+            "unexpected error: {err_string}"
+        );
+    }
+
+    #[test]
+    fn test_current_quorums_info_none_metadata() {
+        let mut response = build_valid_quorums_info_response();
+
+        // Remove metadata from the response
+        if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) = response.version {
+            v0.metadata = None;
+        }
+
+        let request = platform::GetCurrentQuorumsInfoRequest { version: None };
+        let platform_version = PlatformVersion::latest();
+
+        let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let err = result.expect_err("should fail when metadata is missing");
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("empty response metadata"),
+            "unexpected error: {err_string}"
+        );
+    }
+
+    #[test]
+    fn test_evo_node_status_valid_response() {
+        let request = platform::GetStatusRequest { version: None };
+        let response = build_valid_status_response();
+        let platform_version = PlatformVersion::latest();
+
+        let result = EvoNodeStatus::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            platform_version,
+        );
+
+        let (maybe_status, _metadata) = result.expect("should parse valid status response");
+        let status = maybe_status.expect("should contain EvoNodeStatus");
+
+        // Verify version fields
+        let software = status.version.software.as_ref().unwrap();
+        assert_eq!(software.dapi, "1.0.0");
+        assert_eq!(software.drive.as_deref(), Some("2.0.0"));
+        assert_eq!(software.tenderdash.as_deref(), Some("0.14.0"));
+
+        let protocol = status.version.protocol.as_ref().unwrap();
+        let td = protocol.tenderdash.as_ref().unwrap();
+        assert_eq!(td.p2p, 8);
+        assert_eq!(td.block, 11);
+        let drv = protocol.drive.as_ref().unwrap();
+        assert_eq!(drv.latest, 5);
+        assert_eq!(drv.current, 4);
+        assert_eq!(drv.next_epoch, 5);
+
+        // Verify node fields
+        assert_eq!(status.node.id, vec![10u8; 20]);
+        assert_eq!(status.node.pro_tx_hash, Some(vec![11u8; 32]));
+
+        // Verify chain fields
+        assert!(!status.chain.catching_up);
+        assert_eq!(status.chain.latest_block_height, 1000);
+        assert_eq!(status.chain.core_chain_locked_height, Some(500));
+
+        // Verify network fields
+        assert_eq!(status.network.chain_id, "dash-testnet-1");
+        assert_eq!(status.network.peers_count, 25);
+        assert!(status.network.listening);
+
+        // Verify time fields
+        assert_eq!(status.time.local, 1700000000);
+        assert_eq!(status.time.block, Some(1699999900));
+        assert_eq!(status.time.epoch, Some(42));
+    }
+}
