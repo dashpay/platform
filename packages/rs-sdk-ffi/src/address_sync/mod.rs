@@ -211,9 +211,6 @@ struct BatchAddressProvider {
     last_known_recent_block: u64,
 }
 
-// SAFETY: BatchAddressProvider only contains owned data (no raw pointers or shared references)
-unsafe impl Send for BatchAddressProvider {}
-
 impl AddressProvider for BatchAddressProvider {
     fn gap_limit(&self) -> AddressIndex {
         self.gap_limit
@@ -386,10 +383,19 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
     // Parse flat arrays into BTreeMap
     let mut pending = BTreeMap::new();
     if address_count > 0 {
-        let keys_slice = std::slice::from_raw_parts(
-            address_keys,
-            (address_count as usize) * (key_size as usize),
-        );
+        let total_key_bytes = match (address_count as usize).checked_mul(key_size as usize) {
+            Some(n) => n,
+            None => {
+                error!(
+                    "dash_sdk_sync_addresses_batch_with_result: address_count * key_size overflow"
+                );
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    "address_count * key_size overflows usize".to_string(),
+                ));
+            }
+        };
+        let keys_slice = std::slice::from_raw_parts(address_keys, total_key_bytes);
         let indices_slice = std::slice::from_raw_parts(address_indices, address_count as usize);
 
         for (i, &index) in indices_slice.iter().enumerate() {
@@ -408,10 +414,18 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
         && !known_balance_nonces.is_null()
         && !known_balance_amounts.is_null()
     {
-        let kb_keys_slice = std::slice::from_raw_parts(
-            known_balance_keys,
-            (known_balance_count as usize) * (key_size as usize),
-        );
+        let total_kb_key_bytes = match (known_balance_count as usize).checked_mul(key_size as usize)
+        {
+            Some(n) => n,
+            None => {
+                error!("dash_sdk_sync_addresses_batch_with_result: known_balance_count * key_size overflow");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    "known_balance_count * key_size overflows usize".to_string(),
+                ));
+            }
+        };
+        let kb_keys_slice = std::slice::from_raw_parts(known_balance_keys, total_kb_key_bytes);
         let kb_indices =
             std::slice::from_raw_parts(known_balance_indices, known_balance_count as usize);
         let kb_nonces =

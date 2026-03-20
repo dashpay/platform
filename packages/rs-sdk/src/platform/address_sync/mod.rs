@@ -481,9 +481,6 @@ async fn incremental_catch_up<P: AddressProvider>(
             }
         };
 
-    // The recent query succeeded — any subsequent query failures are real errors.
-    let had_successful_query = true;
-
     // Store the raw GroveDB proof bytes for debugging/inspection.
     result.recent_proof = recent_proof.grovedb_proof.clone();
 
@@ -567,14 +564,6 @@ async fn incremental_catch_up<P: AddressProvider>(
                 .await
                 {
                     Ok(result) => result,
-                    Err(e) if !had_successful_query => {
-                        // First compacted query failed — treat as non-fatal.
-                        debug!(
-                            "Compacted address balance changes query failed (non-fatal): {}",
-                            e
-                        );
-                        break;
-                    }
                     Err(e) => return Err(e),
                 };
 
