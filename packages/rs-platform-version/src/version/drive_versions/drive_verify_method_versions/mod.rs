@@ -15,12 +15,6 @@ pub struct DriveVerifyMethodVersions {
     pub address_funds: DriveVerifyAddressFundsMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
     pub shielded: DriveVerifyShieldedMethodVersions,
-    pub boundary: DriveVerifyBoundaryMethodVersions,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DriveVerifyBoundaryMethodVersions {
-    pub verify_key_exists_as_boundary: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

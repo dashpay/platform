@@ -52,7 +52,48 @@ ignore:
   - "packages/rs-platform-version/**"
   # Simple signer — thin test-only wrapper
   - "packages/simple-signer/src/**"
-
+  # SDK integration code — requires a running platform node, not unit-testable
+  - "packages/rs-sdk/src/platform/dpns_usernames/**"
+  - "packages/rs-sdk/src/platform/shielded/nullifier_sync/**"
+  - "packages/rs-sdk/src/platform/address_sync/**"
+  - "packages/rs-sdk/src/platform/dashpay/**"
+  - "packages/rs-sdk/src/core/transaction.rs"
+  - "packages/rs-sdk/src/platform/documents/transitions/purchase.rs"
+  # DAPI service handlers — gRPC long-polling logic, not unit-testable
+  - "packages/rs-dapi/src/services/platform_service/wait_for_state_transition_result.rs"
+  # Proof verifier boilerplate — response type definitions, not logic
+  - "packages/rs-drive-proof-verifier/src/types/evonode_status.rs"
+  # Drive internals — internal size estimation helpers
+  - "packages/rs-drive/src/util/object_size_info/path_key_info.rs"
+  # Wallet logic — requires Core wallet integration, not unit-testable
+  - "packages/rs-platform-wallet/src/platform_wallet_info/matured_transactions.rs"
+  - "packages/rs-platform-wallet/src/platform_wallet_info/contact_requests.rs"
+  # gRPC service handler wrapping Core RPC calls — requires a running Dash
+  # Core node, not unit-testable
+  - "packages/rs-dapi/src/services/core_service.rs"
+  # Proof-verifier boilerplate — response type constructors, conversion impls,
+  # and unproved response handling
+  - "packages/rs-drive-proof-verifier/src/types.rs"
+  - "packages/rs-drive-proof-verifier/src/unproved.rs"
+  # SDK mock infrastructure — test-only scaffolding, not production logic
+  - "packages/rs-sdk/src/mock/**"
+  # Document-type property accessors — pure getter/setter trait implementations,
+  # same category as the state-transition accessors excluded above
+  - "packages/rs-dpp/src/data_contract/document_type/accessors/**"
+  # Core chain type wrappers — masternode entry structs, deserialization
+  # boilerplate, thin type aliases
+  - "packages/rs-dpp/src/core_types/**"
+  # Infrastructure and glue code — binary entrypoints, gRPC/HTTP server setup,
+  # external client wrappers, streaming plumbing, runtime context providers,
+  # and replay/debugging tooling that are not unit-testable
+  - "packages/rs-drive-abci/src/main.rs"
+  - "packages/rs-drive-abci/src/query/service.rs"
+  - "packages/rs-dapi/src/server/**"
+  - "packages/rs-dapi/src/clients/core_client.rs"
+  - "packages/rs-sdk-trusted-context-provider/**"
+  - "packages/rs-dapi/src/services/streaming_service/**"
+  - "packages/rs-drive-abci/src/replay/**"
+  
 coverage:
   status:
     project:
