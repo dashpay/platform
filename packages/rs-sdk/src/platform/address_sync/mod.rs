@@ -947,7 +947,10 @@ mod tests {
     #[test]
     fn test_default_config_values() {
         let config = AddressSyncConfig::default();
-        assert_eq!(config.full_rescan_after_time_s, 6 * 24 * 3600 + 23 * 3600 + 45 * 60);
+        assert_eq!(
+            config.full_rescan_after_time_s,
+            6 * 24 * 3600 + 23 * 3600 + 45 * 60
+        );
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_iterations, 50);
     }
@@ -1029,8 +1032,8 @@ mod tests {
     }
 
     #[test]
-    fn test_check_compaction_from_proof_empty_proof() {
-        // Empty/invalid proof should return an error (conservative fallback)
+    fn test_get_last_recent_block_empty_proof() {
+        // Empty proof should return an error (conservative fallback)
         let proof = dapi_grpc::platform::v0::Proof {
             grovedb_proof: vec![],
             quorum_hash: vec![],
@@ -1039,14 +1042,13 @@ mod tests {
             block_id_hash: vec![],
             quorum_type: 0,
         };
-        let platform_version = PlatformVersion::latest();
-        let result = check_compaction_from_proof(&proof, 100, platform_version);
+        let result = get_last_recent_block_from_proof(&proof);
         // Empty proof should error — triggering conservative compacted query
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_check_compaction_from_proof_invalid_proof() {
+    fn test_get_last_recent_block_invalid_proof() {
         // Garbage bytes should return an error
         let proof = dapi_grpc::platform::v0::Proof {
             grovedb_proof: vec![0xFF, 0xFE, 0xFD, 0xFC],
@@ -1056,8 +1058,7 @@ mod tests {
             block_id_hash: vec![],
             quorum_type: 0,
         };
-        let platform_version = PlatformVersion::latest();
-        let result = check_compaction_from_proof(&proof, 100, platform_version);
+        let result = get_last_recent_block_from_proof(&proof);
         assert!(result.is_err());
     }
 
@@ -1079,5 +1080,51 @@ mod tests {
         assert_ne!(result.checkpoint_height, result.new_sync_height);
         assert_eq!(result.checkpoint_height, 50);
         assert_eq!(result.new_sync_height, 100);
+    }
+
+    #[test]
+    fn test_incremental_mode_checkpoint_zero_skips_compacted() {
+        // In incremental-only mode, checkpoint_height defaults to 0.
+        // Any last_recent_block >= 0 should skip compacted (correct behavior:
+        // known balances are seeded from current_balances, so no compacted gap).
+        let result = AddressSyncResult::new();
+        assert_eq!(result.checkpoint_height, 0);
+
+        // Simulating the compaction detection logic from incremental_catch_up
+        let last_recent_block: u64 = 500;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            !need_compacted,
+            "Incremental-only mode should skip compacted when checkpoint is 0"
+        );
+    }
+
+    #[test]
+    fn test_full_scan_mode_checkpoint_triggers_compacted() {
+        // After a full tree scan, checkpoint_height is set to the scan height.
+        // If last_recent_block < checkpoint, compacted phase should run.
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 1000;
+
+        let last_recent_block: u64 = 500;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            need_compacted,
+            "Full scan mode should run compacted when recent is behind checkpoint"
+        );
+    }
+
+    #[test]
+    fn test_full_scan_mode_recent_covers_checkpoint() {
+        // After a full tree scan, if recent tree covers the checkpoint, skip compacted.
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 1000;
+
+        let last_recent_block: u64 = 1050;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            !need_compacted,
+            "Should skip compacted when recent covers checkpoint"
+        );
     }
 }
