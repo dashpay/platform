@@ -964,20 +964,34 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let start_height = match request.version.ok_or(Error::EmptyVersion)? {
-            get_recent_address_balance_changes_request::Version::V0(v0) => v0.start_height,
-        };
+        let (start_height, start_height_exclusive) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_recent_address_balance_changes_request::Version::V0(v0) => {
+                    (v0.start_height, v0.start_height_exclusive)
+                }
+            };
 
         let limit = Some(100u16); // Same limit as in query handler
 
-        let (root_hash, verified_changes) = Drive::verify_recent_address_balance_changes(
-            &proof.grovedb_proof,
-            start_height,
-            limit,
-            false,
-            platform_version,
-        )
-        .map_drive_error(proof, mtd)?;
+        let (root_hash, verified_changes) = if start_height_exclusive {
+            Drive::verify_recent_address_balance_changes_after(
+                &proof.grovedb_proof,
+                start_height,
+                limit,
+                false,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?
+        } else {
+            Drive::verify_recent_address_balance_changes(
+                &proof.grovedb_proof,
+                start_height,
+                limit,
+                false,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?
+        };
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
