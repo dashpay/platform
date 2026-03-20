@@ -13,7 +13,7 @@ pub use dashcore;
 pub use key_wallet;
 
 #[cfg(feature = "core_key_wallet_manager")]
-pub use key_wallet_manager;
+pub use key_wallet as key_wallet_manager;
 
 #[cfg(feature = "core_spv")]
 pub use dash_spv;

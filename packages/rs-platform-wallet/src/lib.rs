@@ -22,4 +22,4 @@ pub use managed_identity::ManagedIdentity;
 pub use platform_wallet_info::PlatformWalletInfo;
 
 #[cfg(feature = "manager")]
-pub use key_wallet_manager;
+pub use key_wallet as key_wallet_manager;
