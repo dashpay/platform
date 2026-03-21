@@ -105,6 +105,18 @@ public class CoreWalletManager: ObservableObject {
         return wallet
     }
 
+    /// Add a new account to a wallet.
+    public func addAccount(to wallet: HDWallet, type: AccountType, index: UInt32, keyClass: UInt32 = 0) throws {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: wallet.walletId) else {
+            throw WalletError.walletError("Wallet not found")
+        }
+        if type == .platformPayment {
+            try sdkWallet.addPlatformPaymentAccount(accountIndex: index, keyClass: keyClass)
+        } else {
+            _ = try sdkWallet.addAccount(type: type, index: index)
+        }
+    }
+
     public func deleteWallet(_ wallet: HDWallet) async throws {
         let walletId = wallet.id
 
@@ -244,6 +256,8 @@ public class CoreWalletManager: ObservableObject {
             managed = collection.getProviderOperatorKeysAccount()
         case .providerPlatformKeys:
             managed = collection.getProviderPlatformKeysAccount()
+        case .dashPayReceivingFunds, .dashPayExternalAccount, .platformPayment:
+            managed = nil // TODO: implement when FFI supports these account types
         }
 
         let appNetwork = AppNetwork(network: sdkWalletManager.network)
@@ -316,7 +330,8 @@ public class CoreWalletManager: ObservableObject {
             case .coinjoin:
                 let idx = (accountInfo.index ?? 1000) - 1000
                 return (.coinJoin, UInt32(idx), "m/9'/\(coinType)/4'/\(idx)'")
-            case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup:
+            case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup,
+                 .dashPayReceivingFunds, .dashPayExternalAccount, .platformPayment:
                 return nil
             }
         }()
@@ -360,6 +375,12 @@ public class CoreWalletManager: ObservableObject {
             return "m/9'/\(coinType)/3'/3'/x"
         case .providerPlatformKeys:
             return "m/9'/\(coinType)/3'/4'/x"
+        case .dashPayReceivingFunds:
+            return "m/9'/\(coinType)/5'/0'/x"
+        case .dashPayExternalAccount:
+            return "m/9'/\(coinType)/5'/0'/x"
+        case .platformPayment:
+            return "m/9'/\(coinType)/15'/\(index ?? 0)'/x"
         }
     }
 

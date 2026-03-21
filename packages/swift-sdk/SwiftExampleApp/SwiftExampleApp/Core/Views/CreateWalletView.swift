@@ -38,9 +38,12 @@ struct CreateWalletView: View {
         unifiedAppState.platformState.currentNetwork
     }
 
-    // Only show devnet option if currently on devnet
     var shouldShowDevnet: Bool {
         currentNetwork == .devnet
+    }
+
+    var shouldShowRegtest: Bool {
+        currentNetwork == .regtest
     }
 
     var body: some View {
@@ -91,6 +94,19 @@ struct CreateWalletView: View {
                                 Image(systemName: "network")
                                     .foregroundColor(.green)
                                 Text("Devnet")
+                                    .font(.body)
+                            }
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
+
+                    // Only show Regtest/Local if currently on Local
+                    if shouldShowRegtest {
+                        Toggle(isOn: $createForRegtest) {
+                            HStack {
+                                Image(systemName: "network")
+                                    .foregroundColor(.purple)
+                                Text("Local")
                                     .font(.body)
                             }
                         }
@@ -221,7 +237,7 @@ struct CreateWalletView: View {
     }
 
     private var hasNetworkSelected: Bool {
-        createForMainnet || createForTestnet || createForDevnet
+        createForMainnet || createForTestnet || createForDevnet || createForRegtest
     }
 
     private func setupInitialNetworkSelection() {
@@ -279,6 +295,7 @@ struct CreateWalletView: View {
                     createForMainnet ? AppNetwork.mainnet : nil,
                     createForTestnet ? AppNetwork.testnet : nil,
                     (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
+                    (createForRegtest && shouldShowRegtest) ? AppNetwork.regtest : nil,
                 ].compactMap { $0 }
 
                 guard let primaryNetwork = selectedNetworks.first else {

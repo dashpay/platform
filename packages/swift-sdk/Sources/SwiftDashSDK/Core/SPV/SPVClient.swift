@@ -47,6 +47,9 @@ class SPVClient: @unchecked Sendable {
                 return dash_spv_ffi_config_mainnet()
             case 1:
                 return dash_spv_ffi_config_testnet()
+            case 2:
+                // Regtest (local Docker)
+                return dash_spv_ffi_config_new(FFINetwork(rawValue: 2))
             case 3:
                 // Map devnet to custom FFINetwork value 3
                 return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
@@ -134,9 +137,9 @@ class SPVClient: @unchecked Sendable {
     }
 
     private static func readLocalCorePeers() -> [String] {
-        // If no override is set, default to 127.0.0.1 and let FFI pick port by network
+        // If no override is set, default to dashmate Docker Core P2P port
         let raw = UserDefaults.standard.string(forKey: "corePeerAddresses")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1")
+        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1:20001")
         return list
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
