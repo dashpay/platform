@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="GitHub CI Status" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
   <a href="NIGHTLY_STATUS.md"><img alt="Nightly Tests" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg?event=schedule" title="Nightly test status"></a>
   <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg"></a>
   <a href="https://github.com/dashpay/platform/graphs/commit-activity"><img alt="commit activity" src="https://img.shields.io/github/commit-activity/m/dashpay/platform"></a>
