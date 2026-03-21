@@ -17,6 +17,8 @@ struct ReceiveAddressView: View {
 
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
+    @State private var faucetStatus: String?
+    @State private var isFaucetLoading = false
 
     private var currentAddress: String {
         switch selectedTab {
@@ -143,6 +145,27 @@ struct ReceiveAddressView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(tabColor)
                     .padding(.horizontal)
+
+                    // Faucet button — only on local Docker, Core tab
+                    if selectedTab == .core && unifiedAppState.platformState.useDockerSetup {
+                        Button {
+                            Task { await requestFromFaucet() }
+                        } label: {
+                            HStack {
+                                if isFaucetLoading {
+                                    ProgressView().scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "drop.fill")
+                                }
+                                Text(faucetStatus ?? "Get 10 DASH from Faucet")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                        .padding(.horizontal)
+                        .disabled(isFaucetLoading)
+                    }
                 } else {
                     Spacer()
                     Text(unavailableMessage)
@@ -215,6 +238,81 @@ struct ReceiveAddressView: View {
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             copiedToClipboard = false
+        }
+    }
+
+    /// Request 10 DASH from the local Docker faucet (seed node Core RPC).
+    private func requestFromFaucet() async {
+        isFaucetLoading = true
+        faucetStatus = nil
+        defer { isFaucetLoading = false }
+
+        let address = currentAddress
+        guard !address.isEmpty else {
+            faucetStatus = "No address available"
+            return
+        }
+
+        // Read RPC port and password from UserDefaults, with dashmate defaults
+        let rpcPort = UserDefaults.standard.string(forKey: "faucetRPCPort") ?? "20302"
+        let rpcUser = UserDefaults.standard.string(forKey: "faucetRPCUser") ?? "dashmate"
+        let rpcPassword = UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "dashmate"
+
+        guard let url = URL(string: "http://127.0.0.1:\(rpcPort)/") else {
+            faucetStatus = "Invalid RPC URL"
+            return
+        }
+
+        let body: [String: Any] = [
+            "jsonrpc": "1.0",
+            "id": "faucet",
+            "method": "sendtoaddress",
+            "params": [address, 10]
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            faucetStatus = "Failed to encode request"
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+
+        let credentials = "\(rpcUser):\(rpcPassword)"
+        if let credData = credentials.data(using: .utf8) {
+            request.setValue("Basic \(credData.base64EncodedString())", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                faucetStatus = "Invalid response"
+                return
+            }
+
+            if httpResponse.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let txid = json["result"] as? String {
+                    faucetStatus = "Sent! tx: \(txid.prefix(12))..."
+                } else {
+                    faucetStatus = "Sent!"
+                }
+            } else if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                faucetStatus = "Auth failed — set faucetRPCPassword in UserDefaults"
+            } else {
+                let body = String(data: data, encoding: .utf8) ?? ""
+                faucetStatus = "RPC error \(httpResponse.statusCode): \(body.prefix(80))"
+            }
+        } catch {
+            faucetStatus = "Network error: \(error.localizedDescription)"
+        }
+
+        // Clear status after 5 seconds
+        Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            faucetStatus = nil
         }
     }
 }

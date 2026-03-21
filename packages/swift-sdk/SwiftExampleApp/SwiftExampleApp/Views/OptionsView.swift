@@ -47,7 +47,17 @@ struct OptionsView: View {
                                 await MainActor.run { isSwitchingNetwork = false }
                             }
                         }
-                        .help("Connect to local dashmate Docker network (DAPI at 127.0.0.1:1443, Core peers at 127.0.0.1). Override addresses via 'platformDAPIAddresses' and 'corePeerAddresses' UserDefaults keys.")
+                        .help("Connect to local dashmate Docker network.")
+
+                    if appState.useDockerSetup {
+                        TextField("Faucet RPC Password", text: Binding(
+                            get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
+                            set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
+                        ))
+                        .font(.system(.body, design: .monospaced))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    }
 
                     HStack {
                         Text("Network Status")
