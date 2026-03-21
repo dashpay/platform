@@ -467,6 +467,19 @@ public class CoreWalletManager: ObservableObject {
             list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: b, addressCount: (0, 0)))
         }
 
+        // Platform Payment (DIP-17)
+        if collection.hasPlatformPaymentAccounts {
+            for accountIdx in 0..<collection.platformPaymentCount {
+                if let m = collection.getPlatformPaymentAccount(accountIndex: accountIdx, keyClass: 0) {
+                    var addrCount = 0
+                    if let pool = m.getAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 1000) {
+                        addrCount = infos.count
+                    }
+                    list.append(AccountInfo(category: .platformPayment, index: accountIdx, label: "Platform Payment \(accountIdx)", balance: Balance(confirmed: 0, unconfirmed: 0), addressCount: (addrCount, 0)))
+                }
+            }
+        }
+
         // Sort BIP44 by index first, then other types below
         list.sort { (a, b) in
             switch (a.category, b.category) {
