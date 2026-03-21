@@ -331,21 +331,47 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     );
 
     // Create trusted context provider
-    let trusted_provider = match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
-        network,
-        None,                                      // Use default quorum lookup endpoints
-        std::num::NonZeroUsize::new(100).unwrap(), // Cache size
-    ) {
-        Ok(provider) => {
-            info!("dash_sdk_create_trusted: trusted context provider created");
-            Arc::new(provider)
+    // For local/regtest, use the quorum sidecar at localhost:22444 (dashmate Docker default)
+    let is_local = matches!(
+        config.network,
+        DashSDKNetwork::SDKLocal | DashSDKNetwork::SDKRegtest
+    );
+    let trusted_provider = if is_local {
+        info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            network,
+            "http://127.0.0.1:22444".to_string(),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ) {
+            Ok(provider) => {
+                info!("dash_sdk_create_trusted: local trusted context provider created");
+                Arc::new(provider)
+            }
+            Err(e) => {
+                error!(error = %e, "dash_sdk_create_trusted: failed to create local context provider");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    format!("Failed to create local context provider: {}", e),
+                ));
+            }
         }
-        Err(e) => {
-            error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                format!("Failed to create trusted context provider: {}", e),
-            ));
+    } else {
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
+            network,
+            None,                                      // Use default quorum lookup endpoints
+            std::num::NonZeroUsize::new(100).unwrap(), // Cache size
+        ) {
+            Ok(provider) => {
+                info!("dash_sdk_create_trusted: trusted context provider created");
+                Arc::new(provider)
+            }
+            Err(e) => {
+                error!(error = %e, "dash_sdk_create_trusted: failed to create trusted context provider");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    format!("Failed to create trusted context provider: {}", e),
+                ));
+            }
         }
     };
 

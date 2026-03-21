@@ -39,21 +39,15 @@ struct OptionsView: View {
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
 
-                    Toggle("Use Local DAPI (Platform)", isOn: $appState.useLocalPlatform)
-                        .onChange(of: appState.useLocalPlatform) { _, _ in
+                    Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
+                        .onChange(of: appState.useDockerSetup) { _, _ in
                             isSwitchingNetwork = true
                             Task {
                                 await appState.switchNetwork(to: appState.currentNetwork)
                                 await MainActor.run { isSwitchingNetwork = false }
                             }
                         }
-                        .help("When enabled, Platform requests use local DAPI at 127.0.0.1:1443 (override via 'platformDAPIAddresses').")
-
-                    Toggle("Use Local Core (SPV)", isOn: $appState.useLocalCore)
-                        .onChange(of: appState.useLocalCore) { _, _ in
-                            // Core override will be applied when SPV peer overrides are supported
-                        }
-                        .help("When enabled, Core (SPV) connects only to configured peers (default 127.0.0.1 with network port). Override via 'corePeerAddresses'.")
+                        .help("Connect to local dashmate Docker network (DAPI at 127.0.0.1:1443, Core peers at 127.0.0.1). Override addresses via 'platformDAPIAddresses' and 'corePeerAddresses' UserDefaults keys.")
 
                     HStack {
                         Text("Network Status")
@@ -76,6 +70,7 @@ struct OptionsView: View {
                                 .foregroundColor(.red)
                         }
                     }
+
                 }
 
                 Section("Data") {
