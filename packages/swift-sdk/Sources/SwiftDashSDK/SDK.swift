@@ -145,7 +145,7 @@ public final class SDK: @unchecked Sendable {
     if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
       return override
     }
-    return "https://127.0.0.1:2443"
+    return "http://127.0.0.1:2443"
   }
 
   /// Create a new SDK instance with trusted setup
