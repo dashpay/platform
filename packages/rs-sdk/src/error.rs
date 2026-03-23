@@ -196,13 +196,18 @@ impl From<DapiClientError> for Error {
             }
             // Check drive-error-data-bin for decoded Drive error messages
             if status.code() == Code::Internal {
-                if let Some(drive_error_value) = status
-                    .metadata()
-                    .get_bin("drive-error-data-bin")
-                {
-                    if let Ok(bytes) = drive_error_value.to_bytes() {
-                        if let Some(message) = extract_drive_error_message(&bytes) {
-                            return Self::DriveInternalError(message);
+                if let Some(drive_error_value) = status.metadata().get_bin("drive-error-data-bin") {
+                    match drive_error_value.to_bytes() {
+                        Ok(bytes) => {
+                            if let Some(message) = extract_drive_error_message(&bytes) {
+                                return Self::DriveInternalError(message);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                "Failed to decode drive-error-data-bin metadata: {}",
+                                e
+                            );
                         }
                     }
                 }
