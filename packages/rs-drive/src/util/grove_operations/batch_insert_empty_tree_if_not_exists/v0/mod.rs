@@ -295,3 +295,283 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::BatchInsertTreeApplyType;
+    use crate::util::object_size_info::PathKeyInfo;
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::TreeType;
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    /// PathKeyRef variant, no existing operations, tree doesn't exist -> inserts.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_path_key_ref_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let info = PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"child"));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(inserted);
+    }
+
+    /// PathKeyRef variant, tree already exists -> returns false.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_path_key_ref_exists() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        drive
+            .grove_insert_empty_tree(
+                [b"root".as_slice()].as_slice().into(),
+                b"child",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let info = PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"child"));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(!inserted);
+    }
+
+    /// PathKeyRef with check_existing_operations where element is not found in ops
+    /// but also doesn't exist in grove -> inserts via check_existing_operations path.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_with_check_ops_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let mut existing_ops = vec![];
+        let info = PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"child"));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut Some(&mut existing_ops),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(inserted);
+    }
+
+    /// PathKeySize returns error.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_path_key_size_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let key_info_path =
+            grovedb::batch::KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]);
+        let key_info = grovedb::batch::key_info::KeyInfo::KnownKey(b"child".to_vec());
+        let info = PathKeyInfo::<0>::PathKeySize(key_info_path, key_info);
+
+        let result = drive.batch_insert_empty_tree_if_not_exists_v0(
+            info,
+            TreeType::NormalTree,
+            None,
+            BatchInsertTreeApplyType::StatefulBatchInsertTree,
+            None,
+            &mut None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    /// PathKey variant, no check_existing_operations, tree doesn't exist -> inserts.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_path_key_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let info = PathKeyInfo::<0>::PathKey((vec![b"root".to_vec()], b"child".to_vec()));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(inserted);
+    }
+
+    /// PathFixedSizeKey variant, tree doesn't exist -> inserts.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_fixed_size_key_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let info = PathKeyInfo::PathFixedSizeKey((path, b"child".to_vec()));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(inserted);
+    }
+
+    /// PathFixedSizeKeyRef variant, tree doesn't exist -> inserts.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_fixed_size_key_ref_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let info = PathKeyInfo::PathFixedSizeKeyRef((path, b"child"));
+
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                info,
+                TreeType::NormalTree,
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(inserted);
+    }
+}

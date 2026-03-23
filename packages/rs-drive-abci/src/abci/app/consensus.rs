@@ -83,6 +83,79 @@ impl<C> Debug for ConsensusAbciApplication<'_, C> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+
+    #[test]
+    fn consensus_abci_application_debug_format() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::new(&platform.platform);
+
+        let debug_str = format!("{:?}", app);
+        assert_eq!(debug_str, "<ConsensusAbciApplication>");
+    }
+
+    #[test]
+    fn consensus_abci_application_platform_returns_reference() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        let _platform_ref = app.platform();
+    }
+
+    #[test]
+    fn consensus_abci_application_block_execution_context_is_initially_none() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        let ctx = app.block_execution_context().read().unwrap();
+        assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn consensus_abci_application_transaction_is_initially_none() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        let tx = app.transaction().read().unwrap();
+        assert!(tx.is_none());
+    }
+
+    #[test]
+    fn consensus_abci_application_start_transaction_creates_transaction() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        app.start_transaction();
+
+        let tx = app.transaction().read().unwrap();
+        assert!(tx.is_some());
+    }
+
+    #[test]
+    fn consensus_abci_application_commit_without_transaction_fails() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let app = ConsensusAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        let platform_version = PlatformVersion::latest();
+
+        let result = app.commit_transaction(platform_version);
+        assert!(result.is_err());
+    }
+}
+
 impl<C> tenderdash_abci::Application for ConsensusAbciApplication<'_, C>
 where
     C: CoreRPCLike,

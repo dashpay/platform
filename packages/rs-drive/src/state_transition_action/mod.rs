@@ -46,7 +46,6 @@ use crate::state_transition_action::system::bump_identity_nonce_action::{
 use crate::state_transition_action::system::partially_use_asset_lock_action::{
     PartiallyUseAssetLockAction, PartiallyUseAssetLockActionAccessorsV0,
 };
-use crate::state_transition_action::system::penalize_shielded_pool_action::PenalizeShieldedPoolAction;
 use derive_more::From;
 use dpp::prelude::UserFeeIncrease;
 
@@ -108,8 +107,6 @@ pub enum StateTransitionAction {
     ShieldFromAssetLockAction(ShieldFromAssetLockTransitionAction),
     /// shielded withdrawal (shielded pool -> L1 core address)
     ShieldedWithdrawalAction(ShieldedWithdrawalTransitionAction),
-    /// penalize shielded pool for invalid ZK proof
-    PenalizeShieldedPoolAction(PenalizeShieldedPoolAction),
 }
 
 impl StateTransitionAction {
@@ -167,9 +164,6 @@ impl StateTransitionAction {
             }
             StateTransitionAction::ShieldedWithdrawalAction(_) => {
                 UserFeeIncrease::default() // 0 (fee is locked by Orchard binding signature)
-            }
-            StateTransitionAction::PenalizeShieldedPoolAction(_) => {
-                UserFeeIncrease::default() // 0 (no user fee increase for penalty actions)
             }
         }
     }

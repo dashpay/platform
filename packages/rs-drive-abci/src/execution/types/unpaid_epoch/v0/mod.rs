@@ -173,3 +173,97 @@ impl UnpaidEpochV0Setters for UnpaidEpochV0 {
         self.fee_multiplier = fee_multiplier;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_unpaid_epoch() -> UnpaidEpochV0 {
+        UnpaidEpochV0 {
+            epoch_index: 5,
+            next_unpaid_epoch_index: 6,
+            epoch_start_time: 1_000_000,
+            start_block_height: 100,
+            next_epoch_start_block_height: 200,
+            start_block_core_height: 50,
+            next_epoch_start_block_core_height: 60,
+            protocol_version: 1,
+            fee_multiplier: 150,
+        }
+    }
+
+    #[test]
+    fn getters_return_correct_values() {
+        let epoch = make_unpaid_epoch();
+        assert_eq!(epoch.epoch_index(), 5);
+        assert_eq!(epoch.next_unpaid_epoch_index(), 6);
+        assert_eq!(epoch.epoch_start_time(), 1_000_000);
+        assert_eq!(epoch.start_block_height(), 100);
+        assert_eq!(epoch.next_epoch_start_block_height(), 200);
+        assert_eq!(epoch.start_block_core_height(), 50);
+        assert_eq!(epoch.next_epoch_start_block_core_height(), 60);
+        assert_eq!(epoch.protocol_version(), 1);
+        assert_eq!(epoch.fee_multiplier(), 150);
+    }
+
+    #[test]
+    fn setters_update_all_fields() {
+        let mut epoch = UnpaidEpochV0::default();
+        epoch.set_epoch_index(10);
+        epoch.set_next_unpaid_epoch_index(11);
+        epoch.set_epoch_start_time(2_000_000);
+        epoch.set_start_block_height(500);
+        epoch.set_next_epoch_start_block_height(600);
+        epoch.set_start_block_core_height(100);
+        epoch.set_next_epoch_start_block_core_height(110);
+        epoch.set_protocol_version(2);
+        epoch.set_fee_multiplier(200);
+
+        assert_eq!(epoch.epoch_index(), 10);
+        assert_eq!(epoch.next_unpaid_epoch_index(), 11);
+        assert_eq!(epoch.epoch_start_time(), 2_000_000);
+        assert_eq!(epoch.start_block_height(), 500);
+        assert_eq!(epoch.next_epoch_start_block_height(), 600);
+        assert_eq!(epoch.start_block_core_height(), 100);
+        assert_eq!(epoch.next_epoch_start_block_core_height(), 110);
+        assert_eq!(epoch.protocol_version(), 2);
+        assert_eq!(epoch.fee_multiplier(), 200);
+    }
+
+    #[test]
+    fn block_count_returns_difference() {
+        let epoch = make_unpaid_epoch();
+        // next_epoch_start_block_height(200) - start_block_height(100) = 100
+        assert_eq!(epoch.block_count().unwrap(), 100);
+    }
+
+    #[test]
+    fn block_count_returns_zero_for_same_heights() {
+        let mut epoch = make_unpaid_epoch();
+        epoch.set_start_block_height(100);
+        epoch.set_next_epoch_start_block_height(100);
+        assert_eq!(epoch.block_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn block_count_returns_error_on_underflow() {
+        let mut epoch = make_unpaid_epoch();
+        epoch.set_start_block_height(200);
+        epoch.set_next_epoch_start_block_height(100);
+        assert!(epoch.block_count().is_err());
+    }
+
+    #[test]
+    fn default_values_are_zero() {
+        let epoch = UnpaidEpochV0::default();
+        assert_eq!(epoch.epoch_index(), 0);
+        assert_eq!(epoch.next_unpaid_epoch_index(), 0);
+        assert_eq!(epoch.epoch_start_time(), 0);
+        assert_eq!(epoch.start_block_height(), 0);
+        assert_eq!(epoch.next_epoch_start_block_height(), 0);
+        assert_eq!(epoch.start_block_core_height(), 0);
+        assert_eq!(epoch.next_epoch_start_block_core_height(), 0);
+        assert_eq!(epoch.protocol_version(), 0);
+        assert_eq!(epoch.fee_multiplier(), 0);
+    }
+}

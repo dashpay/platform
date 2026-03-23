@@ -28,6 +28,22 @@ async fn test_identity_read() {
     assert_eq!(identity.id(), id);
 }
 
+/// Given a non-existent identity ID, when I fetch the identity, I get None.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "requires mock vectors to be generated against a running Platform"]
+async fn test_identity_read_not_found() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let sdk = cfg.setup_api("test_identity_read_not_found").await;
+
+    let result = Identity::fetch(&sdk, super::generated_data::UNKNOWN_IDENTITY_ID)
+        .await
+        .expect("fetch should not error for non-existent identity");
+
+    assert!(result.is_none(), "non-existent identity should return None");
+}
+
 /// Given some existing identity public key, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_identity_read_by_key() {
@@ -90,6 +106,25 @@ async fn test_identity_balance_revision_read() {
         .expect("found identity balance");
 
     tracing::debug!(balance, revision, ?id, "identity balance and revision")
+}
+
+/// Given a non-existent identity ID, when I fetch the identity balance, I get None.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "requires mock vectors to be generated against a running Platform"]
+async fn test_identity_balance_read_not_found() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let sdk = cfg.setup_api("test_identity_balance_read_not_found").await;
+
+    let result = IdentityBalance::fetch(&sdk, super::generated_data::UNKNOWN_IDENTITY_ID)
+        .await
+        .expect("fetch should not error for non-existent identity");
+
+    assert!(
+        result.is_none(),
+        "non-existent identity balance should return None"
+    );
 }
 
 /// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.

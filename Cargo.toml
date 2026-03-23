@@ -47,11 +47,11 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "450f72f" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "450f72f" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "450f72f" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "450f72f" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "450f72f" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/mempool-support" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/mempool-support" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/mempool-support" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/mempool-support" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/mempool-support" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

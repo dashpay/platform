@@ -27,6 +27,10 @@ use drive::drive::saved_block_transactions::{
     ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
+use drive::drive::shielded::paths::{
+    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
+    SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+};
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
@@ -108,6 +112,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 11 && platform_version.protocol_version >= 11 {
             self.transition_to_version_11(transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 12 && platform_version.protocol_version >= 12 {
+            self.transition_to_version_12(transaction, platform_version)?;
         }
 
         Ok(())
@@ -597,5 +605,337 @@ impl<C> Platform<C> {
         )?;
 
         Ok(())
+    }
+
+    /// We introduced in version 12 Shielded Pools
+    fn transition_to_version_12(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let addresses_path = Drive::addresses_path();
+
+        // Shielded credit pool SumTree under AddressBalances: [AddressBalances] / "s"
+        self.drive.grove_insert_if_not_exists(
+            addresses_path.as_slice().into(),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
+        // [AddressBalances, "s"] / [1]
+        let shielded_pool_path = shielded_credit_pool_path();
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NOTES_KEY],
+            Element::empty_commitment_tree(11).expect("chunk_power 11 is valid"),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NULLIFIERS_KEY],
+            Element::empty_provable_count_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Total balance SumItem(0): [AddressBalances, "s"] / [5]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_TOTAL_BALANCE_KEY],
+            Element::new_sum_item(0),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
+        // Stores block_height_be → anchor_bytes
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_same_version_transition_is_noop() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // When previous == current, no transition_to_version_* should be triggered
+        let result = platform.perform_events_on_first_block_of_protocol_change_v0(
+            &platform_state,
+            &block_info,
+            &transaction,
+            platform_version.protocol_version,
+            platform_version,
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_transition_to_version_6_inserts_wallet_utils_contract() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Transition from version 5 to current (which is >= 6)
+        // should insert the wallet utils contract
+        let result = platform.transition_to_version_6(&block_info, &transaction, platform_version);
+
+        assert!(result.is_ok());
+
+        // Verify the contract was inserted by loading it
+        let wallet_utils_contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::WalletUtils,
+            platform_version,
+        )
+        .expect("expected to load wallet utils contract");
+
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        let (_fee_result, contract_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *wallet_utils_contract.id().as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+        assert!(
+            contract_fetch_info.is_some(),
+            "WalletUtils contract should exist after transition_to_version_6"
+        );
+    }
+
+    // test_transition_to_version_9 removed: requires prior state from versions 4-8
+
+    #[test]
+    fn test_transition_to_version_11_creates_address_trees() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let result = platform.transition_to_version_11(&transaction, platform_version);
+
+        assert!(result.is_ok());
+
+        // Verify that the AddressBalances root tree was created
+        use drive::drive::RootTree;
+        use drive::grovedb::Element;
+        use drive::grovedb_path::SubtreePath;
+        let element = platform.drive.grove.get(
+            SubtreePath::empty(),
+            &[RootTree::AddressBalances as u8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            element.value.is_ok(),
+            "AddressBalances root tree should exist"
+        );
+    }
+
+    #[test]
+    fn test_transition_to_version_12_creates_shielded_pool_trees() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // Version 12 depends on version 11 trees existing
+        platform
+            .transition_to_version_11(&transaction, platform_version)
+            .expect("expected version 11 transition to succeed");
+
+        platform
+            .transition_to_version_12(&transaction, platform_version)
+            .expect("expected version 12 transition to succeed");
+
+        // Verify shielded credit pool tree was created under AddressBalances
+        let shielded_pool_element = platform.drive.grove.get(
+            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            shielded_pool_element.value.is_ok(),
+            "Shielded credit pool tree should exist after transition_to_version_12"
+        );
+
+        // Verify notes tree was created inside the shielded pool
+        let shielded_pool_path = shielded_credit_pool_path();
+        let notes_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_NOTES_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            notes_element.value.is_ok(),
+            "Shielded notes tree should exist after transition_to_version_12"
+        );
+
+        // Verify nullifiers tree was created
+        let nullifiers_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_NULLIFIERS_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            nullifiers_element.value.is_ok(),
+            "Shielded nullifiers tree should exist after transition_to_version_12"
+        );
+
+        // Verify anchors tree was created
+        let anchors_element = platform.drive.grove.get(
+            SubtreePath::from(shielded_pool_path.as_ref()),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            anchors_element.value.is_ok(),
+            "Shielded anchors tree should exist after transition_to_version_12"
+        );
+    }
+
+    // test_full_transition_from_version_3_to_latest and test_transition_from_version_5
+    // removed: multi-version transitions require cumulative state from each prior version
+
+    #[test]
+    fn test_transition_from_version_10_triggers_11_and_12() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_state = platform.state.load();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // From version 10, versions 11 and 12 should trigger
+        platform
+            .perform_events_on_first_block_of_protocol_change_v0(
+                &platform_state,
+                &block_info,
+                &transaction,
+                10,
+                platform_version,
+            )
+            .expect("expected transition from version 10 to succeed");
+
+        // Verify version 11 artifacts: AddressBalances root tree should exist
+        use drive::drive::RootTree;
+        use drive::grovedb_path::SubtreePath;
+        let address_balances = platform.drive.grove.get(
+            SubtreePath::empty(),
+            &[RootTree::AddressBalances as u8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            address_balances.value.is_ok(),
+            "AddressBalances root tree should exist (from version 11 transition)"
+        );
+
+        // Verify version 12 artifacts: shielded credit pool tree should exist
+        let shielded_pool = platform.drive.grove.get(
+            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
+            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            Some(&transaction),
+            &platform_version.drive.grove_version,
+        );
+        assert!(
+            shielded_pool.value.is_ok(),
+            "Shielded credit pool tree should exist (from version 12 transition)"
+        );
+    }
+
+    #[test]
+    fn test_idempotent_transition_to_version_6() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // First call should succeed
+        platform
+            .transition_to_version_6(&block_info, &transaction, platform_version)
+            .expect("first transition should succeed");
+
+        // Second call should also succeed (idempotent due to insert_contract)
+        let result = platform.transition_to_version_6(&block_info, &transaction, platform_version);
+        assert!(result.is_ok());
     }
 }

@@ -452,6 +452,90 @@ impl_transport_request_grpc!(
     get_current_quorums_info
 );
 
+// rpc getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedEncryptedNotesRequest,
+    platform_proto::GetShieldedEncryptedNotesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_encrypted_notes
+);
+
+// rpc getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedAnchorsRequest,
+    platform_proto::GetShieldedAnchorsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_anchors
+);
+
+// rpc getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetMostRecentShieldedAnchorRequest,
+    platform_proto::GetMostRecentShieldedAnchorResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_most_recent_shielded_anchor
+);
+
+// rpc getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedPoolStateRequest,
+    platform_proto::GetShieldedPoolStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_pool_state
+);
+
+// rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNullifiersRequest,
+    platform_proto::GetShieldedNullifiersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_nullifiers
+);
+
+// rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest) returns (GetRecentNullifierChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentNullifierChangesRequest,
+    platform_proto::GetRecentNullifierChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_recent_nullifier_changes
+);
+
+// rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest) returns (GetRecentCompactedNullifierChangesResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetRecentCompactedNullifierChangesRequest,
+    platform_proto::GetRecentCompactedNullifierChangesResponse,
+    PlatformGrpcClient,
+    RequestSettings {
+        max_decoding_message_size: Some(16 * 1024 * 1024),
+        ..RequestSettings::default()
+    },
+    get_recent_compacted_nullifier_changes
+);
+
+// rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest) returns (GetNullifiersTrunkStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetNullifiersTrunkStateRequest,
+    platform_proto::GetNullifiersTrunkStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_nullifiers_trunk_state
+);
+
+// rpc getNullifiersBranchState(GetNullifiersBranchStateRequest) returns (GetNullifiersBranchStateResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetNullifiersBranchStateRequest,
+    platform_proto::GetNullifiersBranchStateResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_nullifiers_branch_state
+);
+
 // Link to each core gRPC request what client and method to use:
 
 impl_transport_request_grpc!(
@@ -564,6 +648,15 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_token_statuses
+);
+
+// rpc getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenPreProgrammedDistributionsRequest,
+    platform_proto::GetTokenPreProgrammedDistributionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_pre_programmed_distributions
 );
 
 // rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);

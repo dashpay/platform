@@ -62,3 +62,31 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_epoch_infos_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .system
+            .verify_epoch_infos = 255;
+
+        let result = Drive::verify_epoch_infos(&[], 0, None, 0, false, &platform_version);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

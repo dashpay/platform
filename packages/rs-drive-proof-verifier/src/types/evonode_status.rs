@@ -40,7 +40,6 @@ pub struct EvoNodeStatus {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Information about protocol and software components versions.
 pub struct Version {
     /// Information about software components versions.
@@ -96,7 +95,6 @@ pub struct TenderdashProtocol {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Drive protocol versions.
 pub struct DriveProtocol {
     /// Latest version supported by the node.
@@ -112,7 +110,6 @@ pub struct DriveProtocol {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Information about current time used by the node.
 pub struct Time {
     /// Local time of the node. Unix timestamp since epoch.
@@ -131,7 +128,6 @@ pub struct Time {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Evo node identification information.
 pub struct Node {
     /// Node ID
@@ -145,7 +141,6 @@ pub struct Node {
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-
 /// Layer 2 blockchain information
 pub struct Chain {
     /// Whether the node is catching up with the network.
@@ -381,5 +376,202 @@ impl TryFrom<&GetStatusResponse> for Time {
             }
             _ => Err(Error::EmptyVersion),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_status_response::get_status_response_v0;
+
+    /// Build a fully populated GetStatusResponse V0 for test reuse.
+    fn build_full_status_response() -> GetStatusResponse {
+        let software = get_status_response_v0::version::Software {
+            dapi: "1.2.3".to_string(),
+            drive: Some("4.5.6".to_string()),
+            tenderdash: Some("0.14.0-dev.1".to_string()),
+        };
+
+        let tenderdash_protocol =
+            get_status_response_v0::version::protocol::Tenderdash { p2p: 9, block: 12 };
+
+        let drive_protocol = get_status_response_v0::version::protocol::Drive {
+            latest: 7,
+            current: 6,
+            next_epoch: 7,
+        };
+
+        let protocol = get_status_response_v0::version::Protocol {
+            tenderdash: Some(tenderdash_protocol),
+            drive: Some(drive_protocol),
+        };
+
+        let version = get_status_response_v0::Version {
+            software: Some(software),
+            protocol: Some(protocol),
+        };
+
+        let time = get_status_response_v0::Time {
+            local: 1700000000,
+            block: Some(1699999900),
+            genesis: Some(1690000000),
+            epoch: Some(42),
+        };
+
+        let node = get_status_response_v0::Node {
+            id: vec![0xAA; 20],
+            pro_tx_hash: Some(vec![0xBB; 32]),
+        };
+
+        let chain = get_status_response_v0::Chain {
+            catching_up: true,
+            latest_block_hash: vec![0x11; 32],
+            latest_app_hash: vec![0x22; 32],
+            latest_block_height: 5000,
+            earliest_block_hash: vec![0x33; 32],
+            earliest_app_hash: vec![0x44; 32],
+            earliest_block_height: 10,
+            max_peer_block_height: 5001,
+            core_chain_locked_height: Some(750),
+        };
+
+        let network = get_status_response_v0::Network {
+            chain_id: "dash-mainnet".to_string(),
+            peers_count: 50,
+            listening: true,
+        };
+
+        let state_sync = get_status_response_v0::StateSync {
+            total_synced_time: 7200,
+            remaining_time: 60,
+            total_snapshots: 3,
+            chunk_process_avg_time: 25,
+            snapshot_height: 4500,
+            snapshot_chunks_count: 200,
+            backfilled_blocks: 1000,
+            backfill_blocks_total: 2000,
+        };
+
+        let v0 = get_status_response::GetStatusResponseV0 {
+            version: Some(version),
+            node: Some(node),
+            chain: Some(chain),
+            network: Some(network),
+            state_sync: Some(state_sync),
+            time: Some(time),
+        };
+
+        GetStatusResponse {
+            version: Some(get_status_response::Version::V0(v0)),
+        }
+    }
+
+    #[test]
+    fn test_try_from_status_response_all_fields() {
+        let response = build_full_status_response();
+        let status = EvoNodeStatus::try_from(response).expect("should convert valid response");
+
+        // Version / Software
+        let sw = status.version.software.as_ref().unwrap();
+        assert_eq!(sw.dapi, "1.2.3");
+        assert_eq!(sw.drive.as_deref(), Some("4.5.6"));
+        assert_eq!(sw.tenderdash.as_deref(), Some("0.14.0-dev.1"));
+
+        // Version / Protocol
+        let proto = status.version.protocol.as_ref().unwrap();
+        let td_proto = proto.tenderdash.as_ref().unwrap();
+        assert_eq!(td_proto.p2p, 9);
+        assert_eq!(td_proto.block, 12);
+        let drv_proto = proto.drive.as_ref().unwrap();
+        assert_eq!(drv_proto.latest, 7);
+        assert_eq!(drv_proto.current, 6);
+        assert_eq!(drv_proto.next_epoch, 7);
+
+        // Node
+        assert_eq!(status.node.id, vec![0xAA; 20]);
+        assert_eq!(status.node.pro_tx_hash, Some(vec![0xBB; 32]));
+
+        // Chain
+        assert!(status.chain.catching_up);
+        assert_eq!(status.chain.latest_block_hash, vec![0x11; 32]);
+        assert_eq!(status.chain.latest_app_hash, vec![0x22; 32]);
+        assert_eq!(status.chain.latest_block_height, 5000);
+        assert_eq!(status.chain.earliest_block_hash, vec![0x33; 32]);
+        assert_eq!(status.chain.earliest_app_hash, vec![0x44; 32]);
+        assert_eq!(status.chain.earliest_block_height, 10);
+        assert_eq!(status.chain.max_peer_block_height, 5001);
+        assert_eq!(status.chain.core_chain_locked_height, Some(750));
+
+        // Network
+        assert_eq!(status.network.chain_id, "dash-mainnet");
+        assert_eq!(status.network.peers_count, 50);
+        assert!(status.network.listening);
+
+        // StateSync
+        assert_eq!(status.state_sync.total_synced_time, 7200);
+        assert_eq!(status.state_sync.remaining_time, 60);
+        assert_eq!(status.state_sync.total_snapshots, 3);
+        assert_eq!(status.state_sync.chunk_process_avg_time, 25);
+        assert_eq!(status.state_sync.snapshot_height, 4500);
+        assert_eq!(status.state_sync.snapshot_chunks_count, 200);
+        assert_eq!(status.state_sync.backfilled_blocks, 1000);
+        assert_eq!(status.state_sync.backfill_blocks_total, 2000);
+
+        // Time
+        assert_eq!(status.time.local, 1700000000);
+        assert_eq!(status.time.block, Some(1699999900));
+        assert_eq!(status.time.genesis, Some(1690000000));
+        assert_eq!(status.time.epoch, Some(42));
+    }
+
+    #[test]
+    fn test_try_from_status_response_empty_version() {
+        let response = GetStatusResponse { version: None };
+        let err = EvoNodeStatus::try_from(response).expect_err("should fail when version is None");
+        let err_string = err.to_string();
+        assert!(
+            err_string.contains("empty version"),
+            "unexpected error: {err_string}"
+        );
+    }
+
+    #[test]
+    fn test_version_conversion() {
+        let response = build_full_status_response();
+        let version = Version::try_from(&response).expect("should convert Version");
+
+        // Software components
+        let sw = version.software.as_ref().unwrap();
+        assert_eq!(sw.dapi, "1.2.3");
+        assert_eq!(sw.drive.as_deref(), Some("4.5.6"));
+        assert_eq!(sw.tenderdash.as_deref(), Some("0.14.0-dev.1"));
+
+        // Protocol versions
+        let proto = version.protocol.as_ref().unwrap();
+
+        let td = proto.tenderdash.as_ref().unwrap();
+        assert_eq!(td.p2p, 9);
+        assert_eq!(td.block, 12);
+
+        let drv = proto.drive.as_ref().unwrap();
+        assert_eq!(drv.latest, 7);
+        assert_eq!(drv.current, 6);
+        assert_eq!(drv.next_epoch, 7);
+    }
+
+    #[test]
+    fn test_chain_conversion() {
+        let response = build_full_status_response();
+        let chain = Chain::try_from(&response).expect("should convert Chain");
+
+        assert!(chain.catching_up);
+        assert_eq!(chain.latest_block_hash, vec![0x11; 32]);
+        assert_eq!(chain.latest_app_hash, vec![0x22; 32]);
+        assert_eq!(chain.latest_block_height, 5000);
+        assert_eq!(chain.earliest_block_hash, vec![0x33; 32]);
+        assert_eq!(chain.earliest_app_hash, vec![0x44; 32]);
+        assert_eq!(chain.earliest_block_height, 10);
+        assert_eq!(chain.max_peer_block_height, 5001);
+        assert_eq!(chain.core_chain_locked_height, Some(750));
     }
 }

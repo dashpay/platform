@@ -141,3 +141,319 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_limit_zero_returns_error() {
+        let (platform, _state, _version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(0),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform.query_proposed_block_counts_by_range_v0(request, &_state, _version);
+
+        assert!(result.is_err(), "limit of 0 should return an error");
+    }
+
+    #[test]
+    fn test_query_limit_exceeds_max_returns_error() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let over_limit = platform.platform.config.drive.max_query_limit as u32 + 1;
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(over_limit),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform.query_proposed_block_counts_by_range_v0(request, &state, version);
+
+        assert!(result.is_err(), "limit over max should return an error");
+    }
+
+    #[test]
+    fn test_query_limit_exceeds_u16_max_returns_error() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(u16::MAX as u32 + 1),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform.query_proposed_block_counts_by_range_v0(request, &state, version);
+
+        assert!(
+            result.is_err(),
+            "limit over u16::MAX should return an error"
+        );
+    }
+
+    #[test]
+    fn test_query_no_limit_uses_default() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: None,
+            start: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(
+                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_invalid_start_after_length() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: Some(Start::StartAfter(vec![1, 2, 3])), // not 32 bytes
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                QuerySyntaxError::InvalidStartsWithClause(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_query_invalid_start_at_length() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: Some(Start::StartAt(vec![1, 2, 3, 4])), // not 32 bytes
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                QuerySyntaxError::InvalidStartsWithClause(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_query_epoch_too_high() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(u16::MAX as u32),
+            limit: Some(10),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("epoch must be within a normal range")
+        ));
+    }
+
+    #[test]
+    fn test_query_no_epoch_uses_current() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: None,
+            limit: Some(10),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(
+                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_non_prove_empty_results() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        if let Some(GetEvonodesProposedEpochBlocksResponseV0 {
+            result:
+                Some(
+                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(
+                        info,
+                    ),
+                ),
+            metadata: Some(_),
+        }) = result.data
+        {
+            assert!(info.evonodes_proposed_block_counts.is_empty());
+        } else {
+            panic!("expected EvonodesProposedBlockCountsInfo result");
+        }
+    }
+
+    #[test]
+    fn test_query_prove_path() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_with_valid_start_after() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: Some(Start::StartAfter(vec![0u8; 32])),
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(
+                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_with_valid_start_at() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: Some(Start::StartAt(vec![0u8; 32])),
+            prove: false,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(
+                    get_evonodes_proposed_epoch_blocks_response_v0::Result::EvonodesProposedBlockCountsInfo(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_with_valid_start_at_prove() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+            epoch: Some(0),
+            limit: Some(10),
+            start: Some(Start::StartAt(vec![0u8; 32])),
+            prove: true,
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_range_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(get_evonodes_proposed_epoch_blocks_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+}

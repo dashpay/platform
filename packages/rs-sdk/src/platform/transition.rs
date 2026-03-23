@@ -9,6 +9,14 @@ pub mod put_contract;
 pub mod put_document;
 pub mod put_identity;
 pub mod put_settings;
+#[cfg(feature = "shielded")]
+pub mod shield;
+#[cfg(feature = "shielded")]
+pub mod shield_from_asset_lock;
+#[cfg(feature = "shielded")]
+pub mod shielded_transfer;
+#[cfg(feature = "shielded")]
+pub mod shielded_withdrawal;
 pub mod top_up_address;
 pub mod top_up_identity;
 pub mod top_up_identity_from_addresses;
@@ -17,6 +25,8 @@ pub mod transfer_address_funds;
 pub mod transfer_document;
 pub mod transfer_to_addresses;
 mod txid;
+#[cfg(feature = "shielded")]
+pub mod unshield;
 pub mod update_price_of_document;
 pub(crate) mod validation;
 pub mod vote;

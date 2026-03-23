@@ -28,6 +28,17 @@ pub struct SignerVTable {
 
     /// Destructor function pointer
     pub destroy: unsafe extern "C" fn(signer: *mut std::os::raw::c_void),
+
+    /// Optional custom deallocator for sign result buffers.
+    ///
+    /// When the `sign` callback returns a buffer, this function will be called
+    /// to free it. If `None`, `libc::free` is used as a fallback (which requires
+    /// the buffer to have been allocated with `malloc`/`calloc`).
+    ///
+    /// **Swift / Kotlin callers** that allocate with their own allocator (e.g.
+    /// `UnsafeMutablePointer<UInt8>.allocate`) **must** supply a matching
+    /// deallocator here to avoid undefined behavior.
+    pub free_result: Option<unsafe extern "C" fn(data: *mut u8, len: usize)>,
 }
 
 /// Generic signer that uses vtable for dynamic dispatch
@@ -85,11 +96,16 @@ impl Signer<IdentityPublicKey> for VTableSigner {
                 return Err(ProtocolError::Generic("Signing failed".to_string()));
             }
 
-            // Convert result to BinaryData
+            // Convert result to BinaryData (copy before freeing)
             let signature = std::slice::from_raw_parts(result_ptr, result_len).to_vec();
 
-            // Free the result using the same allocator
-            dash_sdk_bytes_free(result_ptr);
+            // Free the result using the vtable's custom deallocator if provided,
+            // otherwise fall back to libc::free (which requires malloc-allocated memory).
+            if let Some(free_fn) = (*self.vtable).free_result {
+                free_fn(result_ptr, result_len);
+            } else {
+                dash_sdk_bytes_free(result_ptr);
+            }
 
             Ok(BinaryData::from(signature))
         }
@@ -144,6 +160,12 @@ pub type CanSignCallback = unsafe extern "C" fn(
 /// This is an Option to allow for NULL pointers from C
 pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw::c_void)>;
 
+/// Optional custom deallocator for sign result buffers.
+/// When provided, this function is called to free the buffer returned by the
+/// `sign` callback instead of the default `libc::free`. This is an `Option` so
+/// that passing `NULL` from C selects the default behavior.
+pub type FreeResultCallback = Option<unsafe extern "C" fn(data: *mut u8, len: usize)>;
+
 /// Create a new signer with callbacks from iOS/external code
 ///
 /// This creates a VTableSigner that can be used for all state transitions.
@@ -153,6 +175,9 @@ pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw
 /// - `sign_callback`: Function to sign data
 /// - `can_sign_callback`: Function to check if can sign with a key
 /// - `destroy_callback`: Optional destructor (can be NULL)
+/// - `free_result_callback`: Optional custom deallocator for buffers returned by
+///   `sign_callback`. When NULL, `libc::free` is used. Swift/Kotlin callers that
+///   allocate with their own allocator **must** supply a matching deallocator.
 /// # Safety
 /// - Callback function pointers must be valid and follow the required ABI and lifetime for the duration of use.
 /// - The returned `SignerHandle` must be destroyed with `dash_sdk_signer_destroy` to avoid leaks.
@@ -161,12 +186,14 @@ pub unsafe extern "C" fn dash_sdk_signer_create(
     sign_callback: SignCallback,
     can_sign_callback: CanSignCallback,
     destroy_callback: DestroyCallback, // Option type handles NULL automatically
+    free_result_callback: FreeResultCallback, // Option type handles NULL automatically
 ) -> *mut SignerHandle {
     // Create a vtable on the heap so it persists
     let vtable = Box::new(SignerVTable {
         sign: sign_callback,
         can_sign_with: can_sign_callback,
         destroy: destroy_callback.unwrap_or(default_destroy),
+        free_result: free_result_callback,
     });
 
     let vtable_ptr = Box::into_raw(vtable);
@@ -212,15 +239,19 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
     }
 }
 
-/// Free bytes allocated by callbacks
+/// Free bytes that were allocated with `malloc`/`calloc`.
+///
+/// This is the **default** deallocator used when `SignerVTable::free_result` is
+/// `None`. If your callback allocates memory with a different allocator (e.g.
+/// Swift's `UnsafeMutablePointer.allocate`), supply a custom `free_result`
+/// function in the vtable instead of relying on this function.
+///
 /// # Safety
-/// - `bytes` must be a pointer to a buffer allocated by the corresponding FFI and compatible with `libc::free`.
+/// - `bytes` must be a pointer allocated with `malloc` or `calloc`, or null.
 /// - It may be null (no-op). After this call the pointer must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_bytes_free(bytes: *mut u8) {
     if !bytes.is_null() {
-        // Note: This assumes iOS/external code allocates with malloc/calloc
-        // If a different allocator is used, this function needs to be updated
         libc::free(bytes as *mut libc::c_void);
     }
 }
@@ -285,8 +316,137 @@ unsafe extern "C" fn single_key_signer_destroy(signer: *mut std::os::raw::c_void
 }
 
 /// Static vtable for SingleKeySigner
+///
+/// `free_result` is `None` because `single_key_signer_sign` allocates its
+/// result buffer with `libc::malloc`, so `libc::free` (the default) is correct.
 pub static SINGLE_KEY_SIGNER_VTABLE: SignerVTable = SignerVTable {
     sign: single_key_signer_sign,
     can_sign_with: single_key_signer_can_sign_with,
     destroy: single_key_signer_destroy,
+    free_result: None,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Global flag set by the custom free callback during tests.
+    static CUSTOM_FREE_CALLED: AtomicBool = AtomicBool::new(false);
+
+    /// Custom deallocator that records that it was called and then delegates to
+    /// `libc::free` (valid because the test sign callback allocates with
+    /// `libc::malloc`).
+    unsafe extern "C" fn test_custom_free(data: *mut u8, _len: usize) {
+        CUSTOM_FREE_CALLED.store(true, Ordering::SeqCst);
+        libc::free(data as *mut libc::c_void);
+    }
+
+    /// Sign callback for tests -- allocates the result with `libc::malloc`.
+    unsafe extern "C" fn test_sign(
+        _signer: *const std::os::raw::c_void,
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+        _data: *const u8,
+        _data_len: usize,
+        result_len: *mut usize,
+    ) -> *mut u8 {
+        let sig = [0xABu8; 64];
+        *result_len = sig.len();
+        let ptr = libc::malloc(sig.len()) as *mut u8;
+        if !ptr.is_null() {
+            std::ptr::copy_nonoverlapping(sig.as_ptr(), ptr, sig.len());
+        }
+        ptr
+    }
+
+    /// Can-sign callback for tests.
+    unsafe extern "C" fn test_can_sign(
+        _signer: *const std::os::raw::c_void,
+        _identity_public_key_bytes: *const u8,
+        _identity_public_key_len: usize,
+    ) -> bool {
+        true
+    }
+
+    /// Destroy callback for tests (no-op).
+    unsafe extern "C" fn test_destroy(_signer: *mut std::os::raw::c_void) {}
+
+    #[test]
+    fn custom_free_result_callback_is_invoked() {
+        // Reset global flag
+        CUSTOM_FREE_CALLED.store(false, Ordering::SeqCst);
+
+        let vtable = SignerVTable {
+            sign: test_sign,
+            can_sign_with: test_can_sign,
+            destroy: test_destroy,
+            free_result: Some(test_custom_free),
+        };
+
+        let signer = VTableSigner {
+            signer_ptr: std::ptr::null_mut(),
+            vtable: &vtable,
+        };
+
+        // Build a minimal identity public key to satisfy the Signer trait.
+        use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dash_sdk::dpp::platform_value::BinaryData;
+
+        let ipk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+            contract_bounds: None,
+        });
+
+        let result = signer.sign(&ipk, &[1, 2, 3]);
+        assert!(result.is_ok(), "sign should succeed");
+        assert_eq!(result.unwrap().len(), 64);
+        assert!(
+            CUSTOM_FREE_CALLED.load(Ordering::SeqCst),
+            "custom free_result callback must have been invoked"
+        );
+    }
+
+    #[test]
+    fn default_free_result_when_none() {
+        // When free_result is None, VTableSigner::sign should fall back to
+        // dash_sdk_bytes_free (libc::free) without crashing.
+        let vtable = SignerVTable {
+            sign: test_sign,
+            can_sign_with: test_can_sign,
+            destroy: test_destroy,
+            free_result: None,
+        };
+
+        let signer = VTableSigner {
+            signer_ptr: std::ptr::null_mut(),
+            vtable: &vtable,
+        };
+
+        use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dash_sdk::dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dash_sdk::dpp::platform_value::BinaryData;
+
+        let ipk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+            contract_bounds: None,
+        });
+
+        let result = signer.sign(&ipk, &[4, 5, 6]);
+        assert!(result.is_ok(), "sign with None free_result should succeed");
+        assert_eq!(result.unwrap().len(), 64);
+    }
+}

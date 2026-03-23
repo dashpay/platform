@@ -303,3 +303,349 @@ where
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ciborium::value::Value as CborValue;
+    use std::collections::BTreeMap;
+
+    fn make_map(pairs: Vec<(&str, CborValue)>) -> BTreeMap<String, CborValue> {
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+
+    // --- get_optional_string / get_string ---
+
+    #[test]
+    fn get_optional_string_present() {
+        let map = make_map(vec![("name", CborValue::Text("Alice".to_string()))]);
+        let result = map.get_optional_string("name").unwrap();
+        assert_eq!(result, Some("Alice".to_string()));
+    }
+
+    #[test]
+    fn get_optional_string_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_optional_string("name").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_optional_string_wrong_type() {
+        let map = make_map(vec![("name", CborValue::Integer(42.into()))]);
+        let result = map.get_optional_string("name");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_string_present() {
+        let map = make_map(vec![("name", CborValue::Text("Bob".to_string()))]);
+        let result = map.get_string("name").unwrap();
+        assert_eq!(result, "Bob");
+    }
+
+    #[test]
+    fn get_string_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_string("name");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_str / get_str ---
+
+    #[test]
+    fn get_optional_str_present() {
+        let map = make_map(vec![("key", CborValue::Text("value".to_string()))]);
+        let result = map.get_optional_str("key").unwrap();
+        assert_eq!(result, Some("value"));
+    }
+
+    #[test]
+    fn get_optional_str_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_optional_str("key").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_str_present() {
+        let map = make_map(vec![("key", CborValue::Text("val".to_string()))]);
+        let result = map.get_str("key").unwrap();
+        assert_eq!(result, "val");
+    }
+
+    #[test]
+    fn get_str_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_str("key");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_integer / get_integer ---
+
+    #[test]
+    fn get_optional_integer_present() {
+        let map = make_map(vec![("count", CborValue::Integer(42.into()))]);
+        let result: Option<i64> = map.get_optional_integer("count").unwrap();
+        assert_eq!(result, Some(42));
+    }
+
+    #[test]
+    fn get_optional_integer_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Option<i64> = map.get_optional_integer("count").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_optional_integer_null_value() {
+        let map = make_map(vec![("count", CborValue::Null)]);
+        let result: Option<i64> = map.get_optional_integer("count").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_optional_integer_wrong_type() {
+        let map = make_map(vec![("count", CborValue::Text("not_int".to_string()))]);
+        let result: Result<Option<i64>, _> = map.get_optional_integer("count");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_integer_present() {
+        let map = make_map(vec![("count", CborValue::Integer(100.into()))]);
+        let result: i64 = map.get_integer("count").unwrap();
+        assert_eq!(result, 100);
+    }
+
+    #[test]
+    fn get_integer_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Result<i64, _> = map.get_integer("count");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_bool / get_bool ---
+
+    #[test]
+    fn get_optional_bool_present() {
+        let map = make_map(vec![("flag", CborValue::Bool(true))]);
+        let result = map.get_optional_bool("flag").unwrap();
+        assert_eq!(result, Some(true));
+    }
+
+    #[test]
+    fn get_optional_bool_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_optional_bool("flag").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_optional_bool_wrong_type() {
+        let map = make_map(vec![("flag", CborValue::Integer(1.into()))]);
+        let result = map.get_optional_bool("flag");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_bool_present() {
+        let map = make_map(vec![("flag", CborValue::Bool(false))]);
+        let result = map.get_bool("flag").unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn get_bool_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_bool("flag");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_identifier / get_identifier ---
+
+    #[test]
+    fn get_optional_identifier_with_bytes() {
+        let id_bytes = [7u8; 32];
+        let map = make_map(vec![("id", CborValue::Bytes(id_bytes.to_vec()))]);
+        let result = map.get_optional_identifier("id").unwrap();
+        assert_eq!(result, Some(id_bytes));
+    }
+
+    #[test]
+    fn get_optional_identifier_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_optional_identifier("id").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn get_identifier_present() {
+        let id_bytes = [3u8; 32];
+        let map = make_map(vec![("id", CborValue::Bytes(id_bytes.to_vec()))]);
+        let result = map.get_identifier("id").unwrap();
+        assert_eq!(result, id_bytes);
+    }
+
+    #[test]
+    fn get_identifier_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_identifier("id");
+        assert!(result.is_err());
+    }
+
+    // --- remove_optional_integer / remove_integer ---
+
+    #[test]
+    fn remove_optional_integer_present() {
+        let mut map = make_map(vec![("val", CborValue::Integer(99.into()))]);
+        let result: Option<i64> = map.remove_optional_integer("val").unwrap();
+        assert_eq!(result, Some(99));
+        assert!(!map.contains_key("val"));
+    }
+
+    #[test]
+    fn remove_optional_integer_absent() {
+        let mut map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Option<i64> = map.remove_optional_integer("val").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn remove_optional_integer_null() {
+        let mut map = make_map(vec![("val", CborValue::Null)]);
+        let result: Option<i64> = map.remove_optional_integer("val").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn remove_integer_present() {
+        let mut map = make_map(vec![("val", CborValue::Integer(50.into()))]);
+        let result: i64 = map.remove_integer("val").unwrap();
+        assert_eq!(result, 50);
+    }
+
+    #[test]
+    fn remove_integer_absent() {
+        let mut map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Result<i64, _> = map.remove_integer("val");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_inner_value_array / get_inner_value_array ---
+
+    #[test]
+    fn get_optional_inner_value_array_present() {
+        let array = vec![CborValue::Integer(1.into()), CborValue::Integer(2.into())];
+        let map = make_map(vec![("arr", CborValue::Array(array))]);
+        let result: Option<Vec<&CborValue>> = map.get_optional_inner_value_array("arr").unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn get_optional_inner_value_array_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Option<Vec<&CborValue>> = map.get_optional_inner_value_array("arr").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_inner_value_array_present() {
+        let array = vec![CborValue::Bool(true)];
+        let map = make_map(vec![("arr", CborValue::Array(array))]);
+        let result: Vec<&CborValue> = map.get_inner_value_array("arr").unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn get_inner_value_array_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Result<Vec<&CborValue>, _> = map.get_inner_value_array("arr");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_inner_string_array / get_inner_string_array ---
+
+    #[test]
+    fn get_optional_inner_string_array_present() {
+        let array = vec![
+            CborValue::Text("hello".to_string()),
+            CborValue::Text("world".to_string()),
+        ];
+        let map = make_map(vec![("strs", CborValue::Array(array))]);
+        let result: Option<Vec<String>> = map.get_optional_inner_string_array("strs").unwrap();
+        assert_eq!(result, Some(vec!["hello".to_string(), "world".to_string()]));
+    }
+
+    #[test]
+    fn get_optional_inner_string_array_with_non_string_element() {
+        let array = vec![
+            CborValue::Text("hello".to_string()),
+            CborValue::Integer(42.into()),
+        ];
+        let map = make_map(vec![("strs", CborValue::Array(array))]);
+        let result: Result<Option<Vec<String>>, _> = map.get_optional_inner_string_array("strs");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_inner_string_array_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Result<Vec<String>, _> = map.get_inner_string_array("strs");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_inner_borrowed_map ---
+
+    #[test]
+    fn get_optional_inner_borrowed_map_present() {
+        let inner_map = vec![(
+            CborValue::Text("k".to_string()),
+            CborValue::Integer(1.into()),
+        )];
+        let map = make_map(vec![("m", CborValue::Map(inner_map))]);
+        let result = map.get_optional_inner_borrowed_map("m").unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn get_optional_inner_borrowed_map_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result = map.get_optional_inner_borrowed_map("m").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_optional_inner_borrowed_map_wrong_type() {
+        let map = make_map(vec![("m", CborValue::Integer(1.into()))]);
+        let result = map.get_optional_inner_borrowed_map("m");
+        assert!(result.is_err());
+    }
+
+    // --- get_optional_inner_borrowed_str_value_map / get_inner_borrowed_str_value_map ---
+
+    #[test]
+    fn get_optional_inner_borrowed_str_value_map_present() {
+        let inner_map = vec![(
+            CborValue::Text("key".to_string()),
+            CborValue::Integer(42.into()),
+        )];
+        let map = make_map(vec![("m", CborValue::Map(inner_map))]);
+        let result: Option<BTreeMap<String, &CborValue>> =
+            map.get_optional_inner_borrowed_str_value_map("m").unwrap();
+        assert!(result.is_some());
+        let inner = result.unwrap();
+        assert_eq!(inner.len(), 1);
+        assert!(inner.contains_key("key"));
+    }
+
+    #[test]
+    fn get_inner_borrowed_str_value_map_absent() {
+        let map: BTreeMap<String, CborValue> = BTreeMap::new();
+        let result: Result<BTreeMap<String, &CborValue>, _> =
+            map.get_inner_borrowed_str_value_map("m");
+        assert!(result.is_err());
+    }
+}

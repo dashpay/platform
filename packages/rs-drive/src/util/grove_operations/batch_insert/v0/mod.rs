@@ -55,3 +55,76 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::object_size_info::PathKeyElementInfo;
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::Element;
+
+    #[test]
+    fn test_batch_insert_path_key_ref_element() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path = vec![b"root".to_vec()];
+        let element = Element::new_item(b"value".to_vec());
+        let info = PathKeyElementInfo::<0>::PathKeyRefElement((path, b"key", element));
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert_path_key_element() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path = vec![b"root".to_vec()];
+        let element = Element::new_item(b"value".to_vec());
+        let info = PathKeyElementInfo::<0>::PathKeyElement((path, b"key".to_vec(), element));
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert_path_key_element_size() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let key_info_path = KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]);
+        let key_info = KeyInfo::KnownKey(b"key".to_vec());
+        let element = Element::new_item(b"value".to_vec());
+        let info = PathKeyElementInfo::<0>::PathKeyElementSize((key_info_path, key_info, element));
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_insert_unknown_element_size_returns_error() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let key_info_path = KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]);
+        let key_info = KeyInfo::KnownKey(b"key".to_vec());
+        let info = PathKeyElementInfo::<0>::PathKeyUnknownElementSize((key_info_path, key_info, 8));
+        let result = drive.batch_insert_v0(info, &mut ops);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_insert_fixed_size_key_ref_element() {
+        let drive = setup_drive(None);
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let element = Element::new_item(b"value".to_vec());
+        let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((path, b"key", element));
+        drive
+            .batch_insert_v0(info, &mut ops)
+            .expect("expected operation to succeed");
+        assert_eq!(ops.len(), 1);
+    }
+}

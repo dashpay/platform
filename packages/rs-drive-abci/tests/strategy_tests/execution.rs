@@ -975,6 +975,7 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
+    let mut shielded_state: Option<crate::strategy::ShieldedState> = None;
 
     for block_height in block_start..(block_start + block_count) {
         let state = platform.state.load();
@@ -1023,6 +1024,7 @@ pub(crate) fn continue_chain_for_strategy(
             &mut signer,
             &mut rng,
             &instant_lock_quorums,
+            &mut shielded_state,
         );
 
         state_transitions_per_block.insert(block_height, state_transitions.clone());

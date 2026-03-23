@@ -2092,4 +2092,1699 @@ mod tests {
         let res = clause.validate_against_schema(doc_type);
         assert!(res.is_valid());
     }
+
+    // ---- WhereOperator::allows_flip ----
+
+    #[test]
+    fn allows_flip_returns_true_for_comparison_operators() {
+        assert!(Equal.allows_flip());
+        assert!(GreaterThan.allows_flip());
+        assert!(GreaterThanOrEquals.allows_flip());
+        assert!(LessThan.allows_flip());
+        assert!(LessThanOrEquals.allows_flip());
+    }
+
+    #[test]
+    fn allows_flip_returns_false_for_non_flippable_operators() {
+        assert!(!Between.allows_flip());
+        assert!(!BetweenExcludeBounds.allows_flip());
+        assert!(!BetweenExcludeLeft.allows_flip());
+        assert!(!BetweenExcludeRight.allows_flip());
+        assert!(!In.allows_flip());
+        assert!(!super::StartsWith.allows_flip());
+    }
+
+    // ---- WhereOperator::flip ----
+
+    #[test]
+    fn flip_equal_stays_equal() {
+        assert_eq!(Equal.flip().unwrap(), Equal);
+    }
+
+    #[test]
+    fn flip_greater_than_becomes_less_than() {
+        assert_eq!(GreaterThan.flip().unwrap(), LessThan);
+    }
+
+    #[test]
+    fn flip_greater_than_or_equals_becomes_less_than_or_equals() {
+        assert_eq!(GreaterThanOrEquals.flip().unwrap(), LessThanOrEquals);
+    }
+
+    #[test]
+    fn flip_less_than_becomes_greater_than() {
+        assert_eq!(LessThan.flip().unwrap(), GreaterThan);
+    }
+
+    #[test]
+    fn flip_less_than_or_equals_becomes_greater_than_or_equals() {
+        assert_eq!(LessThanOrEquals.flip().unwrap(), GreaterThanOrEquals);
+    }
+
+    #[test]
+    fn flip_between_returns_error() {
+        assert!(Between.flip().is_err());
+    }
+
+    #[test]
+    fn flip_between_exclude_bounds_returns_error() {
+        assert!(BetweenExcludeBounds.flip().is_err());
+    }
+
+    #[test]
+    fn flip_between_exclude_left_returns_error() {
+        assert!(BetweenExcludeLeft.flip().is_err());
+    }
+
+    #[test]
+    fn flip_between_exclude_right_returns_error() {
+        assert!(BetweenExcludeRight.flip().is_err());
+    }
+
+    #[test]
+    fn flip_in_returns_error() {
+        assert!(In.flip().is_err());
+    }
+
+    #[test]
+    fn flip_starts_with_returns_error() {
+        assert!(super::StartsWith.flip().is_err());
+    }
+
+    // ---- WhereOperator::is_range ----
+
+    #[test]
+    fn is_range_false_for_equal() {
+        assert!(!Equal.is_range());
+    }
+
+    #[test]
+    fn is_range_true_for_all_range_operators() {
+        assert!(GreaterThan.is_range());
+        assert!(GreaterThanOrEquals.is_range());
+        assert!(LessThan.is_range());
+        assert!(LessThanOrEquals.is_range());
+        assert!(Between.is_range());
+        assert!(BetweenExcludeBounds.is_range());
+        assert!(BetweenExcludeLeft.is_range());
+        assert!(BetweenExcludeRight.is_range());
+        assert!(In.is_range());
+        assert!(super::StartsWith.is_range());
+    }
+
+    // ---- WhereOperator::from_string ----
+
+    #[test]
+    fn from_string_parses_equality_operators() {
+        use super::WhereOperator;
+        assert_eq!(WhereOperator::from_string("="), Some(Equal));
+        assert_eq!(WhereOperator::from_string("=="), Some(Equal));
+    }
+
+    #[test]
+    fn from_string_parses_comparison_operators() {
+        use super::WhereOperator;
+        assert_eq!(WhereOperator::from_string(">"), Some(GreaterThan));
+        assert_eq!(WhereOperator::from_string(">="), Some(GreaterThanOrEquals));
+        assert_eq!(WhereOperator::from_string("<"), Some(LessThan));
+        assert_eq!(WhereOperator::from_string("<="), Some(LessThanOrEquals));
+    }
+
+    #[test]
+    fn from_string_parses_between_variants() {
+        use super::WhereOperator;
+        assert_eq!(WhereOperator::from_string("Between"), Some(Between));
+        assert_eq!(WhereOperator::from_string("between"), Some(Between));
+        assert_eq!(
+            WhereOperator::from_string("BetweenExcludeBounds"),
+            Some(BetweenExcludeBounds)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenExcludeBounds"),
+            Some(BetweenExcludeBounds)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenexcludebounds"),
+            Some(BetweenExcludeBounds)
+        );
+        assert_eq!(
+            WhereOperator::from_string("between_exclude_bounds"),
+            Some(BetweenExcludeBounds)
+        );
+        assert_eq!(
+            WhereOperator::from_string("BetweenExcludeLeft"),
+            Some(BetweenExcludeLeft)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenExcludeLeft"),
+            Some(BetweenExcludeLeft)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenexcludeleft"),
+            Some(BetweenExcludeLeft)
+        );
+        assert_eq!(
+            WhereOperator::from_string("between_exclude_left"),
+            Some(BetweenExcludeLeft)
+        );
+        assert_eq!(
+            WhereOperator::from_string("BetweenExcludeRight"),
+            Some(BetweenExcludeRight)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenExcludeRight"),
+            Some(BetweenExcludeRight)
+        );
+        assert_eq!(
+            WhereOperator::from_string("betweenexcluderight"),
+            Some(BetweenExcludeRight)
+        );
+        assert_eq!(
+            WhereOperator::from_string("between_exclude_right"),
+            Some(BetweenExcludeRight)
+        );
+    }
+
+    #[test]
+    fn from_string_parses_in_operator() {
+        use super::WhereOperator;
+        assert_eq!(WhereOperator::from_string("In"), Some(In));
+        assert_eq!(WhereOperator::from_string("in"), Some(In));
+    }
+
+    #[test]
+    fn from_string_parses_starts_with_operator() {
+        use super::WhereOperator;
+        assert_eq!(
+            WhereOperator::from_string("StartsWith"),
+            Some(super::StartsWith)
+        );
+        assert_eq!(
+            WhereOperator::from_string("startsWith"),
+            Some(super::StartsWith)
+        );
+        assert_eq!(
+            WhereOperator::from_string("startswith"),
+            Some(super::StartsWith)
+        );
+        assert_eq!(
+            WhereOperator::from_string("starts_with"),
+            Some(super::StartsWith)
+        );
+    }
+
+    #[test]
+    fn from_string_returns_none_for_unknown() {
+        use super::WhereOperator;
+        assert_eq!(WhereOperator::from_string("LIKE"), None);
+        assert_eq!(WhereOperator::from_string("!="), None);
+        assert_eq!(WhereOperator::from_string(""), None);
+    }
+
+    // ---- WhereOperator::from_sql_operator ----
+
+    #[test]
+    fn from_sql_operator_maps_known_operators() {
+        use super::WhereOperator;
+        use sqlparser::ast::BinaryOperator;
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::Eq),
+            Some(Equal)
+        );
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::Gt),
+            Some(GreaterThan)
+        );
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::GtEq),
+            Some(GreaterThanOrEquals)
+        );
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::Lt),
+            Some(LessThan)
+        );
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::LtEq),
+            Some(LessThanOrEquals)
+        );
+    }
+
+    #[test]
+    fn from_sql_operator_returns_none_for_unsupported() {
+        use super::WhereOperator;
+        use sqlparser::ast::BinaryOperator;
+        assert_eq!(
+            WhereOperator::from_sql_operator(BinaryOperator::NotEq),
+            None
+        );
+        assert_eq!(WhereOperator::from_sql_operator(BinaryOperator::Plus), None);
+    }
+
+    // ---- WhereOperator::eval ----
+
+    #[test]
+    fn eval_equal_matches_identical_values() {
+        assert!(Equal.eval(&Value::I64(42), &Value::I64(42)));
+        assert!(!Equal.eval(&Value::I64(42), &Value::I64(43)));
+    }
+
+    #[test]
+    fn eval_greater_than() {
+        assert!(GreaterThan.eval(&Value::I64(10), &Value::I64(5)));
+        assert!(!GreaterThan.eval(&Value::I64(5), &Value::I64(10)));
+        assert!(!GreaterThan.eval(&Value::I64(5), &Value::I64(5)));
+    }
+
+    #[test]
+    fn eval_greater_than_or_equals() {
+        assert!(GreaterThanOrEquals.eval(&Value::I64(10), &Value::I64(5)));
+        assert!(GreaterThanOrEquals.eval(&Value::I64(5), &Value::I64(5)));
+        assert!(!GreaterThanOrEquals.eval(&Value::I64(4), &Value::I64(5)));
+    }
+
+    #[test]
+    fn eval_less_than() {
+        assert!(LessThan.eval(&Value::I64(3), &Value::I64(5)));
+        assert!(!LessThan.eval(&Value::I64(5), &Value::I64(3)));
+        assert!(!LessThan.eval(&Value::I64(5), &Value::I64(5)));
+    }
+
+    #[test]
+    fn eval_less_than_or_equals() {
+        assert!(LessThanOrEquals.eval(&Value::I64(3), &Value::I64(5)));
+        assert!(LessThanOrEquals.eval(&Value::I64(5), &Value::I64(5)));
+        assert!(!LessThanOrEquals.eval(&Value::I64(6), &Value::I64(5)));
+    }
+
+    #[test]
+    fn eval_in_with_array() {
+        let arr = Value::Array(vec![Value::I64(1), Value::I64(2), Value::I64(3)]);
+        assert!(In.eval(&Value::I64(2), &arr));
+        assert!(!In.eval(&Value::I64(4), &arr));
+    }
+
+    #[test]
+    fn eval_in_with_bytes() {
+        let bytes = Value::Bytes(vec![10, 20, 30]);
+        assert!(In.eval(&Value::U8(20), &bytes));
+        assert!(!In.eval(&Value::U8(40), &bytes));
+        // Non-U8 value against Bytes should return false
+        assert!(!In.eval(&Value::I64(20), &bytes));
+    }
+
+    #[test]
+    fn eval_in_with_non_collection_returns_false() {
+        assert!(!In.eval(&Value::I64(1), &Value::I64(1)));
+    }
+
+    #[test]
+    fn eval_between_inclusive() {
+        let bounds = Value::Array(vec![Value::I64(10), Value::I64(20)]);
+        assert!(Between.eval(&Value::I64(10), &bounds));
+        assert!(Between.eval(&Value::I64(15), &bounds));
+        assert!(Between.eval(&Value::I64(20), &bounds));
+        assert!(!Between.eval(&Value::I64(9), &bounds));
+        assert!(!Between.eval(&Value::I64(21), &bounds));
+    }
+
+    #[test]
+    fn eval_between_exclude_bounds() {
+        let bounds = Value::Array(vec![Value::I64(10), Value::I64(20)]);
+        assert!(!BetweenExcludeBounds.eval(&Value::I64(10), &bounds));
+        assert!(BetweenExcludeBounds.eval(&Value::I64(15), &bounds));
+        assert!(!BetweenExcludeBounds.eval(&Value::I64(20), &bounds));
+    }
+
+    #[test]
+    fn eval_between_exclude_left() {
+        let bounds = Value::Array(vec![Value::I64(10), Value::I64(20)]);
+        assert!(!BetweenExcludeLeft.eval(&Value::I64(10), &bounds));
+        assert!(BetweenExcludeLeft.eval(&Value::I64(15), &bounds));
+        assert!(BetweenExcludeLeft.eval(&Value::I64(20), &bounds));
+    }
+
+    #[test]
+    fn eval_between_exclude_right() {
+        let bounds = Value::Array(vec![Value::I64(10), Value::I64(20)]);
+        assert!(BetweenExcludeRight.eval(&Value::I64(10), &bounds));
+        assert!(BetweenExcludeRight.eval(&Value::I64(15), &bounds));
+        assert!(!BetweenExcludeRight.eval(&Value::I64(20), &bounds));
+    }
+
+    #[test]
+    fn eval_between_with_wrong_bound_order_returns_false() {
+        // Bounds in descending order should not match anything
+        let bounds = Value::Array(vec![Value::I64(20), Value::I64(10)]);
+        assert!(!Between.eval(&Value::I64(15), &bounds));
+        assert!(!BetweenExcludeBounds.eval(&Value::I64(15), &bounds));
+        assert!(!BetweenExcludeLeft.eval(&Value::I64(15), &bounds));
+        assert!(!BetweenExcludeRight.eval(&Value::I64(15), &bounds));
+    }
+
+    #[test]
+    fn eval_between_with_non_array_returns_false() {
+        assert!(!Between.eval(&Value::I64(5), &Value::I64(10)));
+    }
+
+    #[test]
+    fn eval_between_with_wrong_array_len_returns_false() {
+        let single = Value::Array(vec![Value::I64(10)]);
+        assert!(!Between.eval(&Value::I64(10), &single));
+    }
+
+    #[test]
+    fn eval_starts_with_text() {
+        assert!(super::StartsWith.eval(
+            &Value::Text("hello world".to_string()),
+            &Value::Text("hello".to_string())
+        ));
+        assert!(!super::StartsWith.eval(
+            &Value::Text("hello world".to_string()),
+            &Value::Text("world".to_string())
+        ));
+    }
+
+    #[test]
+    fn eval_starts_with_non_text_returns_false() {
+        assert!(!super::StartsWith.eval(&Value::I64(123), &Value::Text("1".to_string())));
+        assert!(!super::StartsWith.eval(&Value::Text("hello".to_string()), &Value::I64(1)));
+    }
+
+    // ---- WhereOperator Display ----
+
+    #[test]
+    fn display_formatting_for_all_operators() {
+        assert_eq!(format!("{}", Equal), "=");
+        assert_eq!(format!("{}", GreaterThan), ">");
+        assert_eq!(format!("{}", GreaterThanOrEquals), ">=");
+        assert_eq!(format!("{}", LessThan), "<");
+        assert_eq!(format!("{}", LessThanOrEquals), "<=");
+        assert_eq!(format!("{}", Between), "Between");
+        assert_eq!(format!("{}", BetweenExcludeBounds), "BetweenExcludeBounds");
+        assert_eq!(format!("{}", BetweenExcludeLeft), "BetweenExcludeLeft");
+        assert_eq!(format!("{}", BetweenExcludeRight), "BetweenExcludeRight");
+        assert_eq!(format!("{}", In), "In");
+        assert_eq!(format!("{}", super::StartsWith), "StartsWith");
+    }
+
+    // ---- WhereOperator -> Value conversion ----
+
+    #[test]
+    fn where_operator_into_value() {
+        let val: Value = Equal.into();
+        assert_eq!(val, Value::Text("=".to_string()));
+
+        let val: Value = In.into();
+        assert_eq!(val, Value::Text("In".to_string()));
+    }
+
+    // ---- WhereClause::is_identifier ----
+
+    #[test]
+    fn is_identifier_returns_true_for_dollar_id() {
+        let clause = WhereClause {
+            field: "$id".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        assert!(clause.is_identifier());
+    }
+
+    #[test]
+    fn is_identifier_returns_false_for_other_fields() {
+        let clause = WhereClause {
+            field: "name".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        assert!(!clause.is_identifier());
+
+        let clause = WhereClause {
+            field: "$ownerId".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        assert!(!clause.is_identifier());
+    }
+
+    // ---- WhereClause::in_values ----
+
+    #[test]
+    fn in_values_with_array() {
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
+        };
+        let result = clause.in_values();
+        assert!(result.is_valid());
+        let data = result.into_data().expect("should have data");
+        assert_eq!(data.len(), 2);
+    }
+
+    #[test]
+    fn in_values_with_bytes() {
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::Bytes(vec![10, 20]),
+        };
+        let result = clause.in_values();
+        assert!(result.is_valid());
+        let data = result.into_data().expect("should have data");
+        assert_eq!(data.len(), 2);
+        assert_eq!(data[0], Value::U8(10));
+        assert_eq!(data[1], Value::U8(20));
+    }
+
+    #[test]
+    fn in_values_non_array_returns_error() {
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::I64(42),
+        };
+        let result = clause.in_values();
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn in_values_empty_array_returns_error() {
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::Array(vec![]),
+        };
+        let result = clause.in_values();
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn in_values_too_many_returns_error() {
+        let values: Vec<Value> = (0..101).map(|i| Value::I64(i)).collect();
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::Array(values),
+        };
+        let result = clause.in_values();
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn in_values_with_duplicates_returns_error() {
+        let clause = WhereClause {
+            field: "f".to_string(),
+            operator: In,
+            value: Value::Array(vec![Value::I64(1), Value::I64(1)]),
+        };
+        let result = clause.in_values();
+        assert!(!result.is_valid());
+    }
+
+    // ---- WhereClause::less_than ----
+
+    #[test]
+    fn less_than_with_i128_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I128(5),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I128(10),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+        assert!(a.less_than(&b, true).unwrap());
+        assert!(!b.less_than(&a, false).unwrap());
+        assert!(a.less_than(&a, true).unwrap()); // le
+        assert!(!a.less_than(&a, false).unwrap()); // lt
+    }
+
+    #[test]
+    fn less_than_with_u128_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U128(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U128(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+        assert!(!b.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_i64_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I64(-5),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I64(10),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_u64_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U64(3),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U64(7),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_i32_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I32(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I32(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_u32_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U32(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U32(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_i16_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I16(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I16(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+        assert!(a.less_than(&b, true).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_u16_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U16(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U16(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_i8_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I8(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I8(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_u8_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U8(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U8(2),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_bytes_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Bytes(vec![1, 2]),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Bytes(vec![1, 3]),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_float_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Float(1.5),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Float(2.5),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+        assert!(a.less_than(&b, true).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_text_values() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Text("abc".to_string()),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Text("xyz".to_string()),
+        };
+        assert!(a.less_than(&b, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_with_mismatched_types_returns_error() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Text("abc".to_string()),
+        };
+        assert!(a.less_than(&b, false).is_err());
+    }
+
+    // ---- WhereClause::from_components ----
+
+    #[test]
+    fn from_components_valid_clause() {
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::Text("=".to_string()),
+            Value::Text("alice".to_string()),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.field, "name");
+        assert_eq!(clause.operator, Equal);
+        assert_eq!(clause.value, Value::Text("alice".to_string()));
+    }
+
+    #[test]
+    fn from_components_wrong_count_returns_error() {
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::Text("=".to_string()),
+        ];
+        assert!(WhereClause::from_components(&components).is_err());
+
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::Text("=".to_string()),
+            Value::I64(1),
+            Value::I64(2),
+        ];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    #[test]
+    fn from_components_non_string_field_returns_error() {
+        let components = vec![Value::I64(123), Value::Text("=".to_string()), Value::I64(1)];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    #[test]
+    fn from_components_non_string_operator_returns_error() {
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::I64(1),
+            Value::I64(1),
+        ];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    #[test]
+    fn from_components_unknown_operator_returns_error() {
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::Text("LIKE".to_string()),
+            Value::I64(1),
+        ];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    #[test]
+    fn from_components_with_in_operator() {
+        let components = vec![
+            Value::Text("status".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![Value::I64(1), Value::I64(2)]),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, In);
+    }
+
+    #[test]
+    fn from_components_with_starts_with_operator() {
+        let components = vec![
+            Value::Text("name".to_string()),
+            Value::Text("startsWith".to_string()),
+            Value::Text("alice".to_string()),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, super::StartsWith);
+    }
+
+    // ---- WhereClause -> Value conversion ----
+
+    #[test]
+    fn where_clause_into_value() {
+        let clause = WhereClause {
+            field: "name".to_string(),
+            operator: Equal,
+            value: Value::Text("alice".to_string()),
+        };
+        let val: Value = clause.into();
+        match val {
+            Value::Array(arr) => {
+                assert_eq!(arr.len(), 3);
+                assert_eq!(arr[0], Value::Text("name".to_string()));
+                assert_eq!(arr[1], Value::Text("=".to_string()));
+                assert_eq!(arr[2], Value::Text("alice".to_string()));
+            }
+            _ => panic!("expected Array"),
+        }
+    }
+
+    // ---- ValueClause::matches_value ----
+
+    #[test]
+    fn value_clause_matches_value_equal() {
+        let clause = ValueClause {
+            operator: Equal,
+            value: Value::I64(42),
+        };
+        assert!(clause.matches_value(&Value::I64(42)));
+        assert!(!clause.matches_value(&Value::I64(43)));
+    }
+
+    #[test]
+    fn value_clause_matches_value_greater_than() {
+        let clause = ValueClause {
+            operator: GreaterThan,
+            value: Value::I64(10),
+        };
+        assert!(clause.matches_value(&Value::I64(20)));
+        assert!(!clause.matches_value(&Value::I64(5)));
+    }
+
+    #[test]
+    fn value_clause_matches_value_in() {
+        let clause = ValueClause {
+            operator: In,
+            value: Value::Array(vec![Value::I64(1), Value::I64(2), Value::I64(3)]),
+        };
+        assert!(clause.matches_value(&Value::I64(2)));
+        assert!(!clause.matches_value(&Value::I64(4)));
+    }
+
+    #[test]
+    fn value_clause_matches_value_starts_with() {
+        let clause = ValueClause {
+            operator: super::StartsWith,
+            value: Value::Text("hello".to_string()),
+        };
+        assert!(clause.matches_value(&Value::Text("hello world".to_string())));
+        assert!(!clause.matches_value(&Value::Text("world hello".to_string())));
+    }
+
+    // ---- WhereClause::matches_value ----
+
+    #[test]
+    fn where_clause_matches_value_delegates_to_eval() {
+        let clause = WhereClause {
+            field: "age".to_string(),
+            operator: GreaterThanOrEquals,
+            value: Value::I64(18),
+        };
+        assert!(clause.matches_value(&Value::I64(18)));
+        assert!(clause.matches_value(&Value::I64(25)));
+        assert!(!clause.matches_value(&Value::I64(17)));
+    }
+
+    // ---- group_clauses: additional coverage ----
+
+    #[test]
+    fn group_clauses_empty_input() {
+        let clauses: Vec<WhereClause> = vec![];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).expect("empty should succeed");
+        assert!(eq.is_empty());
+        assert!(range.is_none());
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_single_equality() {
+        let clauses = vec![WhereClause {
+            field: "name".to_string(),
+            operator: Equal,
+            value: Value::Text("alice".to_string()),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(eq.len(), 1);
+        assert!(eq.contains_key("name"));
+        assert!(range.is_none());
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_equality_on_id_is_excluded_from_equals() {
+        let clauses = vec![WhereClause {
+            field: "$id".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        // $id equality is excluded from the equal_clauses map
+        assert!(eq.is_empty());
+        assert!(range.is_none());
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_in_on_id_is_excluded_from_in_clause() {
+        let clauses = vec![WhereClause {
+            field: "$id".to_string(),
+            operator: In,
+            value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_none());
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_single_in() {
+        let clauses = vec![WhereClause {
+            field: "status".to_string(),
+            operator: In,
+            value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_none());
+        assert!(in_c.is_some());
+        assert_eq!(in_c.unwrap().field, "status");
+    }
+
+    #[test]
+    fn group_clauses_multiple_in_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "a".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(1)]),
+            },
+            WhereClause {
+                field: "b".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(2)]),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_in_same_field_as_equality_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "status".to_string(),
+                operator: Equal,
+                value: Value::I64(1),
+            },
+            WhereClause {
+                field: "status".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(2)]),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_duplicate_equality_same_field_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "name".to_string(),
+                operator: Equal,
+                value: Value::Text("alice".to_string()),
+            },
+            WhereClause {
+                field: "name".to_string(),
+                operator: Equal,
+                value: Value::Text("bob".to_string()),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_single_range_operator() {
+        let clauses = vec![WhereClause {
+            field: "age".to_string(),
+            operator: GreaterThan,
+            value: Value::I64(18),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_some());
+        assert_eq!(range.unwrap().operator, GreaterThan);
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_single_non_groupable_range_between() {
+        let clauses = vec![WhereClause {
+            field: "age".to_string(),
+            operator: Between,
+            value: Value::Array(vec![Value::Float(0.0), Value::Float(100.0)]),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_some());
+        assert_eq!(range.unwrap().operator, Between);
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_starts_with_empty_string_returns_error() {
+        let clauses = vec![WhereClause {
+            field: "name".to_string(),
+            operator: super::StartsWith,
+            value: Value::Text("".to_string()),
+        }];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_starts_with_valid_string() {
+        let clauses = vec![WhereClause {
+            field: "name".to_string(),
+            operator: super::StartsWith,
+            value: Value::Text("al".to_string()),
+        }];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert!(eq.is_empty());
+        assert!(range.is_some());
+        assert_eq!(range.unwrap().operator, super::StartsWith);
+        assert!(in_c.is_none());
+    }
+
+    #[test]
+    fn group_clauses_non_groupable_range_same_field_as_equality_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "name".to_string(),
+                operator: Equal,
+                value: Value::Text("alice".to_string()),
+            },
+            WhereClause {
+                field: "name".to_string(),
+                operator: super::StartsWith,
+                value: Value::Text("al".to_string()),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_multiple_non_groupable_ranges_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "a".to_string(),
+                operator: Between,
+                value: Value::Array(vec![Value::Float(0.0), Value::Float(10.0)]),
+            },
+            WhereClause {
+                field: "b".to_string(),
+                operator: super::StartsWith,
+                value: Value::Text("x".to_string()),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_mixed_groupable_and_non_groupable_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "a".to_string(),
+                operator: GreaterThan,
+                value: Value::Float(0.0),
+            },
+            WhereClause {
+                field: "b".to_string(),
+                operator: Between,
+                value: Value::Array(vec![Value::Float(0.0), Value::Float(10.0)]),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_three_groupable_ranges_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "a".to_string(),
+                operator: GreaterThan,
+                value: Value::Float(0.0),
+            },
+            WhereClause {
+                field: "a".to_string(),
+                operator: LessThan,
+                value: Value::Float(10.0),
+            },
+            WhereClause {
+                field: "a".to_string(),
+                operator: GreaterThanOrEquals,
+                value: Value::Float(5.0),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_range_same_field_as_equality_returns_error() {
+        let clauses = vec![
+            WhereClause {
+                field: "age".to_string(),
+                operator: Equal,
+                value: Value::I64(25),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThan,
+                value: Value::I64(18),
+            },
+        ];
+        assert!(WhereClause::group_clauses(&clauses).is_err());
+    }
+
+    #[test]
+    fn group_clauses_two_ranges_combined_into_between() {
+        let clauses = vec![
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThanOrEquals,
+                value: Value::Float(10.0),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: LessThanOrEquals,
+                value: Value::Float(20.0),
+            },
+        ];
+        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        let r = range.unwrap();
+        assert_eq!(r.operator, Between);
+        assert_eq!(r.field, "age");
+    }
+
+    #[test]
+    fn group_clauses_two_ranges_combined_into_between_exclude_right() {
+        let clauses = vec![
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThanOrEquals,
+                value: Value::Float(10.0),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: LessThan,
+                value: Value::Float(20.0),
+            },
+        ];
+        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(range.unwrap().operator, BetweenExcludeRight);
+    }
+
+    #[test]
+    fn group_clauses_two_ranges_combined_into_between_exclude_left() {
+        let clauses = vec![
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThan,
+                value: Value::Float(10.0),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: LessThanOrEquals,
+                value: Value::Float(20.0),
+            },
+        ];
+        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(range.unwrap().operator, BetweenExcludeLeft);
+    }
+
+    #[test]
+    fn group_clauses_two_ranges_combined_into_between_exclude_bounds() {
+        let clauses = vec![
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThan,
+                value: Value::Float(10.0),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: LessThan,
+                value: Value::Float(20.0),
+            },
+        ];
+        let (_, range, _) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(range.unwrap().operator, BetweenExcludeBounds);
+    }
+
+    #[test]
+    fn group_clauses_equality_plus_in_on_different_fields() {
+        let clauses = vec![
+            WhereClause {
+                field: "name".to_string(),
+                operator: Equal,
+                value: Value::Text("alice".to_string()),
+            },
+            WhereClause {
+                field: "status".to_string(),
+                operator: In,
+                value: Value::Array(vec![Value::I64(1), Value::I64(2)]),
+            },
+        ];
+        let (eq, _, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(eq.len(), 1);
+        assert!(in_c.is_some());
+    }
+
+    #[test]
+    fn group_clauses_equality_plus_range_on_different_fields() {
+        let clauses = vec![
+            WhereClause {
+                field: "name".to_string(),
+                operator: Equal,
+                value: Value::Text("alice".to_string()),
+            },
+            WhereClause {
+                field: "age".to_string(),
+                operator: GreaterThan,
+                value: Value::Float(18.0),
+            },
+        ];
+        let (eq, range, in_c) = WhereClause::group_clauses(&clauses).unwrap();
+        assert_eq!(eq.len(), 1);
+        assert!(range.is_some());
+        assert!(in_c.is_none());
+    }
+
+    // ---- meta_field_property_type ----
+
+    #[test]
+    fn meta_field_property_type_all_identifiers() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        for field in ["$id", "$ownerId", "$dataContractId", "$creatorId"] {
+            let pt = meta_field_property_type(field);
+            assert!(
+                matches!(pt, Some(DocumentPropertyType::Identifier)),
+                "expected Identifier for {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn meta_field_property_type_dates() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        for field in ["$createdAt", "$updatedAt", "$transferredAt"] {
+            let pt = meta_field_property_type(field);
+            assert!(
+                matches!(pt, Some(DocumentPropertyType::Date)),
+                "expected Date for {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn meta_field_property_type_block_heights() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        for field in [
+            "$createdAtBlockHeight",
+            "$updatedAtBlockHeight",
+            "$transferredAtBlockHeight",
+        ] {
+            let pt = meta_field_property_type(field);
+            assert!(
+                matches!(pt, Some(DocumentPropertyType::U64)),
+                "expected U64 for {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn meta_field_property_type_core_block_heights() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        for field in [
+            "$createdAtCoreBlockHeight",
+            "$updatedAtCoreBlockHeight",
+            "$transferredAtCoreBlockHeight",
+        ] {
+            let pt = meta_field_property_type(field);
+            assert!(
+                matches!(pt, Some(DocumentPropertyType::U32)),
+                "expected U32 for {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn meta_field_property_type_revision_and_protocol_version() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(matches!(
+            meta_field_property_type("$revision"),
+            Some(DocumentPropertyType::U64)
+        ));
+        assert!(matches!(
+            meta_field_property_type("$protocolVersion"),
+            Some(DocumentPropertyType::U64)
+        ));
+    }
+
+    #[test]
+    fn meta_field_property_type_type_field() {
+        use super::meta_field_property_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(matches!(
+            meta_field_property_type("$type"),
+            Some(DocumentPropertyType::String(_))
+        ));
+    }
+
+    #[test]
+    fn meta_field_property_type_unknown_returns_none() {
+        use super::meta_field_property_type;
+
+        assert!(meta_field_property_type("unknown").is_none());
+        assert!(meta_field_property_type("$nonexistent").is_none());
+    }
+
+    // ---- allowed_ops_for_type ----
+
+    #[test]
+    fn allowed_ops_for_numeric_types_include_ranges() {
+        use super::allowed_ops_for_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        for ty in [
+            DocumentPropertyType::U8,
+            DocumentPropertyType::I8,
+            DocumentPropertyType::U16,
+            DocumentPropertyType::I16,
+            DocumentPropertyType::U32,
+            DocumentPropertyType::I32,
+            DocumentPropertyType::U64,
+            DocumentPropertyType::I64,
+            DocumentPropertyType::U128,
+            DocumentPropertyType::I128,
+            DocumentPropertyType::F64,
+            DocumentPropertyType::Date,
+        ] {
+            let ops = allowed_ops_for_type(&ty);
+            assert!(ops.contains(&Equal), "numeric type should allow Equal");
+            assert!(ops.contains(&In), "numeric type should allow In");
+            assert!(
+                ops.contains(&GreaterThan),
+                "numeric type should allow GreaterThan"
+            );
+            assert!(ops.contains(&Between), "numeric type should allow Between");
+            assert!(
+                !ops.contains(&super::StartsWith),
+                "numeric type should not allow StartsWith"
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_ops_for_string_includes_starts_with() {
+        use super::allowed_ops_for_type;
+        use dpp::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+
+        let ty = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        let ops = allowed_ops_for_type(&ty);
+        assert!(ops.contains(&super::StartsWith));
+        assert!(ops.contains(&Equal));
+        assert!(ops.contains(&In));
+        assert!(ops.contains(&GreaterThan));
+    }
+
+    #[test]
+    fn allowed_ops_for_identifier_only_equal_and_in() {
+        use super::allowed_ops_for_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let ops = allowed_ops_for_type(&DocumentPropertyType::Identifier);
+        assert_eq!(ops, &[Equal, In]);
+    }
+
+    #[test]
+    fn allowed_ops_for_boolean_only_equal() {
+        use super::allowed_ops_for_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let ops = allowed_ops_for_type(&DocumentPropertyType::Boolean);
+        assert_eq!(ops, &[Equal]);
+    }
+
+    #[test]
+    fn allowed_ops_for_object_is_empty() {
+        use super::allowed_ops_for_type;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let ops = allowed_ops_for_type(&DocumentPropertyType::Object(Default::default()));
+        assert!(ops.is_empty());
+    }
+
+    // ---- value_shape_ok ----
+
+    #[test]
+    fn value_shape_ok_equal_always_true() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        // Equal accepts any value shape
+        assert!(WhereOperator::Equal.value_shape_ok(&Value::I64(1), &DocumentPropertyType::U64));
+        assert!(WhereOperator::Equal
+            .value_shape_ok(&Value::Text("x".into()), &DocumentPropertyType::Boolean));
+    }
+
+    #[test]
+    fn value_shape_ok_in_requires_array_or_bytes() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(WhereOperator::In.value_shape_ok(
+            &Value::Array(vec![Value::I64(1)]),
+            &DocumentPropertyType::U64
+        ));
+        assert!(WhereOperator::In.value_shape_ok(&Value::Bytes(vec![1]), &DocumentPropertyType::U8));
+        assert!(!WhereOperator::In.value_shape_ok(&Value::I64(1), &DocumentPropertyType::U64));
+    }
+
+    #[test]
+    fn value_shape_ok_starts_with_requires_text() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+
+        let str_ty = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        assert!(WhereOperator::StartsWith.value_shape_ok(&Value::Text("abc".into()), &str_ty));
+        assert!(!WhereOperator::StartsWith.value_shape_ok(&Value::I64(1), &str_ty));
+    }
+
+    #[test]
+    fn value_shape_ok_range_for_f64_requires_numeric() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(WhereOperator::GreaterThan
+            .value_shape_ok(&Value::Float(1.0), &DocumentPropertyType::F64));
+        assert!(
+            WhereOperator::GreaterThan.value_shape_ok(&Value::I64(1), &DocumentPropertyType::F64)
+        );
+        assert!(!WhereOperator::GreaterThan
+            .value_shape_ok(&Value::Text("x".into()), &DocumentPropertyType::F64));
+    }
+
+    #[test]
+    fn value_shape_ok_range_for_string_requires_text() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+
+        let str_ty = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+        assert!(WhereOperator::LessThan.value_shape_ok(&Value::Text("a".into()), &str_ty));
+        assert!(!WhereOperator::LessThan.value_shape_ok(&Value::I64(1), &str_ty));
+    }
+
+    #[test]
+    fn value_shape_ok_range_for_integer_requires_integer() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(
+            WhereOperator::GreaterThan.value_shape_ok(&Value::U64(1), &DocumentPropertyType::U64)
+        );
+        assert!(
+            WhereOperator::GreaterThan.value_shape_ok(&Value::I32(1), &DocumentPropertyType::I32)
+        );
+        assert!(!WhereOperator::GreaterThan
+            .value_shape_ok(&Value::Float(1.0), &DocumentPropertyType::U64));
+        assert!(!WhereOperator::GreaterThan
+            .value_shape_ok(&Value::Text("x".into()), &DocumentPropertyType::U64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_requires_array_of_two() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let good = Value::Array(vec![Value::I64(1), Value::I64(10)]);
+        assert!(WhereOperator::Between.value_shape_ok(&good, &DocumentPropertyType::I64));
+
+        let bad_len = Value::Array(vec![Value::I64(1)]);
+        assert!(!WhereOperator::Between.value_shape_ok(&bad_len, &DocumentPropertyType::I64));
+
+        let not_array = Value::I64(5);
+        assert!(!WhereOperator::Between.value_shape_ok(&not_array, &DocumentPropertyType::I64));
+
+        // All between variants
+        assert!(
+            WhereOperator::BetweenExcludeBounds.value_shape_ok(&good, &DocumentPropertyType::I64)
+        );
+        assert!(WhereOperator::BetweenExcludeLeft.value_shape_ok(&good, &DocumentPropertyType::I64));
+        assert!(
+            WhereOperator::BetweenExcludeRight.value_shape_ok(&good, &DocumentPropertyType::I64)
+        );
+    }
+
+    // ---- validate_against_schema: additional coverage ----
+
+    #[test]
+    fn validate_rejects_unknown_field() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "nonexistentField".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_rejects_disallowed_operator_for_boolean() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        // Boolean only allows Equal, not GreaterThan -- but we need a boolean field.
+        // Check if we can use a meta field or if there is one in the doc type.
+        // $type is a String, so let's validate that startsWith is allowed for $type
+        let clause = WhereClause {
+            field: "$type".to_string(),
+            operator: super::StartsWith,
+            value: Value::Text("nice".to_string()),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_valid());
+    }
+
+    #[test]
+    fn validate_rejects_starts_with_empty_string() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$type".to_string(),
+            operator: super::StartsWith,
+            value: Value::Text("".to_string()),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+        assert!(matches!(
+            res.first_error(),
+            Some(QuerySyntaxError::StartsWithIllegalString(_))
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_in_with_empty_array() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$ownerId".to_string(),
+            operator: In,
+            value: Value::Array(vec![]),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_rejects_in_with_duplicates() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$ownerId".to_string(),
+            operator: In,
+            value: Value::Array(vec![
+                Value::Identifier([1u8; 32]),
+                Value::Identifier([1u8; 32]),
+            ]),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_rejects_between_with_descending_bounds() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("uniqueDates")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: Between,
+            value: Value::Array(vec![Value::U64(2000), Value::U64(1000)]),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+        assert!(matches!(
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidBetweenClause(_))
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_range_operator_not_allowed_for_identifier() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$ownerId".to_string(),
+            operator: GreaterThan,
+            value: Value::Identifier([1u8; 32]),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_valid_integer_equality() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$revision".to_string(),
+            operator: Equal,
+            value: Value::U64(5),
+        };
+        let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_valid());
+    }
 }

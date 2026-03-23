@@ -84,7 +84,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 48] = [
+    const VERSIONED_REQUESTS: [&str; 56] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -123,6 +123,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesRequest",
         "GetTokenContractInfoRequest",
         "GetTokenStatusesRequest",
+        "GetTokenPreProgrammedDistributionsRequest",
         "GetTokenTotalSupplyRequest",
         "GetGroupInfoRequest",
         "GetGroupInfosRequest",
@@ -133,11 +134,24 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosRequest",
         "GetRecentAddressBalanceChangesRequest",
         "GetRecentCompactedAddressBalanceChangesRequest",
+        "GetShieldedEncryptedNotesRequest",
+        "GetShieldedAnchorsRequest",
+        "GetMostRecentShieldedAnchorRequest",
+        "GetShieldedPoolStateRequest",
+        "GetShieldedNullifiersRequest",
+        "GetRecentNullifierChangesRequest",
+        "GetRecentCompactedNullifierChangesRequest",
     ];
 
-    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 2] = [
+        "GetAddressesTrunkStateRequest",
+        "GetNullifiersTrunkStateRequest",
+    ];
 
-    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesBranchStateRequest"];
+    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 2] = [
+        "GetAddressesBranchStateRequest",
+        "GetNullifiersBranchStateRequest",
+    ];
 
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
@@ -147,7 +161,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 46] = [
+    const VERSIONED_RESPONSES: [&str; 54] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -184,6 +198,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesResponse",
         "GetTokenContractInfoResponse",
         "GetTokenStatusesResponse",
+        "GetTokenPreProgrammedDistributionsResponse",
         "GetTokenTotalSupplyResponse",
         "GetGroupInfoResponse",
         "GetGroupInfosResponse",
@@ -194,11 +209,24 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosResponse",
         "GetRecentAddressBalanceChangesResponse",
         "GetRecentCompactedAddressBalanceChangesResponse",
+        "GetShieldedEncryptedNotesResponse",
+        "GetShieldedAnchorsResponse",
+        "GetMostRecentShieldedAnchorResponse",
+        "GetShieldedPoolStateResponse",
+        "GetShieldedNullifiersResponse",
+        "GetRecentNullifierChangesResponse",
+        "GetRecentCompactedNullifierChangesResponse",
     ];
 
-    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 2] = [
+        "GetAddressesTrunkStateResponse",
+        "GetNullifiersTrunkStateResponse",
+    ];
 
-    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesBranchStateResponse"];
+    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 2] = [
+        "GetAddressesBranchStateResponse",
+        "GetNullifiersBranchStateResponse",
+    ];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
@@ -288,6 +316,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
         .field_attribute("public_key_hash", SERDE_WITH_BYTES)
         .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
+        .field_attribute("nullifiers", SERDE_WITH_BASE64)
         // Get documents fields
         .field_attribute("data_contract_id", SERDE_WITH_BYTES)
         .field_attribute("where", SERDE_WITH_BYTES)

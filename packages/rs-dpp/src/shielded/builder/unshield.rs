@@ -64,6 +64,12 @@ pub fn build_unshield_transition<P: OrchardProver>(
                 f, min_fee
             )));
         }
+        Some(f) if f > min_fee.saturating_mul(1000) => {
+            return Err(ProtocolError::ShieldedBuildError(format!(
+                "fee {} exceeds 1000x the minimum fee {}",
+                f, min_fee
+            )));
+        }
         Some(f) => f,
         None => min_fee,
     };
@@ -80,8 +86,11 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // Unshield extra_data = output_address.to_bytes()
-    let extra_sighash_data = output_address.to_bytes();
+    // Unshield extra_data = output_address || value_balance (le bytes)
+    // value_balance = unshield_amount + fee, becomes v0.unshielding_amount in the state transition
+    // Must match server-side sighash in shielded_proof.rs
+    let mut extra_sighash_data = output_address.to_bytes();
+    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
 
     let bundle = build_spend_bundle(
         spends,
@@ -147,6 +156,48 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(
             err.contains("below minimum required fee"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unshield_fee_above_upper_bound() {
+        let platform_version = PlatformVersion::latest();
+        let change_address = test_orchard_address();
+        let output_address = PlatformAddress::P2pkh([1u8; 20]);
+
+        let note = test_spendable_note(u64::MAX);
+        let spends = vec![note];
+
+        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
+            .expect("valid spending key bytes");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+
+        // Compute the minimum fee so we can exceed the 1000x bound
+        let num_actions = 1usize;
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+        let excessive_fee = min_fee.saturating_mul(1000) + 1;
+
+        let result = build_unshield_transition(
+            spends,
+            output_address,
+            100,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            Some(excessive_fee),
+            platform_version,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds 1000x the minimum fee"),
             "unexpected error: {}",
             err
         );

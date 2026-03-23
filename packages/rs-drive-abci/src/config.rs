@@ -9,7 +9,6 @@ use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -288,11 +287,14 @@ where
 {
     let network_name = String::deserialize(deserializer)?;
 
-    match network_name.as_str() {
-        "mainnet" => Ok(Network::Mainnet),
-        "local" => Ok(Network::Regtest),
-        _ => Network::from_str(network_name.as_str())
-            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
+    match network_name.to_lowercase().as_str() {
+        "dash" | "mainnet" | "main" => Ok(Network::Mainnet),
+        "local" | "regtest" => Ok(Network::Regtest),
+        "testnet" | "test" => Ok(Network::Testnet),
+        "devnet" | "dev" => Ok(Network::Devnet),
+        _ => Err(serde::de::Error::custom(format!(
+            "can't parse network name: unknown network '{network_name}'"
+        ))),
     }
 }
 

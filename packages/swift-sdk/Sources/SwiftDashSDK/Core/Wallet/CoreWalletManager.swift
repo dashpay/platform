@@ -12,42 +12,20 @@ import DashSDKFFI
 @MainActor
 public class CoreWalletManager: ObservableObject {
     @Published public private(set) var wallets: [HDWallet] = []
-    @Published public private(set) var currentWallet: HDWallet?
-    @Published public private(set) var isLoading = false
     @Published public private(set) var error: WalletError?
 
     // SDK wallet manager - this is the real wallet manager from the SDK
-    private let sdkWalletManager: SwiftDashSDK.WalletManager
+    private let sdkWalletManager: WalletManager
     private let modelContainer: ModelContainer
     private let storage = WalletStorage()
 
-    // Services (initialize in WalletService when SPV is available)
-    var transactionService: TransactionService?
-
-    /// Initialize with an SDK wallet manager
-    /// - Parameters:
-    ///   - sdkWalletManager: The SDK wallet manager from SwiftDashSDK
-    ///   - modelContainer: SwiftData model container for persistence
-    init(sdkWalletManager: SwiftDashSDK.WalletManager, modelContainer: ModelContainer? = nil) throws {
+    /// Initialize with a valid SPVClient instance
+    init(spvClient: SPVClient, modelContainer: ModelContainer) throws {
         print("=== WalletManager.init START ===")
 
-        self.sdkWalletManager = sdkWalletManager
+        self.sdkWalletManager = try spvClient.getWalletManager()
+        self.modelContainer = modelContainer
 
-        if let container = modelContainer {
-            print("Using provided ModelContainer")
-            self.modelContainer = container
-        } else {
-            do {
-                print("Creating ModelContainer...")
-                self.modelContainer = try ModelContainer(for: HDWallet.self, HDAccount.self, HDAddress.self, HDUTXO.self, HDTransaction.self)
-                print("✅ ModelContainer created")
-            } catch {
-                print("❌ Failed to create ModelContainer: \(error)")
-                throw error
-            }
-        }
-
-        // Note: TransactionService is created in WalletService once SPV/UTXO context exists
         print("=== WalletManager.init SUCCESS ===")
 
         Task {
@@ -56,29 +34,13 @@ public class CoreWalletManager: ObservableObject {
     }
 
     // MARK: - Wallet Management
-    func createWallet(label: String, mnemonic: String? = nil, pin: String, isImport: Bool = false) async throws -> HDWallet {
+    public func createWallet(label: String, mnemonic: String, pin: String, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
-        isLoading = true
-        defer { isLoading = false }
 
-        // Generate or validate mnemonic using SDK
-        let finalMnemonic: String
-        if let mnemonic = mnemonic {
-            print("Validating provided mnemonic...")
-            guard SwiftDashSDK.Mnemonic.validate(mnemonic) else {
-                print("Mnemonic validation failed")
-                throw WalletError.invalidMnemonic
-            }
-            finalMnemonic = mnemonic
-        } else {
-            print("Generating new mnemonic...")
-            do {
-                finalMnemonic = try SwiftDashSDK.Mnemonic.generate(wordCount: 12)
-                // Do not log mnemonic to console
-            } catch {
-                print("Failed to generate mnemonic: \(error)")
-                throw WalletError.seedGenerationFailed
-            }
+        print("Validating provided mnemonic...")
+        guard SwiftDashSDK.Mnemonic.validate(mnemonic) else {
+            print("Mnemonic validation failed")
+            throw WalletError.invalidMnemonic
         }
 
         // Add wallet through SDK (with bitfield networks) and capture serialized bytes for persistence
@@ -87,13 +49,11 @@ public class CoreWalletManager: ObservableObject {
         do {
             // Calculate birthHeight based on wallet type
             // For imported wallets: use 730k for mainnet, 0 for test/devnets (need to sync from genesis)
-            // For new wallets: use 0 to signal "use latest checkpoint" (FFI interprets 0 as None)
             let birthHeight: UInt32
             if isImport {
                 // Imported wallet should sync from a reasonable historical point
-                birthHeight = sdkWalletManager.network == .mainnet ? 730_000 : 1 // Use 1 instead of 0 to avoid "latest checkpoint" interpretation
+                birthHeight = sdkWalletManager.network == .mainnet ? 730_000 : 0
             } else {
-                // New wallet: pass 0 to use latest checkpoint (FFI converts 0 -> None -> latest)
                 birthHeight = 0
             }
 
@@ -101,7 +61,7 @@ public class CoreWalletManager: ObservableObject {
 
             // Add wallet using SDK's WalletManager with combined network bitfield and serialize
             let result = try sdkWalletManager.addWalletAndSerialize(
-                mnemonic: finalMnemonic,
+                mnemonic: mnemonic,
                 passphrase: nil,
                 birthHeight: birthHeight,
                 accountOptions: .default,
@@ -112,45 +72,47 @@ public class CoreWalletManager: ObservableObject {
             serializedBytes = result.serializedWallet
 
             print("Wallet added with ID: \(walletId.hexString)")
+
+            // Ensure a DIP-17 Platform Payment account is created for BLAST sync
+            do {
+                try sdkWalletManager.ensurePlatformPaymentAccount(walletId: walletId)
+                print("Platform payment account ensured for wallet \(walletId.hexString)")
+            } catch {
+                print("Warning: Failed to create platform payment account: \(error)")
+                // Non-fatal — wallet still works without platform addresses
+            }
         } catch {
             print("Failed to add wallet: \(error)")
             throw WalletError.walletError("Failed to add wallet: \(error.localizedDescription)")
         }
 
         // Create HDWallet model for SwiftUI
-        let appNetwork = AppNetwork(network: sdkWalletManager.network)
-        let wallet = HDWallet(label: label, network: appNetwork, isImported: isImport)
-        wallet.walletId = walletId
+        let network = AppNetwork(network: sdkWalletManager.network)
+        let wallet = HDWallet(walletId: walletId, serializedWalletBytes: serializedBytes, label: label, network: network, isImported: isImport)
 
-        // Persist serialized wallet bytes for restoration on next launch
-        wallet.serializedWalletBytes = serializedBytes
-
-        // Store encrypted seed (if needed for UI purposes)
         do {
-            let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: finalMnemonic)
-            let encryptedSeed = try storage.storeSeed(seed, pin: pin)
-            wallet.encryptedSeed = encryptedSeed
+            let seed = try SwiftDashSDK.Mnemonic.toSeed(mnemonic: mnemonic)
+            _ = try storage.storeSeed(seed, pin: pin)
         } catch {
             print("Failed to store seed: \(error)")
             // Continue anyway - wallet is already created
         }
 
-        // Insert wallet into context
+        // Insert wallet into context ans save it
         modelContainer.mainContext.insert(wallet)
-
-        // Create default account model
-        _ = wallet.createAccount(at: 0)
-
-        // Sync complete wallet state from Rust managed info
-        try await syncWalletFromManagedInfo(for: wallet)
-
-        // Save to database
         try modelContainer.mainContext.save()
 
-        await loadWallets()
-        currentWallet = wallet
-
         return wallet
+    }
+
+    public func deleteWallet(_ wallet: HDWallet) async throws {
+        let walletId = wallet.id
+
+        wallets.removeAll(where: { $0.id == walletId })
+
+        // Now safe to delete from SwiftData (cascade will delete accounts/addresses)
+        modelContainer.mainContext.delete(wallet)
+        try modelContainer.mainContext.save()
     }
 
     func importWallet(label: String, network: AppNetwork, mnemonic: String, pin: String) async throws -> HDWallet {
@@ -160,64 +122,12 @@ public class CoreWalletManager: ObservableObject {
         return wallet
     }
 
-    /// Restore a wallet from serialized bytes via SDK
-    public func restoreWalletFromBytes(_ walletBytes: Data) throws -> Data {
-        try sdkWalletManager.importWallet(from: walletBytes)
-    }
-
-    /// Sync wallet data using SwiftDashSDK wrappers (no direct FFI in app)
-    private func syncWalletFromManagedInfo(for wallet: HDWallet) async throws {
-        guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
-
-        for account in wallet.accounts {
-            if let managed = collection.getBIP44Account(at: account.accountNumber) {
-                if let bal = try? managed.getBalance() {
-                    account.confirmedBalance = bal.confirmed
-                    account.unconfirmedBalance = bal.unconfirmed
-                }
-                if let pool = managed.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 20) {
-                    account.externalAddresses.removeAll()
-                    for info in infos {
-                        let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .external, account: account)
-                        hd.isUsed = info.used
-                        modelContainer.mainContext.insert(hd)
-                        account.externalAddresses.append(hd)
-                    }
-                    account.externalAddressIndex = UInt32(infos.count)
-                }
-                if let pool = managed.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 10) {
-                    account.internalAddresses.removeAll()
-                    for info in infos {
-                        let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .internal, account: account)
-                        hd.isUsed = info.used
-                        modelContainer.mainContext.insert(hd)
-                        account.internalAddresses.append(hd)
-                    }
-                    account.internalAddressIndex = UInt32(infos.count)
-                }
-            }
-        }
-    }
-
-    // Removed: replaced by syncAccountAddresses(using SDK)
-
-    public func unlockWallet(with pin: String) async throws -> Data {
-        return try storage.retrieveSeed(pin: pin)
-    }
-
     public func decryptSeed(_ encryptedSeed: Data?) -> Data? {
         // This method is used internally by other services
         // In a real implementation, this would decrypt using the current PIN
         // For now, return nil to indicate manual unlock is needed
         return nil
     }
-
-    /// Get wallet IDs via SDK wrapper
-    func getWalletIds() throws -> [Data] { try sdkWalletManager.getWalletIds() }
-
-    /// Get wallet balance via SDK wrapper
-    func getWalletBalance(walletId: Data) throws -> (confirmed: UInt64, unconfirmed: UInt64) { try sdkWalletManager.getWalletBalance(walletId: walletId) }
 
     public func changeWalletPIN(currentPIN: String, newPIN: String) async throws {
         // Retrieve seed with current PIN
@@ -239,84 +149,75 @@ public class CoreWalletManager: ObservableObject {
         return try storage.retrieveSeedWithBiometric()
     }
 
-    func createWatchOnlyWallet(label: String, extendedPublicKey: String) async throws -> HDWallet {
-        isLoading = true
-        defer { isLoading = false }
-
-        let appNetwork = AppNetwork(network: sdkWalletManager.network)
-        let wallet = HDWallet(label: label, network: appNetwork, isWatchOnly: true)
-
-        // Create account with extended public key
-        let account = wallet.createAccount(at: 0)
-        account.extendedPublicKey = extendedPublicKey
-
-        // Generate addresses from extended public key
-        try await generateWatchOnlyAddresses(for: account, count: 20, type: .external)
-        try await generateWatchOnlyAddresses(for: account, count: 10, type: .internal)
-
-        // Save to database
-        modelContainer.mainContext.insert(wallet)
-        try modelContainer.mainContext.save()
-
-        await loadWallets()
-        currentWallet = wallet
-
-        return wallet
-    }
-
-    public func deleteWallet(_ wallet: HDWallet) async throws {
-        let walletId = wallet.id
-
-        // Update observable state FIRST to prevent UI from accessing deleted relationships
-        // This prevents the "Never access a full future backing data" crash
-        if currentWallet?.id == walletId {
-            currentWallet = wallets.first(where: { $0.id != walletId })
-        }
-        wallets.removeAll(where: { $0.id == walletId })
-
-        // Now safe to delete from SwiftData (cascade will delete accounts/addresses)
-        modelContainer.mainContext.delete(wallet)
-        try modelContainer.mainContext.save()
-
-        // Reload to ensure consistency
-        await loadWallets()
-    }
-
-    // MARK: - Transaction Management
+    // MARK: - Account Management
 
     /// Get transactions for a wallet
     /// - Parameters:
     ///   - wallet: The wallet to get transactions for
     ///   - accountIndex: The account index (default 0)
     /// - Returns: Array of wallet transactions
-    public func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
-        guard let walletId = wallet.walletId else {
-            throw WalletError.walletError("Wallet ID not available")
-        }
-
+    public func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) -> [WalletTransaction] {
         // Get managed account
-        let managedAccount = try sdkWalletManager.getManagedAccount(
-            walletId: walletId,
+        let managedAccount = try! sdkWalletManager.getManagedAccount(
+            walletId: wallet.walletId,
             accountIndex: accountIndex,
             accountType: .standardBIP44
         )
 
-        // Get current height (TODO: get from SPV client when available)
-        let currentHeight: UInt32 = 0
-
-        return try managedAccount.getTransactions(currentHeight: currentHeight)
+        return managedAccount.getTransactions()
     }
 
-    // MARK: - Account Management
+    public func getBalance(for wallet: HDWallet) -> Balance {
+        let accounts = self.getAccounts(for: wallet)
 
+        var confirmed: UInt64 = 0
+        var unconfirmed: UInt64 = 0
+        var immature: UInt64 = 0
+        var locked: UInt64 = 0
+
+        for account in accounts {
+            confirmed += account.balance.confirmed
+            unconfirmed += account.balance.unconfirmed
+            immature += account.balance.immature
+            locked += account.balance.locked
+        }
+
+        return Balance(
+            confirmed: confirmed,
+            unconfirmed: unconfirmed,
+            immature: immature,
+            locked: locked
+        )
+    }
+
+    public func getReceiveAddress(for wallet: HDWallet, accountIndex: UInt32 = 0) -> String {
+        return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
+    }
+
+    /// Ensure a DIP-17 Platform Payment account exists for the given wallet.
+    public func ensurePlatformPaymentAccount(for wallet: HDWallet) throws {
+        try sdkWalletManager.ensurePlatformPaymentAccount(walletId: wallet.walletId)
+    }
+
+    /// Get platform payment addresses for BLAST sync.
+    /// Returns (derivation index, address key) tuples from the DIP-17 address pool.
+    public func getPlatformAddresses(for wallet: HDWallet) throws -> [(index: UInt32, key: Data)] {
+        return try sdkWalletManager.getPlatformAddresses(walletId: wallet.walletId)
+    }
+
+    /// Get the managed account collection for a wallet.
+    public func getManagedAccountCollection(for wallet: HDWallet) -> ManagedAccountCollection? {
+        return sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    }
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
     ///   - accountInfo: The account info to get details for
     /// - Returns: Detailed account information
-    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
-        guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
+    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) -> AccountDetailInfo? {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+
+        guard let collection else { return nil }
 
         // Resolve managed account from category and optional index
         var managed: ManagedAccount?
@@ -389,9 +290,8 @@ public class CoreWalletManager: ObservableObject {
 
     /// Derive a private key as WIF from seed using a specific path (deferred to SDK)
     public func derivePrivateKeyAsWIF(for wallet: HDWallet, accountInfo: AccountInfo, addressIndex: UInt32) async throws -> String {
-        guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
         // Obtain a non-owning Wallet wrapper from manager
-        guard let sdkWallet = try sdkWalletManager.getWallet(id: walletId) else {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: wallet.walletId) else {
             throw WalletError.walletError("Wallet not found in manager")
         }
 
@@ -470,26 +370,11 @@ public class CoreWalletManager: ObservableObject {
     /// - Parameters:
     ///   - wallet: The wallet model
     /// - Returns: Account information including balances and address counts
-    public func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
-        guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let collection: ManagedAccountCollection
-        do {
-            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
-        } catch let err as KeyWalletError {
-            // If the managed wallet info isn't found (e.g., after fresh start), try restoring from serialized bytes
-            if case .notFound = err, let bytes = wallet.serializedWalletBytes {
-                do {
-                    let restoredId = try sdkWalletManager.importWallet(from: bytes)
-                    if wallet.walletId != restoredId { wallet.walletId = restoredId }
-                    // Retry once after import
-                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!)
-                } catch {
-                    throw err
-                }
-            } else {
-                throw err
-            }
-        }
+    public func getAccounts(for wallet: HDWallet) -> [AccountInfo] {
+        let collection = sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+
+        guard let collection else { return [] }
+
         var list: [AccountInfo] = []
 
         func counts(_ m: ManagedAccount) -> (Int, Int) {
@@ -502,63 +387,63 @@ public class CoreWalletManager: ObservableObject {
         // BIP44
         for idx in collection.getBIP44Indices() {
             if let m = collection.getBIP44Account(at: idx) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip44, index: idx, label: "Account \(idx)", balance: b, addressCount: c))
             }
         }
         // BIP32 (5000+)
         for raw in collection.getBIP32Indices() {
             if let m = collection.getBIP32Account(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 let c = counts(m)
-                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (c.0, c.1), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .bip32, index: raw, label: "BIP32 \(raw)", balance: b, addressCount: c))
             }
         }
         // CoinJoin (1000+)
         for raw in collection.getCoinJoinIndices() {
             if let m = collection.getCoinJoinAccount(at: raw) {
-                let b = try? m.getBalance()
+                let b = m.getBalance()
                 var total = 0
                 if let p = m.getAddressPool(type: .single), let infos = try? p.getAddresses(from: 0, to: 1000) { total = infos.count }
-                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (total, 0), nextReceiveAddress: nil))
+                list.append(AccountInfo(category: .coinjoin, index: raw, label: "CoinJoin \(raw)", balance: b, addressCount: (total, 0)))
             }
         }
         // Identity accounts
         if let m = collection.getIdentityRegistrationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityRegistration, label: "Identity Registration", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityInvitationAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityInvitation, label: "Identity Invitation", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getIdentityTopUpNotBoundAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .identityTopupNotBound, label: "Identity Topup (Not Bound)", balance: b, addressCount: (0, 0)))
         }
         for raw in collection.getIdentityTopUpIndices() {
             if let m = collection.getIdentityTopUpAccount(registrationIndex: raw) {
-                let b = try? m.getBalance()
-                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+                let b = m.getBalance()
+                list.append(AccountInfo(category: .identityTopup, index: raw, label: "Identity Topup \(raw)", balance: b, addressCount: (0, 0)))
             }
         }
         // Provider
         if let m = collection.getProviderVotingKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerVotingKeys, label: "Provider Voting Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOwnerKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOwnerKeys, label: "Provider Owner Keys", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderOperatorKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerOperatorKeys, label: "Provider Operator Keys (BLS)", balance: b, addressCount: (0, 0)))
         }
         if let m = collection.getProviderPlatformKeysAccount() {
-            let b = try? m.getBalance()
-            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: (b?.confirmed ?? 0, b?.unconfirmed ?? 0), addressCount: (0, 0), nextReceiveAddress: nil))
+            let b = m.getBalance()
+            list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: b, addressCount: (0, 0)))
         }
 
         // Sort BIP44 by index first, then other types below
@@ -571,258 +456,40 @@ public class CoreWalletManager: ObservableObject {
         return list
     }
 
-    public func createAccount(in wallet: HDWallet) async throws -> HDAccount {
-        guard !wallet.isWatchOnly else {
-            throw WalletError.watchOnlyWallet
-        }
-
-        // Note: The FFI wallet manager handles account creation internally
-        // We're just creating UI models here to track them
-        let accountIndex = UInt32(wallet.accounts.count)
-        let account = wallet.createAccount(at: accountIndex)
-
-        // Sync complete wallet state from Rust managed info
-        try await syncWalletFromManagedInfo(for: wallet)
-
-        try modelContainer.mainContext.save()
-
-        return account
-    }
-
-    // MARK: - Address Management
-
-    func generateAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
-        // Refresh address lists from SDK-managed pools (SDK maintains state)
-        guard let wallet = account.wallet else { throw WalletError.walletError("No wallet for account") }
-        try await syncWalletFromManagedInfo(for: wallet)
-    }
-
-    private func generateWatchOnlyAddresses(for account: HDAccount, count: Int, type: AddressType) async throws {
-        // For watch-only wallets, we need to derive addresses from extended public key
-        // This would require implementing public key derivation
-        // For now, throw an error as this requires additional cryptographic operations
-        throw WalletError.notImplemented("Watch-only address generation")
-    }
-
-    func getUnusedAddress(for account: HDAccount, type: AddressType = .external) async throws -> HDAddress {
-        let addresses: [HDAddress]
-        switch type {
-        case .external:
-            addresses = account.externalAddresses
-        case .internal:
-            addresses = account.internalAddresses
-        case .coinJoin:
-            addresses = account.coinJoinAddresses
-        case .identity:
-            addresses = account.identityFundingAddresses
-        }
-
-        // Find first unused address
-        if let unusedAddress = addresses.first(where: { !$0.isUsed }) {
-            return unusedAddress
-        }
-
-        // Generate new addresses if all are used
-        try await generateAddresses(for: account, count: 10, type: type)
-
-        // Return the first newly generated address
-        guard let newAddress = addresses.first(where: { !$0.isUsed }) else {
-            throw WalletError.addressGenerationFailed
-        }
-
-        return newAddress
-    }
-
-    // MARK: - Balance Management
-
-    func updateBalance(for account: HDAccount) async {
-        guard let wallet = account.wallet,
-              let walletId = wallet.walletId else {
-            return
-        }
-
-        // Get balance via SDK wrappers
-        do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
-            if let managed = collection.getBIP44Account(at: account.accountNumber) {
-                if let bal = try? managed.getBalance() {
-                    account.confirmedBalance = bal.confirmed
-                    account.unconfirmedBalance = bal.unconfirmed
-                    try? modelContainer.mainContext.save()
-                }
-            }
-        } catch {
-            print("Failed to update balance: \(error)")
-        }
-    }
-
-    /// Sync all wallet state from Rust WalletManager to SwiftData
-    /// This should be called whenever the Rust wallet state changes (e.g., after processing a transaction)
-    func syncWalletStateFromRust(for wallet: HDWallet) async {
-        guard let walletId = wallet.walletId else { return }
-
-        do {
-            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId)
-
-            // Sync all accounts
-            for account in wallet.accounts {
-                if let managed = collection.getBIP44Account(at: account.accountNumber) {
-                    // Sync balance from account
-                    if let bal = try? managed.getBalance() {
-                        account.confirmedBalance = bal.confirmed
-                        account.unconfirmedBalance = bal.unconfirmed
-                    }
-
-                    // Sync addresses (update isUsed flags and add new addresses)
-                    // Use 0 to 0 to get all addresses from the pool
-                    if let externalPool = managed.getExternalAddressPool() {
-                        if let infos = try? externalPool.getAddresses(from: 0, to: 0) {
-                            // Update existing addresses and add new ones if needed
-                            for info in infos {
-                                if let existingAddr = account.externalAddresses.first(where: { $0.address == info.address }) {
-                                    existingAddr.isUsed = info.used
-                                } else {
-                                    // New address discovered - add it
-                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .external, account: account)
-                                    hd.isUsed = info.used
-                                    modelContainer.mainContext.insert(hd)
-                                    account.externalAddresses.append(hd)
-                                }
-                            }
-                        }
-                    }
-
-                    if let internalPool = managed.getInternalAddressPool() {
-                        if let infos = try? internalPool.getAddresses(from: 0, to: 0) {
-                            for info in infos {
-                                if let existingAddr = account.internalAddresses.first(where: { $0.address == info.address }) {
-                                    existingAddr.isUsed = info.used
-                                } else {
-                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .internal, account: account)
-                                    hd.isUsed = info.used
-                                    modelContainer.mainContext.insert(hd)
-                                    account.internalAddresses.append(hd)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Save all changes to SwiftData
-            try modelContainer.mainContext.save()
-        } catch {
-            print("❌ [WalletManager] Failed to sync wallet state: \(error)")
-        }
-    }
-
-    // MARK: - Public Utility Methods
-
-    func reloadWallets() async {
-        await loadWallets()
-    }
-
-    /// Remove a wallet from the observable arrays without touching SwiftData
-    /// Call this BEFORE deleting from SwiftData to prevent UI from accessing deleted relationships
-    public func removeWalletFromObservableState(_ wallet: HDWallet) {
-        let walletId = wallet.id
-
-        // Update observable state to prevent UI from accessing deleted relationships
-        if currentWallet?.id == walletId {
-            currentWallet = wallets.first(where: { $0.id != walletId })
-        }
-        wallets.removeAll(where: { $0.id == walletId })
-    }
-
     // MARK: - Private Methods
 
     private func loadWallets() async {
+        var wallets: [HDWallet] = []
         do {
             let descriptor = FetchDescriptor<HDWallet>(sortBy: [SortDescriptor(\.createdAt)])
             wallets = try modelContainer.mainContext.fetch(descriptor)
-
-            // Restore each wallet to the FFI wallet manager
-            for wallet in wallets {
-                if let walletBytes = wallet.serializedWalletBytes {
-                    do {
-                        // Restore wallet to FFI and update the wallet ID
-                        let restoredWalletId = try restoreWalletFromBytes(walletBytes)
-
-                        // Update wallet ID if it changed (shouldn't happen, but good to verify)
-                        if wallet.walletId != restoredWalletId {
-                            print("Warning: Wallet ID changed during restoration. Old: \(wallet.walletId?.hexString ?? "nil"), New: \(restoredWalletId.hexString)")
-                            wallet.walletId = restoredWalletId
-                        }
-
-                        print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
-                    } catch {
-                        // Handle wallet format migration errors
-                        // The wallet serialization format changed from multi-network to single-network.
-                        // Old wallet bytes cannot be deserialized with the new format.
-                        let errorString = String(describing: error)
-                        let isFormatMigrationError = errorString.contains("UnexpectedVariant") ||
-                                                     errorString.contains("serialization") ||
-                                                     errorString.contains("deserialize") ||
-                                                     errorString.contains("Network")
-
-                        if isFormatMigrationError {
-                            print("⚠️ Wallet '\(wallet.label)' has incompatible serialization format (likely from old multi-network format).")
-                            print("   Clearing invalid serialized bytes. Please delete and re-import this wallet using your mnemonic.")
-                            print("   Error details: \(errorString)")
-
-                            // Clear the invalid serialized bytes so future loads don't keep failing
-                            wallet.serializedWalletBytes = nil
-                            // Mark wallet as needing recreation so UI can indicate this to user
-                            wallet.needsRecreation = true
-                        } else {
-                            print("Failed to restore wallet '\(wallet.label)': \(error)")
-                        }
-                        // Continue loading other wallets even if one fails
-                    }
-                } else {
-                    print("Warning: Wallet '\(wallet.label)' has no serialized bytes - cannot restore to FFI")
-                }
-            }
-
-            if currentWallet == nil, let firstWallet = wallets.first {
-                currentWallet = firstWallet
-            }
-
-            // Save any wallet ID updates
-            try? modelContainer.mainContext.save()
         } catch {
             self.error = WalletError.databaseError(error.localizedDescription)
+            return
         }
-    }
-}
 
+        // Try to import each wallet into the FFI wallet manager
+        // If it succeeds, we store the HDWallet for later querying. If it fails,
+        // we log the error and remove that wallet from the database.
+        for wallet in wallets {
+            do {
+                let restoredWalletId = try sdkWalletManager.importWallet(from: wallet.serializedWalletBytes)
 
-// MARK: - Keychain Wrapper
+                // Update wallet ID if it changed (shouldn't happen, but good to verify)
+                if wallet.walletId != restoredWalletId {
+                    print("Warning: Wallet ID changed during restoration. Old: \(wallet.walletId.hexString), New: \(restoredWalletId.hexString)")
+                    wallet.walletId = restoredWalletId
+                }
 
-private class KeychainWrapper {
-    func set(_ data: Data, forKey key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data
-        ]
+                self.wallets.append(wallet)
 
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
-    }
+                print("Successfully restored wallet '\(wallet.label)' to FFI wallet manager")
+            } catch {
+                modelContainer.mainContext.delete(wallet)
+            }
+        }
 
-    func data(forKey key: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        try? modelContainer.mainContext.save()
     }
 }
 

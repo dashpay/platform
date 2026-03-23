@@ -39,7 +39,6 @@
 //! ```
 
 mod provider;
-pub(crate) mod tracker;
 mod types;
 
 pub use provider::AddressProvider;
@@ -49,6 +48,9 @@ pub use types::{
 };
 
 use crate::error::Error;
+use crate::platform::trunk_branch_sync::{
+    self, BranchQueryParams, KeyLeafTracker, TrunkBranchSyncOps, TrunkQueryResponse,
+};
 use crate::platform::Fetch;
 use crate::sync::retry;
 use crate::Sdk;
@@ -56,31 +58,211 @@ use dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
     get_recent_address_balance_changes_request,
     get_recent_compacted_address_balance_changes_request, GetAddressesBranchStateRequest,
-    GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest, Proof,
 };
 use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
-use drive::grovedb::{
-    calculate_max_tree_depth_from_count, Element, GroveBranchQueryResult, GroveTrunkQueryResult,
-    LeafInfo,
-};
+use drive::drive::{Drive, RootTree};
+use drive::grovedb::{Element, GroveBranchQueryResult, GroveTrunkQueryResult};
 use drive_proof_verifier::types::{
     PlatformAddressTrunkState, RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
 };
-use futures::stream::{FuturesUnordered, StreamExt};
 use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
 };
-use std::collections::{BTreeSet, HashMap};
-use tracing::{debug, trace, warn};
-use tracker::KeyLeafTracker;
+use std::collections::HashMap;
+use tracing::{debug, info, trace};
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
-/// Server limit for recent address balance changes per request.
-const RECENT_BATCH_LIMIT: usize = 100;
+
+/// The subtree key for recent (per-block) address balances storage.
+/// Mirrors `drive::drive::saved_block_transactions::queries::ADDRESS_BALANCES_KEY_U8`
+/// which is gated behind the `server` feature.
+const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
+
+// ── Context type for the shared algorithm ────────────────────────────
+
+/// Mutable context carried through the trunk/branch tree scan for addresses.
+///
+/// This bundles the provider, the key-to-index lookup, and the result into a
+/// single struct so it can serve as `TrunkBranchSyncOps::Context`.
+struct AddressSyncContext<'a, P: AddressProvider> {
+    provider: &'a mut P,
+    key_to_index: &'a mut HashMap<AddressKey, AddressIndex>,
+    result: &'a mut AddressSyncResult,
+}
+
+// SAFETY: P: AddressProvider is Send (required by trait bound), and HashMap/AddressSyncResult are Send.
+unsafe impl<P: AddressProvider> Send for AddressSyncContext<'_, P> {}
+
+// ── TrunkBranchSyncOps implementation ────────────────────────────────
+
+/// Marker type for address sync operations, parameterized over the provider.
+struct AddressOps<P>(std::marker::PhantomData<P>);
+
+impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
+    type Context<'a>
+        = AddressSyncContext<'a, P>
+    where
+        P: 'a;
+
+    /// Address branch queries need no extra config beyond what's in the
+    /// standard parameters (key, depth, hash, checkpoint_height).
+    type BranchQueryConfig = ();
+
+    async fn execute_trunk_query(
+        sdk: &Sdk,
+        settings: RequestSettings,
+        context: &mut Self::Context<'_>,
+    ) -> Result<TrunkQueryResponse, Error> {
+        let (trunk_state, metadata) =
+            PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
+
+        context.result.metrics.trunk_queries += 1;
+
+        let trunk_state = trunk_state.ok_or_else(|| {
+            Error::InvalidProvedResponse("Trunk query returned no state".to_string())
+        })?;
+
+        context.result.metrics.total_elements_seen += trunk_state.elements.len();
+
+        trace!(
+            "Trunk query returned {} elements, {} leaf_keys",
+            trunk_state.elements.len(),
+            trunk_state.leaf_keys.len()
+        );
+
+        Ok(TrunkQueryResponse {
+            trunk: trunk_state.into_inner(),
+            height: metadata.height,
+            block_time_ms: metadata.time_ms,
+        })
+    }
+
+    fn process_trunk_result(
+        trunk_result: &GroveTrunkQueryResult,
+        context: &mut Self::Context<'_>,
+        tracker: &mut KeyLeafTracker,
+    ) -> Result<(), Error> {
+        let pending: Vec<(AddressIndex, AddressKey)> = context.provider.pending_addresses();
+
+        for (index, key) in pending {
+            if let Some(element) = trunk_result.elements.get(&key) {
+                let funds = AddressFunds::try_from(element)?;
+                context.result.found.insert((index, key.clone()), funds);
+                context.provider.on_address_found(index, &key, funds);
+            } else if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
+                tracker.add_key(key, leaf_key, info);
+            } else {
+                // Key is proven absent
+                context.result.absent.insert((index, key.clone()));
+                context.provider.on_address_absent(index, &key);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn branch_query_config(_context: &Self::Context<'_>) -> Self::BranchQueryConfig {}
+
+    async fn execute_single_branch_query(
+        sdk: &Sdk,
+        _config: &Self::BranchQueryConfig,
+        params: BranchQueryParams,
+        settings: RequestSettings,
+        platform_version: &PlatformVersion,
+    ) -> Result<GroveBranchQueryResult, Error> {
+        execute_address_branch_query(sdk, params, settings, platform_version).await
+    }
+
+    fn process_branch_result(
+        branch_result: &GroveBranchQueryResult,
+        queried_leaf_key: &[u8],
+        context: &mut Self::Context<'_>,
+        tracker: &mut KeyLeafTracker,
+    ) -> Result<(), Error> {
+        let target_keys = tracker.keys_for_leaf(queried_leaf_key);
+
+        for target_key in target_keys {
+            let index = context.key_to_index.get(&target_key).copied().unwrap_or(0);
+
+            if let Some(element) = branch_result.elements.get(&target_key) {
+                let funds = AddressFunds::try_from(element)?;
+                context
+                    .result
+                    .found
+                    .insert((index, target_key.clone()), funds);
+                context.provider.on_address_found(index, &target_key, funds);
+                tracker.key_found(&target_key);
+            } else if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key)
+            {
+                tracker.update_leaf(&target_key, new_leaf_key, info);
+            } else {
+                // Key is proven absent
+                context.result.absent.insert((index, target_key.clone()));
+                context.provider.on_address_absent(index, &target_key);
+                tracker.key_found(&target_key); // Remove from tracking
+            }
+        }
+        Ok(())
+    }
+
+    fn depth_limits(platform_version: &PlatformVersion) -> (u8, u8) {
+        (
+            platform_version
+                .drive
+                .methods
+                .address_funds
+                .address_funds_query_min_depth,
+            platform_version
+                .drive
+                .methods
+                .address_funds
+                .address_funds_query_max_depth,
+        )
+    }
+
+    fn after_branch_iteration(
+        trunk_result: &GroveTrunkQueryResult,
+        context: &mut Self::Context<'_>,
+        tracker: &mut KeyLeafTracker,
+    ) {
+        // Check if provider has extended pending addresses (gap limit behavior)
+        for (index, key) in context.provider.pending_addresses() {
+            if !context.key_to_index.contains_key(&key) {
+                context.key_to_index.insert(key.clone(), index);
+                // New key needs to be traced - it will be picked up in next iteration
+                if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
+                    tracker.add_key(key, leaf_key, info);
+                }
+            }
+        }
+    }
+
+    fn on_branch_query(context: &mut Self::Context<'_>) {
+        context.result.metrics.branch_queries += 1;
+    }
+
+    fn on_branch_failure(_context: &mut Self::Context<'_>) {
+        // Address sync did not track branch failures in the original code.
+    }
+
+    fn on_elements_seen(context: &mut Self::Context<'_>, count: usize) {
+        context.result.metrics.total_elements_seen += count;
+    }
+
+    fn on_iteration(context: &mut Self::Context<'_>, iteration: usize) {
+        context.result.metrics.iterations = iteration;
+    }
+
+    fn set_checkpoint_height(context: &mut Self::Context<'_>, height: u64) {
+        context.result.checkpoint_height = height;
+    }
+}
+
+// ── Public API ───────────────────────────────────────────────────────
 
 /// Synchronize address balances using trunk/branch chunk queries with
 /// incremental block-based catch-up.
@@ -110,7 +292,6 @@ pub async fn sync_address_balances<P: AddressProvider>(
     last_sync_timestamp: Option<u64>,
 ) -> Result<AddressSyncResult, Error> {
     let config = config.unwrap_or_default();
-    let platform_version = sdk.version();
 
     // Build the index -> key map for looking up indices when we find keys
     let mut key_to_index: HashMap<AddressKey, AddressIndex> = HashMap::new();
@@ -164,14 +345,19 @@ pub async fn sync_address_balances<P: AddressProvider>(
         }
         start_height
     } else {
-        // Full tree scan
-        let (scan_height, block_time_ms) = full_tree_scan(
-            sdk,
-            &config,
+        // Full tree scan via the shared algorithm
+        let mut context = AddressSyncContext {
             provider,
-            &mut key_to_index,
-            &mut result,
-            platform_version,
+            key_to_index: &mut key_to_index,
+            result: &mut result,
+        };
+        let (scan_height, block_time_ms) = trunk_branch_sync::run_full_tree_scan::<AddressOps<P>>(
+            sdk,
+            config.min_privacy_count,
+            config.max_iterations,
+            config.max_concurrent_requests,
+            config.request_settings,
+            &mut context,
         )
         .await?;
         // Seed timestamp from the trunk query (may be updated by incremental phase)
@@ -179,11 +365,16 @@ pub async fn sync_address_balances<P: AddressProvider>(
         scan_height
     };
 
-    // Incremental catch-up from catch_up_from to chain tip
+    // Incremental catch-up from catch_up_from to chain tip.
+    // Queries recent first to get a proof, then checks if the boundary height
+    // still exists in the recent tree. If it does, compacted is skipped.
+    // If not (compaction detected), compacted is fetched first, then recent applied.
+    let last_known_recent_block = provider.last_known_recent_block_height();
     incremental_catch_up(
         sdk,
         &key_to_index,
         catch_up_from,
+        last_known_recent_block,
         provider,
         &mut result,
         config.request_settings,
@@ -196,128 +387,42 @@ pub async fn sync_address_balances<P: AddressProvider>(
     Ok(result)
 }
 
-// ── Full tree scan ───────────────────────────────────────────────────
+// ── Incremental catch-up (address-specific) ──────────────────────────
 
-/// Perform the full trunk/branch tree scan.
+/// Perform incremental block-based catch-up using recent + (optionally) compacted
+/// address balance changes RPCs.
 ///
-/// Returns `(checkpoint_height, block_time_ms)` from the trunk query.
-async fn full_tree_scan<P: AddressProvider>(
-    sdk: &Sdk,
-    config: &AddressSyncConfig,
-    provider: &mut P,
-    key_to_index: &mut HashMap<AddressKey, AddressIndex>,
-    result: &mut AddressSyncResult,
-    platform_version: &PlatformVersion,
-) -> Result<(u64, u64), Error> {
-    // Step 1: Execute trunk query
-    let (trunk_result, checkpoint_height, block_time_ms) =
-        execute_trunk_query(sdk, config.request_settings, &mut result.metrics).await?;
-    result.checkpoint_height = checkpoint_height;
-
-    trace!(
-        "Trunk query returned {} elements, {} leaf_keys",
-        trunk_result.elements.len(),
-        trunk_result.leaf_keys.len()
-    );
-
-    // Step 2: Process trunk result
-    let mut tracker = KeyLeafTracker::new();
-    process_trunk_result(&trunk_result, provider, result, &mut tracker)?;
-
-    // Step 3: Iterative branch queries
-    let min_query_depth = platform_version
-        .drive
-        .methods
-        .address_funds
-        .address_funds_query_min_depth;
-    let max_query_depth = platform_version
-        .drive
-        .methods
-        .address_funds
-        .address_funds_query_max_depth;
-
-    let mut iterations = 0;
-    while !tracker.is_empty() && iterations < config.max_iterations {
-        iterations += 1;
-        result.metrics.iterations = iterations;
-
-        // Get leaves that need querying (apply privacy adjustment)
-        let leaves_to_query = get_privacy_adjusted_leaves(
-            &tracker,
-            &trunk_result,
-            config.min_privacy_count,
-            min_query_depth,
-            max_query_depth,
-        );
-
-        if leaves_to_query.is_empty() {
-            break;
-        }
-
-        debug!(
-            "Iteration {}: querying {} leaves for {} remaining keys",
-            iterations,
-            leaves_to_query.len(),
-            tracker.remaining_count()
-        );
-
-        // Execute branch queries in parallel
-        let branch_results = execute_branch_queries(
-            sdk,
-            &leaves_to_query,
-            checkpoint_height,
-            &mut result.metrics,
-            config.max_concurrent_requests,
-            config.request_settings,
-            platform_version,
-        )
-        .await?;
-
-        // Process branch results
-        for (leaf_key, branch_result) in branch_results {
-            process_branch_result(
-                &branch_result,
-                &leaf_key,
-                provider,
-                key_to_index,
-                result,
-                &mut tracker,
-            )?;
-        }
-
-        // Check if provider has extended pending addresses (gap limit behavior)
-        for (index, key) in provider.pending_addresses() {
-            if !key_to_index.contains_key(&key) {
-                key_to_index.insert(key.clone(), index);
-                // New key needs to be traced - it will be picked up in next iteration
-                if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
-                    tracker.add_key(key, leaf_key, info);
-                }
-            }
-        }
-    }
-
-    if iterations >= config.max_iterations {
-        warn!(
-            "Address sync reached max iterations ({}) with {} keys remaining",
-            config.max_iterations,
-            tracker.remaining_count()
-        );
-    }
-
-    Ok((checkpoint_height, block_time_ms))
-}
-
-// ── Incremental catch-up ─────────────────────────────────────────────
-
-/// Perform incremental block-based catch-up using compacted + recent address
-/// balance changes RPCs.
+/// The function queries recent changes **first** to obtain a GroveDB proof, then
+/// uses [`Drive::verify_key_exists_as_boundary`] to check whether the boundary
+/// height still exists in the recent address balances tree. If it does, the
+/// compacted phase is skipped entirely -- this is the common hot path for
+/// frequent 15-second re-syncs where only the recent zone has changed.
 ///
-/// Updates `result.found` with new balance values and sets `result.new_sync_height`.
+/// When `last_known_recent_block > 0`, the recent query uses **exclusive start**
+/// (`RangeAfter`) with that height. This causes the height to appear as a
+/// **boundary node** in the proof, which `key_exists_as_boundary` can detect.
+/// When `last_known_recent_block == 0`, the query falls back to inclusive start
+/// (`RangeFrom` on `start_height`) and the boundary check is skipped (compacted
+/// phase always runs).
+///
+/// - **Phase 1 (recent, always first)**: Single non-paginated query via
+///   `fetch_with_metadata_and_proof`. The recent (uncompacted) zone covers at
+///   most 64 blocks, well under the server limit of 100 entries per request.
+///
+/// - **Phase 2 (compacted, conditional)**: Paginated query (25-entry batches)
+///   covering the compacted range. Only runs when the boundary check detects that
+///   the cursor height was compacted away.
+///
+/// - **Phase 3 (apply recent)**: The recent results fetched in Phase 1 are applied
+///   after the (optional) compacted phase.
+///
+/// Updates `result.found` with new balance values and sets `result.new_sync_height`
+/// and `result.last_known_recent_block`.
 async fn incremental_catch_up<P: AddressProvider>(
     sdk: &Sdk,
     key_to_index: &HashMap<AddressKey, AddressIndex>,
     start_height: u64,
+    last_known_recent_block: u64,
     provider: &mut P,
     result: &mut AddressSyncResult,
     settings: RequestSettings,
@@ -330,150 +435,224 @@ async fn incremental_catch_up<P: AddressProvider>(
         .collect();
 
     let mut current_height = start_height;
-    let mut had_successful_query = false;
+    let mut observed_tip_height = start_height;
 
-    // Phase 1 — Compacted (historical) catch-up
-    loop {
-        let request = GetRecentCompactedAddressBalanceChangesRequest {
-            version: Some(
-                get_recent_compacted_address_balance_changes_request::Version::V0(
-                    get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
-                        start_block_height: current_height,
-                        prove: true,
-                    },
-                ),
-            ),
+    // Phase 1 — Query recent changes first (with proof for compaction detection)
+    //
+    // When we have a last_known_recent_block from a previous sync, use
+    // exclusive start (RangeAfter) so the boundary node appears in the proof.
+    // Otherwise fall back to inclusive start (RangeFrom) on start_height.
+    let use_exclusive_start = last_known_recent_block > 0;
+    let recent_query_height = if use_exclusive_start {
+        last_known_recent_block
+    } else {
+        start_height
+    };
+
+    let recent_request = GetRecentAddressBalanceChangesRequest {
+        version: Some(get_recent_address_balance_changes_request::Version::V0(
+            get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
+                start_height: recent_query_height,
+                prove: true,
+                start_height_exclusive: use_exclusive_start,
+            },
+        )),
+    };
+
+    let (recent_changes, recent_metadata, recent_proof) =
+        match RecentAddressBalanceChanges::fetch_with_metadata_and_proof(
+            sdk,
+            recent_request,
+            Some(settings),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                // First query failed — server may not support incremental
+                // RPCs or may not have data for this height. Treat as
+                // "no incremental data available" rather than hard error.
+                debug!(
+                    "Recent address balance changes query failed (non-fatal): {}",
+                    e
+                );
+                result.new_sync_height = current_height.max(observed_tip_height);
+                return Ok(());
+            }
         };
 
-        let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
-            match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
-                sdk,
-                request,
-                Some(settings),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(e) if !had_successful_query => {
-                    // First query failed — server may not support incremental
-                    // RPCs or may not have data for this height. Treat as
-                    // "no incremental data available" rather than hard error.
-                    debug!(
-                        "Compacted address balance changes query failed (non-fatal): {}",
-                        e
-                    );
-                    break;
-                }
-                Err(e) => return Err(e),
+    // Store the raw GroveDB proof bytes for debugging/inspection.
+    result.recent_proof = recent_proof.grovedb_proof.clone();
+
+    result.new_sync_timestamp = recent_metadata.time_ms / 1000;
+    result.metrics.recent_queries += 1;
+
+    // Log what the recent query returned
+    let recent_entry_count = recent_changes.as_ref().map(|c| c.0.len()).unwrap_or(0);
+    info!(
+        "Address sync: recent query returned {} entries (use_exclusive={}, query_height={}, metadata_height={})",
+        recent_entry_count, use_exclusive_start, recent_query_height, recent_metadata.height
+    );
+
+    if recent_metadata.height > observed_tip_height {
+        observed_tip_height = recent_metadata.height;
+    }
+
+    // Phase 2 — Determine whether compacted phase is needed
+    //
+    // Based on three values:
+    // 1. checkpoint_height: the tree scan snapshot height
+    // 2. last_recent_block: highest boundary in the recent proof (the actual
+    //    last block in the recent tree)
+    // 3. Whether boundaries exist at all
+    //
+    // If last_recent_block >= checkpoint_height → recent covers the full range,
+    //   no compacted data can exist in the gap. Skip compacted.
+    // If last_recent_block < checkpoint_height → there's a gap that may contain
+    //   compacted data. Query compacted.
+    // If no boundaries → recent tree is empty, nothing to compact. Skip.
+    let need_compacted = match get_last_recent_block_from_proof(&recent_proof) {
+        Ok(Some(last_recent_block)) => {
+            if last_recent_block >= result.checkpoint_height {
+                debug!(
+                    "Address sync: last recent block {} >= checkpoint {} — skipping compacted",
+                    last_recent_block, result.checkpoint_height
+                );
+                false
+            } else {
+                debug!(
+                    "Address sync: last recent block {} < checkpoint {} — need compacted",
+                    last_recent_block, result.checkpoint_height
+                );
+                true
+            }
+        }
+        Ok(None) => {
+            // No boundaries in recent tree → empty, nothing to compact
+            debug!("Address sync: recent tree empty (no boundaries) — skipping compacted");
+            false
+        }
+        Err(e) => {
+            debug!(
+                "Address sync: boundary extraction failed ({}), running compacted to be safe",
+                e
+            );
+            true
+        }
+    };
+
+    // Phase 2b — Compacted (historical) catch-up (conditional)
+    if need_compacted {
+        loop {
+            let request = GetRecentCompactedAddressBalanceChangesRequest {
+                version: Some(
+                    get_recent_compacted_address_balance_changes_request::Version::V0(
+                        get_recent_compacted_address_balance_changes_request::GetRecentCompactedAddressBalanceChangesRequestV0 {
+                            start_block_height: current_height,
+                            prove: true,
+                        },
+                    ),
+                ),
             };
 
-        let entries = match changes {
-            Some(c) => c.into_inner(),
-            None => break,
-        };
+            let (changes, metadata): (Option<RecentCompactedAddressBalanceChanges>, _) =
+                match RecentCompactedAddressBalanceChanges::fetch_with_metadata(
+                    sdk,
+                    request,
+                    Some(settings),
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(e) => return Err(e),
+                };
 
-        result.new_sync_timestamp = metadata.time_ms / 1000;
+            let entries = match changes {
+                Some(c) => c.into_inner(),
+                None => break,
+            };
 
-        if entries.is_empty() {
-            break;
-        }
+            result.new_sync_timestamp = metadata.time_ms / 1000;
+            result.metrics.compacted_queries += 1;
+            // Track the platform's chain tip from response metadata
+            if metadata.height > observed_tip_height {
+                observed_tip_height = metadata.height;
+            }
 
-        let entry_count = entries.len();
-        result.metrics.compacted_queries += 1;
-        had_successful_query = true;
+            if entries.is_empty() {
+                break;
+            }
 
-        for entry in &entries {
-            for (platform_addr, credit_op) in &entry.changes {
-                let addr_bytes = platform_addr.to_bytes();
-                if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
-                    let current_balance = result
-                        .found
-                        .get(&(*index, key.clone()))
-                        .map(|f| f.balance)
-                        .unwrap_or(0);
+            let entry_count = entries.len();
+            result.metrics.compacted_entries_returned += entry_count;
 
-                    let new_balance = match credit_op {
-                        BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                        BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                            let total_to_add: u64 = operations
-                                .iter()
-                                .filter(|(height, _)| **height >= current_height)
-                                .map(|(_, credits)| *credits)
-                                .fold(0u64, |acc, c| acc.saturating_add(c));
-                            current_balance.saturating_add(total_to_add)
-                        }
-                    };
-
-                    if new_balance != current_balance {
-                        let nonce = result
+            for entry in &entries {
+                for (platform_addr, credit_op) in &entry.changes {
+                    let addr_bytes = platform_addr.to_bytes();
+                    if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
+                        let current_balance = result
                             .found
                             .get(&(*index, key.clone()))
-                            .map(|f| f.nonce)
+                            .map(|f| f.balance)
                             .unwrap_or(0);
-                        let funds = AddressFunds {
-                            nonce,
-                            balance: new_balance,
+
+                        let new_balance = match credit_op {
+                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                                let total_to_add: u64 = operations
+                                    .iter()
+                                    .filter(|(height, _)| **height >= current_height)
+                                    .map(|(_, credits)| *credits)
+                                    .fold(0u64, |acc, c| acc.saturating_add(c));
+                                current_balance.saturating_add(total_to_add)
+                            }
                         };
-                        result.found.insert((*index, key.clone()), funds);
-                        provider.on_address_found(*index, key, funds);
+
+                        if new_balance != current_balance {
+                            let nonce = result
+                                .found
+                                .get(&(*index, key.clone()))
+                                .map(|f| f.nonce)
+                                .unwrap_or(0);
+                            let funds = AddressFunds {
+                                nonce,
+                                balance: new_balance,
+                            };
+                            result.found.insert((*index, key.clone()), funds);
+                            provider.on_address_found(*index, key, funds);
+                        }
                     }
+                }
+
+                if entry.end_block_height.saturating_add(1) > current_height {
+                    current_height = entry.end_block_height.saturating_add(1);
                 }
             }
 
-            if entry.end_block_height.saturating_add(1) > current_height {
-                current_height = entry.end_block_height.saturating_add(1);
+            if entry_count < COMPACTED_BATCH_LIMIT {
+                break;
             }
-        }
-
-        if entry_count < COMPACTED_BATCH_LIMIT {
-            break;
         }
     }
 
-    // Phase 2 — Recent (per-block) changes
-    loop {
-        let request = GetRecentAddressBalanceChangesRequest {
-            version: Some(
-                get_recent_address_balance_changes_request::Version::V0(
-                    get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
-                        start_height: current_height,
-                        prove: true,
-                    },
-                ),
-            ),
-        };
+    // Phase 3 — Apply held recent results
+    //
+    // The recent results were fetched in Phase 1 but held back so that
+    // compacted entries (if any) are applied first in correct height order.
+    // We also track the highest block_height from recent entries to set
+    // last_known_recent_block for the next sync.
+    let mut highest_recent_block: u64 = 0;
 
-        let (changes, metadata): (Option<RecentAddressBalanceChanges>, _) =
-            match RecentAddressBalanceChanges::fetch_with_metadata(sdk, request, Some(settings))
-                .await
-            {
-                Ok(result) => result,
-                Err(e) if !had_successful_query => {
-                    debug!(
-                        "Recent address balance changes query failed (non-fatal): {}",
-                        e
-                    );
-                    break;
-                }
-                Err(e) => return Err(e),
-            };
-
-        let entries = match changes {
-            Some(c) => c.into_inner(),
-            None => break,
-        };
-
-        result.new_sync_timestamp = metadata.time_ms / 1000;
-
-        if entries.is_empty() {
-            break;
-        }
-
-        let entry_count = entries.len();
-        result.metrics.recent_queries += 1;
-        had_successful_query = true;
+    if let Some(changes) = recent_changes {
+        let entries = changes.into_inner();
+        result.metrics.recent_entries_returned += entries.len();
 
         for entry in &entries {
+            // Track the highest block height in recent entries
+            if entry.block_height > highest_recent_block {
+                highest_recent_block = entry.block_height;
+            }
+
             for (platform_addr, credit_op) in &entry.changes {
                 let addr_bytes = platform_addr.to_bytes();
                 if let Some((index, key)) = address_key_lookup.get(&addr_bytes) {
@@ -510,203 +689,85 @@ async fn incremental_catch_up<P: AddressProvider>(
                 current_height = entry.block_height.saturating_add(1);
             }
         }
-
-        if entry_count < RECENT_BATCH_LIMIT {
-            break;
-        }
     }
 
-    result.new_sync_height = current_height;
+    result.new_sync_height = current_height.max(observed_tip_height);
+    // Store the highest block from the recent entries so the next sync can
+    // use RangeAfter(this_height) for compaction detection.
+    // This MUST be a block that was actually in the recent tree entries —
+    // not the metadata tip — because the boundary check needs the key to
+    // exist in the tree. When the recent tree is empty (no address activity),
+    // this stays at 0 and the next sync falls back to RangeFrom (inclusive).
+    result.last_known_recent_block = highest_recent_block;
     Ok(())
 }
 
-// ── Tree scan helpers ────────────────────────────────────────────────
-
-/// Execute the trunk query and return the verified result.
+/// Extract the highest block height from the recent tree boundaries in the proof.
 ///
-/// Returns `(trunk_result, checkpoint_height, block_time_ms)`.
-async fn execute_trunk_query(
-    sdk: &Sdk,
-    settings: RequestSettings,
-    metrics: &mut AddressSyncMetrics,
-) -> Result<(GroveTrunkQueryResult, u64, u64), Error> {
-    let (trunk_state, metadata) =
-        PlatformAddressTrunkState::fetch_with_metadata(sdk, (), Some(settings)).await?;
+/// Returns:
+/// - `Ok(Some(height))` — the highest block height found as a boundary
+/// - `Ok(None)` — no boundaries found (recent tree is empty)
+/// - `Err(...)` — proof decoding failed
+fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error> {
+    let path: [&[u8]; 2] = [
+        &[RootTree::SavedBlockTransactions as u8],
+        &[ADDRESS_BALANCES_KEY_U8],
+    ];
 
-    metrics.trunk_queries += 1;
+    let config = dpp::bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<{ 256 * 1024 * 1024 }>();
 
-    let trunk_state = trunk_state
-        .ok_or_else(|| Error::InvalidProvedResponse("Trunk query returned no state".to_string()))?;
+    let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
+        dpp::bincode::decode_from_slice(&proof.grovedb_proof, config).map_err(|e| {
+            Error::Protocol(dpp::ProtocolError::DecodingError(format!(
+                "Failed to decode GroveDB proof: {}",
+                e
+            )))
+        })?;
 
-    metrics.total_elements_seen += trunk_state.elements.len();
+    let all_boundaries = grovedb_proof
+        .boundaries(&[path[0], path[1]])
+        .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
 
-    Ok((trunk_state.into_inner(), metadata.height, metadata.time_ms))
-}
+    if all_boundaries.is_empty() {
+        return Ok(None);
+    }
 
-/// Process the trunk query result.
-fn process_trunk_result<P: AddressProvider>(
-    trunk_result: &GroveTrunkQueryResult,
-    provider: &mut P,
-    result: &mut AddressSyncResult,
-    tracker: &mut KeyLeafTracker,
-) -> Result<(), Error> {
-    // Get pending addresses
-    let pending: Vec<(AddressIndex, AddressKey)> = provider.pending_addresses();
-
-    for (index, key) in pending {
-        // Check if found in elements
-        if let Some(element) = trunk_result.elements.get(&key) {
-            let funds = AddressFunds::try_from(element)?;
-            result.found.insert((index, key.clone()), funds);
-            provider.on_address_found(index, &key, funds);
-        } else {
-            // Trace to leaf
-            if let Some((leaf_key, info)) = trunk_result.trace_key_to_leaf(&key) {
-                tracker.add_key(key, leaf_key, info);
+    // Parse boundary keys as block heights (big-endian u64)
+    let max_height = all_boundaries
+        .iter()
+        .filter_map(|key| {
+            if key.len() == 8 {
+                Some(u64::from_be_bytes(key.as_slice().try_into().unwrap()))
             } else {
-                // Key is proven absent (not in elements and no leaf subtree)
-                result.absent.insert((index, key.clone()));
-                provider.on_address_absent(index, &key);
+                None
             }
-        }
-    }
+        })
+        .max();
 
-    Ok(())
+    Ok(max_height)
 }
 
-/// Get privacy-adjusted leaves to query.
-///
-/// For leaves with count below min_privacy_count, find an ancestor with sufficient count.
-/// Returns a `Vec` of `(LeafBoundaryKey, LeafInfo, u8)` tuples where the `u8` is the query depth
-/// clamped to [`min_query_depth`, `max_query_depth`] to stay within platform limits.
-fn get_privacy_adjusted_leaves(
-    tracker: &KeyLeafTracker,
-    trunk_result: &GroveTrunkQueryResult,
-    min_privacy_count: u64,
-    min_query_depth: u8,
-    max_query_depth: u8,
-) -> Vec<(LeafBoundaryKey, LeafInfo, u8)> {
-    let active_leaves = tracker.active_leaves();
-    let mut result = Vec::new();
-    let mut seen_ancestors: BTreeSet<LeafBoundaryKey> = BTreeSet::new();
+// ── Branch query helper (address-specific) ───────────────────────────
 
-    for (leaf_key, info) in active_leaves {
-        let count = info.count.unwrap_or(0);
-        let tree_depth = calculate_max_tree_depth_from_count(count);
-        // Clamp to allowed depth range
-        let clamped_depth = tree_depth.clamp(min_query_depth, max_query_depth);
-
-        if count >= min_privacy_count {
-            // Leaf has sufficient privacy, use it directly
-            if seen_ancestors.insert(leaf_key.clone()) {
-                result.push((leaf_key, info, clamped_depth));
-            }
-        } else {
-            // Need to find an ancestor with more elements
-            if let Some((levels_up, _count, ancestor_key, ancestor_hash)) =
-                trunk_result.get_ancestor(&leaf_key, min_privacy_count)
-            {
-                if seen_ancestors.insert(ancestor_key.clone()) {
-                    let ancestor_info = LeafInfo {
-                        hash: ancestor_hash,
-                        count: Some(_count),
-                    };
-                    // Reduce depth based on how many levels up we went, then clamp
-                    let depth = tree_depth
-                        .saturating_sub(levels_up)
-                        .clamp(min_query_depth, max_query_depth);
-                    result.push((ancestor_key, ancestor_info, depth));
-                }
-            } else {
-                // No suitable ancestor found, use the leaf anyway
-                if seen_ancestors.insert(leaf_key.clone()) {
-                    result.push((leaf_key, info, clamped_depth));
-                }
-            }
-        }
-    }
-
-    result
-}
-
-/// Execute branch queries in parallel.
-async fn execute_branch_queries(
-    sdk: &Sdk,
-    leaves: &[(LeafBoundaryKey, LeafInfo, u8)],
-    checkpoint_height: u64,
-    metrics: &mut AddressSyncMetrics,
-    max_concurrent: usize,
-    settings: RequestSettings,
-    platform_version: &PlatformVersion,
-) -> Result<Vec<(LeafBoundaryKey, GroveBranchQueryResult)>, Error> {
-    let mut futures = FuturesUnordered::new();
-    let mut results = Vec::new();
-
-    for (leaf_key, info, depth) in leaves.iter().cloned() {
-        let sdk = sdk.clone();
-        let expected_hash = info.hash;
-        let depth_u32 = depth as u32;
-
-        futures.push(async move {
-            execute_single_branch_query(
-                &sdk,
-                leaf_key.clone(),
-                depth_u32,
-                expected_hash,
-                checkpoint_height,
-                settings,
-                platform_version,
-            )
-            .await
-            .map(|result| (leaf_key, result))
-        });
-
-        // Limit concurrency
-        if futures.len() >= max_concurrent {
-            if let Some(result) = futures.next().await {
-                match result {
-                    Ok((key, branch_result)) => {
-                        metrics.branch_queries += 1;
-                        results.push((key, branch_result));
-                    }
-                    Err(e) => {
-                        warn!("Branch query failed: {:?}", e);
-                        // Continue with other queries
-                    }
-                }
-            }
-        }
-    }
-
-    // Collect remaining futures
-    while let Some(result) = futures.next().await {
-        match result {
-            Ok((key, branch_result)) => {
-                metrics.branch_queries += 1;
-                results.push((key, branch_result));
-            }
-            Err(e) => {
-                warn!("Branch query failed: {:?}", e);
-            }
-        }
-    }
-
-    Ok(results)
-}
-
-/// Execute a single branch query with retry logic.
+/// Execute a single address branch query with retry logic.
 ///
 /// If proof verification fails, the request will be retried with a different node
 /// according to the retry settings.
-async fn execute_single_branch_query(
+async fn execute_address_branch_query(
     sdk: &Sdk,
-    key: LeafBoundaryKey,
-    depth: u32,
-    expected_hash: [u8; 32],
-    checkpoint_height: u64,
+    params: BranchQueryParams,
     settings: RequestSettings,
     platform_version: &PlatformVersion,
 ) -> Result<GroveBranchQueryResult, Error> {
+    let BranchQueryParams {
+        key,
+        depth,
+        expected_hash,
+        checkpoint_height,
+    } = params;
+
     let request = GetAddressesBranchStateRequest {
         version: Some(get_addresses_branch_state_request::Version::V0(
             get_addresses_branch_state_request::GetAddressesBranchStateRequestV0 {
@@ -769,43 +830,7 @@ async fn execute_single_branch_query(
     retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
-/// Process a branch query result.
-fn process_branch_result<P: AddressProvider>(
-    branch_result: &GroveBranchQueryResult,
-    queried_leaf_key: &[u8],
-    provider: &mut P,
-    key_to_index: &HashMap<AddressKey, AddressIndex>,
-    result: &mut AddressSyncResult,
-    tracker: &mut KeyLeafTracker,
-) -> Result<(), Error> {
-    // Get all target keys that were in this leaf's subtree
-    let target_keys = tracker.keys_for_leaf(queried_leaf_key);
-
-    for target_key in target_keys {
-        let index = key_to_index.get(&target_key).copied().unwrap_or(0);
-
-        // Check if found in elements
-        if let Some(element) = branch_result.elements.get(&target_key) {
-            let funds = AddressFunds::try_from(element)?;
-            result.found.insert((index, target_key.clone()), funds);
-            provider.on_address_found(index, &target_key, funds);
-            tracker.key_found(&target_key);
-        } else {
-            // Try to trace to a deeper leaf
-            if let Some((new_leaf_key, info)) = branch_result.trace_key_to_leaf(&target_key) {
-                tracker.update_leaf(&target_key, new_leaf_key, info);
-            } else {
-                // Key is proven absent
-                result.absent.insert((index, target_key.clone()));
-                provider.on_address_absent(index, &target_key);
-                tracker.key_found(&target_key); // Remove from tracking
-            }
-        }
-    }
-
-    result.metrics.total_elements_seen += branch_result.elements.len();
-    Ok(())
-}
+// ── Element conversion ───────────────────────────────────────────────
 
 impl TryFrom<&Element> for AddressFunds {
     type Error = Error;
@@ -833,7 +858,8 @@ impl TryFrom<&Element> for AddressFunds {
     }
 }
 
-// SDK integration impl
+// ── SDK integration ──────────────────────────────────────────────────
+
 impl Sdk {
     /// Synchronize address balances using privacy-preserving trunk/branch chunk
     /// queries with incremental block-based catch-up.
@@ -910,7 +936,10 @@ mod tests {
     #[test]
     fn test_default_config_values() {
         let config = AddressSyncConfig::default();
-        assert_eq!(config.full_rescan_after_time_s, 7 * 24 * 60 * 60);
+        assert_eq!(
+            config.full_rescan_after_time_s,
+            6 * 24 * 3600 + 23 * 3600 + 45 * 60
+        );
         assert_eq!(config.min_privacy_count, 32);
         assert_eq!(config.max_iterations, 50);
     }
@@ -932,5 +961,398 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(metrics.total_queries(), 7);
+    }
+
+    #[test]
+    fn test_sync_mode_decision_no_timestamp() {
+        // No timestamp → full scan needed
+        let config = AddressSyncConfig::default();
+        let last_sync_timestamp: Option<u64> = None;
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_mode_decision_recent_timestamp() {
+        // Recent timestamp → incremental only
+        let config = AddressSyncConfig::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now - 10); // 10 seconds ago
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(!needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_mode_decision_stale_timestamp() {
+        // Stale timestamp (8 days old) → full scan
+        let config = AddressSyncConfig::default();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now - 8 * 24 * 60 * 60); // 8 days ago
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            _ => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_get_last_recent_block_empty_proof() {
+        // Empty proof should return an error (conservative fallback)
+        let proof = dapi_grpc::platform::v0::Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![],
+            signature: vec![],
+            round: 0,
+            block_id_hash: vec![],
+            quorum_type: 0,
+        };
+        let result = get_last_recent_block_from_proof(&proof);
+        // Empty proof should error — triggering conservative compacted query
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_last_recent_block_invalid_proof() {
+        // Garbage bytes should return an error
+        let proof = dapi_grpc::platform::v0::Proof {
+            grovedb_proof: vec![0xFF, 0xFE, 0xFD, 0xFC],
+            quorum_hash: vec![],
+            signature: vec![],
+            round: 0,
+            block_id_hash: vec![],
+            quorum_type: 0,
+        };
+        let result = get_last_recent_block_from_proof(&proof);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_result_new_sync_height_max() {
+        // new_sync_height should be max of current and observed tip
+        let mut result = AddressSyncResult::new();
+        result.new_sync_height = 100;
+        let observed_tip = 200u64;
+        result.new_sync_height = result.new_sync_height.max(observed_tip);
+        assert_eq!(result.new_sync_height, 200);
+    }
+
+    #[test]
+    fn test_result_checkpoint_separate_from_sync_height() {
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 50;
+        result.new_sync_height = 100;
+        assert_ne!(result.checkpoint_height, result.new_sync_height);
+        assert_eq!(result.checkpoint_height, 50);
+        assert_eq!(result.new_sync_height, 100);
+    }
+
+    #[test]
+    fn test_incremental_mode_checkpoint_zero_skips_compacted() {
+        // In incremental-only mode, checkpoint_height defaults to 0.
+        // Any last_recent_block >= 0 should skip compacted (correct behavior:
+        // known balances are seeded from current_balances, so no compacted gap).
+        let result = AddressSyncResult::new();
+        assert_eq!(result.checkpoint_height, 0);
+
+        // Simulating the compaction detection logic from incremental_catch_up
+        let last_recent_block: u64 = 500;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            !need_compacted,
+            "Incremental-only mode should skip compacted when checkpoint is 0"
+        );
+    }
+
+    #[test]
+    fn test_full_scan_mode_checkpoint_triggers_compacted() {
+        // After a full tree scan, checkpoint_height is set to the scan height.
+        // If last_recent_block < checkpoint, compacted phase should run.
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 1000;
+
+        let last_recent_block: u64 = 500;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            need_compacted,
+            "Full scan mode should run compacted when recent is behind checkpoint"
+        );
+    }
+
+    #[test]
+    fn test_full_scan_mode_recent_covers_checkpoint() {
+        // After a full tree scan, if recent tree covers the checkpoint, skip compacted.
+        let mut result = AddressSyncResult::new();
+        result.checkpoint_height = 1000;
+
+        let last_recent_block: u64 = 1050;
+        let need_compacted = last_recent_block < result.checkpoint_height;
+        assert!(
+            !need_compacted,
+            "Should skip compacted when recent covers checkpoint"
+        );
+    }
+
+    #[test]
+    fn test_address_funds_from_item_with_sum_item() {
+        // Valid: nonce=5 (4 bytes big-endian) with balance=1000
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 5], 1000, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse valid element");
+        assert_eq!(funds.nonce, 5);
+        assert_eq!(funds.balance, 1000);
+
+        // Invalid: nonce bytes too short (only 2 bytes instead of 4)
+        let short_nonce = Element::ItemWithSumItem(vec![0, 5], 500, None);
+        let err = AddressFunds::try_from(&short_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Invalid: nonce bytes too long (5 bytes instead of 4)
+        let long_nonce = Element::ItemWithSumItem(vec![0, 0, 0, 0, 1], 100, None);
+        let err = AddressFunds::try_from(&long_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Invalid: empty nonce bytes
+        let empty_nonce = Element::ItemWithSumItem(vec![], 0, None);
+        let err = AddressFunds::try_from(&empty_nonce).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("4 bytes")),
+            "expected nonce length error, got: {err:?}"
+        );
+
+        // Wrong variant: Item should fail
+        let item = Element::Item(vec![1, 2, 3], None);
+        let err = AddressFunds::try_from(&item).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("unexpected element type")),
+            "expected element type error for Item, got: {err:?}"
+        );
+
+        // Wrong variant: Tree should fail
+        let tree = Element::empty_tree();
+        let err = AddressFunds::try_from(&tree).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("unexpected element type")),
+            "expected element type error for Tree, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_address_funds_zero_values() {
+        // Zero nonce and zero balance via ItemWithSumItem
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 0], 0, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse zero-value element");
+        assert_eq!(funds.nonce, 0);
+        assert_eq!(funds.balance, 0);
+    }
+
+    #[test]
+    fn test_sync_result_new_defaults() {
+        let result = AddressSyncResult::new();
+        assert!(result.found.is_empty());
+        assert!(result.absent.is_empty());
+        assert_eq!(result.highest_found_index, None);
+        assert_eq!(result.checkpoint_height, 0);
+        assert_eq!(result.new_sync_height, 0);
+        assert_eq!(result.new_sync_timestamp, 0);
+        assert_eq!(result.last_known_recent_block, 0);
+        assert!(result.recent_proof.is_empty());
+        assert_eq!(result.total_balance(), 0);
+        assert_eq!(result.non_zero_count(), 0);
+    }
+
+    #[test]
+    fn test_sync_result_default_matches_new() {
+        let from_new = AddressSyncResult::new();
+        let from_default = AddressSyncResult::default();
+        assert_eq!(from_new.found.len(), from_default.found.len());
+        assert_eq!(from_new.absent.len(), from_default.absent.len());
+        assert_eq!(
+            from_new.highest_found_index,
+            from_default.highest_found_index
+        );
+        assert_eq!(from_new.checkpoint_height, from_default.checkpoint_height);
+        assert_eq!(from_new.new_sync_height, from_default.new_sync_height);
+        assert_eq!(from_new.new_sync_timestamp, from_default.new_sync_timestamp);
+        assert_eq!(
+            from_new.last_known_recent_block,
+            from_default.last_known_recent_block
+        );
+    }
+
+    #[test]
+    fn test_metrics_default_all_zero() {
+        let m = AddressSyncMetrics::default();
+        assert_eq!(m.trunk_queries, 0);
+        assert_eq!(m.branch_queries, 0);
+        assert_eq!(m.total_elements_seen, 0);
+        assert_eq!(m.total_proof_bytes, 0);
+        assert_eq!(m.iterations, 0);
+        assert_eq!(m.compacted_queries, 0);
+        assert_eq!(m.recent_queries, 0);
+        assert_eq!(m.recent_entries_returned, 0);
+        assert_eq!(m.compacted_entries_returned, 0);
+        assert_eq!(m.total_queries(), 0);
+        assert_eq!(m.average_proof_bytes(), 0.0);
+    }
+
+    #[test]
+    fn test_metrics_total_queries_sum() {
+        let m = AddressSyncMetrics {
+            trunk_queries: 2,
+            branch_queries: 5,
+            compacted_queries: 3,
+            recent_queries: 4,
+            total_elements_seen: 100,
+            total_proof_bytes: 5000,
+            iterations: 10,
+            recent_entries_returned: 20,
+            compacted_entries_returned: 30,
+        };
+        assert_eq!(m.total_queries(), 2 + 5 + 3 + 4);
+    }
+
+    #[test]
+    fn test_metrics_average_proof_bytes() {
+        let m = AddressSyncMetrics {
+            trunk_queries: 1,
+            branch_queries: 1,
+            compacted_queries: 1,
+            recent_queries: 1,
+            total_proof_bytes: 4000,
+            ..Default::default()
+        };
+        // total_queries = 4, so average = 4000/4 = 1000.0
+        assert_eq!(m.total_queries(), 4);
+        assert!((m.average_proof_bytes() - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_metrics_average_proof_bytes_zero_queries() {
+        let m = AddressSyncMetrics::default();
+        assert_eq!(m.average_proof_bytes(), 0.0);
+    }
+
+    #[test]
+    fn test_config_custom_values() {
+        let config = AddressSyncConfig {
+            min_privacy_count: 64,
+            max_concurrent_requests: 20,
+            max_iterations: 100,
+            full_rescan_after_time_s: 3 * 24 * 3600, // 3 days
+            request_settings: RequestSettings::default(),
+        };
+        assert_eq!(config.min_privacy_count, 64);
+        assert_eq!(config.max_concurrent_requests, 20);
+        assert_eq!(config.max_iterations, 100);
+        assert_eq!(config.full_rescan_after_time_s, 259200);
+    }
+
+    #[test]
+    fn test_config_full_rescan_zero_always_rescans() {
+        let config = AddressSyncConfig {
+            full_rescan_after_time_s: 0,
+            ..Default::default()
+        };
+        // With full_rescan_after_time_s = 0, any timestamp should trigger full rescan
+        // because elapsed >= 0 is always true
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let last_sync_timestamp = Some(now); // just synced
+        let needs_full_scan = match last_sync_timestamp {
+            Some(ts) if config.full_rescan_after_time_s > 0 => {
+                let elapsed = now.saturating_sub(ts);
+                elapsed >= config.full_rescan_after_time_s
+            }
+            Some(_) => {
+                // full_rescan_after_time_s == 0 means always rescan
+                config.full_rescan_after_time_s == 0
+            }
+            None => true,
+        };
+        assert!(needs_full_scan);
+    }
+
+    #[test]
+    fn test_sync_result_total_balance_and_non_zero_count() {
+        let mut result = AddressSyncResult::new();
+
+        // Insert three addresses with varying balances
+        result.found.insert(
+            (0, vec![1; 32]),
+            AddressFunds {
+                nonce: 0,
+                balance: 500,
+            },
+        );
+        result.found.insert(
+            (1, vec![2; 32]),
+            AddressFunds {
+                nonce: 1,
+                balance: 0,
+            },
+        );
+        result.found.insert(
+            (2, vec![3; 32]),
+            AddressFunds {
+                nonce: 2,
+                balance: 1500,
+            },
+        );
+
+        assert_eq!(result.total_balance(), 2000);
+        assert_eq!(result.non_zero_count(), 2);
+    }
+
+    #[test]
+    fn test_address_funds_max_nonce_and_balance() {
+        // Maximum valid nonce (u32::MAX) and large balance
+        let max_nonce_bytes = u32::MAX.to_be_bytes().to_vec();
+        let elem = Element::ItemWithSumItem(max_nonce_bytes, i64::MAX, None);
+        let funds = AddressFunds::try_from(&elem).expect("should parse max values");
+        assert_eq!(funds.nonce, u32::MAX);
+        assert_eq!(funds.balance, i64::MAX as u64);
+    }
+
+    #[test]
+    fn test_address_funds_negative_balance_errors() {
+        // Negative sum_item value should fail conversion to u64
+        let elem = Element::ItemWithSumItem(vec![0, 0, 0, 1], -100, None);
+        let err = AddressFunds::try_from(&elem).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("balance")),
+            "expected balance conversion error, got: {err:?}"
+        );
     }
 }

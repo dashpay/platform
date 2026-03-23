@@ -126,7 +126,11 @@ pub unsafe extern "C" fn dash_sdk_address_transfer_funds(
     outputs_count: usize,
     fee_from_input_index: u16,
 ) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_address_transfer_funds_inner(
             sdk_handle,
@@ -292,8 +296,7 @@ unsafe fn dash_sdk_address_transfer_funds_inner(
             .map(|(address, info_opt)| {
                 let address_bytes = address.to_bytes();
                 let address_len = address_bytes.len();
-                let address_ptr = address_bytes.as_ptr() as *mut u8;
-                std::mem::forget(address_bytes);
+                let address_ptr = Box::into_raw(address_bytes.into_boxed_slice()) as *mut u8;
 
                 // Handle Option<AddressInfo>
                 let (nonce, balance) = match info_opt {

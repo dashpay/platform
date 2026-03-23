@@ -18,6 +18,30 @@ mod insert_nullifiers;
 #[cfg(feature = "server")]
 mod update_total_balance;
 
+/// Record the shielded pool anchor if the commitment tree changed this block
+#[cfg(feature = "server")]
+mod record_anchor_if_changed;
+
+/// Prune shielded pool anchors older than a given cutoff height
+#[cfg(feature = "server")]
+mod prune_anchors;
+
+/// Check whether a shielded pool anchor exists
+#[cfg(feature = "server")]
+mod has_anchor;
+
+/// Check whether a nullifier has already been spent
+#[cfg(feature = "server")]
+mod has_nullifier;
+
+/// Read the shielded pool total balance
+#[cfg(feature = "server")]
+mod read_total_balance;
+
+/// Count the notes in the shielded pool commitment tree
+#[cfg(feature = "server")]
+mod notes_count;
+
 /// Prove methods for shielded pool queries
 #[cfg(feature = "server")]
 pub mod prove;

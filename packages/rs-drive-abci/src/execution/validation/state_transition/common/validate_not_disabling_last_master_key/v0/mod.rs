@@ -40,3 +40,114 @@ pub(super) fn validate_master_key_uniqueness_v0(
         Ok(SimpleConsensusValidationResult::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+
+    fn make_identity_public_key(id: u32, security_level: SecurityLevel) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: id.into(),
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        }
+        .into()
+    }
+
+    fn make_key_in_creation(id: u32, security_level: SecurityLevel) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreationV0 {
+            id: id.into(),
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::default(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_pass_when_no_master_keys_involved() {
+        let result = validate_master_key_uniqueness_v0(&[], &[]).expect("should succeed");
+        assert!(result.is_valid(), "should be valid with empty inputs");
+    }
+
+    #[test]
+    fn should_pass_when_one_master_key_disabled_and_one_added() {
+        let keys_added = vec![make_key_in_creation(10, SecurityLevel::MASTER)];
+        let keys_to_disable = vec![make_identity_public_key(1, SecurityLevel::MASTER)];
+        let result = validate_master_key_uniqueness_v0(&keys_added, &keys_to_disable)
+            .expect("should succeed");
+        assert!(
+            result.is_valid(),
+            "should be valid when exactly one master key is rotated"
+        );
+    }
+
+    #[test]
+    fn should_fail_when_adding_master_key_without_disabling_one() {
+        let keys_added = vec![make_key_in_creation(10, SecurityLevel::MASTER)];
+        let result = validate_master_key_uniqueness_v0(&keys_added, &[]).expect("should succeed");
+        assert!(
+            !result.is_valid(),
+            "should be invalid when adding master key without disabling one"
+        );
+        assert_eq!(result.errors.len(), 1);
+    }
+
+    #[test]
+    fn should_fail_when_disabling_master_key_without_adding_one() {
+        let keys_to_disable = vec![make_identity_public_key(1, SecurityLevel::MASTER)];
+        let result =
+            validate_master_key_uniqueness_v0(&[], &keys_to_disable).expect("should succeed");
+        assert!(
+            !result.is_valid(),
+            "should be invalid when disabling master key without adding one"
+        );
+        assert_eq!(result.errors.len(), 1);
+    }
+
+    #[test]
+    fn should_fail_when_disabling_two_master_keys() {
+        let keys_added = vec![
+            make_key_in_creation(10, SecurityLevel::MASTER),
+            make_key_in_creation(11, SecurityLevel::MASTER),
+        ];
+        let keys_to_disable = vec![
+            make_identity_public_key(1, SecurityLevel::MASTER),
+            make_identity_public_key(2, SecurityLevel::MASTER),
+        ];
+        let result = validate_master_key_uniqueness_v0(&keys_added, &keys_to_disable)
+            .expect("should succeed");
+        assert!(
+            !result.is_valid(),
+            "should be invalid when disabling more than one master key"
+        );
+    }
+
+    #[test]
+    fn should_fail_when_adding_two_master_keys_and_disabling_one() {
+        let keys_added = vec![
+            make_key_in_creation(10, SecurityLevel::MASTER),
+            make_key_in_creation(11, SecurityLevel::MASTER),
+        ];
+        let keys_to_disable = vec![make_identity_public_key(1, SecurityLevel::MASTER)];
+        let result = validate_master_key_uniqueness_v0(&keys_added, &keys_to_disable)
+            .expect("should succeed");
+        assert!(
+            !result.is_valid(),
+            "should be invalid when adding more than one master key"
+        );
+    }
+}

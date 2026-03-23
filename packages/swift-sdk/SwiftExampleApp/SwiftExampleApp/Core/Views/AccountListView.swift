@@ -9,21 +9,10 @@ struct AccountListView: View {
     @EnvironmentObject var walletService: WalletService
     let wallet: HDWallet
     @State private var accounts: [AccountInfo] = []
-    @State private var isLoading = true
-    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
-            if isLoading {
-                ProgressView("Loading accounts...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = errorMessage {
-                ContentUnavailableView(
-                    "Failed to Load Accounts",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(error)
-                )
-            } else if accounts.isEmpty {
+            if accounts.isEmpty {
                 ContentUnavailableView(
                     "No Accounts",
                     systemImage: "folder",
@@ -37,32 +26,16 @@ struct AccountListView: View {
                 }
                 .listStyle(.plain)
                 .refreshable {
-                    await loadAccounts()
+                    loadAccounts()
                 }
             }
-        }
-        .task {
-            await loadAccounts()
+        }.task {
+            loadAccounts()
         }
     }
 
-    private func loadAccounts() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            // Get accounts from wallet manager
-            let fetchedAccounts = try await walletService.walletManager?.getAccounts(for: wallet) ?? []
-            await MainActor.run {
-                self.accounts = fetchedAccounts
-                self.isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.isLoading = false
-            }
-        }
+    private func loadAccounts() {
+        self.accounts = walletService.walletManager.getAccounts(for: wallet)
     }
 }
 
@@ -207,33 +180,6 @@ struct AccountRowView: View {
                     }
 
                     Spacer()
-                }
-            }
-
-            // Next receive address (if available and appropriate for account type)
-            if shouldShowBalance, let address = account.nextReceiveAddress {
-                HStack {
-                    Text("Receive:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text(address)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundColor(.secondary)
-
-                    Button(action: {
-                        // Copy address to clipboard
-                        #if os(iOS)
-                        UIPasteboard.general.string = address
-                        #endif
-                    }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
         }

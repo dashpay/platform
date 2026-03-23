@@ -80,3 +80,140 @@ impl Drive {
         Ok((root_hash, protocol_version_map))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    #[test]
+    fn should_prove_and_verify_upgrade_vote_status_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let proof = drive
+            .fetch_proved_validator_version_votes(None, 100, None, &platform_version.drive)
+            .expect("should fetch proved validator version votes");
+
+        let (_root_hash, vote_map) =
+            Drive::verify_upgrade_vote_status(&proof, None, 100, platform_version)
+                .expect("should verify upgrade vote status");
+
+        assert!(vote_map.is_empty(), "no votes should exist yet");
+    }
+
+    #[test]
+    fn should_prove_and_verify_upgrade_vote_status_with_votes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let validator1: [u8; 32] = [1u8; 32];
+        let validator2: [u8; 32] = [2u8; 32];
+        let validator3: [u8; 32] = [3u8; 32];
+
+        let version_a: ProtocolVersion = platform_version.protocol_version + 1;
+        let version_b: ProtocolVersion = platform_version.protocol_version + 2;
+
+        drive
+            .update_validator_proposed_app_version(
+                validator1,
+                version_a,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .update_validator_proposed_app_version(
+                validator2,
+                version_b,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .update_validator_proposed_app_version(
+                validator3,
+                version_a,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        let proof = drive
+            .fetch_proved_validator_version_votes(None, 100, None, &platform_version.drive)
+            .expect("should fetch proved validator version votes");
+
+        let (_root_hash, vote_map) =
+            Drive::verify_upgrade_vote_status(&proof, None, 100, platform_version)
+                .expect("should verify upgrade vote status");
+
+        assert_eq!(vote_map.len(), 3, "should have 3 validator entries");
+        assert_eq!(vote_map[&validator1], version_a);
+        assert_eq!(vote_map[&validator2], version_b);
+        assert_eq!(vote_map[&validator3], version_a);
+    }
+
+    #[test]
+    fn should_prove_and_verify_upgrade_vote_status_with_start_protx_hash() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        let validator1: [u8; 32] = [1u8; 32];
+        let validator2: [u8; 32] = [2u8; 32];
+
+        let version_a: ProtocolVersion = platform_version.protocol_version + 1;
+
+        drive
+            .update_validator_proposed_app_version(
+                validator1,
+                version_a,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .update_validator_proposed_app_version(
+                validator2,
+                version_a,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        // Query starting from validator2 (should include validator2 since RangeFrom is inclusive)
+        let proof = drive
+            .fetch_proved_validator_version_votes(
+                Some(validator2),
+                100,
+                None,
+                &platform_version.drive,
+            )
+            .expect("should fetch proved validator version votes");
+
+        let (_root_hash, vote_map) =
+            Drive::verify_upgrade_vote_status(&proof, Some(validator2), 100, platform_version)
+                .expect("should verify upgrade vote status");
+
+        // validator2 = [2u8; 32] > validator1 = [1u8; 32], so only validator2 should be returned
+        assert_eq!(vote_map.len(), 1, "should have 1 validator entry");
+        assert_eq!(vote_map[&validator2], version_a);
+    }
+}

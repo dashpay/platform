@@ -14,6 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 dash-sdk = { path = "../rs-sdk", features = [
     "dpns-contract",
     "dashpay-contract",
+    "shielded",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
@@ -51,6 +52,8 @@ libc = "0.2"
 
 # Cryptography
 getrandom = "0.2"
+rand = "0.8"
+zeroize = "1.8"
 
 # Concurrency
 once_cell = "1.20"

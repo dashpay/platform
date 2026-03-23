@@ -1,6 +1,9 @@
 # Summary
 
 [Introduction](introduction.md)
+[Platform Comparison](platform-comparison.md)
+[SDK Support](sdk-support.md)
+[Getting Started](getting-started.md)
 
 ---
 
@@ -37,7 +40,12 @@
 # Serialization
 
 - [Platform Serialization](serialization/platform-serialization.md)
+- [Document Serialization](serialization/document-serialization.md)
 - [Derive Macros](serialization/derive-macros.md)
+
+# Addresses
+
+- [Platform Addresses](addresses/platform-addresses.md)
 
 # Data Model
 
@@ -63,6 +71,8 @@
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
 - [Put Operations](sdk/put-operations.md)
+- [Identity Keys Deep Dive](sdk/identity-keys.md)
+- [BLAST Sync](sdk/blast-sync.md)
 
 # WASM
 
