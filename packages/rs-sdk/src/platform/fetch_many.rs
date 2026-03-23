@@ -207,51 +207,8 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let request = &query.query(sdk.prove())?;
-
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = request
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|e| e.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(
-                request = ?request,
-                response = ?response,
-                ?address,
-                retries,
-                object_type,
-                "fetched objects from platform"
-            );
-
-            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
-                request.clone(),
-                response,
-            )
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })
-            .map(|(o, metadata, proof)| ExecutionResponse {
-                inner: (o.unwrap_or_default(), metadata, proof),
-                retries,
-                address: address.clone(),
-            })
-        };
-
-        let settings = sdk
-            .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
-
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+        let request = query.query(sdk.prove())?;
+        fetch_many_with_metadata_and_proof_impl(sdk, request, settings).await
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -304,6 +261,67 @@ where
 
         Self::fetch_many(sdk, limit_query).await
     }
+}
+
+/// Standalone helper for the default `FetchMany::fetch_many_with_metadata_and_proof`.
+///
+/// Extracting the retry + closure logic into a free `async fn` breaks the
+/// HRTB Send inference chain that prevents `tokio::spawn` from proving the
+/// resulting future is Send.
+async fn fetch_many_with_metadata_and_proof_impl<R, O>(
+    sdk: &Sdk,
+    request: R,
+    settings: Option<RequestSettings>,
+) -> Result<(O, ResponseMetadata, Proof), Error>
+where
+    R: TransportRequest + Into<<O as FromProof<R>>::Request>,
+    O: FromProof<R, Request = R, Response = <R as TransportRequest>::Response>
+        + MockResponse
+        + Send
+        + Default,
+{
+    let request = &request;
+
+    let fut = |settings: RequestSettings| async move {
+        let ExecutionResponse {
+            address,
+            retries,
+            inner: response,
+        } = request
+            .clone()
+            .execute(sdk, settings)
+            .await
+            .map_err(|e| e.inner_into())?;
+
+        let object_type = std::any::type_name::<O>().to_string();
+        tracing::trace!(
+            request = ?request,
+            response = ?response,
+            ?address,
+            retries,
+            object_type,
+            "fetched objects from platform"
+        );
+
+        sdk.parse_proof_with_metadata_and_proof::<R, O>(request.clone(), response)
+            .await
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })
+            .map(|(o, metadata, proof)| ExecutionResponse {
+                inner: (o.unwrap_or_default(), metadata, proof),
+                retries,
+                address: address.clone(),
+            })
+    };
+
+    let settings = sdk
+        .dapi_client_settings
+        .override_by(settings.unwrap_or_default());
+
+    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 /// Fetch documents from Platform.
@@ -462,7 +480,6 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 /// ## Supported query types
 ///
 /// * [`ContestedDocumentVotePollDriveQuery`](drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery)
-#[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
     type Request = GetContestedResourceVoteStateRequest;
 }
