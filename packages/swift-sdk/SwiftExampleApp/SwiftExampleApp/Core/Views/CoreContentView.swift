@@ -325,9 +325,7 @@ var body: some View {
     }
 
     private func startSync() {
-        Task {
-            await walletService.startSync()
-        }
+        walletService.startSync()
     }
 
     private func pauseSync() {

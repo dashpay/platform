@@ -84,9 +84,9 @@ func print(_ items: Any..., separator: String = " ", terminator: String = "\n") 
     Swift.print(output, terminator: terminator)
 }
 
-// DESIGN NOTE: This class feels like something that should be in the example app, 
+// DESIGN NOTE: This class feels like something that should be in the example app,
 // we, as sdk developers, provide the tools and ffi wrappers, but how to
-// use them depends on the sdk user, for example, by implementing the SPV event 
+// use them depends on the sdk user, for example, by implementing the SPV event
 // handlers, the user can decide what to do with the events, but if we implement them in the sdk
 // we are taking that decision for them, and maybe not all users want the same thing
 @MainActor
@@ -96,10 +96,10 @@ public class WalletService: ObservableObject {
     @Published public var masternodesEnabled = true
     @Published public var lastSyncError: Error?
     @Published var network: AppNetwork
-    
+
     // Internal properties
     private var modelContainer: ModelContainer
-    
+
     // SPV Client and Wallet wrappers
     private var spvClient: SPVClient
     public private(set) var walletManager: CoreWalletManager
@@ -111,11 +111,6 @@ public class WalletService: ObservableObject {
         LoggingPreferences.configure()
 
         let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
-
-        // Ensure the data directory exists before initializing the SPV client
-        if let dataDir = dataDir {
-            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
-        }
 
         // Create SPV client first with dummy handlers to obtain the wallet manager,
         // then destroy and recreate with real handlers that reference self.
@@ -152,21 +147,16 @@ public class WalletService: ObservableObject {
         // Recreate the wallet manager with the new client
         self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: modelContainer)
     }
-    
+
     deinit {
         spvClient.stopSync()
         spvClient.destroy()
     }
-    
+
     private func initializeNewSPVClient() {
       SDKLogger.log("Initializing SPV Client for \(self.self.network.rawValue)...", minimumLevel: .medium)
 
       let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.network.rawValue).path
-
-      // Ensure the data directory exists before initializing the SPV client
-      if let dataDir = dataDir {
-          try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
-      }
 
       // This ensures no memory leaks when creating a new client
       // and unlocks the storage in case we are about to use the same (we probably are)
@@ -200,7 +190,7 @@ public class WalletService: ObservableObject {
 
       SDKLogger.log("WalletManager wrapper initialized successfully", minimumLevel: .medium)
     }
-    
+
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
         masternodesEnabled = enabled
@@ -217,11 +207,11 @@ public class WalletService: ObservableObject {
 
     // MARK: - Sync Management
 
-    public func startSync() async {
+    public func startSync() {
         lastSyncError = nil
 
         do {
-            try await spvClient.startSync()
+            try spvClient.startSync()
         } catch {
             self.lastSyncError = error
             print("❌ Sync failed: \(error)")
@@ -232,7 +222,7 @@ public class WalletService: ObservableObject {
       // pausing and resuming is not supported so, the trick is the following,
       // stop the old client and create a new one in its initial state xd
       spvClient.stopSync()
-      
+
       self.initializeNewSPVClient()
     }
 
@@ -265,17 +255,17 @@ public class WalletService: ObservableObject {
 
     public func switchNetwork(to network: AppNetwork) async {
         guard network != self.network else { return }
-        
+
         print("=== WalletService.switchNetwork START ===")
         print("Switching from \(self.network.rawValue) to \(network.rawValue)")
-        
+
         self.network = network
 
         self.stopSync()
-        
+
         print("=== WalletService.switchNetwork END ===")
     }
-    
+
     // MARK: - SPV Event Handlers implementations
 
     internal final class SPVProgressUpdateEventHandlerImpl: SPVProgressUpdateEventHandler, Sendable {

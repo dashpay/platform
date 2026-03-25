@@ -185,14 +185,14 @@ class SPVClient: @unchecked Sendable {
     func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
-        
+
         client = nil
         config = nil
     }
 
     // MARK: - Synchronization
 
-    func startSync() async throws {
+    func startSync() throws {
         let result = dash_spv_ffi_client_run(
             client
         )
