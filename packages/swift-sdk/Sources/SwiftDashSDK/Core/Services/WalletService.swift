@@ -150,6 +150,10 @@ public class WalletService: ObservableObject {
             startHeight: 0,
             eventHandlers: spvEventHandlers
         )
+
+        // Create the SDK wallet manager by reusing the SPV client's shared manager
+        // TODO: Investigate this error
+        self.walletManager = try! CoreWalletManager(spvClient: spvClient, modelContainer: modelContainer)
     }
 
     deinit {

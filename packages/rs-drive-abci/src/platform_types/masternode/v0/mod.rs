@@ -156,7 +156,7 @@ impl From<DMNState> for MasternodeStateV0 {
         } = value;
 
         Self {
-            service: service,
+            service,
             registered_height,
             pose_revived_height,
             pose_ban_height,
