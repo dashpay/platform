@@ -12,8 +12,7 @@ pub use dashcore;
 #[cfg(feature = "core_key_wallet")]
 pub use key_wallet;
 
-#[cfg(feature = "core_key_wallet_manager")]
-pub use key_wallet_manager;
+// key_wallet_manager was merged into key_wallet crate
 
 #[cfg(feature = "core_spv")]
 pub use dash_spv;

@@ -111,4 +111,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
     fn update_synced_height(&mut self, current_height: u32) {
         self.wallet_info.update_synced_height(current_height)
     }
+
+    fn mark_instant_send_utxos(&mut self, txid: &dashcore::Txid) -> bool {
+        self.wallet_info.mark_instant_send_utxos(txid)
+    }
 }

@@ -25,7 +25,6 @@ chrono = { version = "0.4.35", default-features = false, features = [
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
 dashcore = { workspace = true, features = [
-  "std",
   "secp-recovery",
   "rand",
   "signer",
@@ -33,7 +32,6 @@ dashcore = { workspace = true, features = [
   "eddsa",
 ], default-features = false }
 key-wallet = { workspace = true, optional = true }
-key-wallet-manager = { workspace = true, optional = true }
 dash-spv = { workspace = true, optional = true }
 dashcore-rpc = { workspace = true, optional = true }
 
@@ -94,7 +92,7 @@ core_quorum_validation = ["dashcore/quorum_validation"]
 core_key_wallet = ["dep:key-wallet"]
 core_key_wallet_bincode = ["dep:key-wallet", "key-wallet/bincode"]
 core_key_wallet_bip_38 = ["dep:key-wallet", "key-wallet/bip38"]
-core_key_wallet_manager = ["dep:key-wallet-manager"]
+core_key_wallet_manager = ["dep:key-wallet"]
 core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
 core_spv = ["dep:dash-spv"]
 core_rpc_client = ["dep:dashcore-rpc"]
