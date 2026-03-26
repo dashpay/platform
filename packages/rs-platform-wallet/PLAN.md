@@ -21,12 +21,56 @@ date: 2026-03-13
 **PR sequence** (each PR = library feature + evo-tool integration + old code deleted):
 
 1. **PR-1** ✅: Project scaffold + `PlatformWallet` + `PlatformWalletManager` + `CoreWallet` + evo-tool bridge
-2. **PR-2**: CoreWallet deep integration — `Signer<PlatformAddress>`, per-address data, asset locks, transaction sending + migrate evo-tool backend tasks
-3. **PR-3**: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner` + replace identity backend tasks
-4. **PR-4**: `DashPayWallet` — DIP-14, DIP-15, contact requests, payments, sync + replace dashpay backend tasks
-5. **PR-5**: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + replace platform address backend task
-6. **PR-6**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-7. **PR-7**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+2. **PR-2** ✅: CoreWallet deep integration — `Signer<PlatformAddress>`, per-address data, asset locks, transaction sending
+3. **PR-3** ✅: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner`
+4. **PR-4** ✅: `DashPayWallet` — contact requests (simplified API), sync, accept
+5. **PR-5** ✅: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + review fixes
+6. **PR-6**: Update to latest dashcore + evo-tool upstream — mempool support, SPV adapter fixes, evo-tool backports
+7. **PR-7**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+8. **PR-8**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+
+---
+
+## PR-6: Update to latest dashcore + evo-tool upstream
+
+### Dashcore changes to incorporate (v0.42-dev since 42eb1d69)
+
+**Must fix (will not compile):**
+
+1. **`key-wallet-manager` crate merged into `key-wallet`** (5edf719f):
+   - All `use key_wallet_manager::*` → `use key_wallet::manager::*`
+   - Remove `key-wallet-manager` from Cargo.toml, use `key_wallet` with `manager` feature
+   - Affects: SPV adapter, events.rs, PlatformWalletManager, Cargo.toml
+
+2. **`TransactionContext` restructured** (213a9b4f, f2d2dfe8):
+   - `InBlock { height, block_hash: Option, timestamp: Option }` → `InBlock(BlockInfo)` where `BlockInfo { height, block_hash, timestamp }` (all required)
+   - New `TransactionContext::InstantSend` variant
+   - `check_core_transaction()` gained `update_balance: bool` parameter
+   - Affects: SPV adapter `process_block`, `process_mempool_transaction`
+
+3. **`WalletInterface` trait expanded** (08ade6e8, e7c68d9d):
+   - `process_mempool_transaction()`: added `is_instant_send: bool` param, returns `MempoolTransactionResult`
+   - New required: `watched_outpoints() -> Vec<OutPoint>` (for bloom filter)
+   - New with defaults: `monitor_revision()`, `process_instant_send_lock()`
+   - Affects: SpvWalletAdapter must implement new methods
+
+4. **`DashSpvClient` gained `EventHandler` generic** (c39db47d):
+   - Constructor: `DashSpvClient::new(config, network, storage, wallet, Arc::new(handler))`
+   - `DashSpvClient<W, N, S>` → `DashSpvClient<W, N, S, H: EventHandler>`
+   - New `EventHandler` trait: `on_sync_event`, `on_network_event`, `on_progress`, `on_wallet_event`, `on_error`
+   - Affects: `PlatformWalletManager::start_spv()` when wired up
+
+**Should implement (defaults exist but functionality needs it):**
+- `mark_instant_send_utxos()` on `WalletInfoInterface`
+- `EventHandler` impl for SPV progress/wallet event forwarding to `PlatformWalletEvent`
+
+### Evo-tool changes to backport (v1.0-dev since 7647ccf1)
+
+1. **Mempool support** (0f01edd9): `TransactionStatus` enum, `MempoolStrategy::BloomFilter`, transaction deduplication
+2. **Key-only address balances** (917b3471): RPC fallback for transaction history, provider account registration
+3. **DAPI error classification** (65358ef4): Typed `TaskError` variants instead of raw gRPC errors
+4. **DB migration** (8937c1c9): Consolidated migrations, `Network::Dash` → `Network::Mainnet` in DB
+5. **E2E test harness** (fffc649e): `BackendTestContext` pattern for integration tests
 
 ---
 
