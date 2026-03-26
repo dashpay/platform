@@ -40,6 +40,7 @@
 # Serialization
 
 - [Platform Serialization](serialization/platform-serialization.md)
+- [Document Serialization](serialization/document-serialization.md)
 - [Derive Macros](serialization/derive-macros.md)
 
 # Addresses
