@@ -40,12 +40,9 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
         Some(ValidatorV0 {
             pro_tx_hash,
             public_key,
-            node_ip: service
-                .expect("TODO: idk what created this")
-                .ip()
-                .to_string(),
+            node_ip: service.ip().to_string(),
             node_id: PubkeyHash::from_byte_array(platform_node_id),
-            core_port: service.expect("TODO: idk what created this").port(),
+            core_port: service.port(),
             platform_http_port: *platform_http_port as u16,
             platform_p2p_port: *platform_p2p_port as u16,
             is_banned: pose_ban_height.is_some(),
