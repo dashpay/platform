@@ -19,6 +19,11 @@ struct OptionsView: View {
                             if newNetwork != appState.currentNetwork {
                                 isSwitchingNetwork = true
                                 Task {
+                                    // Auto-disable Docker when leaving Local
+                                    if newNetwork != .regtest && appState.useDockerSetup {
+                                        appState.useDockerSetup = false
+                                    }
+
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
 
@@ -39,24 +44,26 @@ struct OptionsView: View {
                     .pickerStyle(SegmentedPickerStyle())
                     .disabled(isSwitchingNetwork)
 
-                    Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
-                        .onChange(of: appState.useDockerSetup) { _, _ in
-                            isSwitchingNetwork = true
-                            Task {
-                                await appState.switchNetwork(to: appState.currentNetwork)
-                                await MainActor.run { isSwitchingNetwork = false }
+                    if appState.currentNetwork == .regtest {
+                        Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
+                            .onChange(of: appState.useDockerSetup) { _, _ in
+                                isSwitchingNetwork = true
+                                Task {
+                                    await appState.switchNetwork(to: appState.currentNetwork)
+                                    await MainActor.run { isSwitchingNetwork = false }
+                                }
                             }
-                        }
-                        .help("Connect to local dashmate Docker network.")
+                            .help("Connect to local dashmate Docker network.")
 
-                    if appState.useDockerSetup {
-                        TextField("Faucet RPC Password", text: Binding(
-                            get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
-                            set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
-                        ))
-                        .font(.system(.body, design: .monospaced))
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        if appState.useDockerSetup {
+                            TextField("Faucet RPC Password", text: Binding(
+                                get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
+                                set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
+                            ))
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        }
                     }
 
                     HStack {
