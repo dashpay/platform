@@ -21,7 +21,7 @@ This allows applications to manage both Layer 1 (blockchain) and Layer 2 (Platfo
 
 ```rust
 use platform_wallet::PlatformWalletInfo;
-use key_wallet_manager::wallet_manager::WalletManager;
+use key_wallet::manager::WalletManager;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use dpp::prelude::Identifier;
 
@@ -105,12 +105,12 @@ The package is structured as follows:
 ### Compatibility
 - Works with `WalletManager<PlatformWalletInfo>` for standard wallet management
 - Works with `SPVWalletManager<PlatformWalletInfo>` for SPV/light client functionality
-- Fully compatible with existing `key-wallet-manager` infrastructure
+- Fully compatible with existing `key-wallet::manager` infrastructure
 
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
-- `key-wallet-manager`: Wallet management and SPV support
+- `key-wallet::manager`: Wallet management and SPV support (merged into key-wallet)
 - `dpp`: Dash Platform Protocol types and identity definitions
 - `dashcore`: Core blockchain types
 

@@ -1,6 +1,8 @@
 /// Accessors for Masternode
 pub mod accessors;
 
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dpp::dashcore_rpc::json::MasternodeListItem;
@@ -45,8 +47,10 @@ impl Debug for MasternodeV0 {
     }
 }
 
-impl From<MasternodeListItem> for MasternodeV0 {
-    fn from(value: MasternodeListItem) -> Self {
+impl TryFrom<MasternodeListItem> for MasternodeV0 {
+    type Error = Error;
+
+    fn try_from(value: MasternodeListItem) -> Result<Self, Self::Error> {
         let MasternodeListItem {
             node_type,
             pro_tx_hash,
@@ -57,15 +61,15 @@ impl From<MasternodeListItem> for MasternodeV0 {
             state,
         } = value;
 
-        Self {
+        Ok(Self {
             node_type,
             pro_tx_hash,
             collateral_hash,
             collateral_index,
             collateral_address,
             operator_reward,
-            state: state.into(),
-        }
+            state: state.try_into()?,
+        })
     }
 }
 
@@ -137,8 +141,10 @@ pub struct MasternodeStateV0 {
     pub platform_http_port: Option<u32>,
 }
 
-impl From<DMNState> for MasternodeStateV0 {
-    fn from(value: DMNState) -> Self {
+impl TryFrom<DMNState> for MasternodeStateV0 {
+    type Error = Error;
+
+    fn try_from(value: DMNState) -> Result<Self, Self::Error> {
         let DMNState {
             service,
             registered_height,
@@ -155,7 +161,11 @@ impl From<DMNState> for MasternodeStateV0 {
             platform_http_port,
         } = value;
 
-        Self {
+        let service = service.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "masternode service address is required but was empty in core RPC response",
+        )))?;
+
+        Ok(Self {
             service,
             registered_height,
             pose_revived_height,
@@ -169,7 +179,7 @@ impl From<DMNState> for MasternodeStateV0 {
             platform_node_id,
             platform_p2p_port,
             platform_http_port,
-        }
+        })
     }
 }
 
@@ -192,7 +202,7 @@ impl From<MasternodeStateV0> for DMNState {
         } = value;
 
         Self {
-            service,
+            service: Some(service),
             registered_height,
             pose_revived_height,
             pose_ban_height,

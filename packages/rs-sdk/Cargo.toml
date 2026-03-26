@@ -75,7 +75,6 @@ default = [
 ]
 spv-client = [
   "core_spv",
-  "core_key_wallet_manager",
   "core_key_wallet",
   "core_bincode",
   "core_key_wallet_bincode",
@@ -146,14 +145,13 @@ core_verification = ["dpp/core_verification"]
 core_key_wallet = ["dpp/core_key_wallet"]
 core_key_wallet_serde = ["dpp/core_key_wallet_serde"]
 core_key_wallet_bincode = ["dpp/core_key_wallet_bincode"]
-core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
 shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-client"]
 
 # Platform wallet support
-wallet = ["core_key_wallet_manager", "core_key_wallet",]
+wallet = ["core_key_wallet"]
 
 [[example]]
 

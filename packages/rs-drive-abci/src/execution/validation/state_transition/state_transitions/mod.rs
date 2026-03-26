@@ -679,7 +679,7 @@ pub(in crate::execution) mod tests {
                 collateral_address: rng.gen(),
                 operator_reward: 0.0,
                 state: DMNState {
-                    service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
+                    service: Some(SocketAddr::new(IpAddr::V4(random_ip), 19999)),
                     registered_height: 0,
                     pose_revived_height: None,
                     pose_ban_height: None,
@@ -768,7 +768,7 @@ pub(in crate::execution) mod tests {
                 collateral_address: rng.gen(),
                 operator_reward: 0.0,
                 state: DMNState {
-                    service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
+                    service: Some(SocketAddr::new(IpAddr::V4(random_ip), 19999)),
                     registered_height: 0,
                     pose_revived_height: None,
                     pose_ban_height: None,

@@ -247,8 +247,10 @@ pub fn generate_test_masternodes(
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
-                    .unwrap(),
+                service: Some(
+                    SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
+                        .unwrap(),
+                ),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -348,9 +350,13 @@ pub fn generate_test_masternodes(
                         rng.gen_range(0..255),
                         rng.gen_range(0..255),
                     );
-                    let old_port = masternode_list_item_b.state.service.port();
+                    let old_port = masternode_list_item_b
+                        .state
+                        .service
+                        .map(|s| s.port())
+                        .unwrap_or(0);
                     masternode_list_item_b.state.service =
-                        SocketAddr::new(IpAddr::V4(random_ip), old_port);
+                        Some(SocketAddr::new(IpAddr::V4(random_ip), old_port));
                 }
 
                 latest_masternode_list_item = masternode_list_item_b.clone();
@@ -384,8 +390,10 @@ pub fn generate_test_masternodes(
             collateral_address: [0; 20],
             operator_reward: 0.0,
             state: DMNState {
-                service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
-                    .unwrap(),
+                service: Some(
+                    SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
+                        .unwrap(),
+                ),
                 registered_height: 0,
                 pose_revived_height: None,
                 pose_ban_height: None,
@@ -525,9 +533,13 @@ pub fn generate_test_masternodes(
                         rng.gen_range(0..255),
                         rng.gen_range(0..255),
                     );
-                    let old_port = hpmn_list_item_b.state.service.port();
+                    let old_port = hpmn_list_item_b
+                        .state
+                        .service
+                        .map(|s| s.port())
+                        .unwrap_or(0);
                     hpmn_list_item_b.state.service =
-                        SocketAddr::new(IpAddr::V4(random_ip), old_port);
+                        Some(SocketAddr::new(IpAddr::V4(random_ip), old_port));
                 }
                 if update.p2p_port {
                     if let Some(port) = hpmn_list_item_b.state.platform_p2p_port.as_mut() {

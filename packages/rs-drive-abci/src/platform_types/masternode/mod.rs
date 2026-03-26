@@ -24,7 +24,7 @@ impl TryFromPlatformVersioned<MasternodeListItem> for Masternode {
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         match platform_version.drive_abci.structs.masternode {
-            0 => Ok(Self::V0(value.into())),
+            0 => Ok(Self::V0(value.try_into()?)),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "Masternode::try_from_platform_versioned(MasternodeListItem)".to_string(),
                 known_versions: vec![0],
