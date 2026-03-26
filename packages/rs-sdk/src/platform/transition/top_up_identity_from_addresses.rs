@@ -4,7 +4,7 @@ use super::address_inputs::fetch_inputs_with_nonce;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use crate::platform::transition::address_inputs::{collect_address_infos_from_proof, nonce_inc};
+use crate::platform::transition::address_inputs::collect_address_infos_from_proof;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
@@ -51,7 +51,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits), Error> {
-        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
+        let inputs_with_nonce = fetch_inputs_with_nonce(sdk, &inputs).await?;
         self.top_up_from_addresses_with_nonce(sdk, inputs_with_nonce, signer, settings)
             .await
     }

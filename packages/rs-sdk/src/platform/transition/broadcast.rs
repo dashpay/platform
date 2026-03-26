@@ -87,6 +87,11 @@ impl BroadcastStateTransition for StateTransition {
                 if let Some(owner_id) = self.owner_id() {
                     sdk.refresh_identity_nonce(&owner_id).await;
                 }
+                if let Some(inputs) = self.inputs() {
+                    for address in inputs.keys() {
+                        sdk.refresh_address_nonce(address).await;
+                    }
+                }
             }
         }
         result

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
+use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
@@ -51,7 +51,7 @@ impl<S: Signer<PlatformAddress>> ShieldFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(self, &inputs).await?);
+        let inputs_with_nonce = fetch_inputs_with_nonce(self, &inputs).await?;
         self.shield_funds_with_nonce(
             inputs_with_nonce,
             bundle,

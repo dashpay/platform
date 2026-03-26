@@ -1,11 +1,15 @@
 use crate::error::Error;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::{Fetch, Identifier};
+use crate::platform::{Fetch, FetchMany, Identifier};
 use crate::Sdk;
+use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_nonce::{IDENTITY_NONCE_VALUE_FILTER, MAX_MISSING_IDENTITY_REVISIONS};
 use dpp::prelude::IdentityNonce;
-use drive_proof_verifier::types::{IdentityContractNonceFetcher, IdentityNonceFetcher};
+use drive_proof_verifier::types::{
+    AddressInfo, AddressInfos, IdentityContractNonceFetcher, IdentityNonceFetcher,
+};
 use lru::LruCache;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::future::Future;
 use std::hash::Hash;
@@ -74,6 +78,7 @@ pub(crate) struct IdentityContractPair {
 pub(crate) struct NonceCache {
     identity_nonces: Mutex<LruCache<Identifier, NonceCacheEntry>>,
     contract_nonces: Mutex<LruCache<IdentityContractPair, NonceCacheEntry>>,
+    address_nonces: Mutex<LruCache<PlatformAddress, NonceCacheEntry>>,
     default_stale_time_s: u64,
 }
 
@@ -90,6 +95,7 @@ impl Default for NonceCache {
         Self {
             identity_nonces: Mutex::new(LruCache::new(DEFAULT_NONCE_CACHE_SIZE)),
             contract_nonces: Mutex::new(LruCache::new(DEFAULT_NONCE_CACHE_SIZE)),
+            address_nonces: Mutex::new(LruCache::new(DEFAULT_NONCE_CACHE_SIZE)),
             default_stale_time_s: DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
         }
     }
@@ -202,6 +208,55 @@ impl NonceCache {
             },
         )
         .await
+    }
+
+    /// Get or fetch address nonce from cache, querying Platform via the SDK
+    /// when the cached value is stale or absent.
+    pub(crate) async fn get_address_nonce(
+        &self,
+        sdk: &Sdk,
+        address: PlatformAddress,
+        bump_first: bool,
+        settings: &PutSettings,
+    ) -> Result<IdentityNonce, Error> {
+        let request_settings = settings.request_settings;
+        Self::get_or_fetch_nonce(
+            &self.address_nonces,
+            address,
+            bump_first,
+            settings,
+            self.default_stale_time_s,
+            || async move {
+                let addresses = BTreeSet::from([address]);
+                let infos: AddressInfos =
+                    AddressInfo::fetch_many_with_metadata(sdk, addresses, Some(request_settings))
+                        .await
+                        .map(|(infos, _metadata)| infos)?;
+                let nonce = infos
+                    .get(&address)
+                    .and_then(|opt| opt.as_ref())
+                    .map(|info| info.nonce as u64)
+                    .unwrap_or_else(|| {
+                        tracing::debug!(
+                            address = ?address,
+                            "Platform returned no nonce for address; \
+                             defaulting to 0 (unknown address or first interaction)"
+                        );
+                        0
+                    });
+                Ok(nonce)
+            },
+        )
+        .await
+    }
+
+    /// Marks a single address nonce cache entry as stale, forcing a fresh
+    /// Platform fetch on the next access while preserving the cached value.
+    pub(crate) async fn refresh_address(&self, address: &PlatformAddress) {
+        let mut guard = self.address_nonces.lock().await;
+        if let Some(entry) = guard.get_mut(address) {
+            entry.last_fetch_timestamp = STALE_TIMESTAMP;
+        }
     }
 
     /// Marks all nonce cache entries for the given identity as stale,
@@ -998,5 +1053,183 @@ mod nonce_cache_tests {
         .await
         .unwrap();
         assert_eq!(nonce, 6);
+    }
+
+    // --- Address nonce cache tests ---
+
+    fn test_address() -> PlatformAddress {
+        PlatformAddress::P2pkh([0u8; 20])
+    }
+
+    fn test_address_2() -> PlatformAddress {
+        PlatformAddress::P2pkh([1u8; 20])
+    }
+
+    #[tokio::test]
+    async fn address_nonce_basic_fetch() {
+        let cache = NonceCache::default();
+        let address = test_address();
+
+        let result = NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            false,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(42u64) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[tokio::test]
+    async fn address_nonce_cache_hit() {
+        let cache = NonceCache::default();
+        let address = test_address();
+        let settings = never_stale();
+
+        // Seed cache
+        NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(10u64) },
+        )
+        .await
+        .unwrap();
+
+        // Second access should serve from cache without Platform fetch
+        let result = NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &settings,
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { panic!("should not fetch from platform") },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 12, "first bump=11, second bump=12");
+    }
+
+    #[tokio::test]
+    async fn address_nonce_refresh_marks_stale() {
+        let cache = NonceCache::default();
+        let address = test_address();
+
+        // Seed cache
+        NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(5u64) },
+        )
+        .await
+        .unwrap();
+
+        // Mark stale
+        cache.refresh_address(&address).await;
+
+        // Verify timestamp is STALE_TIMESTAMP
+        let guard = cache.address_nonces.lock().await;
+        let entry = guard.peek(&address).unwrap();
+        assert_eq!(entry.last_fetch_timestamp, STALE_TIMESTAMP);
+    }
+
+    #[tokio::test]
+    async fn address_nonce_refresh_preserves_cached_value() {
+        let cache = NonceCache::default();
+        let address = test_address();
+
+        // Seed cache with bump: platform=5, cached=6
+        let nonce = NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(5u64) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(nonce, 6);
+
+        // Bump again from cache: cached=7
+        let nonce = NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &never_stale(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { panic!("should not fetch") },
+        )
+        .await
+        .unwrap();
+        assert_eq!(nonce, 7);
+
+        // Simulate broadcast failure: refresh marks stale
+        cache.refresh_address(&address).await;
+
+        // Re-fetch: platform still returns 5 (tx not confirmed yet).
+        // Phase 3 should use max(cached=7, platform=5) = 7, then bump to 8.
+        let nonce = NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            address,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(5u64) },
+        )
+        .await
+        .unwrap();
+        assert_eq!(nonce, 8, "should preserve cached nonce and bump past it");
+    }
+
+    #[tokio::test]
+    async fn address_nonce_different_addresses_isolated() {
+        let cache = NonceCache::default();
+        let addr1 = test_address();
+        let addr2 = test_address_2();
+
+        // Seed both addresses
+        NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            addr1,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(100u64) },
+        )
+        .await
+        .unwrap();
+        NonceCache::get_or_fetch_nonce(
+            &cache.address_nonces,
+            addr2,
+            true,
+            &Default::default(),
+            DEFAULT_IDENTITY_NONCE_STALE_TIME_S,
+            || async { Ok(200u64) },
+        )
+        .await
+        .unwrap();
+
+        // Refresh only addr1
+        cache.refresh_address(&addr1).await;
+
+        // addr1 should be stale, addr2 should be fresh
+        let guard = cache.address_nonces.lock().await;
+        assert_eq!(
+            guard.peek(&addr1).unwrap().last_fetch_timestamp,
+            STALE_TIMESTAMP
+        );
+        assert_ne!(
+            guard.peek(&addr2).unwrap().last_fetch_timestamp,
+            STALE_TIMESTAMP
+        );
     }
 }

@@ -24,19 +24,11 @@ pub(crate) async fn fetch_inputs_with_nonce(
     for (address, amount) in amounts {
         let info = ensure_address_exists(&address_infos, *address)?;
         ensure_address_balance(*address, info.balance, *amount)?;
-        inputs_with_nonce.insert(*address, (info.nonce, *amount));
+        let nonce = sdk.get_address_nonce(*address, true, None).await?;
+        inputs_with_nonce.insert(*address, (nonce, *amount));
     }
 
     Ok(inputs_with_nonce)
-}
-
-/// Increments the nonce for each address in the provided map.
-pub(crate) fn nonce_inc(
-    data: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-    data.into_iter()
-        .map(|(address, (nonce, credits))| (address, (nonce + 1, credits)))
-        .collect()
 }
 
 /// Validates that the provided `address_infos_map` contains exactly the set of `expected_addresses`

@@ -15,10 +15,11 @@ use dapi_grpc::tonic::transport::Certificate;
 use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 use dash_context_provider::MockContextProvider;
+use dpp::address_funds::PlatformAddress;
 use dpp::bincode;
 use dpp::bincode::error::DecodeError;
 use dpp::dashcore::Network;
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{AddressNonce, IdentityNonce};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::operations::proof::GroveDBProof;
 use drive_proof_verifier::FromProof;
@@ -378,6 +379,29 @@ impl Sdk {
     /// [`get_identity_contract_nonce`].
     pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
         self.nonce_cache.refresh(identity_id).await;
+    }
+
+    /// Get or fetch address nonce, querying Platform when stale or absent.
+    /// Treats a missing nonce as `0` before applying the optional bump; on first
+    /// interaction this may return `0` or `1` depending on `bump_first`.
+    pub async fn get_address_nonce(
+        &self,
+        address: PlatformAddress,
+        bump_first: bool,
+        settings: Option<PutSettings>,
+    ) -> Result<AddressNonce, Error> {
+        let settings = settings.unwrap_or_default();
+        let nonce = self
+            .nonce_cache
+            .get_address_nonce(self, address, bump_first, &settings)
+            .await?;
+        Ok(nonce as AddressNonce)
+    }
+
+    /// Marks address nonce cache entry as stale so it is re-fetched from
+    /// Platform on the next call to [`get_address_nonce`].
+    pub async fn refresh_address_nonce(&self, address: &PlatformAddress) {
+        self.nonce_cache.refresh_address(address).await;
     }
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
