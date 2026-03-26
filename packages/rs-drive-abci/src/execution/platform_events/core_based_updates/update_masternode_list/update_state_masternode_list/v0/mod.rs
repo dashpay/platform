@@ -64,10 +64,8 @@ where
                         // the ban_height was changed
                         validator.is_banned = maybe_ban_height.is_some();
                     }
-                    if let Some(maybe_address) = dmn_state_diff.service {
-                        if let Some(address) = maybe_address {
-                            validator.node_ip = address.ip().to_string();
-                        }
+                    if let Some(Some(address)) = dmn_state_diff.service {
+                        validator.node_ip = address.ip().to_string();
                     }
 
                     if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {

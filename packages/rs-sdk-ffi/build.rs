@@ -23,7 +23,16 @@ fn main() {
                 "/* This file is auto-generated. Do not modify manually. */\n/* Unified Dash SDK - includes both Core (SPV) and Platform functionality */".to_string(),
             ),
             after_includes: Some(
-                "/* Forward declarations for opaque types */\nstruct ShieldedPoolClient;\n".to_string(),
+                concat!(
+                    "/* Forward declarations for opaque types */\n",
+                    "struct ShieldedPoolClient;\n",
+                    "\n",
+                    "/* Forward declarations for dash-spv-ffi types used by the unified SDK.\n",
+                    " * These allow the header to compile standalone. The full iOS build\n",
+                    " * merges the complete dash_spv_ffi.h definitions via build_ios.sh. */\n",
+                    "typedef struct FFIClientConfig FFIClientConfig;\n",
+                    "typedef struct FFIDashSpvClient FFIDashSpvClient;\n",
+                ).to_string(),
             ),
             includes: vec![],
             sys_includes: vec!["stdint.h".to_string(), "stdbool.h".to_string()],

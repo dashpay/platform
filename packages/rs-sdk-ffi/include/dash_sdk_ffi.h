@@ -11,9 +11,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include "dash_spv_ffi.h"
+
+/* Forward declarations for types from dash-spv-ffi.
+ * When building the full unified SDK, the merge step in build_ios.sh replaces
+ * this header with one that includes the complete dash_spv_ffi.h definitions.
+ * These forward declarations keep the header self-contained for local use. */
+#ifndef DASH_SPV_FFI_H
+typedef struct FFIClientConfig FFIClientConfig;
+#endif
 
 // Authorized action takers for token operations
 typedef enum DashSDKAuthorizedActionTakers {

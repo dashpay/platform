@@ -124,18 +124,20 @@ public class WalletService: ObservableObject {
             network: network.sdkNetwork,
             dataDir: dataDir,
             startHeight: 0,
+            progressHandler: SPVProgressUpdateEventHandlerImpl(walletService: self),
+            syncHandler: SPVSyncEventsHandlerImpl(walletService: self),
+            networkHandler: SPVNetworkEventsHandlerImpl(walletService: self),
+            walletHandler: SPVWalletEventsHandlerImpl(walletService: self)
         )
-        
+
         self.spvClient = spvClient
-        
+
+        // Trigger initial progress snapshot since the FFI won't send one until sync starts
+        spvClient.triggerProgressUpdate()
+
         // Create the SDK wallet manager by reusing the SPV client's shared manager
         // TODO: Investigate this error
         self.walletManager = try! CoreWalletManager(spvClient: spvClient, modelContainer: modelContainer)
-        
-        spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-        spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-        spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-        spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
     }
     
     deinit {
@@ -164,12 +166,11 @@ public class WalletService: ObservableObject {
           network: self.self.network.sdkNetwork,
           dataDir: dataDir,
           startHeight: 0,
+          progressHandler: SPVProgressUpdateEventHandlerImpl(walletService: self),
+          syncHandler: SPVSyncEventsHandlerImpl(walletService: self),
+          networkHandler: SPVNetworkEventsHandlerImpl(walletService: self),
+          walletHandler: SPVWalletEventsHandlerImpl(walletService: self)
       )
-      
-      self.spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-      self.spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-      self.spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-      self.spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
       
       try! self.spvClient.setMasternodeSyncEnabled(self.masternodesEnabled)
       

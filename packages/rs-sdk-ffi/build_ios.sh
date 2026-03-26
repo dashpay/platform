@@ -186,6 +186,38 @@ RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
 KEY_WALLET_HEADER_PATH="$RUST_DASHCORE_PATH/key-wallet-ffi/include/key_wallet_ffi.h"
 SPV_HEADER_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi/include/dash_spv_ffi.h"
 
+# Generate missing FFI headers from rust-dashcore via a host build
+# The build.rs in each crate runs cbindgen to produce the header under include/
+if [ -d "$RUST_DASHCORE_PATH" ]; then
+    if [ ! -f "$KEY_WALLET_HEADER_PATH" ] || [ ! -f "$SPV_HEADER_PATH" ]; then
+        echo -e "${GREEN}Generating FFI headers from rust-dashcore (host build)...${NC}"
+        pushd "$RUST_DASHCORE_PATH" >/dev/null
+        DASHCORE_CARGO_CMD="cargo"
+        if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
+            DASHCORE_CARGO_CMD="cargo +${RUST_DASHCORE_TOOLCHAIN}"
+        fi
+        if [ ! -f "$KEY_WALLET_HEADER_PATH" ]; then
+            echo -ne "  Generating key_wallet_ffi.h..."
+            if $DASHCORE_CARGO_CMD build --release -p key-wallet-ffi > /tmp/cargo_build_kwffi_host.log 2>&1; then
+                echo -e " ${GREEN}done${NC}"
+            else
+                echo -e " ${RED}failed${NC}"
+                cat /tmp/cargo_build_kwffi_host.log
+            fi
+        fi
+        if [ ! -f "$SPV_HEADER_PATH" ]; then
+            echo -ne "  Generating dash_spv_ffi.h..."
+            if $DASHCORE_CARGO_CMD build --release -p dash-spv-ffi > /tmp/cargo_build_spvffi_host.log 2>&1; then
+                echo -e " ${GREEN}done${NC}"
+            else
+                echo -e " ${RED}failed${NC}"
+                cat /tmp/cargo_build_spvffi_host.log
+            fi
+        fi
+        popd >/dev/null
+    fi
+fi
+
 if [ -f "$KEY_WALLET_HEADER_PATH" ] && [ -f "$SPV_HEADER_PATH" ]; then
     # Create merged header with unified include guard
     MERGED_HEADER="$OUTPUT_DIR/dash_unified_ffi.h"
@@ -210,8 +242,8 @@ extern "C" {
 
 // Forward declarations to ensure cross-refs compile regardless of merge order
 typedef struct FFIClientConfig FFIClientConfig;
-// Provide explicit opaque definitions so Swift can import the type names
-typedef struct FFIDashSpvClient { unsigned char _private[0]; } FFIDashSpvClient;
+// Forward declarations so Swift can import the type names
+struct FFIDashSpvClient; typedef struct FFIDashSpvClient FFIDashSpvClient;
 typedef struct FFIWallet { unsigned char _private[0]; } FFIWallet;
 typedef struct FFIAccount { unsigned char _private[0]; } FFIAccount;
 typedef struct FFIAccountCollection { unsigned char _private[0]; } FFIAccountCollection;
@@ -348,9 +380,24 @@ EOF
     echo -e "${GREEN}✓ Headers merged successfully${NC}"
 else
     echo -e "${YELLOW}⚠ Key Wallet FFI or SPV FFI headers not found${NC}"
-    echo -e "${YELLOW}  Please build key-wallet-ffi and dash-spv-ffi first:${NC}"
-    echo -e "${YELLOW}  cd ../../../rust-dashcore/key-wallet-ffi && cargo build --release${NC}"
-    echo -e "${YELLOW}  cd ../../../rust-dashcore/dash-spv-ffi && cargo build --release${NC}"
+    echo -e "${YELLOW}  Patching dash_sdk_ffi.h with forward declarations as fallback...${NC}"
+    # Replace the #include "dash_spv_ffi.h" with forward declarations for the
+    # types that rs-sdk-ffi references from dash-spv-ffi, so the header compiles
+    # even without the external header file.
+    if [ -f "$OUTPUT_DIR/dash_sdk_ffi.h" ]; then
+        TEMP_HEADER=$(mktemp)
+        awk '
+        /^#include "dash_spv_ffi\.h"/ {
+            print "/* dash_spv_ffi.h not available; forward declarations injected */"
+            print "struct FFIClientConfig; typedef struct FFIClientConfig FFIClientConfig;"
+            print "struct FFIDashSpvClient; typedef struct FFIDashSpvClient FFIDashSpvClient;"
+            next
+        }
+        { print }
+        ' "$OUTPUT_DIR/dash_sdk_ffi.h" > "$TEMP_HEADER"
+        mv "$TEMP_HEADER" "$OUTPUT_DIR/dash_sdk_ffi.h"
+        echo -e "${YELLOW}  ⚠ Header patched with minimal forward declarations${NC}"
+    fi
 fi
 
 # Build dash-spv-ffi from local rust-dashcore for device and simulator

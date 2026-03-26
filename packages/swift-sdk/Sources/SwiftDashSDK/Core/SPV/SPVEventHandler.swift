@@ -219,6 +219,8 @@ private func onSpvBlockProcessedCallbackC(
     height: UInt32,
     hashPtr: UnsafePointer<Byte32>?,
     newAddressCount: UInt32,
+    confirmedTxids: UnsafePointer<Byte32>?,
+    confirmedTxidCount: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
     let hash = bytePtrIntoData(hashPtr, 32)
@@ -419,6 +421,7 @@ extension SPVWalletEventsHandler {
     func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
+            on_transaction_status_changed: nil,
             on_balance_updated: onSpvBalanceUpdatedCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
         )
@@ -427,6 +430,7 @@ extension SPVWalletEventsHandler {
 
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
+    status: FFITransactionContext,
     accountIndex: UInt32,
     txidPtr: UnsafePointer<Byte32>?,
     amount: Int64,
@@ -545,4 +549,40 @@ public func ffiSyncProgressPtrIntoSpvSyncProgress(_ ptr: UnsafePointer<FFISyncPr
     }
 
     return SPVSyncProgress(ptr.pointee)
+}
+
+// MARK: - Unified FFIEventCallbacks builder
+
+/// Build an `FFIEventCallbacks` struct from individual handler objects.
+///
+/// The new dashcore FFI requires all callbacks to be provided at client creation
+/// time via a single `FFIEventCallbacks` struct. This function assembles one from
+/// the individual Swift handler protocols.
+func buildFFIEventCallbacks(
+    progressHandler: SPVProgressUpdateEventHandler?,
+    syncHandler: SPVSyncEventsHandler?,
+    networkHandler: SPVNetworkEventsHandler?,
+    walletHandler: SPVWalletEventsHandler?
+) -> FFIEventCallbacks {
+    let progress: FFIProgressCallback = progressHandler?.intoFFIProgressCallback()
+        ?? FFIProgressCallback(on_progress: nil, user_data: nil)
+
+    let sync: FFISyncEventCallbacks = syncHandler?.intoFFISyncEventCallbacks()
+        ?? FFISyncEventCallbacks()
+
+    let network: FFINetworkEventCallbacks = networkHandler?.intoFFINetworkEventCallbacks()
+        ?? FFINetworkEventCallbacks()
+
+    let wallet: FFIWalletEventCallbacks = walletHandler?.intoFFIWalletEventCallbacks()
+        ?? FFIWalletEventCallbacks()
+
+    let error = FFIClientErrorCallback(on_error: nil, user_data: nil)
+
+    return FFIEventCallbacks(
+        sync: sync,
+        network: network,
+        progress: progress,
+        wallet: wallet,
+        error: error
+    )
 }
