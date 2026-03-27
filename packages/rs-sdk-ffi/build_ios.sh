@@ -95,7 +95,7 @@ if [[ "$CLEAN_BUILD" -eq 1 ]]; then
     cargo clean --release --target aarch64-apple-ios-sim -p rs-sdk-ffi 2>/dev/null || true
     cargo clean --release --target x86_64-apple-ios -p rs-sdk-ffi 2>/dev/null || true
     # Also clean path-dependency crates that cargo may cache
-    for pkg in dashcore key-wallet key-wallet-manager dash-spv dash-spv-ffi rs-platform-wallet rs-platform-wallet-ffi; do
+    for pkg in dashcore key-wallet dash-spv dash-spv-ffi rs-platform-wallet rs-platform-wallet-ffi; do
         cargo clean --release --target aarch64-apple-ios -p "$pkg" 2>/dev/null || true
         cargo clean --release --target aarch64-apple-ios-sim -p "$pkg" 2>/dev/null || true
         cargo clean --release --target x86_64-apple-ios -p "$pkg" 2>/dev/null || true

@@ -32,7 +32,6 @@ mod signer_simple;
 mod system;
 mod token;
 mod types;
-mod unified;
 mod utils;
 mod voting;
 
@@ -65,7 +64,6 @@ pub use signer_simple::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;
-pub use unified::*;
 pub use utils::*;
 pub use voting::*;
 

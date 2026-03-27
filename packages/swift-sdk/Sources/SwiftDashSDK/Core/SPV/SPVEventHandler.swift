@@ -36,6 +36,48 @@ private typealias Byte96 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
+// MARK: - SPV Event Handlers
+
+struct SPVEventHandlers {
+    let progress: SPVProgressUpdateEventHandler
+    let sync: SPVSyncEventsHandler
+    let network: SPVNetworkEventsHandler
+    let wallet: SPVWalletEventsHandler
+    let error: SPVClientErrorEventsHandler
+
+    init(
+        _ progress: SPVProgressUpdateEventHandler,
+        _ sync: SPVSyncEventsHandler,
+        _ network: SPVNetworkEventsHandler,
+        _ wallet: SPVWalletEventsHandler,
+        _ error: SPVClientErrorEventsHandler
+    ) {
+        self.progress = progress
+        self.sync = sync
+        self.network = network
+        self.wallet = wallet
+        self.error = error
+    }
+
+    init() {
+        self.progress = DummySPVProgressUpdateEventHandler()
+        self.sync = DummySPVSyncEventsHandler()
+        self.network = DummySPVNetworkEventsHandler()
+        self.wallet = DummySPVWalletEventsHandler()
+        self.error = DummySPVClientErrorEventsHandler()
+    }
+
+    func intoFFIEventCallbacks() -> FFIEventCallbacks {
+        return FFIEventCallbacks(
+            sync: self.sync.intoFFISyncEventCallbacks(),
+            network: self.network.intoFFINetworkEventCallbacks(),
+            progress: self.progress.intoFFIProgressCallback(),
+            wallet: self.wallet.intoFFIWalletEventCallbacks(),
+            error: self.error.intoFFIClientErrorCallback(),
+        )
+    }
+}
+
 // MARK: - Progress callback
 
 protocol SPVProgressUpdateEventHandler: AnyObject {
@@ -219,6 +261,8 @@ private func onSpvBlockProcessedCallbackC(
     height: UInt32,
     hashPtr: UnsafePointer<Byte32>?,
     newAddressCount: UInt32,
+    confirmedTxids: UnsafePointer<Byte32>?,
+    confirmedTxidCount: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
     let hash = bytePtrIntoData(hashPtr, 32)
@@ -419,6 +463,7 @@ extension SPVWalletEventsHandler {
     func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
+            on_transaction_status_changed: nil,
             on_balance_updated: onSpvBalanceUpdatedCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
         )
@@ -427,6 +472,7 @@ extension SPVWalletEventsHandler {
 
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
+    status: FFITransactionContext,
     accountIndex: UInt32,
     txidPtr: UnsafePointer<Byte32>?,
     amount: Int64,
@@ -510,6 +556,57 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
     ) {}
 
     func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
+        .init()
+    }
+}
+
+// MARK: - Client error events callbacks
+
+protocol SPVClientErrorEventsHandler: AnyObject {
+    func onClientError(_ error: String);
+}
+
+extension SPVClientErrorEventsHandler {
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+        FFIClientErrorCallback(
+            on_error: onSpvClientErrorCallbackC,
+            user_data: Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
+}
+
+private func onSpvClientErrorCallbackC(
+    errorPtr: UnsafePointer<CChar>?,
+    userData: UnsafeMutableRawPointer?
+) {
+    let handler = rawPtrIntoSpvClientErrorEventsHandler(userData)
+
+    guard let errorPtr else {
+        assertionFailure("ClientError address pointer is nil")
+        return
+    }
+
+    let error = String(cString: errorPtr)
+    handler.onClientError(error)
+}
+
+private func rawPtrIntoSpvClientErrorEventsHandler(
+    _ ptr: UnsafeMutableRawPointer?
+) -> any SPVClientErrorEventsHandler {
+    guard let ptr else {
+        assertionFailure("SPVClientErrorEventsHandler pointer is nil!")
+        return DummySPVClientErrorEventsHandler()
+    }
+
+    return Unmanaged<AnyObject>
+        .fromOpaque(ptr)
+        .takeUnretainedValue() as! any SPVClientErrorEventsHandler
+}
+
+private final class DummySPVClientErrorEventsHandler: SPVClientErrorEventsHandler {
+    func onClientError(_: String) {}
+
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
         .init()
     }
 }
