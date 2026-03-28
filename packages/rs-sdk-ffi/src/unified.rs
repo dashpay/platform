@@ -72,7 +72,10 @@ pub unsafe extern "C" fn dash_unified_sdk_create(
     let config = &*config;
 
     // Create Core SDK client (always enabled in unified SDK)
-    let core_client = dash_spv_ffi::dash_spv_ffi_client_new(config.core_config);
+    let core_client = dash_spv_ffi::dash_spv_ffi_client_new(
+        config.core_config,
+        dash_spv_ffi::FFIEventCallbacks::default(),
+    );
 
     // Create Platform SDK
     let platform_sdk_result = crate::dash_sdk_create(&config.platform_config);

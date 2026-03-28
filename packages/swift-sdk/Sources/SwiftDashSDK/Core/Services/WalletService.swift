@@ -107,9 +107,9 @@ public class WalletService: ObservableObject {
     public init(modelContainer: ModelContainer, network: AppNetwork) {
         self.modelContainer = modelContainer
         self.network = network
-        
+
         LoggingPreferences.configure()
-        
+
         let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
 
         // Ensure the data directory exists before initializing the SPV client
@@ -117,25 +117,40 @@ public class WalletService: ObservableObject {
             try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
         }
 
-        // For simplicity, lets unwrap the error. This can only fail due to
-        // IO errors when working with the internal storage system, I don't
-        // see how we can recover from that right now easily
-        let spvClient = try! SPVClient(
+        // Create SPV client first with dummy handlers to obtain the wallet manager,
+        // then destroy and recreate with real handlers that reference self.
+        let dummyClient = try! SPVClient(
             network: network.sdkNetwork,
             dataDir: dataDir,
             startHeight: 0,
         )
-        
-        self.spvClient = spvClient
-        
+
+        self.spvClient = dummyClient
+
         // Create the SDK wallet manager by reusing the SPV client's shared manager
         // TODO: Investigate this error
-        self.walletManager = try! CoreWalletManager(spvClient: spvClient, modelContainer: modelContainer)
-        
-        spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-        spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-        spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-        spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
+        self.walletManager = try! CoreWalletManager(spvClient: dummyClient, modelContainer: modelContainer)
+
+        // Destroy the dummy client and recreate with real event handlers
+        dummyClient.destroy()
+
+        let handlers = SPVEventHandlers(
+            progress: SPVProgressUpdateEventHandlerImpl(walletService: self),
+            sync: SPVSyncEventsHandlerImpl(walletService: self),
+            network: SPVNetworkEventsHandlerImpl(walletService: self),
+            wallet: SPVWalletEventsHandlerImpl(walletService: self),
+            error: SPVClientErrorEventsHandlerImpl(walletService: self)
+        )
+
+        self.spvClient = try! SPVClient(
+            network: network.sdkNetwork,
+            dataDir: dataDir,
+            startHeight: 0,
+            eventHandlers: handlers,
+        )
+
+        // Recreate the wallet manager with the new client
+        self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: modelContainer)
     }
     
     deinit {
@@ -145,7 +160,7 @@ public class WalletService: ObservableObject {
     
     private func initializeNewSPVClient() {
       SDKLogger.log("Initializing SPV Client for \(self.self.network.rawValue)...", minimumLevel: .medium)
-      
+
       let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.network.rawValue).path
 
       // Ensure the data directory exists before initializing the SPV client
@@ -157,6 +172,14 @@ public class WalletService: ObservableObject {
       // and unlocks the storage in case we are about to use the same (we probably are)
       self.spvClient.destroy()
 
+      let handlers = SPVEventHandlers(
+          progress: SPVProgressUpdateEventHandlerImpl(walletService: self),
+          sync: SPVSyncEventsHandlerImpl(walletService: self),
+          network: SPVNetworkEventsHandlerImpl(walletService: self),
+          wallet: SPVWalletEventsHandlerImpl(walletService: self),
+          error: SPVClientErrorEventsHandlerImpl(walletService: self)
+      )
+
       // For simplicity, lets unwrap the error. This can only fail due to
       // IO errors when working with the internal storage system, I don't
       // see how we can recover from that right now easily
@@ -164,22 +187,18 @@ public class WalletService: ObservableObject {
           network: self.self.network.sdkNetwork,
           dataDir: dataDir,
           startHeight: 0,
+          eventHandlers: handlers,
       )
-      
-      self.spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-      self.spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-      self.spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-      self.spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
-      
+
       try! self.spvClient.setMasternodeSyncEnabled(self.masternodesEnabled)
-      
-      SDKLogger.log("✅ SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
-      
+
+      SDKLogger.log("SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
+
       // Create the SDK wallet manager by reusing the SPV client's shared manager
       // TODO: Investigate this error
       self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: self.modelContainer)
-      
-      SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
+
+      SDKLogger.log("WalletManager wrapper initialized successfully", minimumLevel: .medium)
     }
     
     // MARK: - Trusted Mode / Masternode Sync
@@ -339,7 +358,7 @@ public class WalletService: ObservableObject {
             _ amount: Int64,
             _ addresses: [String]
         ) {}
-    
+
         func onBalanceUpdated(
             _ walletId: String,
             _ spendable: UInt64,
@@ -347,6 +366,22 @@ public class WalletService: ObservableObject {
             _ immature: UInt64,
             _ locked: UInt64
         ) {}
+    }
+
+    internal final class SPVClientErrorEventsHandlerImpl: SPVClientErrorEventsHandler, Sendable {
+        private let walletService: WalletService
+
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+
+        func onError(_ errorMsg: String) {
+            SDKLogger.error("SPV client error: \(errorMsg)")
+
+            Task { @MainActor in
+                walletService.lastSyncError = SPVError.syncFailed(errorMsg)
+            }
+        }
     }
 }
 
