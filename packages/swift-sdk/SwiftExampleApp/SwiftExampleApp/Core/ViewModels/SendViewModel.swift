@@ -3,6 +3,8 @@ import SwiftDashSDK
 
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
+    case coreToPlatform       // Asset lock / transfer to platform address
+    case coreToCore           // Standard Core transaction
     case platformToShielded   // Shield credits
     case shieldedToShielded   // Private transfer
     case shieldedToPlatform   // Unshield
@@ -10,6 +12,8 @@ enum SendFlow: Equatable {
 
     var displayName: String {
         switch self {
+        case .coreToPlatform: return "Transfer to Platform"
+        case .coreToCore: return "Core Transfer"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
@@ -19,6 +23,8 @@ enum SendFlow: Equatable {
 
     var iconName: String {
         switch self {
+        case .coreToPlatform: return "arrow.up.to.line"
+        case .coreToCore: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
         case .shieldedToPlatform: return "lock.open"
@@ -26,9 +32,11 @@ enum SendFlow: Equatable {
         }
     }
 
-    /// Approximate fee in credits for this flow type.
+    /// Approximate fee in duffs for this flow type.
     var estimatedFee: UInt64 {
         switch self {
+        case .coreToPlatform: return 100_000     // ~0.001 DASH
+        case .coreToCore: return 100_000         // ~0.001 DASH
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
@@ -58,8 +66,8 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
-    // Source preference (for demo UI)
-    @Published var preferShieldedSource = true
+    // Source preference (for demo UI — defaults to Core since shielded requires setup)
+    @Published var preferShieldedSource = false
 
     private let network: AppNetwork
 
@@ -95,9 +103,10 @@ class SendViewModel: ObservableObject {
         case .orchard:
             detectedFlow = preferShieldedSource ? .shieldedToShielded : .platformToShielded
         case .platform:
-            detectedFlow = .shieldedToPlatform
+            // If we have shielded balance, unshield; otherwise transfer from Core
+            detectedFlow = preferShieldedSource ? .shieldedToPlatform : .coreToPlatform
         case .core:
-            detectedFlow = .shieldedToCore
+            detectedFlow = preferShieldedSource ? .shieldedToCore : .coreToCore
         case .unknown:
             detectedFlow = nil
         }
@@ -200,6 +209,14 @@ class SendViewModel: ObservableObject {
                     outputScript: outputScript
                 )
                 successMessage = "Withdrawal submitted"
+
+            case .coreToPlatform:
+                // TODO: Implement asset lock / Core → Platform transfer
+                error = "Core to Platform transfer not yet implemented"
+
+            case .coreToCore:
+                // TODO: Implement standard Core → Core transaction
+                error = "Core to Core transfer not yet implemented"
             }
 
             // Refresh shielded balance

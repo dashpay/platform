@@ -189,6 +189,8 @@ struct SendTransactionView: View {
 
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
+        case .coreToPlatform: return .indigo
+        case .coreToCore: return .blue
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
