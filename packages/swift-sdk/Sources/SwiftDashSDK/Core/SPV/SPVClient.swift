@@ -61,6 +61,7 @@ class SPVClient: @unchecked Sendable {
 
         // If requested, prefer local core peers (defaults to 127.0.0.1 with network default port)
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+            || UserDefaults.standard.bool(forKey: "useDockerSetup")
         // Only restrict to configured peers when using local core, if not, allow DNS discovery
         let restrictToConfiguredPeers = useLocalCore
         if useLocalCore {
