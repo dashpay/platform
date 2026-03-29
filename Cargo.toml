@@ -47,11 +47,12 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "8cbae416458565faac21d3452fbc6d80b324f6d3" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "8cbae416458565faac21d3452fbc6d80b324f6d3" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "8cbae416458565faac21d3452fbc6d80b324f6d3" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "8cbae416458565faac21d3452fbc6d80b324f6d3" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "8cbae416458565faac21d3452fbc6d80b324f6d3" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "f92f114b83f6e442af8290611a10f2246ee58d3a" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

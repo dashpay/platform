@@ -36,6 +36,29 @@ private typealias Byte96 = (
     UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
 )
 
+// MARK: - Combined event handlers
+
+/// Bundles every SPV handler protocol into one object so that `SPVClient` can
+/// build the unified `FFIEventCallbacks` struct required by the updated
+/// `dash_spv_ffi_client_new` entry point.
+struct SPVEventHandlers {
+    var progress: SPVProgressUpdateEventHandler
+    var sync: SPVSyncEventsHandler
+    var network: SPVNetworkEventsHandler
+    var wallet: SPVWalletEventsHandler
+    var error: SPVClientErrorEventsHandler
+
+    func intoFFIEventCallbacks() -> FFIEventCallbacks {
+        FFIEventCallbacks(
+            sync: sync.intoFFISyncEventCallbacks(),
+            network: network.intoFFINetworkEventCallbacks(),
+            progress: progress.intoFFIProgressCallback(),
+            wallet: wallet.intoFFIWalletEventCallbacks(),
+            error: error.intoFFIClientErrorCallback()
+        )
+    }
+}
+
 // MARK: - Progress callback
 
 protocol SPVProgressUpdateEventHandler: AnyObject {
@@ -219,6 +242,8 @@ private func onSpvBlockProcessedCallbackC(
     height: UInt32,
     hashPtr: UnsafePointer<Byte32>?,
     newAddressCount: UInt32,
+    confirmedTxids: UnsafePointer<Byte32>?,
+    confirmedTxidCount: UInt32,
     userData: UnsafeMutableRawPointer?
 ) {
     let hash = bytePtrIntoData(hashPtr, 32)
@@ -393,6 +418,53 @@ private final class DummySPVNetworkEventsHandler: SPVNetworkEventsHandler {
     }
 }
 
+// MARK: - Client error event callbacks
+
+protocol SPVClientErrorEventsHandler: AnyObject {
+    func onError(_ errorMsg: String)
+
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback
+}
+
+extension SPVClientErrorEventsHandler {
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+        FFIClientErrorCallback(
+            on_error: onSpvClientErrorCallbackC,
+            user_data: Unmanaged.passUnretained(self).toOpaque()
+        )
+    }
+}
+
+private func onSpvClientErrorCallbackC(
+    errorPtr: UnsafePointer<CChar>?,
+    userData: UnsafeMutableRawPointer?
+) {
+    let handler = rawPtrIntoSpvClientErrorEventsHandler(userData)
+    let errorMsg = errorPtr.map { String(cString: $0) } ?? "Unknown error"
+    handler.onError(errorMsg)
+}
+
+private func rawPtrIntoSpvClientErrorEventsHandler(
+    _ ptr: UnsafeMutableRawPointer?
+) -> any SPVClientErrorEventsHandler {
+    guard let ptr else {
+        assertionFailure("SPVClientErrorEventsHandler pointer is nil!")
+        return DummySPVClientErrorEventsHandler()
+    }
+
+    return Unmanaged<AnyObject>
+        .fromOpaque(ptr)
+        .takeUnretainedValue() as! any SPVClientErrorEventsHandler
+}
+
+private final class DummySPVClientErrorEventsHandler: SPVClientErrorEventsHandler {
+    func onError(_: String) {}
+
+    func intoFFIClientErrorCallback() -> FFIClientErrorCallback {
+        .init()
+    }
+}
+
 // MARK: - Wallet event callbacks
 
 protocol SPVWalletEventsHandler: AnyObject {
@@ -419,6 +491,7 @@ extension SPVWalletEventsHandler {
     func intoFFIWalletEventCallbacks() -> FFIWalletEventCallbacks {
         FFIWalletEventCallbacks(
             on_transaction_received: onSpvTransactionReceivedCallbackC,
+            on_transaction_status_changed: nil,
             on_balance_updated: onSpvBalanceUpdatedCallbackC,
             user_data: Unmanaged.passUnretained(self).toOpaque()
         )
@@ -427,6 +500,7 @@ extension SPVWalletEventsHandler {
 
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
+    status: FFITransactionContext,
     accountIndex: UInt32,
     txidPtr: UnsafePointer<Byte32>?,
     amount: Int64,
