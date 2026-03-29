@@ -69,6 +69,8 @@ class SPVClient: @unchecked Sendable {
             if swiftLoggingEnabled {
                 print("[SPV][Config] Use Local Core enabled; peers=\(peers.joined(separator: ", "))")
             }
+            // Clear default peers before adding custom Docker peers
+            dash_spv_ffi_config_clear_peers(configPtr)
             // Add peers via FFI (supports "ip:port" or bare IP for network-default port)
             for addr in peers {
                 addr.withCString { cstr in
