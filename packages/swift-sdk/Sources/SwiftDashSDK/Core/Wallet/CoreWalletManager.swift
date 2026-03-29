@@ -256,8 +256,11 @@ public class CoreWalletManager: ObservableObject {
             managed = collection.getProviderOperatorKeysAccount()
         case .providerPlatformKeys:
             managed = collection.getProviderPlatformKeysAccount()
-        case .dashPayReceivingFunds, .dashPayExternalAccount, .platformPayment:
-            managed = nil // TODO: implement when FFI supports these account types
+        case .dashPayReceivingFunds, .dashPayExternalAccount:
+            managed = nil
+        case .platformPayment:
+            // Platform Payment uses ManagedPlatformAccount, handled separately below
+            managed = nil
         }
 
         let appNetwork = AppNetwork(network: sdkWalletManager.network)
@@ -266,7 +269,18 @@ public class CoreWalletManager: ObservableObject {
         var externalDetails: [AddressDetail] = []
         var internalDetails: [AddressDetail] = []
         var ffiType = FFIAccountType(rawValue: 0)
-        if let m = managed {
+
+        // Special handling for Platform Payment accounts
+        if accountInfo.category == .platformPayment {
+            ffiType = FFIAccountType(rawValue: AccountType.platformPayment.rawValue)
+            if let platformAccount = collection.getPlatformPaymentAccount(accountIndex: accountInfo.index ?? 0, keyClass: 0),
+               let pool = platformAccount.getAddressPool(),
+               let infos = try? pool.getAddresses(from: 0, to: 0) {
+                externalDetails = infos.map { info in
+                    AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
+                }
+            }
+        } else if let m = managed {
             ffiType = FFIAccountType(rawValue: m.accountType?.rawValue ?? 0)
             // Query all generated addresses (0 to 0 means "all addresses" in FFI)
             if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
