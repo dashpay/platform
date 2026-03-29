@@ -20,18 +20,19 @@ struct DashAddress {
             let data = decoded.data
 
             // Check HRP validity
-            let validPlatformHrp = (network == .mainnet) ? "dashevo" : "tdashevo"
-            let validOrchardHrp = (network == .mainnet) ? "dash" : "tdash"
+            // Platform and Orchard share the same HRP: "dash" (mainnet) / "tdash" (testnet/regtest)
+            // Distinguished by type byte: 0x00/0xb0/0x80 = platform, 0x10 = orchard
+            let validHrp = (network == .mainnet) ? "dash" : "tdash"
 
-            if hrp == validPlatformHrp && data.count == 21 {
-                // Platform address: type byte 0xb0 or 0x80 + 20-byte hash
+            if hrp == validHrp && data.count == 21 {
+                // Platform address: type byte 0x00 (P2PKH) or 0xb0/0x80 + 20-byte hash
                 let typeByte = data[0]
-                if typeByte == 0xb0 || typeByte == 0x80 {
+                if typeByte == 0x00 || typeByte == 0xb0 || typeByte == 0x80 {
                     return DashAddress(type: .platform(data), displayString: input)
                 }
             }
 
-            if hrp == validOrchardHrp && data.count >= 2 {
+            if hrp == validHrp && data.count >= 2 {
                 let typeByte = data[0]
                 if typeByte == 0x10 {
                     // Orchard address: 0x10 type byte + 43 bytes raw address
