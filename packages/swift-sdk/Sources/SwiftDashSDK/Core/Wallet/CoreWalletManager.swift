@@ -270,14 +270,23 @@ public class CoreWalletManager: ObservableObject {
         var internalDetails: [AddressDetail] = []
         var ffiType = FFIAccountType(rawValue: 0)
 
-        // Special handling for Platform Payment accounts
+        // Special handling for Platform Payment accounts — encode as bech32m
         if accountInfo.category == .platformPayment {
             ffiType = FFIAccountType(rawValue: AccountType.platformPayment.rawValue)
+            let networkValue: UInt32 = {
+                switch appNetwork {
+                case .mainnet: return 0
+                case .testnet: return 1
+                case .regtest: return 2
+                case .devnet: return 3
+                }
+            }()
             if let platformAccount = collection.getPlatformPaymentAccount(accountIndex: accountInfo.index ?? 0, keyClass: 0),
                let pool = platformAccount.getAddressPool(),
                let infos = try? pool.getAddresses(from: 0, to: 0) {
-                externalDetails = infos.map { info in
-                    AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
+                externalDetails = infos.compactMap { info in
+                    let bech32Address = Self.encodePlatformAddress(scriptPubKey: info.scriptPubKey, networkValue: networkValue) ?? info.address
+                    return AddressDetail(address: bech32Address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
         } else if let m = managed {
@@ -398,6 +407,23 @@ public class CoreWalletManager: ObservableObject {
         }
     }
 
+
+    /// Encode a P2PKH scriptPubKey as a bech32m platform address (DIP-17/18).
+    private static func encodePlatformAddress(scriptPubKey: Data, networkValue: UInt32) -> String? {
+        let result = scriptPubKey.withUnsafeBytes { buffer -> DashSDKResult in
+            guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return DashSDKResult()
+            }
+            return dash_sdk_encode_platform_address(base, UInt32(scriptPubKey.count), networkValue)
+        }
+        guard result.error == nil, let dataPtr = result.data else {
+            if let error = result.error { dash_sdk_error_free(error) }
+            return nil
+        }
+        let str = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+        return str
+    }
 
     // Removed old FFI-based helper; using SwiftDashSDK wrappers instead
 
