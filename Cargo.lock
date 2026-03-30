@@ -1628,6 +1628,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-sdk-macros"
+version = "3.1.0-dev.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "dash-spv"
 version = "0.42.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=f92f114b83f6e442af8290611a10f2246ee58d3a#f92f114b83f6e442af8290611a10f2246ee58d3a"
