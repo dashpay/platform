@@ -308,3 +308,248 @@ impl BlockStateInfoV0Setters for BlockStateInfoV0 {
         self.app_hash = app_hash;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_types::block_proposal::v0::BlockProposal;
+    use dpp::block::epoch::Epoch;
+    use tenderdash_abci::proto::version::Consensus;
+
+    fn make_block_state_info() -> BlockStateInfoV0 {
+        BlockStateInfoV0 {
+            height: 10,
+            round: 2,
+            block_time_ms: 1_700_000_000_000,
+            previous_block_time_ms: Some(1_699_999_990_000),
+            proposer_pro_tx_hash: [1u8; 32],
+            core_chain_locked_height: 500,
+            block_hash: Some([0xAA; 32]),
+            app_hash: Some([0xBB; 32]),
+        }
+    }
+
+    #[test]
+    fn getters_return_correct_values() {
+        let info = make_block_state_info();
+        assert_eq!(info.height(), 10);
+        assert_eq!(info.round(), 2);
+        assert_eq!(info.block_time_ms(), 1_700_000_000_000);
+        assert_eq!(info.previous_block_time_ms(), Some(1_699_999_990_000));
+        assert_eq!(info.proposer_pro_tx_hash(), [1u8; 32]);
+        assert_eq!(info.core_chain_locked_height(), 500);
+        assert_eq!(info.block_hash(), Some([0xAA; 32]));
+        assert_eq!(info.app_hash(), Some([0xBB; 32]));
+    }
+
+    #[test]
+    fn setters_update_values() {
+        let mut info = make_block_state_info();
+        info.set_height(20);
+        info.set_round(5);
+        info.set_block_time_ms(2_000_000_000_000);
+        info.set_previous_block_time_ms(None);
+        info.set_proposer_pro_tx_hash([2u8; 32]);
+        info.set_core_chain_locked_height(600);
+        info.set_block_hash(None);
+        info.set_app_hash(None);
+
+        assert_eq!(info.height(), 20);
+        assert_eq!(info.round(), 5);
+        assert_eq!(info.block_time_ms(), 2_000_000_000_000);
+        assert_eq!(info.previous_block_time_ms(), None);
+        assert_eq!(info.proposer_pro_tx_hash(), [2u8; 32]);
+        assert_eq!(info.core_chain_locked_height(), 600);
+        assert_eq!(info.block_hash(), None);
+        assert_eq!(info.app_hash(), None);
+    }
+
+    #[test]
+    fn to_block_info_produces_correct_block_info() {
+        let info = make_block_state_info();
+        let epoch = Epoch::new(3).unwrap();
+        let block_info = info.to_block_info(epoch);
+        assert_eq!(block_info.time_ms, 1_700_000_000_000);
+        assert_eq!(block_info.height, 10);
+        assert_eq!(block_info.core_height, 500);
+        assert_eq!(block_info.epoch.index, 3);
+    }
+
+    #[test]
+    fn next_block_to_returns_true_for_sequential_block() {
+        let info = make_block_state_info(); // height=10, core_chain_locked_height=500
+        assert!(info.next_block_to(9, 500).unwrap());
+        assert!(info.next_block_to(9, 400).unwrap());
+    }
+
+    #[test]
+    fn next_block_to_returns_false_for_non_sequential_height() {
+        let info = make_block_state_info(); // height=10
+        assert!(!info.next_block_to(10, 500).unwrap());
+        assert!(!info.next_block_to(8, 500).unwrap());
+    }
+
+    #[test]
+    fn next_block_to_returns_false_for_core_height_regression() {
+        let info = make_block_state_info(); // core_chain_locked_height=500
+        assert!(!info.next_block_to(9, 501).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_returns_true_for_matching() {
+        let info = make_block_state_info(); // height=10, round=2, block_hash=Some([0xAA; 32])
+        assert!(info.matches_current_block(10, 2, [0xAA; 32]).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_returns_false_for_wrong_height() {
+        let info = make_block_state_info();
+        assert!(!info.matches_current_block(11, 2, [0xAA; 32]).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_returns_false_for_wrong_round() {
+        let info = make_block_state_info();
+        assert!(!info.matches_current_block(10, 3, [0xAA; 32]).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_returns_false_for_wrong_hash() {
+        let info = make_block_state_info();
+        assert!(!info.matches_current_block(10, 2, [0xBB; 32]).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_returns_false_when_no_block_hash() {
+        let mut info = make_block_state_info();
+        info.block_hash = None;
+        assert!(!info.matches_current_block(10, 2, [0xAA; 32]).unwrap());
+    }
+
+    #[test]
+    fn matches_current_block_error_on_bad_hash_size() {
+        let info = make_block_state_info();
+        // Provide a Vec that can't convert to [u8; 32]
+        let bad_hash: Vec<u8> = vec![0u8; 16];
+        let result = info.matches_current_block(10, 2, bad_hash);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_true_for_exact_match() {
+        let info = make_block_state_info();
+        assert!(info
+            .matches_expected_block_info(10, 2, 500, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_false_for_wrong_core_height() {
+        let info = make_block_state_info();
+        assert!(!info
+            .matches_expected_block_info(10, 2, 501, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_false_for_wrong_proposer() {
+        let info = make_block_state_info();
+        assert!(!info
+            .matches_expected_block_info(10, 2, 500, [9u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_false_for_wrong_app_hash() {
+        let info = make_block_state_info();
+        assert!(!info
+            .matches_expected_block_info(10, 2, 500, [1u8; 32], [0xAA; 32], [0xCC; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_false_when_no_block_hash() {
+        let mut info = make_block_state_info();
+        info.block_hash = None;
+        assert!(!info
+            .matches_expected_block_info(10, 2, 500, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_returns_false_when_no_app_hash() {
+        let mut info = make_block_state_info();
+        info.app_hash = None;
+        assert!(!info
+            .matches_expected_block_info(10, 2, 500, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn matches_expected_block_info_error_on_bad_commit_hash() {
+        let info = make_block_state_info();
+        let bad_hash: Vec<u8> = vec![0u8; 5];
+        let good_app_hash: Vec<u8> = vec![0xBB; 32];
+        let result =
+            info.matches_expected_block_info(10, 2, 500, [1u8; 32], bad_hash, good_app_hash);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn matches_expected_block_info_error_on_bad_app_hash() {
+        let info = make_block_state_info();
+        let good_commit_hash: Vec<u8> = vec![0xAA; 32];
+        let bad_hash: Vec<u8> = vec![0u8; 5];
+        let result =
+            info.matches_expected_block_info(10, 2, 500, [1u8; 32], good_commit_hash, bad_hash);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_block_proposal_creates_correct_state_info() {
+        let empty_txs = vec![];
+        let proposal = BlockProposal {
+            consensus_versions: Consensus { block: 1, app: 1 },
+            block_hash: Some([0xDD; 32]),
+            height: 42,
+            round: 3,
+            block_time_ms: 1_700_000_000_000,
+            core_chain_locked_height: 800,
+            core_chain_lock_update: None,
+            proposed_app_version: 1,
+            proposer_pro_tx_hash: [5u8; 32],
+            validator_set_quorum_hash: [0u8; 32],
+            raw_state_transitions: &empty_txs,
+        };
+        let info = BlockStateInfoV0::from_block_proposal(&proposal, Some(1_699_999_000_000));
+        assert_eq!(info.height(), 42);
+        assert_eq!(info.round(), 3);
+        assert_eq!(info.block_time_ms(), 1_700_000_000_000);
+        assert_eq!(info.previous_block_time_ms(), Some(1_699_999_000_000));
+        assert_eq!(info.proposer_pro_tx_hash(), [5u8; 32]);
+        assert_eq!(info.core_chain_locked_height(), 800);
+        assert_eq!(info.block_hash(), Some([0xDD; 32]));
+        assert_eq!(info.app_hash(), None);
+    }
+
+    #[test]
+    fn from_block_proposal_with_no_previous_time() {
+        let empty_txs = vec![];
+        let proposal = BlockProposal {
+            consensus_versions: Consensus { block: 1, app: 1 },
+            block_hash: None,
+            height: 1,
+            round: 0,
+            block_time_ms: 1_000_000,
+            core_chain_locked_height: 1,
+            core_chain_lock_update: None,
+            proposed_app_version: 1,
+            proposer_pro_tx_hash: [0u8; 32],
+            validator_set_quorum_hash: [0u8; 32],
+            raw_state_transitions: &empty_txs,
+        };
+        let info = BlockStateInfoV0::from_block_proposal(&proposal, None);
+        assert_eq!(info.previous_block_time_ms(), None);
+        assert_eq!(info.block_hash(), None);
+    }
+}

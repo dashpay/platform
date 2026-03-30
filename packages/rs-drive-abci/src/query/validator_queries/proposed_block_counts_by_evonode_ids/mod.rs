@@ -65,3 +65,54 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_missing_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByIdsRequest { version: None };
+
+        let result = platform
+            .query_proposed_block_counts_by_evonode_ids(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("by ids")
+        ));
+    }
+
+    #[test]
+    fn test_v0_request_passes_through() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+
+        let request = GetEvonodesProposedEpochBlocksByIdsRequest {
+            version: Some(RequestVersion::V0(
+                GetEvonodesProposedEpochBlocksByIdsRequestV0 {
+                    epoch: Some(0),
+                    ids: vec![vec![0u8; 32]],
+                    prove: true,
+                },
+            )),
+        };
+
+        let result = platform
+            .query_proposed_block_counts_by_evonode_ids(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetEvonodesProposedEpochBlocksResponse {
+                version: Some(ResponseVersion::V0(_)),
+            })
+        ));
+    }
+}

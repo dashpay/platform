@@ -526,7 +526,12 @@ fn test_identifier_operations() {
         assert!(!id_string.is_null());
 
         let id_str = std::ffi::CStr::from_ptr(id_string).to_str().unwrap();
-        assert_eq!(id_str.len(), 44); // Base58-encoded identifier is 44 chars
+        // Base58-encoded 32-byte identifier is 43-44 chars (variable length encoding)
+        assert!(
+            id_str.len() == 43 || id_str.len() == 44,
+            "Expected Base58 identifier length 43-44, got {}",
+            id_str.len()
+        );
 
         // Convert back from string
         let mut id2 = IdentifierBytes { bytes: [0u8; 32] };

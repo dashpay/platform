@@ -22,6 +22,9 @@ fn main() {
             autogen_warning: Some(
                 "/* This file is auto-generated. Do not modify manually. */\n/* Unified Dash SDK - includes both Core (SPV) and Platform functionality */".to_string(),
             ),
+            after_includes: Some(
+                "/* Forward declarations for opaque types */\nstruct ShieldedPoolClient;\n".to_string(),
+            ),
             includes: vec![],
             sys_includes: vec!["stdint.h".to_string(), "stdbool.h".to_string()],
             no_includes: false,

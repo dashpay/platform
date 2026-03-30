@@ -23,3 +23,49 @@ impl fmt::Display for ProposersPayouts {
         write!(f, "}}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_formats_correctly() {
+        let payouts = ProposersPayouts {
+            proposers_paid_count: 5,
+            paid_epoch_index: 42,
+        };
+        let output = format!("{}", payouts);
+        assert!(output.contains("proposers_paid_count: 5"));
+        assert!(output.contains("paid_epoch_index: 42"));
+        assert!(output.contains("ProposersPayouts"));
+    }
+
+    #[test]
+    fn display_with_zero_values() {
+        let payouts = ProposersPayouts {
+            proposers_paid_count: 0,
+            paid_epoch_index: 0,
+        };
+        let output = format!("{}", payouts);
+        assert!(output.contains("proposers_paid_count: 0"));
+        assert!(output.contains("paid_epoch_index: 0"));
+    }
+
+    #[test]
+    fn equality() {
+        let a = ProposersPayouts {
+            proposers_paid_count: 3,
+            paid_epoch_index: 7,
+        };
+        let b = ProposersPayouts {
+            proposers_paid_count: 3,
+            paid_epoch_index: 7,
+        };
+        let c = ProposersPayouts {
+            proposers_paid_count: 4,
+            paid_epoch_index: 7,
+        };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+}

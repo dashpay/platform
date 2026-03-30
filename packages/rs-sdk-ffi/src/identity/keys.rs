@@ -297,9 +297,9 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_to_bytes(
     let config = bincode::config::standard();
     match bincode::encode_to_vec(key, config) {
         Ok(bytes) => {
-            let len = bytes.len();
-            let ptr = bytes.as_ptr() as *mut u8;
-            std::mem::forget(bytes); // Prevent deallocation
+            let boxed = bytes.into_boxed_slice();
+            let len = boxed.len();
+            let ptr = Box::into_raw(boxed) as *mut u8;
             *out_bytes = ptr;
             *out_len = len;
             DashSDKResult::success(std::ptr::null_mut())

@@ -240,7 +240,10 @@ impl Sdk {
     /// respective tolerance will be None regardless of method, to allow disabling staleness checks globally.
     fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
         match method_name {
-            "get_addresses_trunk_state" | "get_addresses_branch_state" => (
+            "get_addresses_trunk_state"
+            | "get_addresses_branch_state"
+            | "get_nullifiers_trunk_state"
+            | "get_nullifiers_branch_state" => (
                 None,
                 self.metadata_time_tolerance_ms
                     .and(Some(ADDRESS_STATE_TIME_TOLERANCE_MS)),
@@ -736,7 +739,7 @@ impl Default for SdkBuilder {
         Self {
             addresses: None,
             settings: None,
-            network: Network::Dash,
+            network: Network::Mainnet,
             core_ip: "".to_string(),
             core_port: 0,
             core_password: "".to_string().into(),
@@ -833,7 +836,7 @@ impl SdkBuilder {
 
     /// Configure network type.
     ///
-    /// Defaults to Network::Dash which is mainnet.
+    /// Defaults to Network::Mainnet which is mainnet.
     pub fn with_network(mut self, network: Network) -> Self {
         self.network = network;
         self

@@ -1458,3 +1458,74 @@ impl StateTransitionStructureValidation for StateTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // StateTransitionSigningOptions tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_signing_options_default() {
+        let opts = StateTransitionSigningOptions::default();
+        assert!(!opts.allow_signing_with_any_security_level);
+        assert!(!opts.allow_signing_with_any_purpose);
+    }
+
+    #[test]
+    fn test_signing_options_equality() {
+        let a = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: true,
+            allow_signing_with_any_purpose: false,
+        };
+        let b = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: true,
+            allow_signing_with_any_purpose: false,
+        };
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_signing_options_inequality() {
+        let a = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: true,
+            allow_signing_with_any_purpose: false,
+        };
+        let b = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+        };
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_signing_options_clone() {
+        let original = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: true,
+            allow_signing_with_any_purpose: true,
+        };
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_signing_options_copy() {
+        let original = StateTransitionSigningOptions {
+            allow_signing_with_any_security_level: true,
+            allow_signing_with_any_purpose: false,
+        };
+        let copied = original;
+        assert_eq!(original, copied);
+    }
+
+    #[test]
+    fn test_signing_options_debug() {
+        let opts = StateTransitionSigningOptions::default();
+        let debug_str = format!("{:?}", opts);
+        assert!(debug_str.contains("StateTransitionSigningOptions"));
+        assert!(debug_str.contains("allow_signing_with_any_security_level"));
+        assert!(debug_str.contains("allow_signing_with_any_purpose"));
+    }
+}

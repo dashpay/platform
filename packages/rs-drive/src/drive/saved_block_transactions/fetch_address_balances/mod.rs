@@ -82,4 +82,84 @@ impl Drive {
             })),
         }
     }
+
+    /// Fetches recent address balance changes after a given block height (exclusive).
+    ///
+    /// Uses `RangeAfter` so that `after_height` appears as a boundary node in
+    /// proofs. This enables `key_exists_as_boundary` to detect compaction.
+    ///
+    /// # Arguments
+    /// * `after_height` - The block height to start after (exclusive)
+    /// * `limit` - Optional maximum number of blocks to return
+    /// * `transaction` - Optional database transaction
+    /// * `platform_version` - The platform version
+    ///
+    /// # Returns
+    /// A vector of (block_height, address_balance_changes) tuples
+    pub fn fetch_recent_address_balance_changes_after(
+        &self,
+        after_height: u64,
+        limit: Option<u16>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<AddressBalanceChangesPerBlock, Error> {
+        match platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .fetch_address_balances
+        {
+            0 => self.fetch_recent_address_balance_changes_after_v0(
+                after_height,
+                limit,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_recent_address_balance_changes_after".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Proves recent address balance changes after a given block height (exclusive).
+    ///
+    /// Uses `RangeAfter` so that `after_height` appears as a boundary node in
+    /// proofs. This enables `key_exists_as_boundary` to detect compaction.
+    ///
+    /// # Arguments
+    /// * `after_height` - The block height to start after (exclusive)
+    /// * `limit` - Optional maximum number of blocks to prove
+    /// * `transaction` - Optional database transaction
+    /// * `platform_version` - The platform version
+    ///
+    /// # Returns
+    /// A grovedb proof
+    pub fn prove_recent_address_balance_changes_after(
+        &self,
+        after_height: u64,
+        limit: Option<u16>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .fetch_address_balances
+        {
+            0 => self.prove_recent_address_balance_changes_after_v0(
+                after_height,
+                limit,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "prove_recent_address_balance_changes_after".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
 }

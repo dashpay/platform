@@ -8462,7 +8462,7 @@ mod tests {
             );
 
             let result = transition
-                .validate_basic_structure(Network::Dash, platform_version) // Mainnet
+                .validate_basic_structure(Network::Mainnet, platform_version) // Mainnet
                 .expect("validation should not return Err");
 
             // Should work on mainnet

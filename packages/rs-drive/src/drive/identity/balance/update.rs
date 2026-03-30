@@ -932,4 +932,74 @@ mod tests {
             ));
         }
     }
+
+    mod remove_from_identity_balance_errors {
+        use super::*;
+        use crate::error::identity::IdentityError;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::version::PlatformVersion;
+
+        #[test]
+        fn should_fail_to_remove_more_than_balance() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+
+            // Identity starts with balance from create_test_identity (which is 0 after creation
+            // since create_test_identity sets balance to 0). Let's add some balance first.
+            let added_balance = 100;
+
+            drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    added_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add balance");
+
+            // Now try to remove more than available
+            let result = drive.remove_from_identity_balance(
+                identity.id().to_buffer(),
+                added_balance + 1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
+                    _
+                )))
+            ));
+        }
+
+        #[test]
+        fn should_fail_to_remove_from_non_existent_identity() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let result = drive.remove_from_identity_balance(
+                [0; 32],
+                100,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ));
+        }
+    }
 }

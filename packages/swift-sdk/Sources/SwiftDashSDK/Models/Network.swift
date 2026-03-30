@@ -4,8 +4,8 @@ import Foundation
 public enum AppNetwork: String, CaseIterable, Codable, Sendable {
     case mainnet = "mainnet"
     case testnet = "testnet"
-    case regtest = "regtest"
     case devnet = "devnet"
+    case regtest = "regtest"
 
     init(network: KeyWalletNetwork) {
         switch network {
@@ -23,7 +23,7 @@ public enum AppNetwork: String, CaseIterable, Codable, Sendable {
         case .testnet:
             return "Testnet"
         case .regtest:
-            return "Regtest"
+            return "Local"
         case .devnet:
             return "Devnet"
         }

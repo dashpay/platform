@@ -39,6 +39,10 @@ impl Drive {
             .collect();
 
         // Store to per-block sync storage for catch-up RPCs
+        //
+        // SAFETY: `store_nullifiers_for_block` writes under the same GroveDB
+        // transaction that the caller later uses to apply the returned `ops`.
+        // If that transaction aborts, neither write persists (atomic commit/rollback).
         self.store_nullifiers_for_block(
             nullifiers,
             block_height,

@@ -955,7 +955,7 @@ mod creation_tests {
     fn test_document_creation_on_contested_unique_index_should_fail_if_not_paying_for_it() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
-            network: Network::Dash,
+            network: Network::Mainnet,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

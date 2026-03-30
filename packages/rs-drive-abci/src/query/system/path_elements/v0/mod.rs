@@ -17,6 +17,12 @@ use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
+    // Security note: this endpoint intentionally allows querying ANY path in GroveDB.
+    // All platform state is public and authenticated -- every element has a Merkle
+    // proof back to the state root signed by the validator quorum. There is no
+    // concept of "private" vs "public" paths. Restricting paths here would not
+    // improve security since the same data is accessible through other query
+    // endpoints or by running a full node.
     pub(super) fn query_path_elements_v0(
         &self,
         GetPathElementsRequestV0 { path, keys, prove }: GetPathElementsRequestV0,

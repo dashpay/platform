@@ -22,15 +22,16 @@ mod error;
 mod evonode;
 mod group;
 mod identity;
+mod nullifier_sync;
 mod platform_wallet_types;
 mod protocol_version;
 mod sdk;
+mod shielded;
 mod signer;
 mod signer_simple;
 mod system;
 mod token;
 mod types;
-mod unified;
 mod utils;
 mod voting;
 
@@ -52,16 +53,17 @@ pub use error::*;
 pub use evonode::*;
 pub use group::*;
 pub use identity::*;
+pub use nullifier_sync::*;
 #[allow(unused_imports)]
 pub use platform_wallet_types::*;
 pub use protocol_version::*;
 pub use sdk::*;
+pub use shielded::*;
 pub use signer::*;
 pub use signer_simple::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;
-pub use unified::*;
 pub use utils::*;
 pub use voting::*;
 

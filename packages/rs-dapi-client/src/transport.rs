@@ -148,3 +148,119 @@ pub trait TransportClient: Send + Sized {
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::tonic::Code;
+
+    #[test]
+    fn test_tonic_status_can_retry_retryable_codes() {
+        let retryable_codes = vec![
+            Code::Ok,
+            Code::DataLoss,
+            Code::Cancelled,
+            Code::Unknown,
+            Code::DeadlineExceeded,
+            Code::ResourceExhausted,
+            Code::Aborted,
+            Code::Internal,
+            Code::Unavailable,
+        ];
+
+        for code in retryable_codes {
+            let status = dapi_grpc::tonic::Status::new(code, "test");
+            assert!(
+                status.can_retry(),
+                "Expected code {:?} to be retryable",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_tonic_status_can_retry_non_retryable_codes() {
+        let non_retryable_codes = vec![
+            Code::InvalidArgument,
+            Code::NotFound,
+            Code::AlreadyExists,
+            Code::PermissionDenied,
+            Code::FailedPrecondition,
+            Code::OutOfRange,
+            Code::Unimplemented,
+            Code::Unauthenticated,
+        ];
+
+        for code in non_retryable_codes {
+            let status = dapi_grpc::tonic::Status::new(code, "test");
+            assert!(
+                !status.can_retry(),
+                "Expected code {:?} to be non-retryable",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_transport_error_can_retry() {
+        let retryable = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        assert!(retryable.can_retry());
+
+        let non_retryable = TransportError::Grpc(dapi_grpc::tonic::Status::not_found("permanent"));
+        assert!(!non_retryable.can_retry());
+    }
+
+    #[test]
+    fn test_transport_error_clone() {
+        let original = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("test message"));
+
+        let cloned = original.clone();
+
+        match (&original, &cloned) {
+            (TransportError::Grpc(orig), TransportError::Grpc(clone)) => {
+                assert_eq!(orig.code(), clone.code());
+                assert_eq!(orig.message(), clone.message());
+            }
+        }
+    }
+
+    #[test]
+    fn test_transport_error_display() {
+        let err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("service down"));
+        let display = format!("{}", err);
+        assert!(display.contains("service down"));
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_transport_error_mock_roundtrip() {
+        let original =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("test roundtrip"));
+        let serialized = original.mock_serialize().expect("should serialize");
+        let deserialized =
+            TransportError::mock_deserialize(&serialized).expect("should deserialize");
+
+        match deserialized {
+            TransportError::Grpc(status) => {
+                assert_eq!(status.code(), Code::Unavailable);
+            }
+        }
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_boxed_transport_error_mock_roundtrip() {
+        let original = Box::new(TransportError::Grpc(dapi_grpc::tonic::Status::internal(
+            "boxed test",
+        )));
+        let serialized = original.mock_serialize().expect("should serialize");
+        let deserialized =
+            Box::<TransportError>::mock_deserialize(&serialized).expect("should deserialize");
+
+        match *deserialized {
+            TransportError::Grpc(status) => {
+                assert_eq!(status.code(), Code::Internal);
+            }
+        }
+    }
+}

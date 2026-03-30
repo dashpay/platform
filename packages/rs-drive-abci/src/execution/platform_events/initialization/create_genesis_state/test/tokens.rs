@@ -8,6 +8,7 @@ use dpp::data_contract::associated_token::token_configuration_convention::v0::To
 use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
 use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMarketplaceRulesV0;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
@@ -15,6 +16,8 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::distribu
 use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
 use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::config::DataContractConfig;
@@ -39,6 +42,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 const IDENTITY_ID_1: Identifier = Identifier::new([1; 32]);
@@ -380,10 +384,31 @@ impl<C> Platform<C> {
                 }),
             );
 
+        let mut token_configuration_2 = token_configuration.clone();
+        if let TokenConfiguration::V0(ref mut cfg) = token_configuration_2 {
+            if let TokenDistributionRules::V0(ref mut rules) = cfg.distribution_rules {
+                rules.pre_programmed_distribution = Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 {
+                        distributions: BTreeMap::from([
+                            (
+                                1000,
+                                BTreeMap::from([(IDENTITY_ID_1, 500), (IDENTITY_ID_2, 300)]),
+                            ),
+                            (5000, BTreeMap::from([(IDENTITY_ID_1, 1000)])),
+                            (
+                                10000,
+                                BTreeMap::from([(IDENTITY_ID_2, 750), (IDENTITY_ID_3, 250)]),
+                            ),
+                        ]),
+                    },
+                ));
+            }
+        }
+
         let tokens = [
             (0, token_configuration.clone()),
-            (1, token_configuration.clone()),
-            (2, token_configuration),
+            (1, token_configuration),
+            (2, token_configuration_2),
         ]
         .into();
 

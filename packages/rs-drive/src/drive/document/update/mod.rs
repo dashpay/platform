@@ -49,6 +49,7 @@ mod tests {
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
 
+    use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveDocumentQuery;
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
@@ -57,6 +58,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::{
         DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
@@ -2022,5 +2024,385 @@ mod tests {
             .expect("should update document");
 
         assert_ne!(update_fees.storage_fee, 0);
+    }
+
+    #[test]
+    fn test_add_update_multiple_documents_operations() {
+        let (drive, contract) = setup_dashpay("multi-update", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest document exists");
+
+        let owner_id = random::<[u8; 32]>();
+
+        let doc0 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let doc1 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        // Insert documents first so update operations target existing documents
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &doc0,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert first document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &doc1,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert second document");
+
+        let documents = vec![doc0, doc1];
+
+        let mut drive_operations = vec![];
+
+        drive
+            .add_update_multiple_documents_operations(
+                &documents,
+                &contract,
+                document_type,
+                &mut drive_operations,
+                &platform_version.drive,
+            )
+            .expect("expected to add update operations");
+
+        // Should have created one operation containing both documents
+        assert_eq!(drive_operations.len(), 1);
+    }
+
+    #[test]
+    fn test_add_update_multiple_documents_operations_empty() {
+        let (drive, contract) = setup_dashpay("multi-update-empty", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest document exists");
+
+        let documents: Vec<dpp::document::Document> = vec![];
+
+        let mut drive_operations = vec![];
+
+        drive
+            .add_update_multiple_documents_operations(
+                &documents,
+                &contract,
+                document_type,
+                &mut drive_operations,
+                &platform_version.drive,
+            )
+            .expect("expected empty documents to succeed");
+
+        // Empty documents should produce no operations
+        assert_eq!(drive_operations.len(), 0);
+    }
+
+    #[test]
+    fn test_update_document_for_contract_immutable_error() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        // Use the non-mutable dashpay contract
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        // contactRequest is not mutable in this contract
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("contactRequest document exists");
+
+        let owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get cbor document");
+
+        // Try to update an immutable document type
+        let err = drive
+            .update_document_for_contract(
+                &document,
+                &contract,
+                document_type,
+                Some(owner_id),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect_err("expected updating an immutable document type to fail");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(_))
+        ));
+    }
+
+    #[test]
+    fn test_update_document_with_serialization_for_contract() {
+        let (drive, contract) = setup_dashpay("update-serialized", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let owner_id: Identifier = random::<[u8; 32]>().into();
+
+        let mut document = document_type
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                owner_id,
+                random(),
+                random(),
+                random(),
+                platform_version,
+            )
+            .expect("should create document");
+
+        // First create the document
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: Some(owner_id.to_buffer()),
+            },
+            contract: &contract,
+            document_type,
+        };
+
+        drive
+            .add_document_for_contract(
+                info,
+                true,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("should create profile");
+
+        // Update document
+        document.set("displayName", "Bob".into());
+        document
+            .increment_revision()
+            .expect("document should have a revision to increment");
+
+        let serialized = DocumentPlatformConversionMethodsV0::serialize(
+            &document,
+            document_type,
+            &contract,
+            platform_version,
+        )
+        .expect("expected to serialize");
+
+        let fee_result = drive
+            .update_document_with_serialization_for_contract(
+                &document,
+                &serialized,
+                &contract,
+                "profile",
+                Some(owner_id.to_buffer()),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to update document with serialization");
+
+        assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify the update took effect
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let outcome = drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected to query documents");
+
+        assert_eq!(outcome.documents().len(), 1);
+        let fetched_doc = &outcome.documents()[0];
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "Bob",
+            "displayName should have been updated to Bob"
+        );
+    }
+
+    #[test]
+    fn test_update_document_for_contract_id() {
+        let (drive, contract) = setup_dashpay("update-by-id", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let owner_id: Identifier = random::<[u8; 32]>().into();
+
+        let mut document = document_type
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                owner_id,
+                random(),
+                random(),
+                random(),
+                platform_version,
+            )
+            .expect("should create document");
+
+        // First create the document
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: Some(owner_id.to_buffer()),
+            },
+            contract: &contract,
+            document_type,
+        };
+
+        drive
+            .add_document_for_contract(
+                info,
+                true,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("should create profile");
+
+        // Update document using contract_id API
+        document.set("displayName", "Bob".into());
+        document
+            .increment_revision()
+            .expect("document should have a revision to increment");
+
+        let serialized = DocumentPlatformConversionMethodsV0::serialize(
+            &document,
+            document_type,
+            &contract,
+            platform_version,
+        )
+        .expect("expected to serialize");
+
+        let fee_result = drive
+            .update_document_for_contract_id(
+                &serialized,
+                contract.id().to_buffer(),
+                "profile",
+                Some(owner_id.to_buffer()),
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to update document for contract id");
+
+        assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify the update took effect
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let outcome = drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected to query documents");
+
+        assert_eq!(outcome.documents().len(), 1);
+        let fetched_doc = &outcome.documents()[0];
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "Bob",
+            "displayName should have been updated to Bob"
+        );
     }
 }

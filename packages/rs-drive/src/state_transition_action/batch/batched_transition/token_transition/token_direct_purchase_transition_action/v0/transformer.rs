@@ -3,6 +3,7 @@ use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::consensus::state::token::{TokenAmountUnderMinimumSaleAmount, TokenDirectPurchaseUserPriceTooLow, TokenNotForDirectSale};
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::TokenDirectPurchaseTransitionV0;
@@ -191,7 +192,35 @@ impl TokenDirectPurchaseTransitionActionV0 {
                 match set_prices.range(..=token_count).next_back() {
                     Some((_matched_quantity, matched_price)) => {
                         // Use matched_quantity and matched_price to compute required cost
-                        let required_total = *matched_price * token_count;
+                        let required_total = match matched_price.checked_mul(*token_count) {
+                            Some(total) => total,
+                            None => {
+                                let bump_action =
+                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                                        base,
+                                        owner_id,
+                                        user_fee_increase,
+                                    );
+                                let batched_action =
+                                    BatchedTransitionAction::BumpIdentityDataContractNonce(
+                                        bump_action,
+                                    );
+
+                                return Ok((
+                                    ConsensusValidationResult::new_with_data_and_errors(
+                                        batched_action,
+                                        vec![ConsensusError::BasicError(
+                                            dpp::consensus::basic::BasicError::OverflowError(
+                                                OverflowError::new(
+                                                    "overflow when calculating required total price in SetPrices direct purchase".to_string(),
+                                                ),
+                                            ),
+                                        )],
+                                    ),
+                                    fee_result,
+                                ));
+                            }
+                        };
 
                         if *total_agreed_price < required_total {
                             let bump_action =
@@ -264,5 +293,117 @@ impl TokenDirectPurchaseTransitionActionV0 {
             .into(),
             fee_result,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dpp::balances::credits::TokenAmount;
+    use dpp::fee::Credits;
+    use std::collections::BTreeMap;
+
+    /// Verifies that `checked_mul` correctly detects overflow for the values
+    /// that previously would have silently wrapped in the `SetPrices` branch.
+    ///
+    /// With the fix, `matched_price.checked_mul(token_count)` returns `None`
+    /// when the product would overflow u64, causing the transformer to return
+    /// an `OverflowError` consensus error instead of a wrapped value.
+    #[test]
+    fn set_prices_checked_mul_returns_none_on_overflow() {
+        // These values cause overflow:
+        // matched_price = u64::MAX / 3 + 1 = 6_148_914_691_236_517_206
+        // token_count = 3
+        // True product = 18_446_744_073_709_551_618 > u64::MAX
+        let matched_price: Credits = u64::MAX / 3 + 1;
+        let token_count: TokenAmount = 3;
+
+        // checked_mul returns None on overflow -- this is what the fixed code uses
+        assert_eq!(
+            matched_price.checked_mul(token_count),
+            None,
+            "checked_mul must return None when the product overflows u64"
+        );
+
+        // For comparison, wrapping_mul would silently produce 2 (the old bug)
+        assert_eq!(
+            matched_price.wrapping_mul(token_count),
+            2,
+            "wrapping_mul silently wraps to 2 -- this was the vulnerability"
+        );
+    }
+
+    /// Verifies the fix with realistic SetPrices schedule parameters, using
+    /// `BTreeMap::range` exactly as the transformer code does.
+    ///
+    /// With the fix, overflow returns an error rather than allowing an
+    /// attacker to purchase tokens at a wrapped (near-zero) price.
+    #[test]
+    fn set_prices_overflow_detected_via_btreemap_range_lookup() {
+        // Build a SetPrices schedule with a high per-token price at the 1-token tier.
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        let large_price: Credits = (1u64 << 63) + 1; // 9_223_372_036_854_775_809
+        set_prices.insert(1, large_price);
+
+        let token_count: TokenAmount = 2;
+
+        // Replicate the exact BTreeMap lookup from the transformer
+        let matched_price = match set_prices.range(..=token_count).next_back() {
+            Some((_matched_quantity, price)) => *price,
+            None => panic!("Should have found a matching price tier"),
+        };
+
+        assert_eq!(matched_price, large_price);
+
+        // The fixed code uses checked_mul, which returns None on overflow
+        assert_eq!(
+            matched_price.checked_mul(token_count),
+            None,
+            "checked_mul detects overflow: the transformer will return an OverflowError"
+        );
+    }
+
+    /// Verifies that normal (non-overflowing) SetPrices purchases still work
+    /// correctly with `checked_mul`.
+    #[test]
+    fn set_prices_checked_mul_works_for_normal_values() {
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        let price_per_token: Credits = 1_000_000; // 1 million credits per token
+        set_prices.insert(1, price_per_token);
+
+        let token_count: TokenAmount = 100;
+
+        let matched_price = match set_prices.range(..=token_count).next_back() {
+            Some((_matched_quantity, price)) => *price,
+            None => panic!("Should have found a matching price tier"),
+        };
+
+        // checked_mul returns Some for values that fit in u64
+        let required_total = matched_price.checked_mul(token_count);
+        assert_eq!(
+            required_total,
+            Some(100_000_000),
+            "Normal multiplication should succeed and return the correct product"
+        );
+
+        // A user paying the correct amount passes the price check
+        let user_agreed_price: Credits = 100_000_000;
+        assert!(user_agreed_price >= required_total.unwrap());
+    }
+
+    /// Verify that SinglePrice branch (saturating_mul) is safe for the same inputs.
+    #[test]
+    fn single_price_saturating_mul_is_safe() {
+        let price_per_token: Credits = u64::MAX / 3 + 1;
+        let token_count: TokenAmount = 3;
+
+        // SinglePrice branch uses saturating_mul
+        let required_price = price_per_token.saturating_mul(token_count);
+
+        // Should saturate to u64::MAX, not wrap
+        assert_eq!(required_price, u64::MAX);
+
+        // Any attacker offering less than u64::MAX would be rejected
+        let attacker_price: Credits = 1_000_000;
+        assert!(attacker_price < required_price);
     }
 }

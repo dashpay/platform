@@ -96,7 +96,7 @@ impl OrchardAddress {
 
         let hrp_lower = hrp.as_str().to_ascii_lowercase();
         let network = match hrp_lower.as_str() {
-            s if s == PLATFORM_HRP_MAINNET => Network::Dash,
+            s if s == PLATFORM_HRP_MAINNET => Network::Mainnet,
             s if s == PLATFORM_HRP_TESTNET => Network::Testnet,
             _ => {
                 return Err(ProtocolError::DecodingError(format!(
@@ -182,7 +182,7 @@ mod tests {
     fn test_orchard_bech32m_mainnet_roundtrip() {
         let address = test_orchard_address();
 
-        let encoded = address.to_bech32m_string(Network::Dash);
+        let encoded = address.to_bech32m_string(Network::Mainnet);
         assert!(
             encoded.starts_with("dash1z"),
             "Orchard mainnet address should start with 'dash1z', got: {}",
@@ -192,7 +192,7 @@ mod tests {
         let (decoded, network) =
             OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Dash);
+        assert_eq!(network, Network::Mainnet);
     }
 
     #[test]
@@ -250,9 +250,9 @@ mod tests {
         let p2sh = PlatformAddress::P2sh([0xAB; 20]);
         let orchard = test_orchard_address();
 
-        let p2pkh_enc = p2pkh.to_bech32m_string(Network::Dash);
-        let p2sh_enc = p2sh.to_bech32m_string(Network::Dash);
-        let orchard_enc = orchard.to_bech32m_string(Network::Dash);
+        let p2pkh_enc = p2pkh.to_bech32m_string(Network::Mainnet);
+        let p2sh_enc = p2sh.to_bech32m_string(Network::Mainnet);
+        let orchard_enc = orchard.to_bech32m_string(Network::Mainnet);
 
         // All three start with "dash1" but have different type-byte characters
         assert!(p2pkh_enc.starts_with("dash1k"), "P2PKH: {}", p2pkh_enc);

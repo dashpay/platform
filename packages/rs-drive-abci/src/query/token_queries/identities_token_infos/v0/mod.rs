@@ -11,6 +11,7 @@ use dpp::identifier::Identifier;
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 
@@ -25,6 +26,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesTokenInfosResponseV0>, Error> {
+        if identity_ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} identities token infos, maximum is {}",
+                    identity_ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let token_id: Identifier =
             check_validation_result_with_data!(token_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -93,5 +103,233 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use crate::query::tests::setup_platform_with_token_state;
+    use dapi_grpc::platform::v0::get_identities_token_infos_response::get_identities_token_infos_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_invalid_token_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 8],
+            identity_ids: vec![vec![0; 32]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_id")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: vec![vec![0; 8]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("identity_id")
+        ));
+    }
+
+    #[test]
+    fn test_query_with_empty_state() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: vec![vec![0; 32]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(result.data.is_some());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_identities_token_infos_response_v0::Result::IdentityTokenInfos(infos)) => {
+                assert_eq!(infos.token_infos.len(), 1);
+                // Info should be None (no token exists)
+                assert!(infos.token_infos[0].info.is_none());
+            }
+            _ => panic!("expected IdentityTokenInfos result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: vec![vec![0; 32]],
+            prove: true,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesTokenInfosResponseV0 {
+                result: Some(get_identities_token_infos_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_identity_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_identity_ids_at_max_limit_is_accepted() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: vec![0; 32],
+            identity_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                QueryError::Query(drive::error::query::QuerySyntaxError::InvalidLimit(_))
+            )),
+            "should not be rejected at exactly the max limit"
+        );
+    }
+
+    #[test]
+    fn test_query_with_token_data_not_frozen() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        // Identity 1 is NOT frozen on token 0 - no explicit info record is stored
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            identity_ids: vec![identity_ids[0].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_identities_token_infos_response_v0::Result::IdentityTokenInfos(infos)) => {
+                assert_eq!(infos.token_infos.len(), 1);
+                // Unfrozen identities have no info record, so info is None
+                assert!(infos.token_infos[0].info.is_none());
+            }
+            _ => panic!("expected IdentityTokenInfos result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_token_data_frozen() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        // Identity 2 IS frozen on token 0
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            identity_ids: vec![identity_ids[1].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_identities_token_infos_response_v0::Result::IdentityTokenInfos(infos)) => {
+                assert_eq!(infos.token_infos.len(), 1);
+                let info = infos.token_infos[0].info.as_ref().expect("expected info");
+                assert!(info.frozen);
+            }
+            _ => panic!("expected IdentityTokenInfos result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_token_data_proof() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetIdentitiesTokenInfosRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            identity_ids: vec![identity_ids[0].to_vec()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_identities_token_infos_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetIdentitiesTokenInfosResponseV0 {
+                result: Some(get_identities_token_infos_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 }

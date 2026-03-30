@@ -62,3 +62,193 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_v1_no_upgrade_when_no_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_v1_upgrade_when_sufficient_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 80);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_v1_no_upgrade_when_insufficient_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 50);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_v1_error_when_multiple_versions_pass_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+        let another_version = platform_version.protocol_version + 2;
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 80);
+            counter.global_cache.insert(another_version, 80);
+        }
+
+        let result = platform.check_for_desired_protocol_upgrade_v1(100, platform_version);
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::ProtocolUpgradeIncoherence(_))) => {}
+            _ => panic!("expected ProtocolUpgradeIncoherence error"),
+        }
+    }
+
+    #[test]
+    fn test_v1_upgrade_with_votes_exactly_at_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        let pct = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
+        let required = 1 + (100u64 * pct / 100);
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, required);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_v1_no_upgrade_with_one_below_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        let pct = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
+        let required = 1 + (100u64 * pct / 100);
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, required - 1);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_v1_block_cache_votes_count_towards_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // versions_passing_threshold looks at both global and block caches
+        // Put enough votes only in block_cache to pass threshold
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.set_block_cache_version_count(next_version, 80);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_v1_upgrade_with_large_number_of_hpmns() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // With 10000 active hpmns and 75% threshold:
+        // required = 1 + (10000 * 75 / 100) = 7501
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 7501);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v1(10000, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+}

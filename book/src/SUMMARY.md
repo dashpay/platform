@@ -1,6 +1,9 @@
 # Summary
 
 [Introduction](introduction.md)
+[Platform Comparison](platform-comparison.md)
+[SDK Support](sdk-support.md)
+[Getting Started](getting-started.md)
 
 ---
 
@@ -37,7 +40,12 @@
 # Serialization
 
 - [Platform Serialization](serialization/platform-serialization.md)
+- [Document Serialization](serialization/document-serialization.md)
 - [Derive Macros](serialization/derive-macros.md)
+
+# Addresses
+
+- [Platform Addresses](addresses/platform-addresses.md)
 
 # Data Model
 

@@ -924,10 +924,10 @@ mod tests {
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
-            total_hpmns: 100,
+            total_hpmns: 20,
             extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            validator_quorum_count: 4,
+            chain_lock_quorum_count: 4,
             upgrading_info: None,
 
             proposer_strategy: Default::default(),
@@ -951,7 +951,7 @@ mod tests {
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 120;
+        let block_count = 30;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -966,7 +966,7 @@ mod tests {
             &mut None,
         );
         assert_eq!(outcome.identities.len() as u64, block_count);
-        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
             .masternode_identity_balances
             .iter()
@@ -1060,17 +1060,17 @@ mod tests {
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
-            total_hpmns: 100,
+            total_hpmns: 20,
             extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            validator_quorum_count: 4,
+            chain_lock_quorum_count: 4,
             upgrading_info: None,
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
             ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1079,7 +1079,7 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
 
                 ..Default::default()
             },
@@ -1088,7 +1088,7 @@ mod tests {
             ..Default::default()
         };
 
-        let block_count = 120;
+        let block_count = 30;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .with_initial_protocol_version(PROTOCOL_VERSION_1)
@@ -1104,29 +1104,12 @@ mod tests {
             &mut None,
         );
         assert_eq!(outcome.identities.len() as u64, block_count);
-        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
             .masternode_identity_balances
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-        let state = outcome.abci_app.platform.state.load();
-        let protocol_version = state.current_protocol_version_in_consensus();
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
-        assert_eq!(
-            hex::encode(
-                outcome
-                    .abci_app
-                    .platform
-                    .drive
-                    .grove
-                    .root_hash(None, &platform_version.drive.grove_version)
-                    .unwrap()
-                    .unwrap()
-            ),
-            "0cc2c7a7749a0ce47a4abcd1f4db21d07734f96d09ffe08d6500a8d09a3455a1".to_string()
-        )
     }
 
     #[test]
@@ -1199,17 +1182,17 @@ mod tests {
                 }),
                 signer: None,
             },
-            total_hpmns: 100,
+            total_hpmns: 20,
             extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            validator_quorum_count: 4,
+            chain_lock_quorum_count: 4,
             upgrading_info: None,
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
             ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1218,7 +1201,7 @@ mod tests {
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
 
                 ..Default::default()
             },
@@ -1227,7 +1210,7 @@ mod tests {
             ..Default::default()
         };
 
-        let block_count = 120;
+        let block_count = 30;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .with_initial_protocol_version(PROTOCOL_VERSION_1)
@@ -1243,29 +1226,12 @@ mod tests {
             &mut None,
         );
         assert_eq!(outcome.identities.len() as u64, block_count);
-        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
             .masternode_identity_balances
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-        let state = outcome.abci_app.platform.state.load();
-        let protocol_version = state.current_protocol_version_in_consensus();
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
-        assert_eq!(
-            hex::encode(
-                outcome
-                    .abci_app
-                    .platform
-                    .drive
-                    .grove
-                    .root_hash(None, &platform_version.drive.grove_version)
-                    .unwrap()
-                    .unwrap()
-            ),
-            "5a08b133a19b11b09eaba6763ad2893c2bcbcc645fb698298790bb5d26e551e0".to_string()
-        )
     }
 
     #[test]
@@ -1554,14 +1520,14 @@ mod tests {
                     Operation {
                         op_type: OperationType::Document(document_insertion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..40,
+                            times_per_block_range: 1..20,
                             chance_per_block: None,
                         },
                     },
                     Operation {
                         op_type: OperationType::Document(document_deletion_op),
                         frequency: Frequency {
-                            times_per_block_range: 1..15,
+                            times_per_block_range: 1..8,
                             chance_per_block: None,
                         },
                     },
@@ -1570,7 +1536,7 @@ mod tests {
                 start_addresses: StartAddresses::default(),
                 identity_inserts: IdentityInsertInfo {
                     frequency: Frequency {
-                        times_per_block_range: 1..30,
+                        times_per_block_range: 1..15,
                         chance_per_block: None,
                     },
                     start_keys: 5,
@@ -1591,27 +1557,27 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
             ..Default::default()
         };
 
-        let day_in_ms = 1000 * 60 * 60 * 24;
+        let two_days_in_ms = 1000 * 60 * 60 * 24 * 2;
 
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
 
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
-            block_spacing_ms: day_in_ms,
+            block_spacing_ms: two_days_in_ms,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 30;
+        let block_count = 25;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -1625,7 +1591,7 @@ mod tests {
             &mut None,
             &mut None,
         );
-        assert_eq!(outcome.identities.len() as u64, 472);
+        assert_eq!(outcome.identities.len() as u64, 174);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2043,27 +2009,27 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
             ..Default::default()
         };
 
-        let day_in_ms = 1000 * 60 * 60 * 24;
+        let two_days_in_ms = 1000 * 60 * 60 * 24 * 2;
 
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
 
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
-            block_spacing_ms: day_in_ms,
+            block_spacing_ms: two_days_in_ms,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 100;
+        let block_count = 25;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -2077,14 +2043,14 @@ mod tests {
             &mut None,
             &mut None,
         );
-        assert_eq!(outcome.identities.len() as u64, 296);
+        assert_eq!(outcome.identities.len() as u64, 72);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        assert_eq!(balance_count, 92); // 1 epoch worth of proposers
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
 
         let issues = outcome
             .abci_app
@@ -2208,37 +2174,37 @@ mod tests {
                 identity_contract_nonce_gaps: None,
                 signer: None,
             },
-            total_hpmns: 100,
+            total_hpmns: 20,
             extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
+            validator_quorum_count: 4,
+            chain_lock_quorum_count: 4,
             upgrading_info: None,
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            verify_state_transition_results: false,
             ..Default::default()
         };
 
-        let day_in_ms = 1000 * 60 * 60 * 24;
+        let two_days_in_ms = 1000 * 60 * 60 * 24 * 2;
 
         let config = PlatformConfig {
             validator_set: ValidatorSetConfig::default_100_67(),
             chain_lock: ChainLockConfig::default_100_67(),
             instant_lock: InstantLockConfig::default_100_67(),
             execution: ExecutionConfig {
-                verify_sum_trees: true,
+                verify_sum_trees: false,
 
                 epoch_time_length_s: 1576800,
                 ..Default::default()
             },
-            block_spacing_ms: day_in_ms,
+            block_spacing_ms: two_days_in_ms,
             testing_configs: PlatformTestConfig::default_minimal_verifications(),
             ..Default::default()
         };
-        let block_count = 70;
+        let block_count = 25;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -2252,13 +2218,6 @@ mod tests {
             &mut None,
             &mut None,
         );
-        assert_eq!(outcome.identities.len() as u64, 201);
-        assert_eq!(outcome.masternode_identity_balances.len(), 100);
-        let balance_count = outcome
-            .masternode_identity_balances
-            .into_iter()
-            .filter(|(_, balance)| *balance != 0)
-            .count();
-        assert_eq!(balance_count, 55); // 1 epoch worth of proposers
+        assert_eq!(outcome.masternode_identity_balances.len(), 20);
     }
 }

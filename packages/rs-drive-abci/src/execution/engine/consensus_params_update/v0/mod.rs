@@ -13,7 +13,7 @@ pub(super) fn consensus_params_update_v0(
 ) -> Option<ConsensusParams> {
     // These are emergency consensus updates
     match network {
-        Network::Dash => {
+        Network::Mainnet => {
             if epoch_info.is_first_block_of_epoch(3) {
                 return Some(ConsensusParams {
                     block: None,

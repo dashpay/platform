@@ -18,7 +18,7 @@ impl RewardDistributionType {
         match self {
             RewardDistributionType::BlockBasedDistribution { interval, .. } => {
                 let min_block_interval = match network_type {
-                    Network::Dash => 100,
+                    Network::Mainnet => 100,
                     Network::Testnet => 5,
                     Network::Devnet => 2,
                     Network::Regtest => 1,
@@ -37,7 +37,7 @@ impl RewardDistributionType {
             }
             RewardDistributionType::TimeBasedDistribution { interval, .. } => {
                 let min_block_interval = match network_type {
-                    Network::Dash => 3_600_000,
+                    Network::Mainnet => 3_600_000,
                     Network::Testnet => 600_000,
                     Network::Devnet => 60_000,
                     Network::Regtest => 60_000,

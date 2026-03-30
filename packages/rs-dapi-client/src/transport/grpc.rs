@@ -650,6 +650,15 @@ impl_transport_request_grpc!(
     get_token_statuses
 );
 
+// rpc getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetTokenPreProgrammedDistributionsRequest,
+    platform_proto::GetTokenPreProgrammedDistributionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_token_pre_programmed_distributions
+);
+
 // rpc getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse);
 impl_transport_request_grpc!(
     platform_proto::GetTokenTotalSupplyRequest,

@@ -254,3 +254,123 @@ pub fn convert_to_consensus_signature_error(
         )),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+    use dpp::state_transition::errors::PublicKeySecurityLevelNotMetError;
+    use dpp::state_transition::errors::WrongPublicKeyPurposeError;
+
+    mod convert_to_consensus_signature_error_tests {
+        use super::*;
+
+        #[test]
+        fn should_convert_invalid_signature_public_key_security_level_error() {
+            let inner = InvalidSignaturePublicKeySecurityLevelError::new(
+                SecurityLevel::MEDIUM,
+                vec![SecurityLevel::MASTER, SecurityLevel::HIGH],
+            );
+            let protocol_error =
+                ProtocolError::InvalidSignaturePublicKeySecurityLevelError(inner.clone());
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            match result {
+                ConsensusError::SignatureError(
+                    SignatureError::InvalidSignaturePublicKeySecurityLevelError(e),
+                ) => {
+                    assert_eq!(e.public_key_security_level(), SecurityLevel::MEDIUM);
+                }
+                other => panic!("unexpected error variant: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn should_convert_public_key_security_level_not_met_error() {
+            let inner = PublicKeySecurityLevelNotMetError::new(
+                SecurityLevel::MEDIUM,
+                SecurityLevel::MASTER,
+            );
+            let protocol_error = ProtocolError::PublicKeySecurityLevelNotMetError(inner);
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            match result {
+                ConsensusError::SignatureError(
+                    SignatureError::PublicKeySecurityLevelNotMetError(e),
+                ) => {
+                    assert_eq!(e.public_key_security_level(), SecurityLevel::MEDIUM);
+                    assert_eq!(e.required_security_level(), SecurityLevel::MASTER);
+                }
+                other => panic!("unexpected error variant: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn should_convert_public_key_is_disabled_error() {
+            let inner = PublicKeyIsDisabledError::new(42u32);
+            let protocol_error = ProtocolError::PublicKeyIsDisabledError(inner);
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            match result {
+                ConsensusError::SignatureError(SignatureError::PublicKeyIsDisabledError(e)) => {
+                    assert_eq!(e.public_key_id(), 42u32);
+                }
+                other => panic!("unexpected error variant: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn should_convert_invalid_identity_public_key_type_error() {
+            let inner = InvalidIdentityPublicKeyTypeError::new(KeyType::BIP13_SCRIPT_HASH);
+            let protocol_error = ProtocolError::InvalidIdentityPublicKeyTypeError(inner);
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            match result {
+                ConsensusError::SignatureError(
+                    SignatureError::InvalidIdentityPublicKeyTypeError(e),
+                ) => {
+                    assert_eq!(e.public_key_type(), KeyType::BIP13_SCRIPT_HASH);
+                }
+                other => panic!("unexpected error variant: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn should_convert_wrong_public_key_purpose_error() {
+            let inner =
+                WrongPublicKeyPurposeError::new(Purpose::ENCRYPTION, vec![Purpose::AUTHENTICATION]);
+            let protocol_error = ProtocolError::WrongPublicKeyPurposeError(inner);
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            // WrongPublicKeyPurposeError converts via its Into impl
+            match result {
+                ConsensusError::SignatureError(SignatureError::WrongPublicKeyPurposeError(_)) => {}
+                other => panic!("unexpected error variant: {:?}", other),
+            }
+        }
+
+        #[test]
+        fn should_convert_other_errors_to_invalid_state_transition_signature() {
+            // Use a variant that falls through to the catch-all
+            let protocol_error = ProtocolError::Overflow("test overflow");
+
+            let result = convert_to_consensus_signature_error(protocol_error)
+                .expect("should not return Err");
+            match result {
+                ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_),
+                ) => {}
+                other => panic!(
+                    "expected InvalidStateTransitionSignatureError, got {:?}",
+                    other
+                ),
+            }
+        }
+    }
+}

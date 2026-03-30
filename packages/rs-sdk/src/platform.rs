@@ -18,8 +18,11 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod query;
+#[cfg(feature = "shielded")]
+pub mod shielded;
 pub mod tokens;
 pub mod transition;
+pub mod trunk_branch_sync;
 pub mod types;
 
 pub use dapi_grpc::platform::v0 as proto;

@@ -25,11 +25,7 @@ struct AccountDetailView: View {
 
     var body: some View {
         ScrollView {
-            if isLoading {
-                ProgressView("Loading account details...")
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = errorMessage {
+            if let error = errorMessage {
                 ContentUnavailableView(
                     "Failed to Load Details",
                     systemImage: "exclamationmark.triangle",
@@ -62,7 +58,7 @@ struct AccountDetailView: View {
         .navigationTitle(account.label)
         .navigationBarTitleDisplayMode(.large)
         .task {
-            await loadAccountDetails()
+            loadAccountDetails()
         }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
@@ -126,7 +122,7 @@ struct AccountDetailView: View {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.dashNetwork.rawValue.capitalized)
+                    Text(wallet.network.rawValue.capitalized)
                         .fontWeight(.medium)
                 }
             }
@@ -604,10 +600,7 @@ struct AccountDetailView: View {
     private func derivePrivateKeyWithPIN(for detail: AddressDetail, pin: String) async {
         do {
             // Gate with PIN but derive via account-based FFI (no seed passage required)
-            guard let walletManager = walletService.walletManager else {
-                throw WalletError.walletError("Wallet manager not available")
-            }
-            let wifPrivateKey = try await walletManager.derivePrivateKeyAsWIF(
+            let wifPrivateKey = try await walletService.walletManager.derivePrivateKeyAsWIF(
                 for: wallet,
                 accountInfo: account,
                 addressIndex: detail.index
@@ -625,30 +618,14 @@ struct AccountDetailView: View {
 
     // MARK: - Data Loading
 
-    private func loadAccountDetails() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            guard let walletManager = walletService.walletManager else {
-                throw WalletError.walletError("Wallet manager not available")
-            }
-
-            // Get extended public key and other details
-            let details = try await walletManager.getAccountDetails(
-                for: wallet,
-                accountInfo: account
-            )
-
-            await MainActor.run {
-                self.detailInfo = details
-                self.isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                self.errorMessage = error.localizedDescription
-                self.isLoading = false
-            }
+    private func loadAccountDetails() {
+        if let details = walletService.walletManager.getAccountDetails(
+            for: wallet,
+            accountInfo: account
+        ) {
+            self.detailInfo = details
+        } else {
+            self.errorMessage = "Unable to load account details"
         }
     }
 }

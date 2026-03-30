@@ -172,3 +172,247 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use crate::query::tests::setup_platform_with_token_state;
+    use dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_invalid_token_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: vec![0; 8],
+            contract_info: None,
+            identity_id: vec![0; 32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_id")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: vec![0; 32],
+            contract_info: None,
+            identity_id: vec![0; 8],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("identity_id")
+        ));
+    }
+
+    #[test]
+    fn test_query_with_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: vec![0; 32],
+            contract_info: None,
+            identity_id: vec![0; 32],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetTokenPerpetualDistributionLastClaimResponseV0 {
+                result: Some(
+                    get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_without_contract_info_raw() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        // Query without contract_info - should return raw bytes
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: None,
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
+                claim,
+            )) => {
+                // paid_at might be None if no distribution has happened yet
+                // The important thing is the query succeeds
+                let _ = claim.paid_at;
+            }
+            _ => panic!("expected LastClaim result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_contract_info() {
+        let (platform, state, version, contract_id, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: 0,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
+                claim,
+            )) => {
+                // No distribution has been executed yet, so paid_at should be None
+                let _ = claim.paid_at;
+            }
+            _ => panic!("expected LastClaim result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_invalid_contract_id() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: vec![0; 8], // invalid
+                token_contract_position: 0,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id")
+        ));
+    }
+
+    #[test]
+    fn test_query_with_contract_not_found() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: vec![99; 32], // nonexistent
+                token_contract_position: 0,
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::NotFound(msg)] if msg.contains("contract")
+        ));
+    }
+
+    #[test]
+    fn test_query_with_token_position_too_large() {
+        let (platform, state, version, contract_id, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: Some(ContractTokenInfo {
+                contract_id: contract_id.to_vec(),
+                token_contract_position: u32::MAX, // too large
+            }),
+            identity_id: identity_ids[0].to_vec(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_contract_position")
+        ));
+    }
+
+    #[test]
+    fn test_query_with_data_proof() {
+        let (platform, state, version, _, token_ids, identity_ids) =
+            setup_platform_with_token_state();
+
+        let request = GetTokenPerpetualDistributionLastClaimRequestV0 {
+            token_id: token_ids[0].to_vec(),
+            contract_info: None,
+            identity_id: identity_ids[0].to_vec(),
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_perpetual_distribution_last_claim_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetTokenPerpetualDistributionLastClaimResponseV0 {
+                result: Some(
+                    get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(_)
+                ),
+                metadata: Some(_),
+            })
+        ));
+    }
+}

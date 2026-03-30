@@ -84,7 +84,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 55] = [
+    const VERSIONED_REQUESTS: [&str; 56] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
@@ -123,6 +123,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesRequest",
         "GetTokenContractInfoRequest",
         "GetTokenStatusesRequest",
+        "GetTokenPreProgrammedDistributionsRequest",
         "GetTokenTotalSupplyRequest",
         "GetGroupInfoRequest",
         "GetGroupInfosRequest",
@@ -160,7 +161,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 53] = [
+    const VERSIONED_RESPONSES: [&str; 54] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -197,6 +198,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesResponse",
         "GetTokenContractInfoResponse",
         "GetTokenStatusesResponse",
+        "GetTokenPreProgrammedDistributionsResponse",
         "GetTokenTotalSupplyResponse",
         "GetGroupInfoResponse",
         "GetGroupInfosResponse",

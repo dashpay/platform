@@ -6,10 +6,6 @@ public struct ModelContainerHelper {
         let schema = Schema([
             // Core models
             HDWallet.self,
-            HDAddress.self,
-            HDTransaction.self,
-            HDUTXO.self,
-            HDWatchedAddress.self,
 
             // Platform models
             PersistentIdentity.self,

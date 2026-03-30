@@ -42,3 +42,87 @@ impl TokenEmergencyActionTransitionStructureValidationV0 for TokenEmergencyActio
         Ok(SimpleConsensusValidationResult::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::group::GroupStateTransitionInfo;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use crate::state_transition::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
+    use crate::tokens::emergency_action::TokenEmergencyAction;
+    use platform_value::Identifier;
+
+    fn make_transition(
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfo>,
+    ) -> TokenEmergencyActionTransition {
+        TokenEmergencyActionTransition::V0(TokenEmergencyActionTransitionV0 {
+            base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: Identifier::default(),
+                token_id: Identifier::default(),
+                using_group_info,
+            }),
+            emergency_action: TokenEmergencyAction::Pause,
+            public_note,
+        })
+    }
+
+    #[test]
+    fn should_pass_with_no_public_note() {
+        let transition = make_transition(None, None);
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn should_pass_with_short_public_note_and_no_group() {
+        let transition = make_transition(Some("hello".to_string()), None);
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn should_pass_with_public_note_and_proposer_group() {
+        let group_info = GroupStateTransitionInfo {
+            group_contract_position: 0,
+            action_id: Identifier::default(),
+            action_is_proposer: true,
+        };
+        let transition = make_transition(Some("hello".to_string()), Some(group_info));
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn should_return_error_when_public_note_too_big() {
+        let long_note = "a".repeat(MAX_TOKEN_NOTE_LEN + 1);
+        let transition = make_transition(Some(long_note), None);
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(!result.is_valid());
+        let error = result.errors.first().unwrap();
+        assert!(matches!(
+            error,
+            ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_))
+        ));
+    }
+
+    #[test]
+    fn should_return_error_when_note_present_but_non_proposer_in_group() {
+        let group_info = GroupStateTransitionInfo {
+            group_contract_position: 0,
+            action_id: Identifier::default(),
+            action_is_proposer: false,
+        };
+        let transition = make_transition(Some("hello".to_string()), Some(group_info));
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(!result.is_valid());
+        let error = result.errors.first().unwrap();
+        assert!(matches!(
+            error,
+            ConsensusError::BasicError(BasicError::TokenNoteOnlyAllowedWhenProposerError(_))
+        ));
+    }
+}

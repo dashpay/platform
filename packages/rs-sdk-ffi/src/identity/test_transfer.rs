@@ -84,40 +84,19 @@ pub unsafe extern "C" fn dash_sdk_test_identity_transfer_crash(
     key_types.insert(KeyType::BIP13_SCRIPT_HASH);
     key_types.insert(KeyType::EDDSA_25519_HASH160);
 
-    // Wrap in catch_unwind to see if it panics
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        eprintln!("🔵 Test: Inside catch_unwind, calling get_first_public_key_matching");
+    // Note: Previous versions wrapped this in catch_unwind, which was removed because
+    // with panic = "abort" in the release profile, catch_unwind is a no-op and would
+    // never actually catch a panic. The identity is locally owned here (fetched above),
+    // so this call should not panic.
+    let key =
+        identity.get_first_public_key_matching(Purpose::TRANSFER, security_levels, key_types, true);
 
-        let key = identity.get_first_public_key_matching(
-            Purpose::TRANSFER,
-            security_levels,
-            key_types,
-            true,
-        );
-
-        match key {
-            Some(k) => eprintln!("🔵 Test: Found transfer key with ID: {}", k.id()),
-            None => eprintln!("⚠️ Test: No transfer key found"),
-        }
-
-        eprintln!("🔵 Test: get_first_public_key_matching completed successfully");
-    })) {
-        Ok(_) => eprintln!("✅ Test: No panic occurred"),
-        Err(panic) => {
-            eprintln!("❌ Test: PANIC caught!");
-            if let Some(msg) = panic.downcast_ref::<&str>() {
-                eprintln!("❌ Panic message: {}", msg);
-            } else if let Some(msg) = panic.downcast_ref::<String>() {
-                eprintln!("❌ Panic message: {}", msg);
-            } else {
-                eprintln!("❌ Panic occurred but message type unknown");
-            }
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                "Panic in get_first_public_key_matching".to_string(),
-            ));
-        }
+    match key {
+        Some(k) => eprintln!("🔵 Test: Found transfer key with ID: {}", k.id()),
+        None => eprintln!("⚠️ Test: No transfer key found"),
     }
+
+    eprintln!("🔵 Test: get_first_public_key_matching completed successfully");
 
     // If we get here, the method works fine
     eprintln!("✅ Test: All tests passed, no crash detected");

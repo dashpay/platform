@@ -81,14 +81,10 @@ final class SDKMethodTests: XCTestCase {
         amount: amount,
         signer: OpaquePointer(signer)
       )
-      print("✅ Method call succeeded (unexpected)")
+      XCTFail("transferCredits should fail with dummy data")
     } catch {
-      print("Method call failed with error: \(error)")
-      print("Error type: \(type(of: error))")
-      // This is expected since we're using dummy data
+      // Expected: dummy data causes an error
     }
-
-    XCTAssertTrue(true)
   }
 
   func testSimpleIdentityFetch() async throws {

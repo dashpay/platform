@@ -469,4 +469,512 @@ mod test {
             json!("new_value")
         );
     }
+
+    // ------- New coverage tests -------
+
+    // push
+
+    #[test]
+    fn push_adds_to_array() {
+        let mut arr = json!([1, 2, 3]);
+        arr.push(json!(4)).expect("should push");
+        assert_eq!(arr, json!([1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn push_on_non_array_fails() {
+        let mut obj = json!({"a": 1});
+        assert!(obj.push(json!(1)).is_err());
+    }
+
+    // insert
+
+    #[test]
+    fn insert_adds_key_to_object() {
+        let mut obj = json!({"existing": 1});
+        JsonValueExt::insert(&mut obj, "new_key".to_string(), json!("new_value"))
+            .expect("should insert");
+        assert_eq!(obj["new_key"], json!("new_value"));
+        assert_eq!(obj["existing"], json!(1));
+    }
+
+    #[test]
+    fn insert_on_non_object_fails() {
+        let mut arr = json!([1, 2]);
+        assert!(JsonValueExt::insert(&mut arr, "key".to_string(), json!(1)).is_err());
+    }
+
+    // remove
+
+    #[test]
+    fn remove_existing_property() {
+        let mut obj = json!({"a": 1, "b": 2});
+        let removed = JsonValueExt::remove(&mut obj, "a").expect("should remove");
+        assert_eq!(removed, json!(1));
+        assert!(obj.get("a").is_none());
+    }
+
+    #[test]
+    fn remove_nonexistent_property_fails() {
+        let mut obj = json!({"a": 1});
+        assert!(JsonValueExt::remove(&mut obj, "missing").is_err());
+    }
+
+    #[test]
+    fn remove_on_non_object_fails() {
+        let mut val = json!("string");
+        assert!(JsonValueExt::remove(&mut val, "key").is_err());
+    }
+
+    // remove_into
+
+    #[test]
+    fn remove_into_deserializes_value() {
+        let mut obj = json!({"count": 42});
+        let count: u64 = obj
+            .remove_into("count")
+            .expect("should remove and deserialize");
+        assert_eq!(count, 42);
+    }
+
+    #[test]
+    fn remove_into_missing_property_fails() {
+        let mut obj = json!({"a": 1});
+        let result: Result<u64, _> = obj.remove_into("missing");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn remove_into_on_non_object_fails() {
+        let mut val = json!(123);
+        let result: Result<u64, _> = val.remove_into("key");
+        assert!(result.is_err());
+    }
+
+    // get_string
+
+    #[test]
+    fn get_string_returns_string_value() {
+        let obj = json!({"name": "Alice"});
+        let result = obj.get_string("name").expect("should get string");
+        assert_eq!(result, "Alice");
+    }
+
+    #[test]
+    fn get_string_missing_property_fails() {
+        let obj = json!({"a": 1});
+        assert!(obj.get_string("missing").is_err());
+    }
+
+    #[test]
+    fn get_string_non_string_value_fails() {
+        let obj = json!({"num": 42});
+        assert!(obj.get_string("num").is_err());
+    }
+
+    // get_u8
+
+    #[test]
+    fn get_u8_returns_u8_value() {
+        let obj = json!({"val": 200});
+        let result = obj.get_u8("val").expect("should get u8");
+        assert_eq!(result, 200);
+    }
+
+    #[test]
+    fn get_u8_too_large_fails() {
+        let obj = json!({"val": 300});
+        assert!(obj.get_u8("val").is_err());
+    }
+
+    #[test]
+    fn get_u8_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_u8("val").is_err());
+    }
+
+    #[test]
+    fn get_u8_non_number_fails() {
+        let obj = json!({"val": "text"});
+        assert!(obj.get_u8("val").is_err());
+    }
+
+    // get_u32
+
+    #[test]
+    fn get_u32_returns_u32_value() {
+        let obj = json!({"val": 100000});
+        let result = obj.get_u32("val").expect("should get u32");
+        assert_eq!(result, 100_000);
+    }
+
+    #[test]
+    fn get_u32_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_u32("val").is_err());
+    }
+
+    #[test]
+    fn get_u32_non_number_fails() {
+        let obj = json!({"val": true});
+        assert!(obj.get_u32("val").is_err());
+    }
+
+    // get_u64
+
+    #[test]
+    fn get_u64_returns_u64_value() {
+        let obj = json!({"val": 9999999999u64});
+        let result = obj.get_u64("val").expect("should get u64");
+        assert_eq!(result, 9_999_999_999);
+    }
+
+    #[test]
+    fn get_u64_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_u64("val").is_err());
+    }
+
+    #[test]
+    fn get_u64_non_number_fails() {
+        let obj = json!({"val": "text"});
+        assert!(obj.get_u64("val").is_err());
+    }
+
+    // get_i64
+
+    #[test]
+    fn get_i64_returns_i64_value() {
+        let obj = json!({"val": -42});
+        let result = obj.get_i64("val").expect("should get i64");
+        assert_eq!(result, -42);
+    }
+
+    #[test]
+    fn get_i64_positive_value() {
+        let obj = json!({"val": 100});
+        let result = obj.get_i64("val").expect("should get i64");
+        assert_eq!(result, 100);
+    }
+
+    #[test]
+    fn get_i64_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_i64("val").is_err());
+    }
+
+    #[test]
+    fn get_i64_non_number_fails() {
+        let obj = json!({"val": "text"});
+        assert!(obj.get_i64("val").is_err());
+    }
+
+    // get_f64
+
+    #[test]
+    fn get_f64_returns_f64_value() {
+        let obj = json!({"val": 3.14});
+        let result = obj.get_f64("val").expect("should get f64");
+        assert!((result - 3.14).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn get_f64_integer_value() {
+        let obj = json!({"val": 42});
+        let result = obj.get_f64("val").expect("should get f64 from integer");
+        assert!((result - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn get_f64_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_f64("val").is_err());
+    }
+
+    #[test]
+    fn get_f64_non_number_fails() {
+        let obj = json!({"val": "text"});
+        assert!(obj.get_f64("val").is_err());
+    }
+
+    // get_bytes
+
+    #[test]
+    fn get_bytes_from_array() {
+        let obj = json!({"data": [1, 2, 3, 4, 5]});
+        let result = obj.get_bytes("data").expect("should get bytes");
+        assert_eq!(result, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn get_bytes_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_bytes("data").is_err());
+    }
+
+    // get_bool
+
+    #[test]
+    fn get_bool_true() {
+        let obj = json!({"flag": true});
+        let result = obj.get_bool("flag").expect("should get bool");
+        assert!(result);
+    }
+
+    #[test]
+    fn get_bool_false() {
+        let obj = json!({"flag": false});
+        let result = obj.get_bool("flag").expect("should get bool");
+        assert!(!result);
+    }
+
+    #[test]
+    fn get_bool_missing_property_fails() {
+        let obj = json!({});
+        assert!(obj.get_bool("flag").is_err());
+    }
+
+    #[test]
+    fn get_bool_non_bool_fails() {
+        let obj = json!({"flag": 1});
+        assert!(obj.get_bool("flag").is_err());
+    }
+
+    // get_value and get_value_mut
+
+    #[test]
+    fn get_value_navigates_nested_path() {
+        let obj = json!({
+            "a": {
+                "b": {
+                    "c": "deep_value"
+                }
+            }
+        });
+
+        let result = obj.get_value("a.b.c").expect("should find nested value");
+        assert_eq!(result, &json!("deep_value"));
+    }
+
+    #[test]
+    fn get_value_with_array_index() {
+        let obj = json!({
+            "items": [10, 20, 30]
+        });
+
+        let result = obj
+            .get_value("items[1]")
+            .expect("should find array element");
+        assert_eq!(result, &json!(20));
+    }
+
+    #[test]
+    fn get_value_missing_path_fails() {
+        let obj = json!({"a": 1});
+        assert!(obj.get_value("a.b.c").is_err());
+    }
+
+    #[test]
+    fn get_value_mut_modifies_nested_value() {
+        let mut obj = json!({
+            "a": {
+                "b": "old"
+            }
+        });
+
+        let val = obj.get_value_mut("a.b").expect("should find value");
+        *val = json!("new");
+
+        assert_eq!(obj["a"]["b"], json!("new"));
+    }
+
+    // get_value_by_path and get_value_by_path_mut
+
+    #[test]
+    fn get_value_by_path_with_steps() {
+        let obj = json!({
+            "root": {
+                "items": [1, 2, 3]
+            }
+        });
+
+        let path = vec![
+            JsonPathStep::Key("root".to_string()),
+            JsonPathStep::Key("items".to_string()),
+            JsonPathStep::Index(2),
+        ];
+
+        let result = obj.get_value_by_path(&path).expect("should find value");
+        assert_eq!(result, &json!(3));
+    }
+
+    #[test]
+    fn get_value_by_path_missing_fails() {
+        let obj = json!({"a": 1});
+        let path = vec![JsonPathStep::Key("nonexistent".to_string())];
+        assert!(obj.get_value_by_path(&path).is_err());
+    }
+
+    #[test]
+    fn get_value_by_path_mut_modifies_value() {
+        let mut obj = json!({
+            "list": ["a", "b", "c"]
+        });
+
+        let path = vec![
+            JsonPathStep::Key("list".to_string()),
+            JsonPathStep::Index(1),
+        ];
+
+        let val = obj.get_value_by_path_mut(&path).expect("should find value");
+        *val = json!("modified");
+
+        assert_eq!(obj["list"][1], json!("modified"));
+    }
+
+    // remove_u32
+
+    #[test]
+    fn remove_u32_removes_and_returns_value() {
+        let mut obj = json!({"version": 42});
+        let result = obj.remove_u32("version").expect("should remove u32");
+        assert_eq!(result, 42);
+        assert!(obj.get("version").is_none());
+    }
+
+    #[test]
+    fn remove_u32_missing_property_fails() {
+        let mut obj = json!({"a": 1});
+        assert!(obj.remove_u32("missing").is_err());
+    }
+
+    #[test]
+    fn remove_u32_non_number_fails() {
+        let mut obj = json!({"val": "text"});
+        assert!(obj.remove_u32("val").is_err());
+    }
+
+    #[test]
+    fn remove_u32_on_non_object_fails() {
+        let mut val = json!([1, 2, 3]);
+        assert!(val.remove_u32("key").is_err());
+    }
+
+    // add_protocol_version
+
+    #[test]
+    fn add_protocol_version_inserts_number() {
+        let mut obj = json!({});
+        obj.add_protocol_version("protocolVersion", 5)
+            .expect("should add protocol version");
+
+        assert_eq!(obj["protocolVersion"], json!(5));
+    }
+
+    #[test]
+    fn add_protocol_version_on_non_object_fails() {
+        let mut val = json!([1, 2]);
+        assert!(val.add_protocol_version("protocolVersion", 1).is_err());
+    }
+
+    // remove_value_at_path_into
+
+    #[test]
+    fn remove_value_at_path_into_removes_and_deserializes() {
+        let mut obj = json!({
+            "config": {
+                "timeout": 30
+            }
+        });
+
+        let timeout: u64 = obj
+            .remove_value_at_path_into("config.timeout")
+            .expect("should remove and deserialize");
+        assert_eq!(timeout, 30);
+        assert!(obj["config"].get("timeout").is_none());
+    }
+
+    #[test]
+    fn remove_value_at_path_into_missing_path_fails() {
+        let mut obj = json!({"a": 1});
+        let result: Result<u64, _> = obj.remove_value_at_path_into("a.b.c");
+        assert!(result.is_err());
+    }
+
+    // Free functions: get_value_mut, get_value_from_json_path, get_value_from_json_path_mut
+
+    #[test]
+    fn free_get_value_mut_works() {
+        let mut obj = json!({"x": {"y": 10}});
+        let val = get_value_mut("x.y", &mut obj).expect("should find value");
+        *val = json!(20);
+        assert_eq!(obj["x"]["y"], json!(20));
+    }
+
+    #[test]
+    fn get_value_from_json_path_navigates_keys_and_indices() {
+        let obj = json!({
+            "data": [
+                {"id": "first"},
+                {"id": "second"}
+            ]
+        });
+
+        let path = vec![
+            JsonPathStep::Key("data".to_string()),
+            JsonPathStep::Index(1),
+            JsonPathStep::Key("id".to_string()),
+        ];
+
+        let result = get_value_from_json_path(&path, &obj).expect("should find");
+        assert_eq!(result, &json!("second"));
+    }
+
+    #[test]
+    fn get_value_from_json_path_returns_none_for_missing() {
+        let obj = json!({"a": 1});
+        let path = vec![JsonPathStep::Key("nonexistent".to_string())];
+        assert!(get_value_from_json_path(&path, &obj).is_none());
+    }
+
+    #[test]
+    fn get_value_from_json_path_mut_modifies_value() {
+        let mut obj = json!({"items": [100, 200, 300]});
+
+        let path = vec![
+            JsonPathStep::Key("items".to_string()),
+            JsonPathStep::Index(0),
+        ];
+
+        let val = get_value_from_json_path_mut(&path, &mut obj).expect("should find");
+        *val = json!(999);
+        assert_eq!(obj["items"][0], json!(999));
+    }
+
+    #[test]
+    fn get_value_from_json_path_empty_path_returns_root() {
+        let obj = json!({"a": 1});
+        let path: Vec<JsonPathStep> = vec![];
+        let result = get_value_from_json_path(&path, &obj).expect("should return root");
+        assert_eq!(result, &json!({"a": 1}));
+    }
+
+    // insert_with_path via trait
+
+    #[test]
+    fn insert_with_path_creates_deeply_nested_structure() {
+        let mut obj = json!({});
+        obj.insert_with_path("a.b.c", json!("deep"))
+            .expect("should insert");
+        assert_eq!(obj["a"]["b"]["c"], json!("deep"));
+    }
+
+    #[test]
+    fn insert_with_path_into_existing_structure() {
+        let mut obj = json!({"a": {"b": 1}});
+        obj.insert_with_path("a.c", json!(2))
+            .expect("should insert sibling");
+        assert_eq!(obj["a"]["c"], json!(2));
+        assert_eq!(obj["a"]["b"], json!(1));
+    }
 }

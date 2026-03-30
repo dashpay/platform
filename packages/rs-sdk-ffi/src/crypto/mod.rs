@@ -82,7 +82,7 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
     let mut key_array = [0u8; 32];
@@ -261,7 +261,7 @@ pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
     let network = if is_testnet {
         Network::Testnet
     } else {
-        Network::Dash
+        Network::Mainnet
     };
 
     // Use DPP's public_key_data_from_private_key_data to derive the public key

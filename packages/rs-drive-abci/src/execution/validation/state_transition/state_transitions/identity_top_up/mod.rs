@@ -384,4 +384,103 @@ mod tests {
 
         assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
     }
+
+    #[test]
+    fn test_identity_top_up_for_nonexistent_identity() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+        let (critical_public_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                1,
+                Some(999),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        // Create identity but do NOT add it to the platform
+        let identity_not_in_system: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([
+                (0, master_key.clone()),
+                (1, critical_public_key.clone()),
+            ]),
+            balance: 50000000000,
+            revision: 0,
+        }
+        .into();
+
+        signer.add_identity_public_key(critical_public_key.clone(), private_key);
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+            None,
+        );
+
+        let identity_top_up_transition: StateTransition =
+            IdentityTopUpTransition::try_from_identity(
+                &identity_not_in_system,
+                asset_lock_proof,
+                pk.as_slice(),
+                0,
+                platform_version,
+                None,
+            )
+            .expect("expected an identity top up transition");
+
+        let identity_top_up_serialized_transition = identity_top_up_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_top_up_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Identity not found should result in an error (unpaid since identity can't be charged)
+        assert_eq!(processing_result.valid_count(), 0);
+        assert_eq!(processing_result.invalid_paid_count(), 0);
+        assert_eq!(processing_result.invalid_unpaid_count(), 1);
+    }
 }

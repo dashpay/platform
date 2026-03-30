@@ -375,4 +375,109 @@ mod tests {
         assert_eq!(value["protocol"], "HTTP");
         assert_eq!(value["remote_addr"], "10.0.0.1");
     }
+
+    #[test]
+    fn test_grpc_status_conversion_all_codes() {
+        assert_eq!(grpc_status_to_http_status(1), 499); // CANCELLED
+        assert_eq!(grpc_status_to_http_status(2), 500); // UNKNOWN
+        assert_eq!(grpc_status_to_http_status(4), 504); // DEADLINE_EXCEEDED
+        assert_eq!(grpc_status_to_http_status(6), 409); // ALREADY_EXISTS
+        assert_eq!(grpc_status_to_http_status(7), 403); // PERMISSION_DENIED
+        assert_eq!(grpc_status_to_http_status(8), 429); // RESOURCE_EXHAUSTED
+        assert_eq!(grpc_status_to_http_status(9), 412); // FAILED_PRECONDITION
+        assert_eq!(grpc_status_to_http_status(10), 409); // ABORTED
+        assert_eq!(grpc_status_to_http_status(11), 400); // OUT_OF_RANGE
+        assert_eq!(grpc_status_to_http_status(12), 501); // UNIMPLEMENTED
+        assert_eq!(grpc_status_to_http_status(14), 503); // UNAVAILABLE
+        assert_eq!(grpc_status_to_http_status(15), 500); // DATA_LOSS
+        assert_eq!(grpc_status_to_http_status(99), 500); // Unknown code
+    }
+
+    #[test]
+    fn test_http_log_no_remote_addr() {
+        let entry = AccessLogEntry::new_http(
+            None,
+            "GET".to_string(),
+            "/health".to_string(),
+            "HTTP/1.1".to_string(),
+            200,
+            0,
+            100,
+        );
+        let line = entry.to_combined_format();
+        assert!(line.starts_with("- "));
+    }
+
+    #[test]
+    fn test_grpc_json_includes_grpc_fields() {
+        let entry = AccessLogEntry::new_grpc(
+            None,
+            "/svc/method".to_string(),
+            "svc".to_string(),
+            "method".to_string(),
+            0,
+            0,
+            500,
+        );
+        let json_line = entry.to_json_string();
+        let value: Value = serde_json::from_str(&json_line).expect("valid json");
+        assert_eq!(value["grpc_service"], "svc");
+        assert_eq!(value["grpc_method"], "method");
+        assert_eq!(value["grpc_status"], 0);
+        assert_eq!(value["protocol"], "gRPC");
+        assert!(value["remote_addr"].is_null());
+    }
+
+    #[test]
+    fn test_http_json_no_grpc_fields() {
+        let entry = AccessLogEntry::new_http(
+            None,
+            "GET".to_string(),
+            "/test".to_string(),
+            "HTTP/1.1".to_string(),
+            200,
+            0,
+            0,
+        );
+        let json_line = entry.to_json_string();
+        let value: Value = serde_json::from_str(&json_line).expect("valid json");
+        assert!(value.get("grpc_service").is_none());
+        assert!(value.get("grpc_method").is_none());
+        assert!(value.get("grpc_status").is_none());
+    }
+
+    #[test]
+    fn test_combined_format_no_referer_no_user_agent() {
+        let entry = AccessLogEntry::new_http(
+            None,
+            "HEAD".to_string(),
+            "/ping".to_string(),
+            "HTTP/1.0".to_string(),
+            204,
+            0,
+            50,
+        );
+        let line = entry.to_combined_format();
+        assert!(line.contains("\"-\""));
+        assert!(line.contains("204"));
+    }
+
+    #[test]
+    fn test_json_null_optional_fields() {
+        let entry = AccessLogEntry::new_http(
+            None,
+            "GET".to_string(),
+            "/".to_string(),
+            "HTTP/1.1".to_string(),
+            200,
+            0,
+            0,
+        );
+        let json_line = entry.to_json_string();
+        let value: Value = serde_json::from_str(&json_line).expect("valid json");
+        assert!(value["remote_addr"].is_null());
+        assert!(value["remote_user"].is_null());
+        assert!(value["referer"].is_null());
+        assert!(value["user_agent"].is_null());
+    }
 }

@@ -549,3 +549,176 @@ impl SpecializedDocumentFactoryV0 {
         ids.into_iter().all_equal()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::document::DocumentV0Getters;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use crate::util::entropy_generator::EntropyGenerator;
+    use platform_value::platform_value;
+
+    /// A deterministic entropy generator for tests
+    struct TestEntropyGenerator;
+
+    impl EntropyGenerator for TestEntropyGenerator {
+        fn generate(&self) -> anyhow::Result<[u8; 32]> {
+            Ok([1u8; 32])
+        }
+    }
+
+    fn setup_factory() -> (SpecializedDocumentFactoryV0, DataContract) {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let factory = SpecializedDocumentFactoryV0::new_with_entropy_generator(
+            platform_version.protocol_version,
+            data_contract.clone(),
+            Box::new(TestEntropyGenerator),
+        );
+        (factory, data_contract)
+    }
+
+    #[test]
+    fn new_creates_factory_with_default_entropy() {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let data_contract = created.data_contract_owned();
+        let factory =
+            SpecializedDocumentFactoryV0::new(platform_version.protocol_version, data_contract);
+        // Just verify it was created without panic
+        assert_eq!(factory.protocol_version, platform_version.protocol_version);
+    }
+
+    #[test]
+    fn create_document_with_valid_type_succeeds() {
+        let (factory, data_contract) = setup_factory();
+        let owner_id = Identifier::from([10u8; 32]);
+
+        let data = platform_value!({
+            "firstName": "John",
+            "lastName": "Doe",
+        });
+
+        let result = factory.create_document(
+            &data_contract,
+            owner_id,
+            100,
+            50,
+            "indexedDocument".to_string(),
+            data,
+        );
+
+        let doc = result.expect("should create document");
+        assert_eq!(doc.owner_id(), owner_id);
+    }
+
+    #[test]
+    fn create_document_with_invalid_type_fails() {
+        let (factory, data_contract) = setup_factory();
+        let owner_id = Identifier::from([10u8; 32]);
+
+        let result = factory.create_document(
+            &data_contract,
+            owner_id,
+            100,
+            50,
+            "nonExistentDocType".to_string(),
+            Value::Null,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_document_without_time_based_properties_succeeds() {
+        let (factory, _) = setup_factory();
+        let owner_id = Identifier::from([20u8; 32]);
+
+        let data = platform_value!({
+            "name": "test",
+        });
+
+        let result = factory.create_document_without_time_based_properties(
+            owner_id,
+            "noTimeDocument".to_string(),
+            data,
+        );
+
+        let doc = result.expect("should create document without time properties");
+        assert_eq!(doc.owner_id(), owner_id);
+    }
+
+    #[test]
+    fn create_document_without_time_based_properties_invalid_type_fails() {
+        let (factory, _) = setup_factory();
+        let owner_id = Identifier::from([20u8; 32]);
+
+        let result = factory.create_document_without_time_based_properties(
+            owner_id,
+            "nonExistentDocType".to_string(),
+            Value::Null,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "extended-document")]
+    #[test]
+    fn create_extended_document_succeeds() {
+        let (factory, _) = setup_factory();
+        let owner_id = Identifier::from([30u8; 32]);
+
+        let data = platform_value!({
+            "name": "test",
+        });
+
+        let result = factory.create_extended_document(owner_id, "noTimeDocument".to_string(), data);
+
+        assert!(result.is_ok());
+    }
+
+    #[cfg(feature = "extended-document")]
+    #[test]
+    fn create_extended_document_invalid_type_fails() {
+        let (factory, _) = setup_factory();
+        let owner_id = Identifier::from([30u8; 32]);
+
+        let result = factory.create_extended_document(
+            owner_id,
+            "nonExistentDocType".to_string(),
+            Value::Null,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn is_ownership_the_same_with_same_ids() {
+        let id = Identifier::from([1u8; 32]);
+        assert!(SpecializedDocumentFactoryV0::is_ownership_the_same([
+            &id, &id, &id
+        ]));
+    }
+
+    #[test]
+    fn is_ownership_the_same_with_different_ids() {
+        let id1 = Identifier::from([1u8; 32]);
+        let id2 = Identifier::from([2u8; 32]);
+        assert!(!SpecializedDocumentFactoryV0::is_ownership_the_same([
+            &id1, &id2
+        ]));
+    }
+
+    #[test]
+    fn is_ownership_the_same_with_single_id() {
+        let id = Identifier::from([1u8; 32]);
+        assert!(SpecializedDocumentFactoryV0::is_ownership_the_same([&id]));
+    }
+
+    #[test]
+    fn is_ownership_the_same_with_empty_iter() {
+        let ids: Vec<&Identifier> = vec![];
+        assert!(SpecializedDocumentFactoryV0::is_ownership_the_same(ids));
+    }
+}

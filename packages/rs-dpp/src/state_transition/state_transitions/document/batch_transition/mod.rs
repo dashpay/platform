@@ -119,3 +119,6 @@ pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> Secu
 }
 
 impl OptionallyAssetLockProved for BatchTransition {}
+
+#[cfg(test)]
+mod tests;

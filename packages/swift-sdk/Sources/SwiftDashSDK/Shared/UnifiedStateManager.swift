@@ -9,7 +9,6 @@ public class UnifiedStateManager: ObservableObject {
 
     // Core wallet state
     @Published public var coreBalance = Balance()
-    @Published public var coreTransactions: [CoreTransaction] = []
 
     // Platform state
     @Published public var platformIdentities: [DPPIdentity] = []

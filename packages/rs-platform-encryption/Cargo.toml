@@ -11,7 +11,6 @@ description = "Cryptographic utilities for Dash Platform (DIP-15 DashPay encrypt
 dashcore = { workspace = true }
 aes = "0.8"
 cbc = "0.1"
-sha2 = "0.10"
 thiserror = "1.0"
 
 [dev-dependencies]
