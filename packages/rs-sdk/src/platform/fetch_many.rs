@@ -45,6 +45,8 @@ use rs_dapi_client::{
     transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
     IntoInner, RequestSettings,
 };
+use std::future::Future;
+use std::pin::Pin;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -83,10 +85,9 @@ use rs_dapi_client::{
 ///
 /// let data_contract = DataContract::fetch_many(&sdk, query);
 /// ```
-#[async_trait::async_trait]
 pub trait FetchMany<K: Ord, O: FromIterator<(K, Option<Self>)>>
 where
-    Self: Sized,
+    Self: Sized + Send,
     O: MockResponse
         + FromProof<
             Self::Request,
@@ -141,13 +142,15 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn fetch_many<Q: Query<<Self as FetchMany<K, O>>::Request>>(
-        sdk: &Sdk,
+    fn fetch_many<'a, Q: Query<<Self as FetchMany<K, O>>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
-    ) -> Result<O, Error> {
-        Self::fetch_many_with_metadata_and_proof(sdk, query, None)
-            .await
-            .map(|(objects, _, _)| objects)
+    ) -> Pin<Box<dyn Future<Output = Result<O, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            Self::fetch_many_with_metadata_and_proof(sdk, query, None)
+                .await
+                .map(|(objects, _, _)| objects)
+        })
     }
 
     /// Fetch multiple objects from Platform with metadata.
@@ -171,14 +174,16 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_many_with_metadata<Q: Query<<Self as FetchMany<K, O>>::Request>>(
-        sdk: &Sdk,
+    fn fetch_many_with_metadata<'a, Q: Query<<Self as FetchMany<K, O>>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         settings: Option<RequestSettings>,
-    ) -> Result<(O, ResponseMetadata), Error> {
-        Self::fetch_many_with_metadata_and_proof(sdk, query, settings)
-            .await
-            .map(|(objects, metadata, _)| (objects, metadata))
+    ) -> Pin<Box<dyn Future<Output = Result<(O, ResponseMetadata), Error>> + Send + 'a>> {
+        Box::pin(async move {
+            Self::fetch_many_with_metadata_and_proof(sdk, query, settings)
+                .await
+                .map(|(objects, metadata, _)| (objects, metadata))
+        })
     }
 
     /// Fetch multiple objects from Platform with metadata and underlying proof.
@@ -202,56 +207,62 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Request>>(
-        sdk: &Sdk,
+    fn fetch_many_with_metadata_and_proof<
+        'a,
+        Q: Query<<Self as FetchMany<K, O>>::Request> + Send + 'a,
+    >(
+        sdk: &'a Sdk,
         query: Q,
         settings: Option<RequestSettings>,
-    ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let request = &query.query(sdk.prove())?;
+    ) -> Pin<Box<dyn Future<Output = Result<(O, ResponseMetadata, Proof), Error>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            let request = &query.query(sdk.prove())?;
 
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = request
-                .clone()
-                .execute(sdk, settings)
+            let fut = |settings: RequestSettings| async move {
+                let ExecutionResponse {
+                    address,
+                    retries,
+                    inner: response,
+                } = request
+                    .clone()
+                    .execute(sdk, settings)
+                    .await
+                    .map_err(|e| e.inner_into())?;
+
+                let object_type = std::any::type_name::<Self>().to_string();
+                tracing::trace!(
+                    request = ?request,
+                    response = ?response,
+                    ?address,
+                    retries,
+                    object_type,
+                    "fetched objects from platform"
+                );
+
+                sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
+                    request.clone(),
+                    response,
+                )
                 .await
-                .map_err(|e| e.inner_into())?;
+                .map_err(|e| ExecutionError {
+                    inner: e,
+                    address: Some(address.clone()),
+                    retries,
+                })
+                .map(|(o, metadata, proof)| ExecutionResponse {
+                    inner: (o.unwrap_or_default(), metadata, proof),
+                    retries,
+                    address: address.clone(),
+                })
+            };
 
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(
-                request = ?request,
-                response = ?response,
-                ?address,
-                retries,
-                object_type,
-                "fetched objects from platform"
-            );
+            let settings = sdk
+                .dapi_client_settings
+                .override_by(settings.unwrap_or_default());
 
-            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
-                request.clone(),
-                response,
-            )
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })
-            .map(|(o, metadata, proof)| ExecutionResponse {
-                inner: (o.unwrap_or_default(), metadata, proof),
-                retries,
-                address: address.clone(),
-            })
-        };
-
-        let settings = sdk
-            .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
-
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+            retry(sdk.address_list(), settings, fut).await.into_inner()
+        })
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -267,15 +278,17 @@ where
     /// ## Requirements
     ///
     /// `Vec<Identifier>` must implement [Query] for [Self::Request].
-    async fn fetch_by_identifiers<I: IntoIterator<Item = Identifier> + Send>(
-        sdk: &Sdk,
+    fn fetch_by_identifiers<'a, I: IntoIterator<Item = Identifier> + Send + 'a>(
+        sdk: &'a Sdk,
         identifiers: I,
-    ) -> Result<O, Error>
+    ) -> Pin<Box<dyn Future<Output = Result<O, Error>> + Send + 'a>>
     where
         Vec<Identifier>: Query<<Self as FetchMany<K, O>>::Request>,
     {
-        let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
-        Self::fetch_many(sdk, ids).await
+        Box::pin(async move {
+            let ids = identifiers.into_iter().collect::<Vec<Identifier>>();
+            Self::fetch_many(sdk, ids).await
+        })
     }
 
     /// Fetch multiple objects from Platform with limit.
@@ -288,21 +301,23 @@ where
     /// - `sdk`: An instance of [Sdk].
     /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     /// - `limit`: Maximum number of objects to fetch.
-    async fn fetch_many_with_limit<Q: Query<<Self as FetchMany<K, O>>::Request>>(
-        sdk: &Sdk,
+    fn fetch_many_with_limit<'a, Q: Query<<Self as FetchMany<K, O>>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         limit: u32,
-    ) -> Result<O, Error>
+    ) -> Pin<Box<dyn Future<Output = Result<O, Error>> + Send + 'a>>
     where
         LimitQuery<Q>: Query<<Self as FetchMany<K, O>>::Request>,
     {
-        let limit_query = LimitQuery {
-            limit: Some(limit),
-            query,
-            start_info: None,
-        };
+        Box::pin(async move {
+            let limit_query = LimitQuery {
+                limit: Some(limit),
+                query,
+                start_info: None,
+            };
 
-        Self::fetch_many(sdk, limit_query).await
+            Self::fetch_many(sdk, limit_query).await
+        })
     }
 }
 
@@ -462,7 +477,6 @@ impl FetchMany<Identifier, ContestedResources> for ContestedResource {
 /// ## Supported query types
 ///
 /// * [`ContestedDocumentVotePollDriveQuery`](drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQuery)
-#[async_trait::async_trait]
 impl FetchMany<Identifier, Contenders> for ContenderWithSerializedDocument {
     type Request = GetContestedResourceVoteStateRequest;
 }

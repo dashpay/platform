@@ -21,29 +21,30 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use drive_proof_verifier::types::AddressInfos;
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::pin::Pin;
 
 /// Trait for creating identities on the platform.
-#[async_trait::async_trait]
 pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     /// Creates an identity using an asset lock proof.
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &PrivateKey,
-        signer: &IS,
+        asset_lock_proof_private_key: &'a PrivateKey,
+        signer: &'a IS,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>>;
 
     /// Creates an identity using an asset lock and waits for confirmation.
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &PrivateKey,
-        signer: &IS,
+        asset_lock_proof_private_key: &'a PrivateKey,
+        signer: &'a IS,
         settings: Option<PutSettings>,
-    ) -> Result<Self, Error>
+    ) -> Pin<Box<dyn Future<Output = Result<Self, Error>> + Send + 'a>>
     where
         Self: Sized;
 
@@ -53,78 +54,83 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     /// to create an identity. Then use this method to put it to the platform.
     ///
     /// This is a preferred method, as you need to use the same nonces when creating the identity.
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
-        &self,
-        sdk: &Sdk,
+    fn put_with_address_funding<'a, AS: Signer<PlatformAddress> + Send + Sync + 'a>(
+        &'a self,
+        sdk: &'a Sdk,
         inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &IS,
-        input_address_signer: &AS,
+        identity_signer: &'a IS,
+        input_address_signer: &'a AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<(Identity, AddressInfos), Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &PrivateKey,
-        signer: &IS,
+        asset_lock_proof_private_key: &'a PrivateKey,
+        signer: &'a IS,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        put_identity_with_asset_lock(
-            self,
-            sdk,
-            asset_lock_proof,
-            asset_lock_proof_private_key,
-            signer,
-            settings,
-        )
-        .await
-    }
-
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &PrivateKey,
-        signer: &IS,
-        settings: Option<PutSettings>,
-    ) -> Result<Identity, Error> {
-        let state_transition = self
-            .put_to_platform(
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            put_identity_with_asset_lock(
+                self,
                 sdk,
                 asset_lock_proof,
                 asset_lock_proof_private_key,
                 signer,
                 settings,
             )
-            .await?;
-
-        Self::wait_for_response(sdk, state_transition, settings).await
+            .await
+        })
     }
 
-    async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &'a PrivateKey,
+        signer: &'a IS,
+        settings: Option<PutSettings>,
+    ) -> Pin<Box<dyn Future<Output = Result<Identity, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let state_transition = self
+                .put_to_platform(
+                    sdk,
+                    asset_lock_proof,
+                    asset_lock_proof_private_key,
+                    signer,
+                    settings,
+                )
+                .await?;
+
+            Self::wait_for_response(sdk, state_transition, settings).await
+        })
+    }
+
+    fn put_with_address_funding<'a, AS: Signer<PlatformAddress> + Send + Sync + 'a>(
+        &'a self,
+        sdk: &'a Sdk,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
-        identity_signer: &IS,
-        input_address_signer: &AS,
+        identity_signer: &'a IS,
+        input_address_signer: &'a AS,
         settings: Option<PutSettings>,
-    ) -> Result<(Identity, AddressInfos), Error> {
-        put_identity_with_address_funding::<IS, AS>(
-            self,
-            sdk,
-            inputs,
-            output,
-            identity_signer,
-            input_address_signer,
-            settings,
-        )
-        .await
+    ) -> Pin<Box<dyn Future<Output = Result<(Identity, AddressInfos), Error>> + Send + 'a>> {
+        Box::pin(async move {
+            put_identity_with_address_funding::<IS, AS>(
+                self,
+                sdk,
+                inputs,
+                output,
+                identity_signer,
+                input_address_signer,
+                settings,
+            )
+            .await
+        })
     }
 }
 

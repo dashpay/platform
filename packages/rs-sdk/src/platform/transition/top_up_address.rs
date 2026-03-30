@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::pin::Pin;
 
 use super::address_inputs::collect_address_infos_from_proof;
 use super::broadcast::BroadcastStateTransition;
@@ -19,98 +21,99 @@ use dpp::ProtocolError;
 use drive_proof_verifier::types::AddressInfos;
 
 /// Trait for topping up Platform addresses using various funding sources.
-#[async_trait::async_trait]
 pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     /// Tops up addresses using the provided funding source and fee strategy.
     ///
     /// Returns proof-backed [`AddressInfos`] for the funded addresses.
-    async fn top_up(
-        &self,
-        sdk: &Sdk,
+    fn top_up<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: PrivateKey,
         fee_strategy: AddressFundsFeeStrategy,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>>;
 }
 
 pub type AddressWithBalance = (PlatformAddress, Option<Credits>);
 pub type AddressesWithBalances = BTreeMap<PlatformAddress, Option<Credits>>;
 
-#[async_trait::async_trait]
 impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressWithBalance
 where
     BTreeMap<PlatformAddress, Option<Credits>>: TopUpAddress<S>,
 {
-    async fn top_up(
-        &self,
-        sdk: &Sdk,
+    fn top_up<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: PrivateKey,
         fee_strategy: AddressFundsFeeStrategy,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
-        BTreeMap::from([(self.0, self.1)])
-            .top_up(
-                sdk,
-                asset_lock_proof,
-                asset_lock_private_key,
-                fee_strategy,
-                signer,
-                settings,
-            )
-            .await
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            BTreeMap::from([(self.0, self.1)])
+                .top_up(
+                    sdk,
+                    asset_lock_proof,
+                    asset_lock_private_key,
+                    fee_strategy,
+                    signer,
+                    settings,
+                )
+                .await
+        })
     }
 }
 
-#[async_trait::async_trait]
 impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
-    async fn top_up(
-        &self,
-        sdk: &Sdk,
+    fn top_up<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: PrivateKey,
         fee_strategy: AddressFundsFeeStrategy,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
-        if self.is_empty() {
-            return Err(Error::from(TransitionNoOutputsError::new()));
-        }
-
-        let user_fee_increase = settings
-            .as_ref()
-            .and_then(|settings| settings.user_fee_increase)
-            .unwrap_or_default();
-
-        let state_transition = create_address_funding_from_asset_lock_transition(
-            asset_lock_proof,
-            asset_lock_private_key.inner.as_ref(),
-            BTreeMap::new(),
-            self.clone(),
-            fee_strategy,
-            signer,
-            user_fee_increase,
-            sdk,
-        )?;
-
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let st_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-            .await?;
-        match st_result {
-            StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
-                let expected_addresses =
-                    self.keys().copied().collect::<BTreeSet<PlatformAddress>>();
-                collect_address_infos_from_proof(address_infos, &expected_addresses)
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.is_empty() {
+                return Err(Error::from(TransitionNoOutputsError::new()));
             }
-            other => Err(Error::InvalidProvedResponse(format!(
-                "address info proof was expected for {:?}, but received {:?}",
-                state_transition, other
-            ))),
-        }
+
+            let user_fee_increase = settings
+                .as_ref()
+                .and_then(|settings| settings.user_fee_increase)
+                .unwrap_or_default();
+
+            let state_transition = create_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                asset_lock_private_key.inner.as_ref(),
+                BTreeMap::new(),
+                self.clone(),
+                fee_strategy,
+                signer,
+                user_fee_increase,
+                sdk,
+            )?;
+
+            ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+            let st_result = state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
+                .await?;
+            match st_result {
+                StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
+                    let expected_addresses =
+                        self.keys().copied().collect::<BTreeSet<PlatformAddress>>();
+                    collect_address_infos_from_proof(address_infos, &expected_addresses)
+                }
+                other => Err(Error::InvalidProvedResponse(format!(
+                    "address info proof was expected for {:?}, but received {:?}",
+                    state_transition, other
+                ))),
+            }
+        })
     }
 }
 

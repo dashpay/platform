@@ -14,131 +14,135 @@ use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransiti
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
+use std::future::Future;
+use std::pin::Pin;
 
-#[async_trait::async_trait]
 /// A trait for putting a document to platform
 pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: Option<[u8; 32]>,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>>;
 
     /// Puts a document on platform and waits for the confirmation proof
     #[allow(clippy::too_many_arguments)]
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: Option<[u8; 32]>,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<Document, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<Document, Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: Option<[u8; 32]>,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        let new_identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.owner_id(),
-                document_type.data_contract_id(),
-                true,
-                settings,
-            )
-            .await?;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let new_identity_contract_nonce = sdk
+                .get_identity_contract_nonce(
+                    self.owner_id(),
+                    document_type.data_contract_id(),
+                    true,
+                    settings,
+                )
+                .await?;
 
-        let settings = settings.unwrap_or_default();
-        let transition = if self.revision().is_some()
-            && self.revision().unwrap() != INITIAL_REVISION
-        {
-            BatchTransition::new_document_replacement_transition_from_document(
-                self.clone(),
-                document_type.as_ref(),
-                &identity_public_key,
-                new_identity_contract_nonce,
-                settings.user_fee_increase.unwrap_or_default(),
-                token_payment_info,
-                signer,
-                sdk.version(),
-                settings.state_transition_creation_options,
-            )
-        } else {
-            let (document, document_state_transition_entropy) = document_state_transition_entropy
-                .map(|entropy| (self.clone(), entropy))
-                .unwrap_or_else(|| {
-                    let mut rng = StdRng::from_entropy();
-                    let mut document = self.clone();
-                    let entropy = rng.gen::<[u8; 32]>();
-                    document.set_id(Document::generate_document_id_v0(
-                        &document_type.data_contract_id(),
-                        &document.owner_id(),
-                        document_type.name(),
-                        entropy.as_slice(),
-                    ));
-                    (document, entropy)
-                });
-            BatchTransition::new_document_creation_transition_from_document(
-                document,
-                document_type.as_ref(),
-                document_state_transition_entropy,
-                &identity_public_key,
-                new_identity_contract_nonce,
-                settings.user_fee_increase.unwrap_or_default(),
-                token_payment_info,
-                signer,
-                sdk.version(),
-                settings.state_transition_creation_options,
-            )
-        }?;
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
+            let settings = settings.unwrap_or_default();
+            let transition =
+                if self.revision().is_some() && self.revision().unwrap() != INITIAL_REVISION {
+                    BatchTransition::new_document_replacement_transition_from_document(
+                        self.clone(),
+                        document_type.as_ref(),
+                        &identity_public_key,
+                        new_identity_contract_nonce,
+                        settings.user_fee_increase.unwrap_or_default(),
+                        token_payment_info,
+                        signer,
+                        sdk.version(),
+                        settings.state_transition_creation_options,
+                    )
+                } else {
+                    let (document, document_state_transition_entropy) =
+                        document_state_transition_entropy
+                            .map(|entropy| (self.clone(), entropy))
+                            .unwrap_or_else(|| {
+                                let mut rng = StdRng::from_entropy();
+                                let mut document = self.clone();
+                                let entropy = rng.gen::<[u8; 32]>();
+                                document.set_id(Document::generate_document_id_v0(
+                                    &document_type.data_contract_id(),
+                                    &document.owner_id(),
+                                    document_type.name(),
+                                    entropy.as_slice(),
+                                ));
+                                (document, entropy)
+                            });
+                    BatchTransition::new_document_creation_transition_from_document(
+                        document,
+                        document_type.as_ref(),
+                        document_state_transition_entropy,
+                        &identity_public_key,
+                        new_identity_contract_nonce,
+                        settings.user_fee_increase.unwrap_or_default(),
+                        token_payment_info,
+                        signer,
+                        sdk.version(),
+                        settings.state_transition_creation_options,
+                    )
+                }?;
+            ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-        transition.broadcast(sdk, Some(settings)).await?;
-        Ok(transition)
+            // response is empty for a broadcast, result comes from the stream wait for state transition result
+            transition.broadcast(sdk, Some(settings)).await?;
+            Ok(transition)
+        })
     }
 
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         document_state_transition_entropy: Option<[u8; 32]>,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<Document, Error> {
-        let state_transition = self
-            .put_to_platform(
-                sdk,
-                document_type,
-                document_state_transition_entropy,
-                identity_public_key,
-                token_payment_info,
-                signer,
-                settings,
-            )
-            .await?;
+    ) -> Pin<Box<dyn Future<Output = Result<Document, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let state_transition = self
+                .put_to_platform(
+                    sdk,
+                    document_type,
+                    document_state_transition_entropy,
+                    identity_public_key,
+                    token_payment_info,
+                    signer,
+                    settings,
+                )
+                .await?;
 
-        Self::wait_for_response(sdk, state_transition, settings).await
+            Self::wait_for_response(sdk, state_transition, settings).await
+        })
     }
 }

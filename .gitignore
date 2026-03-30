@@ -94,3 +94,4 @@ __pycache__/
 
 # Security audit reports (local-only, not committed)
 audits/
+.serena/

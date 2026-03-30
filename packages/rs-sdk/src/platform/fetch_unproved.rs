@@ -11,11 +11,12 @@ use drive_proof_verifier::unproved::FromUnproved;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
 
-#[async_trait::async_trait]
 pub trait FetchUnproved
 where
-    Self: Sized + Debug + MockResponse,
+    Self: Sized + Send + Debug + MockResponse,
 {
     /// Type of request used to fetch data from Platform.
     type Request: TransportRequest;
@@ -31,10 +32,10 @@ where
     /// * `Ok(Some(Self))` when object is found.
     /// * `Ok(None)` when object is not found.
     /// * [`Err(Error)`](Error) when an error occurs.
-    async fn fetch_unproved<Q: Query<<Self as FetchUnproved>::Request>>(
-        sdk: &Sdk,
+    fn fetch_unproved<'a, Q: Query<<Self as FetchUnproved>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
-    ) -> Result<Option<Self>, Error>
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Self>, Error>> + Send + 'a>>
     where
         Self: FromUnproved<
             <Self as FetchUnproved>::Request,
@@ -42,9 +43,11 @@ where
             Response = <<Self as FetchUnproved>::Request as TransportRequest>::Response,
         >,
     {
-        let (obj, _mtd) =
-            Self::fetch_unproved_with_settings(sdk, query, RequestSettings::default()).await?;
-        Ok(obj)
+        Box::pin(async move {
+            let (obj, _mtd) =
+                Self::fetch_unproved_with_settings(sdk, query, RequestSettings::default()).await?;
+            Ok(obj)
+        })
     }
 
     /// Fetch unproved data from the Platform with custom settings.
@@ -58,11 +61,11 @@ where
     /// * `Ok(Some(Self))` when object is found.
     /// * `Ok(None)` when object is not found.
     /// * [`Err(Error)`](Error) when an error occurs.
-    async fn fetch_unproved_with_settings<Q: Query<<Self as FetchUnproved>::Request>>(
-        sdk: &Sdk,
+    fn fetch_unproved_with_settings<'a, Q: Query<<Self as FetchUnproved>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         settings: RequestSettings,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    ) -> Pin<Box<dyn Future<Output = Result<(Option<Self>, ResponseMetadata), Error>> + Send + 'a>>
     where
         Self: FromUnproved<
             <Self as FetchUnproved>::Request,
@@ -70,45 +73,47 @@ where
             Response = <<Self as FetchUnproved>::Request as TransportRequest>::Response,
         >,
     {
-        // Default implementation
-        let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
-        let closure = move |local_settings: RequestSettings| async move {
-            // Execute the request using the Sdk instance
-            let ExecutionResponse {
-                inner: response,
-                address,
-                retries,
-            } = request
-                .clone()
-                .execute(sdk, local_settings)
-                .await
-                .map_err(|e| e.inner_into())?;
-
-            // Parse the response into the appropriate type along with metadata
-            let (object, metadata): (Option<Self>, platform_proto::ResponseMetadata) =
-                Self::maybe_from_unproved_with_metadata(
-                    request.clone(),
-                    response,
-                    sdk.network,
-                    sdk.version(),
-                )
-                .map_err(|e| ExecutionError {
-                    inner: e.into(),
-                    address: Some(address.clone()),
+        Box::pin(async move {
+            // Default implementation
+            let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
+            let closure = move |local_settings: RequestSettings| async move {
+                // Execute the request using the Sdk instance
+                let ExecutionResponse {
+                    inner: response,
+                    address,
                     retries,
-                })?;
+                } = request
+                    .clone()
+                    .execute(sdk, local_settings)
+                    .await
+                    .map_err(|e| e.inner_into())?;
 
-            Ok(ExecutionResponse {
-                inner: (object, metadata),
-                address,
-                retries,
-            })
-        };
+                // Parse the response into the appropriate type along with metadata
+                let (object, metadata): (Option<Self>, platform_proto::ResponseMetadata) =
+                    Self::maybe_from_unproved_with_metadata(
+                        request.clone(),
+                        response,
+                        sdk.network,
+                        sdk.version(),
+                    )
+                    .map_err(|e| ExecutionError {
+                        inner: e.into(),
+                        address: Some(address.clone()),
+                        retries,
+                    })?;
 
-        let settings = sdk.dapi_client_settings.override_by(settings);
-        retry(sdk.address_list(), settings, closure)
-            .await
-            .into_inner()
+                Ok(ExecutionResponse {
+                    inner: (object, metadata),
+                    address,
+                    retries,
+                })
+            };
+
+            let settings = sdk.dapi_client_settings.override_by(settings);
+            retry(sdk.address_list(), settings, closure)
+                .await
+                .into_inner()
+        })
     }
 }
 

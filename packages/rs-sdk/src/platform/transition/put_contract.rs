@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::{Error, Sdk};
 
@@ -16,79 +18,81 @@ use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 
-#[async_trait::async_trait]
 /// A trait for putting a contract to platform
 pub trait PutContract<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a contract on platform
     /// Setting settings to `None` sets default connection behavior
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         identity_public_key: IdentityPublicKey,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>>;
 
     /// Puts a contract on platform and waits for the confirmation proof
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         identity_public_key: IdentityPublicKey,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<DataContract, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<DataContract, Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
-    async fn put_to_platform(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         identity_public_key: IdentityPublicKey,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        let new_identity_nonce = sdk
-            .get_identity_nonce(self.owner_id(), true, settings)
-            .await?;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let new_identity_nonce = sdk
+                .get_identity_nonce(self.owner_id(), true, settings)
+                .await?;
 
-        let key_id = identity_public_key.id();
+            let key_id = identity_public_key.id();
 
-        let partial_identity = PartialIdentity {
-            id: self.owner_id(),
-            loaded_public_keys: BTreeMap::from([(key_id, identity_public_key)]),
-            balance: None,
-            revision: None,
-            not_found_public_keys: Default::default(),
-        };
-        let transition = DataContractCreateTransition::new_from_data_contract(
-            self.clone(),
-            new_identity_nonce,
-            &partial_identity,
-            key_id,
-            signer,
-            sdk.version(),
-            None,
-        )?;
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
+            let partial_identity = PartialIdentity {
+                id: self.owner_id(),
+                loaded_public_keys: BTreeMap::from([(key_id, identity_public_key)]),
+                balance: None,
+                revision: None,
+                not_found_public_keys: Default::default(),
+            };
+            let transition = DataContractCreateTransition::new_from_data_contract(
+                self.clone(),
+                new_identity_nonce,
+                &partial_identity,
+                key_id,
+                signer,
+                sdk.version(),
+                None,
+            )?;
+            ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
-        transition.broadcast(sdk, settings).await?;
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
+            transition.broadcast(sdk, settings).await?;
+            // response is empty for a broadcast, result comes from the stream wait for state transition result
 
-        Ok(transition)
+            Ok(transition)
+        })
     }
 
-    async fn put_to_platform_and_wait_for_response(
-        &self,
-        sdk: &Sdk,
+    fn put_to_platform_and_wait_for_response<'a>(
+        &'a self,
+        sdk: &'a Sdk,
         identity_public_key: IdentityPublicKey,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<DataContract, Error> {
-        let state_transition = self
-            .put_to_platform(sdk, identity_public_key, signer, settings)
-            .await?;
+    ) -> Pin<Box<dyn Future<Output = Result<DataContract, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let state_transition = self
+                .put_to_platform(sdk, identity_public_key, signer, settings)
+                .await?;
 
-        Self::wait_for_response(sdk, state_transition, settings).await
+            Self::wait_for_response(sdk, state_transition, settings).await
+        })
     }
 }

@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::pin::Pin;
 
 use super::address_inputs::{collect_address_infos_from_proof, fetch_inputs_with_nonce};
 use super::broadcast::BroadcastStateTransition;
@@ -18,112 +20,114 @@ use dpp::withdrawal::Pooling;
 use drive_proof_verifier::types::AddressInfos;
 
 /// Helper trait to withdraw credits from Platform addresses into a Core script.
-#[async_trait::async_trait]
 pub trait WithdrawAddressFunds<S: Signer<PlatformAddress>> {
     /// Withdraws address balances (nonces fetched automatically).
     #[allow(clippy::too_many_arguments)]
-    async fn withdraw_address_funds(
-        &self,
+    fn withdraw_address_funds<'a>(
+        &'a self,
         inputs: BTreeMap<PlatformAddress, Credits>,
         change_output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>>;
 
     /// Withdraws address balances with explicitly provided nonces.
     ///
     /// Inputs are not pre-validated client-side beyond signature preparation.
     #[allow(clippy::too_many_arguments)]
-    async fn withdraw_address_funds_with_nonce(
-        &self,
+    fn withdraw_address_funds_with_nonce<'a>(
+        &'a self,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         change_output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
-    async fn withdraw_address_funds(
-        &self,
+    fn withdraw_address_funds<'a>(
+        &'a self,
         inputs: BTreeMap<PlatformAddress, Credits>,
         change_output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
-        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(self, &inputs).await?);
-        self.withdraw_address_funds_with_nonce(
-            inputs_with_nonce,
-            change_output,
-            fee_strategy,
-            core_fee_per_byte,
-            pooling,
-            output_script,
-            signer,
-            settings,
-        )
-        .await
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(self, &inputs).await?);
+            self.withdraw_address_funds_with_nonce(
+                inputs_with_nonce,
+                change_output,
+                fee_strategy,
+                core_fee_per_byte,
+                pooling,
+                output_script,
+                signer,
+                settings,
+            )
+            .await
+        })
     }
 
-    async fn withdraw_address_funds_with_nonce(
-        &self,
+    fn withdraw_address_funds_with_nonce<'a>(
+        &'a self,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         change_output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<AddressInfos, Error> {
-        let user_fee_increase = settings
-            .as_ref()
-            .and_then(|settings| settings.user_fee_increase)
-            .unwrap_or_default();
+    ) -> Pin<Box<dyn Future<Output = Result<AddressInfos, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let user_fee_increase = settings
+                .as_ref()
+                .and_then(|settings| settings.user_fee_increase)
+                .unwrap_or_default();
 
-        let state_transition = AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
-            inputs.clone(),
-            change_output,
-            fee_strategy,
-            core_fee_per_byte,
-            pooling,
-            output_script,
-            signer,
-            user_fee_increase,
-            self.version(),
-        )?;
-        ensure_valid_state_transition_structure(&state_transition, self.version())?;
+            let state_transition = AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+                inputs.clone(),
+                change_output,
+                fee_strategy,
+                core_fee_per_byte,
+                pooling,
+                output_script,
+                signer,
+                user_fee_increase,
+                self.version(),
+            )?;
+            ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        match state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
-            .await?
-        {
-            StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {
-                let mut expected_addresses: BTreeSet<PlatformAddress> =
-                    inputs.keys().copied().collect();
-                if let Some((change_address, _)) = change_output {
-                    expected_addresses.insert(change_address);
+            match state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
+                .await?
+            {
+                StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {
+                    let mut expected_addresses: BTreeSet<PlatformAddress> =
+                        inputs.keys().copied().collect();
+                    if let Some((change_address, _)) = change_output {
+                        expected_addresses.insert(change_address);
+                    }
+
+                    collect_address_infos_from_proof(address_infos_map, &expected_addresses)
                 }
-
-                collect_address_infos_from_proof(address_infos_map, &expected_addresses)
+                other => Err(Error::InvalidProvedResponse(format!(
+                    "unexpected proof result for address withdrawal: {:?}",
+                    other
+                ))),
             }
-            other => Err(Error::InvalidProvedResponse(format!(
-                "unexpected proof result for address withdrawal: {:?}",
-                other
-            ))),
-        }
+        })
     }
 }

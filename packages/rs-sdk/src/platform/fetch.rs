@@ -23,6 +23,8 @@ use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use rs_dapi_client::{ExecutionError, ExecutionResponse, InnerInto, IntoInner};
 use std::fmt::Debug;
+use std::future::Future;
+use std::pin::Pin;
 
 use super::types::identity::IdentityRequest;
 use super::DocumentQuery;
@@ -52,10 +54,10 @@ use super::DocumentQuery;
 ///
 /// let identity = Identity::fetch(&sdk, query);
 /// ```
-#[async_trait::async_trait]
 pub trait Fetch
 where
     Self: Sized
+        + Send
         + Debug
         + MockResponse
         + FromProof<
@@ -91,11 +93,13 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &Sdk,
+    fn fetch<'a, Q: Query<<Self as Fetch>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
-    ) -> Result<Option<Self>, Error> {
-        Self::fetch_with_settings(sdk, query, RequestSettings::default()).await
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Self>, Error>> + Send + 'a>> {
+        Box::pin(
+            async move { Self::fetch_with_settings(sdk, query, RequestSettings::default()).await },
+        )
     }
 
     /// Fetch single object from Platform with metadata.
@@ -119,14 +123,17 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_with_metadata<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &Sdk,
+    fn fetch_with_metadata<'a, Q: Query<<Self as Fetch>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         settings: Option<RequestSettings>,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error> {
-        Self::fetch_with_metadata_and_proof(sdk, query, settings)
-            .await
-            .map(|(object, metadata, _)| (object, metadata))
+    ) -> Pin<Box<dyn Future<Output = Result<(Option<Self>, ResponseMetadata), Error>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            Self::fetch_with_metadata_and_proof(sdk, query, settings)
+                .await
+                .map(|(object, metadata, _)| (object, metadata))
+        })
     }
 
     /// Fetch single object from Platform with metadata and underlying proof.
@@ -153,52 +160,58 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_with_metadata_and_proof<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &Sdk,
+    fn fetch_with_metadata_and_proof<'a, Q: Query<<Self as Fetch>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         settings: Option<RequestSettings>,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<(Option<Self>, ResponseMetadata, Proof), Error>> + Send + 'a,
+        >,
+    > {
+        Box::pin(async move {
+            let request: &<Self as Fetch>::Request = &query.query(sdk.prove())?;
 
-        let fut = |settings: RequestSettings| async move {
-            let ExecutionResponse {
-                address,
-                retries,
-                inner: response,
-            } = request
-                .clone()
-                .execute(sdk, settings)
-                .await
-                .map_err(|execution_error| execution_error.inner_into())?;
-
-            let object_type = std::any::type_name::<Self>().to_string();
-            tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
-
-            let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) = sdk
-                .parse_proof_with_metadata_and_proof(request.clone(), response)
-                .await
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    address: Some(address.clone()),
+            let fut = |settings: RequestSettings| async move {
+                let ExecutionResponse {
+                    address,
                     retries,
-                })?;
+                    inner: response,
+                } = request
+                    .clone()
+                    .execute(sdk, settings)
+                    .await
+                    .map_err(|execution_error| execution_error.inner_into())?;
 
-            match object {
-                Some(item) => Ok((item.into(), response_metadata, proof)),
-                None => Ok((None, response_metadata, proof)),
-            }
-            .map(|x| ExecutionResponse {
-                inner: x,
-                address,
-                retries,
-            })
-        };
+                let object_type = std::any::type_name::<Self>().to_string();
+                tracing::trace!(request = ?request, response = ?response, ?address, retries, object_type, "fetched object from platform");
 
-        let settings = sdk
-            .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
+                let (object, response_metadata, proof): (Option<Self>, ResponseMetadata, Proof) =
+                    sdk.parse_proof_with_metadata_and_proof(request.clone(), response)
+                        .await
+                        .map_err(|e| ExecutionError {
+                            inner: e,
+                            address: Some(address.clone()),
+                            retries,
+                        })?;
 
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+                match object {
+                    Some(item) => Ok((item.into(), response_metadata, proof)),
+                    None => Ok((None, response_metadata, proof)),
+                }
+                .map(|x| ExecutionResponse {
+                    inner: x,
+                    address,
+                    retries,
+                })
+            };
+
+            let settings = sdk
+                .dapi_client_settings
+                .override_by(settings.unwrap_or_default());
+
+            retry(sdk.address_list(), settings, fut).await.into_inner()
+        })
     }
 
     /// Fetch single object from Platform.
@@ -222,13 +235,15 @@ where
     /// ## Error Handling
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch_with_settings<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &Sdk,
+    fn fetch_with_settings<'a, Q: Query<<Self as Fetch>::Request> + Send + 'a>(
+        sdk: &'a Sdk,
         query: Q,
         settings: RequestSettings,
-    ) -> Result<Option<Self>, Error> {
-        let (object, _) = Self::fetch_with_metadata(sdk, query, Some(settings)).await?;
-        Ok(object)
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Self>, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let (object, _) = Self::fetch_with_metadata(sdk, query, Some(settings)).await?;
+            Ok(object)
+        })
     }
 
     /// Fetch single object from Platform by identifier.
@@ -241,11 +256,14 @@ where
     ///
     /// - `sdk`: An instance of [Sdk].
     /// - `id`: An [Identifier] of the object to be fetched.
-    async fn fetch_by_identifier(sdk: &Sdk, id: Identifier) -> Result<Option<Self>, Error>
+    fn fetch_by_identifier<'a>(
+        sdk: &'a Sdk,
+        id: Identifier,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Self>, Error>> + Send + 'a>>
     where
         Identifier: Query<<Self as Fetch>::Request>,
     {
-        Self::fetch(sdk, id).await
+        Box::pin(async move { Self::fetch(sdk, id).await })
     }
 }
 

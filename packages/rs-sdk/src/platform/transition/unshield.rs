@@ -6,49 +6,51 @@ use dpp::address_funds::PlatformAddress;
 use dpp::shielded::OrchardBundleParams;
 use dpp::state_transition::unshield_transition::methods::UnshieldTransitionMethodsV0;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
+use std::future::Future;
+use std::pin::Pin;
 
 /// Helper trait to unshield funds from the shielded pool to a platform address.
-#[async_trait::async_trait]
 pub trait UnshieldFunds {
     /// Unshield funds from the shielded pool to a platform address.
     /// Authentication is via Orchard spend authorization signatures in the bundle actions.
-    async fn unshield_funds(
-        &self,
+    fn unshield_funds<'a>(
+        &'a self,
         output_address: PlatformAddress,
         unshielding_amount: u64,
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
-    ) -> Result<(), Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl UnshieldFunds for Sdk {
-    async fn unshield_funds(
-        &self,
+    fn unshield_funds<'a>(
+        &'a self,
         output_address: PlatformAddress,
         unshielding_amount: u64,
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
-    ) -> Result<(), Error> {
-        let OrchardBundleParams {
-            actions,
-            anchor,
-            proof,
-            binding_signature,
-        } = bundle;
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let OrchardBundleParams {
+                actions,
+                anchor,
+                proof,
+                binding_signature,
+            } = bundle;
 
-        let state_transition = UnshieldTransition::try_from_bundle(
-            output_address,
-            actions,
-            unshielding_amount,
-            anchor,
-            proof,
-            binding_signature,
-            self.version(),
-        )?;
-        ensure_valid_state_transition_structure(&state_transition, self.version())?;
+            let state_transition = UnshieldTransition::try_from_bundle(
+                output_address,
+                actions,
+                unshielding_amount,
+                anchor,
+                proof,
+                binding_signature,
+                self.version(),
+            )?;
+            ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        state_transition.broadcast(self, settings).await?;
-        Ok(())
+            state_transition.broadcast(self, settings).await?;
+            Ok(())
+        })
     }
 }

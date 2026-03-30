@@ -14,110 +14,114 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use rs_dapi_client::{DapiRequest, IntoInner};
+use std::future::Future;
+use std::pin::Pin;
 
-#[async_trait::async_trait]
 /// A trait for transferring a document on Platform
 pub trait TransferDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
-    async fn transfer_document_to_identity(
-        &self,
+    fn transfer_document_to_identity<'a>(
+        &'a self,
         recipient_id: Identifier,
-        sdk: &Sdk,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>>;
 
     /// Transfers a document on platform and waits for the response
     #[allow(clippy::too_many_arguments)]
-    async fn transfer_document_to_identity_and_wait_for_response(
-        &self,
+    fn transfer_document_to_identity_and_wait_for_response<'a>(
+        &'a self,
         recipient_id: Identifier,
-        sdk: &Sdk,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<Document, Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<Document, Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
-    async fn transfer_document_to_identity(
-        &self,
+    fn transfer_document_to_identity<'a>(
+        &'a self,
         recipient_id: Identifier,
-        sdk: &Sdk,
+        sdk: &'a Sdk,
         document_type: DocumentType,
         identity_public_key: IdentityPublicKey,
         token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
+        signer: &'a S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error> {
-        let new_identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.owner_id(),
-                document_type.data_contract_id(),
-                true,
-                settings,
-            )
-            .await?;
+    ) -> Pin<Box<dyn Future<Output = Result<StateTransition, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let new_identity_contract_nonce = sdk
+                .get_identity_contract_nonce(
+                    self.owner_id(),
+                    document_type.data_contract_id(),
+                    true,
+                    settings,
+                )
+                .await?;
 
-        let settings = settings.unwrap_or_default();
+            let settings = settings.unwrap_or_default();
 
-        let transition = BatchTransition::new_document_transfer_transition_from_document(
-            self.clone(),
-            document_type.as_ref(),
-            recipient_id,
-            &identity_public_key,
-            new_identity_contract_nonce,
-            settings.user_fee_increase.unwrap_or_default(),
-            token_payment_info,
-            signer,
-            sdk.version(),
-            settings.state_transition_creation_options,
-        )?;
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
-
-        let request = transition.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, settings.request_settings)
-            .await // TODO: We need better way to handle execution errors
-            .into_inner()?;
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-
-        Ok(transition)
-    }
-
-    async fn transfer_document_to_identity_and_wait_for_response(
-        &self,
-        recipient_id: Identifier,
-        sdk: &Sdk,
-        document_type: DocumentType,
-        identity_public_key: IdentityPublicKey,
-        token_payment_info: Option<TokenPaymentInfo>,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<Document, Error> {
-        let state_transition = self
-            .transfer_document_to_identity(
+            let transition = BatchTransition::new_document_transfer_transition_from_document(
+                self.clone(),
+                document_type.as_ref(),
                 recipient_id,
-                sdk,
-                document_type,
-                identity_public_key,
+                &identity_public_key,
+                new_identity_contract_nonce,
+                settings.user_fee_increase.unwrap_or_default(),
                 token_payment_info,
                 signer,
-                settings,
-            )
-            .await?;
+                sdk.version(),
+                settings.state_transition_creation_options,
+            )?;
+            ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
-        Self::wait_for_response(sdk, state_transition, settings).await
+            let request = transition.broadcast_request_for_state_transition()?;
+
+            request
+                .clone()
+                .execute(sdk, settings.request_settings)
+                .await // TODO: We need better way to handle execution errors
+                .into_inner()?;
+
+            // response is empty for a broadcast, result comes from the stream wait for state transition result
+
+            Ok(transition)
+        })
+    }
+
+    fn transfer_document_to_identity_and_wait_for_response<'a>(
+        &'a self,
+        recipient_id: Identifier,
+        sdk: &'a Sdk,
+        document_type: DocumentType,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &'a S,
+        settings: Option<PutSettings>,
+    ) -> Pin<Box<dyn Future<Output = Result<Document, Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let state_transition = self
+                .transfer_document_to_identity(
+                    recipient_id,
+                    sdk,
+                    document_type,
+                    identity_public_key,
+                    token_payment_info,
+                    signer,
+                    settings,
+                )
+                .await?;
+
+            Self::wait_for_response(sdk, state_transition, settings).await
+        })
     }
 }

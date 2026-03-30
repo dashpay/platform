@@ -9,10 +9,11 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use std::future::Future;
+use std::pin::Pin;
 
 use super::waitable::Waitable;
 
-#[async_trait::async_trait]
 pub trait TransferToIdentity: Waitable {
     /// Transfers credits from an identity to another identity.
     ///
@@ -24,54 +25,55 @@ pub trait TransferToIdentity: Waitable {
     /// ## Returns
     ///
     /// A tuple of `(sender_balance, receiver_balance)` after the transfer.
-    async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
-        &self,
-        sdk: &Sdk,
+    fn transfer_credits<'a, S: Signer<IdentityPublicKey> + Send + 'a>(
+        &'a self,
+        sdk: &'a Sdk,
         to_identity_id: Identifier,
         amount: u64,
-        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signing_transfer_key_to_use: Option<&'a IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error>;
+    ) -> Pin<Box<dyn Future<Output = Result<(u64, u64), Error>> + Send + 'a>>;
 }
 
-#[async_trait::async_trait]
 impl TransferToIdentity for Identity {
-    async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
-        &self,
-        sdk: &Sdk,
+    fn transfer_credits<'a, S: Signer<IdentityPublicKey> + Send + 'a>(
+        &'a self,
+        sdk: &'a Sdk,
         to_identity_id: Identifier,
         amount: u64,
-        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signing_transfer_key_to_use: Option<&'a IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<(u64, u64), Error> {
-        let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
-        let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
-        let state_transition = IdentityCreditTransferTransition::try_from_identity(
-            self,
-            to_identity_id,
-            amount,
-            user_fee_increase.unwrap_or_default(),
-            signer,
-            signing_transfer_key_to_use,
-            new_identity_nonce,
-            sdk.version(),
-            None,
-        )?;
-        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+    ) -> Pin<Box<dyn Future<Output = Result<(u64, u64), Error>> + Send + 'a>> {
+        Box::pin(async move {
+            let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
+            let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
+            let state_transition = IdentityCreditTransferTransition::try_from_identity(
+                self,
+                to_identity_id,
+                amount,
+                user_fee_increase.unwrap_or_default(),
+                signer,
+                signing_transfer_key_to_use,
+                new_identity_nonce,
+                sdk.version(),
+                None,
+            )?;
+            ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let (sender, receiver): (PartialIdentity, PartialIdentity) =
-            state_transition.broadcast_and_wait(sdk, settings).await?;
+            let (sender, receiver): (PartialIdentity, PartialIdentity) =
+                state_transition.broadcast_and_wait(sdk, settings).await?;
 
-        let sender_balance = sender.balance.ok_or_else(|| {
-            Error::Generic("expected an identity balance after transfer (sender)".to_string())
-        })?;
+            let sender_balance = sender.balance.ok_or_else(|| {
+                Error::Generic("expected an identity balance after transfer (sender)".to_string())
+            })?;
 
-        let receiver_balance = receiver.balance.ok_or_else(|| {
-            Error::Generic("expected an identity balance after transfer (receiver)".to_string())
-        })?;
+            let receiver_balance = receiver.balance.ok_or_else(|| {
+                Error::Generic("expected an identity balance after transfer (receiver)".to_string())
+            })?;
 
-        Ok((sender_balance, receiver_balance))
+            Ok((sender_balance, receiver_balance))
+        })
     }
 }
