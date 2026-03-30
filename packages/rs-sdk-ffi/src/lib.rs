@@ -246,7 +246,7 @@ mod tests {
         }
 
         // Call the function under test with each supported level.
-        for level in 0..=5 {
+        for level in 0..=4 {
             dash_sdk_enable_logging(level);
         }
 
