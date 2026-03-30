@@ -29,7 +29,7 @@ struct CoreContentView: View {
     }
 
     private var filterHeightsDisplay: String? {
-        let cur = walletService.syncProgress.filters?.currentHeight ?? 0
+        let cur = walletService.syncProgress.filters?.storedHeight ?? 0
         let tot = walletService.syncProgress.filters?.targetHeight ?? 0
 
         return heightDisplay(numerator: cur, denominator: tot)
@@ -81,7 +81,11 @@ var body: some View {
 
                     CompactSyncRow(
                         title: "Filters",
-                        progress: walletService.syncProgress.filters?.percentage ?? 0.0,
+                        progress: {
+                            let stored = Double(walletService.syncProgress.filters?.storedHeight ?? 0)
+                            let target = Double(walletService.syncProgress.filters?.targetHeight ?? 0)
+                            return target > 0 ? stored / target : 0.0
+                        }(),
                         value: filterHeightsDisplay
                     )
 
