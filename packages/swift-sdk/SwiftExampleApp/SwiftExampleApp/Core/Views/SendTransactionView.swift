@@ -28,6 +28,29 @@ struct SendTransactionView: View {
                     if !viewModel.recipientAddress.isEmpty {
                         AddressTypeBadge(type: viewModel.detectedAddressType)
                     }
+
+                    // Quick-fill address buttons
+                    let quickAddresses = buildQuickAddresses()
+                    if !quickAddresses.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(quickAddresses, id: \.label) { qa in
+                                    Button {
+                                        viewModel.recipientAddress = qa.address
+                                    } label: {
+                                        Text(qa.label)
+                                            .font(.caption2)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(qa.color.opacity(0.15))
+                                            .foregroundColor(qa.color)
+                                            .cornerRadius(12)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
                 } header: {
                     Text("Recipient")
                 }
@@ -103,25 +126,6 @@ struct SendTransactionView: View {
                     }
                 }
 
-                // Asset Lock (disabled)
-                Section {
-                    HStack {
-                        Image(systemName: "lock.fill")
-                            .foregroundColor(.gray)
-                        Text("Asset Lock")
-                            .foregroundColor(.gray)
-                        Spacer()
-                        Text("Coming Soon")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color(UIColor.tertiarySystemBackground))
-                            .cornerRadius(6)
-                    }
-                } header: {
-                    Text("Other Options")
-                }
             }
             .navigationTitle("Send Dash")
             .navigationBarTitleDisplayMode(.inline)
@@ -210,6 +214,61 @@ struct SendTransactionView: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+
+    // MARK: - Quick Address Buttons
+
+    private struct QuickAddress {
+        let label: String
+        let address: String
+        let color: Color
+    }
+
+    private func buildQuickAddresses() -> [QuickAddress] {
+        var addresses: [QuickAddress] = []
+        let wallets = walletService.walletManager.wallets
+
+        // Our wallet's internal addresses
+        let ownCoreAddress = walletService.walletManager.getReceiveAddress(for: wallet)
+        if !ownCoreAddress.isEmpty {
+            addresses.append(QuickAddress(label: "My Core", address: ownCoreAddress, color: .blue))
+        }
+
+        // Our platform address
+        if let collection = walletService.walletManager.getManagedAccountCollection(for: wallet),
+           let platformAccount = collection.getPlatformPaymentAccount(accountIndex: 0, keyClass: 0),
+           let pool = platformAccount.getAddressPool(),
+           let infos = try? pool.getAddresses(from: 0, to: 1),
+           let addrInfo = infos.first {
+            let networkValue: UInt32 = wallet.network == .mainnet ? 0 : 1
+            let result = addrInfo.scriptPubKey.withUnsafeBytes { buffer -> DashSDKResult in
+                guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    return DashSDKResult()
+                }
+                return dash_sdk_encode_platform_address(base, UInt32(addrInfo.scriptPubKey.count), networkValue)
+            }
+            if result.error == nil, let dataPtr = result.data {
+                let str = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+                dash_sdk_string_free(dataPtr)
+                addresses.append(QuickAddress(label: "My Platform", address: str, color: .indigo))
+            }
+        }
+
+        // Our shielded address
+        if let orchardAddress = shieldedService.orchardDisplayAddress {
+            addresses.append(QuickAddress(label: "My Shielded", address: orchardAddress, color: .purple))
+        }
+
+        // Other wallet's addresses (first wallet that isn't ours)
+        if let otherWallet = wallets.first(where: { $0.id != wallet.id }) {
+            let otherCore = walletService.walletManager.getReceiveAddress(for: otherWallet)
+            if !otherCore.isEmpty {
+                let name = otherWallet.label.isEmpty ? "Other" : otherWallet.label
+                addresses.append(QuickAddress(label: "\(name) Core", address: otherCore, color: .green))
+            }
+        }
+
+        return addresses
     }
 }
 
