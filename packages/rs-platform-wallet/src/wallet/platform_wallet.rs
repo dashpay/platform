@@ -14,6 +14,7 @@ use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
 use super::platform_addresses::PlatformAddressWallet;
+use super::tokens::TokenWallet;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -36,6 +37,7 @@ pub struct PlatformWallet {
     pub(crate) identity: IdentityWallet,
     pub(crate) dashpay: DashPayWallet,
     pub(crate) platform: PlatformAddressWallet,
+    pub(crate) tokens: TokenWallet,
 }
 
 impl PlatformWallet {
@@ -62,6 +64,11 @@ impl PlatformWallet {
     /// Access the platform address wallet.
     pub fn platform(&self) -> &PlatformAddressWallet {
         &self.platform
+    }
+
+    /// Access the token wallet.
+    pub fn tokens(&self) -> &TokenWallet {
+        &self.tokens
     }
 
     /// Get the wallet ID.
@@ -116,6 +123,13 @@ impl PlatformWallet {
             network,
         );
 
+        let tokens = TokenWallet::new(
+            sdk.clone(),
+            wallet.clone(),
+            identity_manager.clone(),
+            network,
+        );
+
         Self {
             wallet_id,
             sdk,
@@ -123,6 +137,7 @@ impl PlatformWallet {
             identity,
             dashpay,
             platform,
+            tokens,
         }
     }
 

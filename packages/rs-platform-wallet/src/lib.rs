@@ -16,6 +16,7 @@ pub use wallet::dashpay::EstablishedContact;
 pub use wallet::identity::IdentityManager;
 pub use wallet::identity::ManagedIdentity;
 pub use wallet::PlatformWallet;
+pub use wallet::TokenWallet;
 
 #[cfg(feature = "manager")]
 pub use key_wallet_manager;

@@ -83,4 +83,7 @@ pub enum PlatformWalletError {
 
     #[error("SPV error: {0}")]
     SpvError(String),
+
+    #[error("Token operation failed: {0}")]
+    TokenError(String),
 }
