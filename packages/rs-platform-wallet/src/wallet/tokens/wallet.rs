@@ -506,6 +506,319 @@ impl TokenWallet {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Extended token operations (external signer, full result types)
+// ---------------------------------------------------------------------------
+//
+// These methods accept an external `Signer` and `IdentityPublicKey` from the
+// caller, along with optional builder options (public note, group info,
+// state transition creation options). They return the SDK's detailed result
+// types so callers can inspect proof-verified outcomes (e.g. updated balances).
+
+impl TokenWallet {
+    /// Transfer tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transfer_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        from_identity_id: Identifier,
+        to_identity_id: Identifier,
+        amount: TokenAmount,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::TransferResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
+
+        let mut builder = TokenTransferTransitionBuilder::new(
+            data_contract,
+            token_position,
+            from_identity_id,
+            to_identity_id,
+            amount,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_transfer(builder, signing_key, signer).await
+    }
+
+    /// Mint tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn mint_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        amount: TokenAmount,
+        recipient_id: Option<Identifier>,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
+
+        let builder = TokenMintTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+        );
+
+        let mut builder = if let Some(recipient) = recipient_id {
+            builder.issued_to_identity_id(recipient)
+        } else {
+            builder
+        };
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_mint(builder, signing_key, signer).await
+    }
+
+    /// Burn tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn burn_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        amount: TokenAmount,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::BurnResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
+
+        let mut builder = TokenBurnTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_burn(builder, signing_key, signer).await
+    }
+
+    /// Freeze tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn freeze_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        target_identity_id: Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
+
+        let mut builder = TokenFreezeTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            target_identity_id,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_freeze(builder, signing_key, signer).await
+    }
+
+    /// Unfreeze tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn unfreeze_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        target_identity_id: Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::UnfreezeResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::unfreeze::TokenUnfreezeTransitionBuilder;
+
+        let mut builder = TokenUnfreezeTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            target_identity_id,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk
+            .token_unfreeze_identity(builder, signing_key, signer)
+            .await
+    }
+
+    /// Set direct purchase price using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn set_price_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        token_pricing_schedule: Option<dpp::tokens::token_pricing_schedule::TokenPricingSchedule>,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::SetPriceResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
+
+        let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+        );
+
+        if let Some(pricing_schedule) = token_pricing_schedule {
+            builder = builder.with_token_pricing_schedule(pricing_schedule);
+        }
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk
+            .token_set_price_for_direct_purchase(builder, signing_key, signer)
+            .await
+    }
+
+    /// Purchase tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn purchase_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        amount: TokenAmount,
+        total_agreed_price: dpp::fee::Credits,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
+
+        let mut builder = TokenDirectPurchaseTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            amount,
+            total_agreed_price,
+        );
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_purchase(builder, signing_key, signer).await
+    }
+
+    /// Claim tokens using an external signer. Returns the SDK result.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn claim_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        distribution_type: dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::ClaimResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
+
+        let mut builder = TokenClaimTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            distribution_type,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_claim(builder, signing_key, signer).await
+    }
+}
+
 impl std::fmt::Debug for TokenWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenWallet")
