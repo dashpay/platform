@@ -54,6 +54,8 @@ impl Drive {
             // Extract anchor_bytes from the element value
             if let Element::Item(anchor_bytes, _) = element {
                 // Delete from anchors tree (anchor_bytes -> block_height)
+                // NOTE: .unwrap() is CostContext::unwrap(), not Result::unwrap().
+                // It discards cost tracking info and never panics.
                 self.grove
                     .delete(
                         &anchors_path,

@@ -108,6 +108,15 @@ impl Drive {
         let balance_path = token_balances_path_vec(token_id);
 
         if let Some(previous_balance) = previous_balance {
+            if balance_to_add > i64::MAX as u64 {
+                return Err(
+                    ProtocolError::CriticalCorruptedCreditsCodeExecution(format!(
+                        "Token balance to add over i64 max, is {}",
+                        balance_to_add
+                    ))
+                    .into(),
+                );
+            }
             // Check for overflow
             let new_balance = (previous_balance as i64)
                 .checked_add(balance_to_add as i64)
@@ -138,5 +147,150 @@ impl Drive {
         }
 
         Ok(drive_operations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+
+    mod add_to_identity_token_balance {
+        use super::*;
+
+        #[test]
+        fn should_error_when_balance_to_add_exceeds_i64_max_on_existing_balance() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+            let block_info = BlockInfo::default();
+            let token_id = [1u8; 32];
+            let identity_id = [2u8; 32];
+            let contract_id = Identifier::from([3u8; 32]);
+
+            // Create the token tree structure first
+            drive
+                .create_token_trees(
+                    contract_id,
+                    0,
+                    token_id,
+                    false,
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to create token trees");
+
+            // Insert an initial balance via add_to_identity_token_balance (insert path)
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    identity_id,
+                    1000,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add initial token balance");
+
+            // Now try to add a value that exceeds i64::MAX to the existing balance (add path).
+            // Before the fix, this would silently wrap to a negative value.
+            let overflow_amount: u64 = i64::MAX as u64 + 1;
+
+            let result = drive.add_to_identity_token_balance(
+                token_id,
+                identity_id,
+                overflow_amount,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(
+                result.is_err(),
+                "expected an error for balance_to_add > i64::MAX but got Ok"
+            );
+            let err_string = format!("{}", result.unwrap_err());
+            assert!(
+                err_string.contains("Token balance to add over i64 max"),
+                "expected CriticalCorruptedCreditsCodeExecution error, got: {}",
+                err_string
+            );
+        }
+
+        #[test]
+        fn should_successfully_add_normal_amount_to_existing_balance() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+            let block_info = BlockInfo::default();
+            let token_id = [1u8; 32];
+            let identity_id = [2u8; 32];
+            let contract_id = Identifier::from([3u8; 32]);
+
+            // Create the token tree structure first
+            drive
+                .create_token_trees(
+                    contract_id,
+                    0,
+                    token_id,
+                    false,
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to create token trees");
+
+            // Insert an initial balance (insert path)
+            drive
+                .add_to_identity_token_balance(
+                    token_id,
+                    identity_id,
+                    1000,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add initial token balance");
+
+            // Add a normal amount to the existing balance (add path) -- should succeed
+            let result = drive.add_to_identity_token_balance(
+                token_id,
+                identity_id,
+                500,
+                &block_info,
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(
+                result.is_ok(),
+                "expected normal addition to succeed, got error: {:?}",
+                result.err()
+            );
+
+            // Verify the balance is now 1500
+            let balance = drive
+                .fetch_identity_token_balance(token_id, identity_id, None, platform_version)
+                .expect("expected to fetch balance");
+
+            assert_eq!(
+                balance,
+                Some(1500),
+                "expected balance to be 1500 after adding 500 to 1000"
+            );
+        }
     }
 }

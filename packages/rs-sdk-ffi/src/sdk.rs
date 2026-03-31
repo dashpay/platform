@@ -591,14 +591,32 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
     let wrapper = Box::new(ContextProviderWrapper::new(context_provider));
     let context_provider_handle = Box::into_raw(wrapper) as *mut ContextProviderHandle;
 
+    // Read fields from the caller's config individually rather than copying
+    // the struct (which would duplicate the raw `dapi_addresses` pointer).
+    // The pointer is only borrowed for the duration of this call; the
+    // downstream `dash_sdk_create_extended` reads and copies the string data
+    // immediately before returning.
+    let config_ref = &*config;
     let extended_config = DashSDKConfigExtended {
-        base_config: *config,
+        base_config: DashSDKConfig {
+            network: config_ref.network,
+            dapi_addresses: config_ref.dapi_addresses,
+            skip_asset_lock_proof_verification: config_ref.skip_asset_lock_proof_verification,
+            request_retry_count: config_ref.request_retry_count,
+            request_timeout_ms: config_ref.request_timeout_ms,
+        },
         context_provider: context_provider_handle,
         core_sdk_handle: std::ptr::null_mut(),
     };
 
     // Use the extended creation function
-    dash_sdk_create_extended(&extended_config)
+    let result = dash_sdk_create_extended(&extended_config);
+
+    // Reclaim the context provider wrapper - the SDK has already cloned what it needs
+    // via `provider_wrapper.provider()` inside `dash_sdk_create_extended`.
+    let _ = Box::from_raw(context_provider_handle as *mut ContextProviderWrapper);
+
+    result
 }
 
 /// Get the current network the SDK is connected to

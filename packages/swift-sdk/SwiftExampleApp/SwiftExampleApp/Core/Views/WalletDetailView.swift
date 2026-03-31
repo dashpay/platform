@@ -75,8 +75,10 @@ struct WalletDetailView: View {
 
                         Spacer()
 
-                        if wallet.transactionCount > 0 {
-                            Text("\(wallet.transactionCount)")
+                        let transactions = walletService.walletManager.getTransactions(for: wallet)
+                        let transactionCount = transactions.count
+                        if transactionCount > 0 {
+                            Text("\(transactionCount)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal, 8)
@@ -128,20 +130,20 @@ struct WalletDetailView: View {
         .sheet(isPresented: $showReceiveAddress) {
             ReceiveAddressView(wallet: wallet)
                 .environmentObject(walletService)
+                .environmentObject(unifiedAppState)
+                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showSendTransaction) {
             SendTransactionView(wallet: wallet)
                 .environmentObject(walletService)
                 .environmentObject(unifiedAppState)
+                .environmentObject(unifiedAppState.shieldedService)
         }
         .sheet(isPresented: $showWalletInfo) {
             WalletInfoView(wallet: wallet) {
                 dismiss()
             }
             .environmentObject(walletService)
-        }
-        .task {
-            await walletService.loadWallet(wallet)
         }
         .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
@@ -280,16 +282,14 @@ struct WalletInfoView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    if let walletId = wallet.walletId {
-                        HStack {
-                            Text("Wallet ID")
-                            Spacer()
-                            Text(walletId.toHexString())
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                                .multilineTextAlignment(.trailing)
-                        }
+                    HStack {
+                        Text("Wallet ID")
+                        Spacer()
+                        Text(wallet.walletId.toHexString())
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.trailing)
                     }
 
                     if mainnetEnabled {
@@ -373,7 +373,7 @@ struct WalletInfoView: View {
 
     private func loadNetworkStates() {
         // TODO: Probably not needed this way anymore?
-        switch wallet.dashNetwork {
+        switch wallet.network {
         case .mainnet:
             mainnetEnabled = true
         case .testnet:
@@ -388,23 +388,18 @@ struct WalletInfoView: View {
 
     private func loadAccountCounts() async {
         // TODO: This can probably be refactored now with with single network manager?
-        guard let manager = walletService.walletManager else { return }
+        let count = walletService.walletManager.getAccounts(for: wallet).count
+
         if mainnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
-                mainnetAccountCount = list.count
-            }
+            mainnetAccountCount = count
         } else { mainnetAccountCount = nil }
 
         if testnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
-                testnetAccountCount = list.count
-            }
+            testnetAccountCount = count
         } else { testnetAccountCount = nil }
 
         if devnetEnabled {
-            if let list = try? await manager.getAccounts(for: wallet) {
-                devnetAccountCount = list.count
-            }
+            devnetAccountCount = count
         } else { devnetAccountCount = nil }
     }
 
@@ -453,57 +448,35 @@ struct WalletInfoView: View {
     }
 
     private func deleteWallet() async {
-        isDeleting = true
-        defer {
-            Task { @MainActor in
-                isDeleting = false
-            }
+        // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
+        // This prevents "Never access a full future backing data" crash
+        await MainActor.run {
+            dismiss()
+            onWalletDeleted()
         }
 
-        do {
-            // IMPORTANT: Dismiss views FIRST to prevent UI from accessing deleted relationships
-            // This prevents "Never access a full future backing data" crash
-            await MainActor.run {
-                dismiss()
-                onWalletDeleted()
-            }
-
-            // Notify the wallet service (removes wallet from observable arrays)
-            await walletService.walletDeleted(wallet)
-
-            // Now safe to delete from Core Data (cascade will delete accounts/addresses)
-            modelContext.delete(wallet)
-            try modelContext.save()
-
-        } catch {
-            await MainActor.run {
-                errorMessage = "Failed to delete wallet: \(error.localizedDescription)"
-                showError = true
-            }
-        }
+        try! await walletService.walletManager.deleteWallet(wallet)
     }
 }
 
 struct BalanceCardView: View {
     let wallet: HDWallet
     @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var shieldedService: ShieldedService
+    @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
+    /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
     var platformBalance: UInt64 {
-        // Only sum balances of identities that belong to this specific wallet
-        // and are on the same network
-
-        // For now, if wallet doesn't have a walletId (not yet initialized with FFI),
-        // don't show any platform balance
-        guard let walletId = wallet.walletId else {
-            return 0
+        let blastBalance = platformBalanceSyncService.totalPlatformBalance
+        if blastBalance > 0 || platformBalanceSyncService.lastSyncTime != nil {
+            return blastBalance
         }
-
+        // Fallback to identity-based sum if BLAST sync hasn't run yet
         return unifiedAppState.platformState.identities
             .filter { identity in
-                // Check if identity belongs to this wallet and is on the same network
-                // Only count identities that have been explicitly associated with this wallet
-                identity.walletId == walletId &&
-                identity.network == wallet.dashNetwork.rawValue
+                identity.walletId == wallet.walletId &&
+                identity.network == wallet.network.rawValue
             }
             .reduce(0) { sum, identity in
                 sum + identity.balance
@@ -511,258 +484,99 @@ struct BalanceCardView: View {
     }
 
     var body: some View {
+        let balance = walletService.walletManager.getBalance(for: wallet)
+        let allZero = balance.total == 0 && platformBalance == 0 && shieldedService.shieldedBalance == 0
+
         VStack(spacing: 12) {
-            // Show main balance or "Empty Wallet"
-            if wallet.totalBalance == 0 {
+            if allZero {
                 Text("Empty Wallet")
                     .font(.system(size: 28, weight: .medium, design: .rounded))
                     .foregroundColor(.secondary)
             } else {
-                Text("Wallet Balance")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                // Core Balance row
+                WalletBalanceRow(
+                    label: "Core Balance",
+                    amount: balance.confirmed,
+                    incoming: balance.unconfirmed,
+                    color: .primary
+                )
 
-                Text(formatBalance(wallet.totalBalance))
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
-            }
+                // Platform Balance row
+                WalletBalanceRow(
+                    label: "Platform Balance",
+                    amount: platformBalance,
+                    color: .blue,
+                    showSyncIndicator: platformBalanceSyncService.isSyncing
+                )
 
-            HStack(spacing: 20) {
-                // Incoming (unconfirmed) balance
-                VStack(spacing: 4) {
-                    Text("Incoming")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    if wallet.unconfirmedBalance > 0 {
-                        Text(formatBalance(wallet.unconfirmedBalance))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.orange)
-                    } else {
-                        Text("—")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Divider()
-                    .frame(height: 30)
-
-                // Platform balance
-                VStack(spacing: 4) {
-                    Text("Platform Balance")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    if platformBalance > 0 {
-                        Text(formatBalance(platformBalance))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.blue)
-                    } else {
-                        Text("—")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                // Shielded Balance row
+                WalletBalanceRow(
+                    label: "Shielded Balance",
+                    amount: shieldedService.shieldedBalance,
+                    color: .purple,
+                    showSyncIndicator: shieldedService.isSyncing
+                )
             }
         }
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
         .cornerRadius(12)
     }
+}
+
+/// A single balance row showing label, amount, and optional incoming amount.
+private struct WalletBalanceRow: View {
+    let label: String
+    var amount: UInt64
+    var incoming: UInt64 = 0
+    var color: Color
+    var showSyncIndicator: Bool = false
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if showSyncIndicator {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                    }
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                if amount > 0 {
+                    Text(formatBalance(amount))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(color)
+                } else {
+                    Text("—")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                if incoming > 0 {
+                    Text("(+\(formatBalance(incoming)) incoming)")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+        }
+    }
 
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-
-        // Format with up to 8 decimal places, removing trailing zeros
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-
-        return String(format: "%.8f DASH", dash).replacingOccurrences(of: "0+$", with: "", options: .regularExpression).replacingOccurrences(of: "\\.$", with: "", options: .regularExpression)
-    }
-}
-
-// MARK: - Legacy Views (kept for reference)
-// These views show transactions, addresses, and UTXOs directly
-// They have been replaced by AccountListView which shows account-level information
-
-/*
-struct TransactionListView: View {
-    let transactions: [HDTransaction]
-
-    var body: some View {
-        if transactions.isEmpty {
-            ContentUnavailableView(
-                "No Transactions",
-                systemImage: "list.bullet.rectangle",
-                description: Text("Transactions will appear here")
-            )
-        } else {
-            List(transactions.sorted(by: { $0.timestamp > $1.timestamp })) { transaction in
-                TransactionRowView(transaction: transaction)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct TransactionRowView: View {
-    let transaction: HDTransaction
-
-    var body: some View {
-        HStack {
-            Image(systemName: transaction.amount < 0 ? "arrow.up.circle" : "arrow.down.circle")
-                .font(.title2)
-                .foregroundColor(transaction.amount < 0 ? .red : .green)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.type.capitalized)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Text(transaction.timestamp, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(formatAmount(transaction.amount))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(transaction.amount < 0 ? .red : .green)
-
-                if transaction.isPending {
-                    Text("Pending")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                } else {
-                    Text("\(transaction.confirmations) conf")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func formatAmount(_ amount: Int64) -> String {
-        let dash = Double(abs(amount)) / 100_000_000.0
-        let sign = amount < 0 ? "-" : "+"
-        return "\(sign)\(String(format: "%.8f", dash))"
-    }
-}
-
-struct AddressListView: View {
-    let addresses: [HDAddress]
-
-    var body: some View {
-        if addresses.isEmpty {
-            ContentUnavailableView(
-                "No Addresses",
-                systemImage: "qrcode",
-                description: Text("Addresses will appear here")
-            )
-        } else {
-            List(addresses.sorted(by: { $0.index < $1.index })) { address in
-                AddressRowView(address: address)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct AddressRowView: View {
-    let address: HDAddress
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Address #\(address.index)")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Spacer()
-
-                if address.isUsed {
-                    Label("Used", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                }
-            }
-
-            Text(address.address)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct UTXOListView: View {
-    let utxos: [HDUTXO]
-
-    var body: some View {
-        if utxos.isEmpty {
-            ContentUnavailableView(
-                "No UTXOs",
-                systemImage: "bitcoinsign.circle",
-                description: Text("Unspent outputs will appear here")
-            )
-        } else {
-            List(utxos) { utxo in
-                UTXORowView(utxo: utxo)
-            }
-            .listStyle(.plain)
-        }
-    }
-}
-
-struct UTXORowView: View {
-    let utxo: HDUTXO
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(formatAmount(utxo.amount))
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-
-                Spacer()
-
-                if utxo.isConfirmed {
-                    Label("Confirmed", systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                } else {
-                    Label("Unconfirmed", systemImage: "clock")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                }
-            }
-
-            Text("\(utxo.txid):\(utxo.outputIndex)")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func formatAmount(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
         return String(format: "%.8f DASH", dash)
     }
 }
-*/

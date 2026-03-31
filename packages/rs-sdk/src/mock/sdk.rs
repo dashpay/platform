@@ -244,6 +244,11 @@ impl MockDashPlatformSdk {
                         &mut dapi, filename,
                     )?
                 }
+                "GetTokenPreProgrammedDistributionsRequest" => {
+                    load_expectation::<proto::GetTokenPreProgrammedDistributionsRequest>(
+                        &mut dapi, filename,
+                    )?
+                }
                 "GetAddressesTrunkStateRequest" => {
                     load_expectation::<proto::GetAddressesTrunkStateRequest>(&mut dapi, filename)?
                 }

@@ -35,7 +35,11 @@ pub unsafe extern "C" fn dash_sdk_addresses_fetch_infos(
     address_lengths: *const usize,
     addresses_count: usize,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_addresses_fetch_infos_inner(
             sdk_handle,
@@ -188,8 +192,7 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
             // Allocate address bytes
             let address_bytes_vec = address_bytes.clone();
             let address_len = address_bytes_vec.len();
-            let address_ptr = address_bytes_vec.as_ptr() as *mut u8;
-            std::mem::forget(address_bytes_vec); // Prevent deallocation
+            let address_ptr = Box::into_raw(address_bytes_vec.into_boxed_slice()) as *mut u8;
 
             entries.push(DashSDKAddressInfoEntry {
                 address: address_ptr,
@@ -200,8 +203,7 @@ unsafe fn dash_sdk_addresses_fetch_infos_inner(
         }
 
         let count = entries.len();
-        let entries_ptr = entries.as_mut_ptr();
-        std::mem::forget(entries); // Prevent deallocation
+        let entries_ptr = Box::into_raw(entries.into_boxed_slice()) as *mut DashSDKAddressInfoEntry;
 
         Ok(DashSDKAddressInfoMap {
             entries: entries_ptr,

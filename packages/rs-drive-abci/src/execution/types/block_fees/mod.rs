@@ -72,3 +72,58 @@ impl BlockFeesV0Methods for BlockFees {
         BlockFees::V0(BlockFeesV0::from_fees(storage_fee, processing_fee))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::fee::epoch::CreditsPerEpoch;
+
+    fn make_block_fees() -> BlockFees {
+        BlockFees::from_fees(500, 300)
+    }
+
+    #[test]
+    fn block_fees_wrapper_getters_delegate_correctly() {
+        let fees = make_block_fees();
+        assert_eq!(fees.storage_fee(), 500);
+        assert_eq!(fees.processing_fee(), 300);
+        assert!(fees.refunds_per_epoch().is_empty());
+    }
+
+    #[test]
+    fn block_fees_wrapper_setters_delegate_correctly() {
+        let mut fees = make_block_fees();
+        fees.set_processing_fee(999);
+        fees.set_storage_fee(888);
+        assert_eq!(fees.processing_fee(), 999);
+        assert_eq!(fees.storage_fee(), 888);
+
+        let mut refunds = CreditsPerEpoch::default();
+        refunds.insert(2, 100);
+        fees.set_refunds_per_epoch(refunds);
+        assert_eq!(*fees.refunds_per_epoch().get(&2).unwrap(), 100);
+    }
+
+    #[test]
+    fn block_fees_wrapper_refunds_per_epoch_mut() {
+        let mut fees = make_block_fees();
+        fees.refunds_per_epoch_mut().insert(7, 42);
+        assert_eq!(*fees.refunds_per_epoch().get(&7).unwrap(), 42);
+    }
+
+    #[test]
+    fn block_fees_wrapper_refunds_per_epoch_owned() {
+        let mut fees = make_block_fees();
+        fees.refunds_per_epoch_mut().insert(3, 55);
+        let owned = fees.refunds_per_epoch_owned();
+        assert_eq!(*owned.get(&3).unwrap(), 55);
+    }
+
+    #[test]
+    fn block_fees_from_v0_conversion() {
+        let v0 = BlockFeesV0::from_fees(10, 20);
+        let fees: BlockFees = v0.into();
+        assert_eq!(fees.storage_fee(), 10);
+        assert_eq!(fees.processing_fee(), 20);
+    }
+}

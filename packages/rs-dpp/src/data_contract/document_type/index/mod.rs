@@ -658,3 +658,588 @@ impl IndexProperty {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_index_property(name: &str, ascending: bool) -> IndexProperty {
+        IndexProperty {
+            name: name.to_string(),
+            ascending,
+        }
+    }
+
+    fn make_index(name: &str, properties: Vec<(&str, bool)>, unique: bool) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .into_iter()
+                .map(|(n, asc)| make_index_property(n, asc))
+                .collect(),
+            unique,
+            null_searchable: true,
+            contested_index: None,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexResolution tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_resolution_try_from_valid() {
+        let res = ContestedIndexResolution::try_from(0u8).unwrap();
+        assert_eq!(res, ContestedIndexResolution::MasternodeVote);
+    }
+
+    #[test]
+    fn test_contested_index_resolution_try_from_invalid() {
+        let res = ContestedIndexResolution::try_from(1u8);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_contested_index_resolution_try_from_255() {
+        let res = ContestedIndexResolution::try_from(255u8);
+        assert!(res.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // LazyRegex tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_lazy_regex_match() {
+        let lr = LazyRegex::new("^[a-z]+$".to_string());
+        assert!(lr.is_match("hello"));
+        assert!(!lr.is_match("Hello"));
+        assert!(!lr.is_match("123"));
+    }
+
+    #[test]
+    fn test_lazy_regex_as_str() {
+        let lr = LazyRegex::new("test_pattern".to_string());
+        assert_eq!(lr.as_str(), "test_pattern");
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_regex_matches() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash".to_string()));
+        assert!(m.matches(&Value::Text("dashname".to_string())));
+        assert!(!m.matches(&Value::Text("notdash".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_non_string() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new(".*".to_string()));
+        assert!(!m.matches(&Value::U64(42)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_matches() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(m.matches(&Value::U64(42)));
+        assert!(!m.matches(&Value::U64(43)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_non_integer() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(!m.matches(&Value::Text("42".to_string())));
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch ordering tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_ord_integers() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(20);
+        assert!(a < b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_vs_integer() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert!(regex < integer);
+        assert!(integer > regex);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_vs_regex() {
+        let short = ContestedIndexFieldMatch::Regex(LazyRegex::new("a".to_string()));
+        let long = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        assert!(short < long);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch equality tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_eq_regex() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_different_regex() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("^a$".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("^b$".to_string()));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_integer() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_different_types() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("42".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert_ne!(regex, integer);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch clone tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_clone_regex() {
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_clone_integer() {
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexInformation default tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_information_default() {
+        let info = ContestedIndexInformation::default();
+        assert!(info.field_matches.is_empty());
+        assert_eq!(info.resolution, ContestedIndexResolution::MasternodeVote);
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::objects_are_conflicting tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_objects_are_conflicting_non_unique_always_false() {
+        let index = make_index("idx", vec![("name", true)], false);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_same_values() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_different_values() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Alice".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_one_missing_property() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_multi_property() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], true);
+        let obj1: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(30)),
+        ];
+        let obj2: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(30)),
+        ];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+
+        let obj3: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(25)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj3));
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::property_names() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_property_names() {
+        let index = make_index("idx", vec![("name", true), ("age", false)], false);
+        let names = index.property_names();
+        assert_eq!(names, vec!["name".to_string(), "age".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::extract_values() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_values_with_matching_data() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let mut data = BTreeMap::new();
+        data.insert("name".to_string(), Value::Text("Sam".to_string()));
+        data.insert("age".to_string(), Value::U64(30));
+        let values = index.extract_values(&data);
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], Value::Text("Sam".to_string()));
+        assert_eq!(values[1], Value::U64(30));
+    }
+
+    #[test]
+    fn test_extract_values_with_missing_data() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let mut data = BTreeMap::new();
+        data.insert("name".to_string(), Value::Text("Sam".to_string()));
+        let values = index.extract_values(&data);
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], Value::Text("Sam".to_string()));
+        assert_eq!(values[1], Value::Null); // missing key returns Null
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::matches() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_matches_exact_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name", "age"], None, &[]);
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn test_matches_partial_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], None, &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_no_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["email"], None, &[]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_matches_with_order_by() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        // Matching on "name" with order_by "age": d starts at 2, one match decrements to 1
+        let result = index.matches(&["name"], None, &["age"]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_last_property() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], Some("age"), &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_before_last() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["age"], Some("name"), &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_not_matching() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], Some("email"), &[]);
+        assert_eq!(result, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // IndexProperty::try_from tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_try_from_asc() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "asc".to_string());
+        let prop = IndexProperty::try_from(map).unwrap();
+        assert_eq!(prop.name, "name");
+        assert!(prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_try_from_desc() {
+        let mut map = BTreeMap::new();
+        map.insert("age".to_string(), "desc".to_string());
+        let prop = IndexProperty::try_from(map).unwrap();
+        assert_eq!(prop.name, "age");
+        assert!(!prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_try_from_empty_map_error() {
+        let map: BTreeMap<String, String> = BTreeMap::new();
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_try_from_multiple_entries_error() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "asc".to_string());
+        map.insert("age".to_string(), "desc".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_try_from_invalid_sort_order_error() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "random".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // IndexProperty::from_platform_value() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_from_platform_value_asc() {
+        let map = vec![(
+            Value::Text("fieldName".to_string()),
+            Value::Text("asc".to_string()),
+        )];
+        let prop = IndexProperty::from_platform_value(&map).unwrap();
+        assert_eq!(prop.name, "fieldName");
+        assert!(prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_desc() {
+        let map = vec![(
+            Value::Text("fieldName".to_string()),
+            Value::Text("desc".to_string()),
+        )];
+        let prop = IndexProperty::from_platform_value(&map).unwrap();
+        assert_eq!(prop.name, "fieldName");
+        assert!(!prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_bad_key_type() {
+        let map = vec![(Value::U64(42), Value::Text("asc".to_string()))];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_bad_value_type() {
+        let map = vec![(Value::Text("field".to_string()), Value::U64(1))];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // Index TryFrom<&[(Value, Value)]> tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_try_from_basic() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("test_index".to_string()),
+            ),
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("nullSearchable".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert_eq!(index.name, "test_index");
+        assert!(index.unique);
+        assert!(!index.null_searchable);
+        assert_eq!(index.properties.len(), 1);
+        assert_eq!(index.properties[0].name, "fieldA");
+        assert!(index.properties[0].ascending);
+        assert!(index.contested_index.is_none());
+    }
+
+    #[test]
+    fn test_index_try_from_without_name_generates_random() {
+        let index_map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("fieldA".to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        )];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(!index.name.is_empty());
+        assert_eq!(index.name.len(), 24); // Alphanumeric.sample_string with len 24
+    }
+
+    #[test]
+    fn test_index_try_from_default_null_searchable_true() {
+        let index_map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("fieldA".to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        )];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(index.null_searchable); // default is true
+    }
+
+    #[test]
+    fn test_index_try_from_unknown_key_error() {
+        let index_map: Vec<(Value, Value)> =
+            vec![(Value::Text("unknownKey".to_string()), Value::Bool(true))];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_try_from_contested_without_unique_error() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![(Value::Text("resolution".to_string()), Value::U64(0))]),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err()); // contest supported only for unique indexes
+    }
+
+    #[test]
+    fn test_index_try_from_contested_with_unique() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![
+                    (Value::Text("resolution".to_string()), Value::U64(0)),
+                    (
+                        Value::Text("fieldMatches".to_string()),
+                        Value::Array(vec![Value::Map(vec![
+                            (
+                                Value::Text("field".to_string()),
+                                Value::Text("normalizedLabel".to_string()),
+                            ),
+                            (
+                                Value::Text("regexPattern".to_string()),
+                                Value::Text("^[a-zA-Z]+$".to_string()),
+                            ),
+                        ])]),
+                    ),
+                ]),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(index.unique);
+        assert!(index.contested_index.is_some());
+        let contested = index.contested_index.unwrap();
+        assert_eq!(
+            contested.resolution,
+            ContestedIndexResolution::MasternodeVote
+        );
+        assert!(contested.field_matches.contains_key("normalizedLabel"));
+    }
+
+    // -----------------------------------------------------------------------
+    // OrderBy tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_order_by_partial_ord() {
+        assert!(OrderBy::Asc < OrderBy::Desc);
+    }
+}

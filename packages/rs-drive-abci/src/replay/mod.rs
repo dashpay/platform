@@ -308,3 +308,531 @@ impl RequestSequenceValidator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use runner::LoadedRequest;
+    use std::io::Write;
+    use tenderdash_abci::proto::abci::{
+        RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestProcessProposal,
+    };
+
+    // ---- update_known_height ----
+
+    #[test]
+    fn update_known_height_from_none() {
+        let mut current = None;
+        update_known_height(&mut current, Some(10));
+        assert_eq!(current, Some(10));
+    }
+
+    #[test]
+    fn update_known_height_higher() {
+        let mut current = Some(5);
+        update_known_height(&mut current, Some(10));
+        assert_eq!(current, Some(10));
+    }
+
+    #[test]
+    fn update_known_height_lower_ignored() {
+        let mut current = Some(10);
+        update_known_height(&mut current, Some(5));
+        assert_eq!(current, Some(10));
+    }
+
+    #[test]
+    fn update_known_height_equal_ignored() {
+        let mut current = Some(10);
+        update_known_height(&mut current, Some(10));
+        assert_eq!(current, Some(10));
+    }
+
+    #[test]
+    fn update_known_height_none_new_ignored() {
+        let mut current = Some(10);
+        update_known_height(&mut current, None);
+        assert_eq!(current, Some(10));
+    }
+
+    #[test]
+    fn update_known_height_both_none() {
+        let mut current = None;
+        update_known_height(&mut current, None);
+        assert_eq!(current, None);
+    }
+
+    // ---- should_skip_item ----
+
+    fn make_replay_item(line: usize, request: LoadedRequest) -> ReplayItem {
+        ReplayItem::from_log(std::path::Path::new("/test.log"), line, None, None, request)
+    }
+
+    #[test]
+    fn should_skip_item_no_selectors() {
+        let item = make_replay_item(10, LoadedRequest::Info(RequestInfo::default()));
+        assert!(!should_skip_item(&item, &[]));
+    }
+
+    #[test]
+    fn should_skip_item_matching_line() {
+        let item = make_replay_item(10, LoadedRequest::Info(RequestInfo::default()));
+        let skip = vec![SkipSelector::Line(10)];
+        assert!(should_skip_item(&item, &skip));
+    }
+
+    #[test]
+    fn should_skip_item_non_matching_line() {
+        let item = make_replay_item(10, LoadedRequest::Info(RequestInfo::default()));
+        let skip = vec![SkipSelector::Line(11)];
+        assert!(!should_skip_item(&item, &skip));
+    }
+
+    #[test]
+    fn should_skip_item_in_range() {
+        let item = make_replay_item(15, LoadedRequest::Info(RequestInfo::default()));
+        let skip = vec![SkipSelector::Range { start: 10, end: 20 }];
+        assert!(should_skip_item(&item, &skip));
+    }
+
+    #[test]
+    fn should_skip_item_outside_range() {
+        let item = make_replay_item(25, LoadedRequest::Info(RequestInfo::default()));
+        let skip = vec![SkipSelector::Range { start: 10, end: 20 }];
+        assert!(!should_skip_item(&item, &skip));
+    }
+
+    #[test]
+    fn should_skip_item_multiple_selectors() {
+        let item = make_replay_item(25, LoadedRequest::Info(RequestInfo::default()));
+        let skip = vec![
+            SkipSelector::Line(10),
+            SkipSelector::Range { start: 20, end: 30 },
+        ];
+        assert!(should_skip_item(&item, &skip));
+    }
+
+    // ---- RequestSequenceValidator ----
+
+    #[test]
+    fn validator_empty_sequence_ok() {
+        let validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+        validator.finish().unwrap();
+    }
+
+    #[test]
+    fn validator_complete_height_ok() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        let process = make_replay_item(
+            1,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+        let finalize = make_replay_item(
+            2,
+            LoadedRequest::Finalize(RequestFinalizeBlock {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+
+        validator.observe(&process).unwrap();
+        validator.observe(&finalize).unwrap();
+        validator.finish().unwrap();
+    }
+
+    #[test]
+    fn validator_two_consecutive_heights_ok() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        let items = [
+            make_replay_item(
+                1,
+                LoadedRequest::Process(RequestProcessProposal {
+                    height: 1,
+                    ..Default::default()
+                }),
+            ),
+            make_replay_item(
+                2,
+                LoadedRequest::Finalize(RequestFinalizeBlock {
+                    height: 1,
+                    ..Default::default()
+                }),
+            ),
+            make_replay_item(
+                3,
+                LoadedRequest::Process(RequestProcessProposal {
+                    height: 2,
+                    ..Default::default()
+                }),
+            ),
+            make_replay_item(
+                4,
+                LoadedRequest::Finalize(RequestFinalizeBlock {
+                    height: 2,
+                    ..Default::default()
+                }),
+            ),
+        ];
+
+        for item in &items {
+            validator.observe(item).unwrap();
+        }
+        validator.finish().unwrap();
+    }
+
+    #[test]
+    fn validator_finalize_before_process_error() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+        let finalize = make_replay_item(
+            1,
+            LoadedRequest::Finalize(RequestFinalizeBlock {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+        let err = validator.observe(&finalize).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("finalize_block before process_proposal"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn validator_out_of_order_height_error() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        let items = [
+            make_replay_item(
+                1,
+                LoadedRequest::Process(RequestProcessProposal {
+                    height: 5,
+                    ..Default::default()
+                }),
+            ),
+            make_replay_item(
+                2,
+                LoadedRequest::Finalize(RequestFinalizeBlock {
+                    height: 5,
+                    ..Default::default()
+                }),
+            ),
+        ];
+        for item in &items {
+            validator.observe(item).unwrap();
+        }
+
+        let bad = make_replay_item(
+            3,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 3,
+                ..Default::default()
+            }),
+        );
+        let err = validator.observe(&bad).unwrap_err();
+        assert!(
+            err.to_string().contains("out-of-order height"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn validator_skipped_heights_error() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        let items = [
+            make_replay_item(
+                1,
+                LoadedRequest::Process(RequestProcessProposal {
+                    height: 1,
+                    ..Default::default()
+                }),
+            ),
+            make_replay_item(
+                2,
+                LoadedRequest::Finalize(RequestFinalizeBlock {
+                    height: 1,
+                    ..Default::default()
+                }),
+            ),
+        ];
+        for item in &items {
+            validator.observe(item).unwrap();
+        }
+
+        let skip = make_replay_item(
+            3,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 3,
+                ..Default::default()
+            }),
+        );
+        let err = validator.observe(&skip).unwrap_err();
+        assert!(
+            err.to_string().contains("skipped heights"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn validator_missing_pair_on_height_change_error() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        // Only process, no finalize for height 1
+        let process = make_replay_item(
+            1,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+        validator.observe(&process).unwrap();
+
+        // Jump to height 2
+        let process2 = make_replay_item(
+            2,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 2,
+                ..Default::default()
+            }),
+        );
+        let err = validator.observe(&process2).unwrap_err();
+        assert!(
+            err.to_string().contains("missing process/finalize pair"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn validator_finish_incomplete_height_error() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+
+        let process = make_replay_item(
+            1,
+            LoadedRequest::Process(RequestProcessProposal {
+                height: 1,
+                ..Default::default()
+            }),
+        );
+        validator.observe(&process).unwrap();
+
+        let err = validator.finish().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ended before height 1 had both process_proposal and finalize_block"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn validator_info_request_ignored() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+        let info = make_replay_item(1, LoadedRequest::Info(RequestInfo::default()));
+        validator.observe(&info).unwrap();
+        validator.finish().unwrap();
+    }
+
+    #[test]
+    fn validator_init_chain_ignored() {
+        let mut validator = RequestSequenceValidator::new(PathBuf::from("/test.log"));
+        // InitChain returns height 0, which is treated as no block_height match (not Process/Finalize)
+        let init = make_replay_item(1, LoadedRequest::InitChain(RequestInitChain::default()));
+        validator.observe(&init).unwrap();
+        // InitChain is neither Process nor Finalize, so no error
+    }
+
+    // ---- LogRequestStream integration tests ----
+
+    #[test]
+    fn log_stream_reads_info_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            writeln!(
+                f,
+                r#"{{"timestamp":"2024-01-01T00:00:00Z","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}},"span":{{"endpoint":"info"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        let item = stream.next_item().unwrap().expect("expected an item");
+        assert!(matches!(item.request, LoadedRequest::Info(_)));
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn log_stream_skips_irrelevant_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            // Line without "received ABCI request"
+            writeln!(
+                f,
+                r#"{{"timestamp":"2024-01-01T00:00:00Z","fields":{{"message":"something else"}}}}"#
+            )
+            .unwrap();
+            // Empty line
+            writeln!(f).unwrap();
+            // Malformed JSON
+            writeln!(f, "not json at all").unwrap();
+            // Line without fields
+            writeln!(f, r#"{{"timestamp":"2024-01-01T00:00:00Z"}}"#).unwrap();
+            // Line with message but no request
+            writeln!(
+                f,
+                r#"{{"timestamp":"2024-01-01T00:00:00Z","fields":{{"message":"received ABCI request"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn log_stream_peek_then_next() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            writeln!(
+                f,
+                r#"{{"timestamp":"2024-01-01T00:00:00Z","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}},"span":{{"endpoint":"info"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        // Peek should return a reference without consuming
+        assert!(stream.peek().unwrap().is_some());
+        // Peek again should return the same item
+        assert!(stream.peek().unwrap().is_some());
+        // next_item should consume the buffered item
+        let item = stream.next_item().unwrap().expect("expected an item");
+        assert!(matches!(item.request, LoadedRequest::Info(_)));
+        // Stream should now be empty
+        assert!(stream.next_item().unwrap().is_none());
+    }
+
+    #[test]
+    fn log_stream_skip_processed_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            // ProcessProposal at height 1
+            writeln!(
+                f,
+                r#"{{"timestamp":"t1","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(ProcessProposal(RequestProcessProposal {{ txs: [], proposed_last_commit: None, misbehavior: [], hash: [], height: 1, round: 0, time: None, next_validators_hash: [], core_chain_locked_height: 0, core_chain_lock_update: None, proposer_pro_tx_hash: [], proposed_app_version: 1, version: None, quorum_hash: [] }})) }}"}}}}"#
+            )
+            .unwrap();
+            // ProcessProposal at height 5
+            writeln!(
+                f,
+                r#"{{"timestamp":"t2","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(ProcessProposal(RequestProcessProposal {{ txs: [], proposed_last_commit: None, misbehavior: [], hash: [], height: 5, round: 0, time: None, next_validators_hash: [], core_chain_locked_height: 0, core_chain_lock_update: None, proposer_pro_tx_hash: [], proposed_app_version: 1, version: None, quorum_hash: [] }})) }}"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        let skipped = stream.skip_processed_entries(3).unwrap();
+        assert_eq!(skipped, 1);
+        // Remaining item should be height 5
+        let item = stream.next_item().unwrap().expect("expected height 5 item");
+        assert_eq!(item.request.block_height(), Some(5));
+    }
+
+    // ---- drain_skipped_entries ----
+
+    #[test]
+    fn drain_skipped_entries_empty_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            writeln!(
+                f,
+                r#"{{"timestamp":"t1","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        drain_skipped_entries(&mut stream, &[]).unwrap();
+        // Item should still be available
+        assert!(stream.next_item().unwrap().is_some());
+    }
+
+    #[test]
+    fn drain_skipped_entries_skips_matching_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            // Line 1 - will be skipped
+            writeln!(
+                f,
+                r#"{{"timestamp":"t1","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}}}}"#
+            )
+            .unwrap();
+            // Line 2 - not skipped
+            writeln!(
+                f,
+                r#"{{"timestamp":"t2","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"2.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        let skip = vec![SkipSelector::Line(1)];
+        drain_skipped_entries(&mut stream, &skip).unwrap();
+        // The remaining item should be from line 2
+        let item = stream.next_item().unwrap().expect("expected an item");
+        assert_eq!(item.source.line(), 2);
+    }
+
+    // ---- advance_stream ----
+
+    #[test]
+    fn advance_stream_no_height_no_skip() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            writeln!(
+                f,
+                r#"{{"timestamp":"t1","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Info(RequestInfo {{ version: \"1.0\", block_version: 14, p2p_version: 10, abci_version: \"1.0\" }})) }}"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        advance_stream(&mut stream, None, &[]).unwrap();
+        assert!(stream.next_item().unwrap().is_some());
+    }
+
+    // ---- Log stream with Flush (filtered out) ----
+
+    #[test]
+    fn log_stream_flush_request_filtered_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+        {
+            let mut f = std::fs::File::create(&log_path).unwrap();
+            writeln!(
+                f,
+                r#"{{"timestamp":"t1","fields":{{"message":"received ABCI request","request":"Request {{ value: Some(Flush(RequestFlush {{}})) }}"}}}}"#
+            )
+            .unwrap();
+        }
+        let mut stream = LogRequestStream::open(&log_path).unwrap();
+        // Flush is filtered to None by parse_request_variant
+        assert!(stream.next_item().unwrap().is_none());
+    }
+}

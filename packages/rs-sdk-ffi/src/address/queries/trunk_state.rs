@@ -27,7 +27,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 pub unsafe extern "C" fn dash_sdk_address_fetch_trunk_state(
     sdk_handle: *const SDKHandle,
 ) -> DashSDKResult {
-    // Wrap the entire function in catch_unwind to prevent panics from crashing the app
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_address_fetch_trunk_state_inner(sdk_handle)
     }));
@@ -81,8 +85,7 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle)
             if let Some((balance, nonce)) = extract_balance_nonce_from_element(element) {
                 let key_vec: Vec<u8> = key.clone();
                 let key_len = key_vec.len();
-                let key_ptr = key_vec.as_ptr() as *mut u8;
-                std::mem::forget(key_vec);
+                let key_ptr = Box::into_raw(key_vec.into_boxed_slice()) as *mut u8;
 
                 elements.push(DashSDKTrunkStateElement {
                     key: key_ptr,
@@ -99,8 +102,7 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle)
         for (key, leaf_info) in grove_result.leaf_keys.iter() {
             let key_vec: Vec<u8> = key.clone();
             let key_len = key_vec.len();
-            let key_ptr = key_vec.as_ptr() as *mut u8;
-            std::mem::forget(key_vec);
+            let key_ptr = Box::into_raw(key_vec.into_boxed_slice()) as *mut u8;
 
             leaf_boundaries.push(DashSDKLeafBoundary {
                 key: key_ptr,
@@ -115,18 +117,14 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle)
         let elements_ptr = if elements.is_empty() {
             std::ptr::null_mut()
         } else {
-            let ptr = elements.as_ptr() as *mut DashSDKTrunkStateElement;
-            std::mem::forget(elements);
-            ptr
+            Box::into_raw(elements.into_boxed_slice()) as *mut DashSDKTrunkStateElement
         };
 
         let leaf_boundaries_count = leaf_boundaries.len();
         let leaf_boundaries_ptr = if leaf_boundaries.is_empty() {
             std::ptr::null_mut()
         } else {
-            let ptr = leaf_boundaries.as_ptr() as *mut DashSDKLeafBoundary;
-            std::mem::forget(leaf_boundaries);
-            ptr
+            Box::into_raw(leaf_boundaries.into_boxed_slice()) as *mut DashSDKLeafBoundary
         };
 
         Ok(DashSDKTrunkState {

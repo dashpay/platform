@@ -276,3 +276,143 @@ impl IdentityFactory {
         Ok(IdentityUpdateTransition::V0(identity_update_transition))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::accessors::IdentityGettersV0;
+    use platform_value::Identifier;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn factory_new_sets_protocol_version() {
+        let factory = IdentityFactory::new(1);
+        assert_eq!(factory.protocol_version, 1);
+    }
+
+    #[test]
+    fn factory_clone() {
+        let factory = IdentityFactory::new(1);
+        let cloned = factory.clone();
+        assert_eq!(cloned.protocol_version, 1);
+    }
+
+    #[test]
+    fn create_identity_with_empty_keys() {
+        let factory = IdentityFactory::new(1);
+        let id = Identifier::random();
+        let public_keys = BTreeMap::new();
+
+        let identity = factory.create(id, public_keys).unwrap();
+
+        assert_eq!(identity.id(), id);
+    }
+
+    #[test]
+    fn create_identity_with_invalid_version() {
+        let factory = IdentityFactory::new(u32::MAX);
+        let id = Identifier::random();
+        let public_keys = BTreeMap::new();
+
+        let result = factory.create(id, public_keys);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_identity_preserves_id() {
+        let factory = IdentityFactory::new(1);
+        let id = Identifier::random();
+        let public_keys = BTreeMap::new();
+
+        let identity = factory.create(id, public_keys).unwrap();
+        assert_eq!(identity.id(), id);
+    }
+
+    #[test]
+    fn create_identity_has_zero_balance() {
+        let factory = IdentityFactory::new(1);
+        let id = Identifier::random();
+        let public_keys = BTreeMap::new();
+
+        let identity = factory.create(id, public_keys).unwrap();
+        assert_eq!(identity.balance(), 0);
+    }
+
+    #[test]
+    fn create_identity_has_zero_revision() {
+        let factory = IdentityFactory::new(1);
+        let id = Identifier::random();
+        let public_keys = BTreeMap::new();
+
+        let identity = factory.create(id, public_keys).unwrap();
+        assert_eq!(identity.revision(), 0);
+    }
+
+    #[test]
+    fn create_identity_with_multiple_versions() {
+        // Version 1 should work
+        let factory_v1 = IdentityFactory::new(1);
+        let id = Identifier::random();
+        let result = factory_v1.create(id, BTreeMap::new());
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn create_chain_asset_lock_proof_test() {
+        let out_point = [0u8; 36];
+        let proof = IdentityFactory::create_chain_asset_lock_proof(100, out_point);
+
+        assert_eq!(proof.core_chain_locked_height, 100);
+    }
+
+    #[test]
+    fn create_chain_asset_lock_proof_different_heights() {
+        let out_point = [1u8; 36];
+        let proof = IdentityFactory::create_chain_asset_lock_proof(500, out_point);
+        assert_eq!(proof.core_chain_locked_height, 500);
+
+        let proof2 = IdentityFactory::create_chain_asset_lock_proof(0, out_point);
+        assert_eq!(proof2.core_chain_locked_height, 0);
+
+        let proof3 = IdentityFactory::create_chain_asset_lock_proof(u32::MAX, out_point);
+        assert_eq!(proof3.core_chain_locked_height, u32::MAX);
+    }
+
+    #[test]
+    fn create_two_identities_have_different_ids() {
+        let factory = IdentityFactory::new(1);
+        let id1 = Identifier::random();
+        let id2 = Identifier::random();
+
+        let identity1 = factory.create(id1, BTreeMap::new()).unwrap();
+        let identity2 = factory.create(id2, BTreeMap::new()).unwrap();
+
+        assert_ne!(identity1.id(), identity2.id());
+    }
+
+    #[test]
+    fn create_identity_with_public_keys() {
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+
+        let factory = IdentityFactory::new(1);
+        let id = Identifier::random();
+
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: vec![0u8; 33].into(),
+            disabled_at: None,
+        });
+
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(0u32, key);
+
+        let identity = factory.create(id, public_keys).unwrap();
+        assert_eq!(identity.public_keys().len(), 1);
+    }
+}

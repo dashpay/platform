@@ -465,3 +465,232 @@ fn bincode_encode_values<'a, T: IntoIterator<Item = &'a Value>>(
         })
         .collect::<Result<Vec<_>, _>>()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+
+    // ---------------------------------------------------------------
+    // Helper: to_bytes32
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_to_bytes32_valid() {
+        let input = [0xABu8; 32];
+        let result = to_bytes32(&input).expect("should convert 32-byte slice");
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_to_bytes32_invalid_length() {
+        // Too short
+        let short = [0u8; 16];
+        assert!(to_bytes32(&short).is_err());
+
+        // Too long
+        let long = [0u8; 33];
+        assert!(to_bytes32(&long).is_err());
+
+        // Empty
+        assert!(to_bytes32(&[]).is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: bincode encode/decode roundtrip
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_bincode_encode_decode_roundtrip() {
+        let values = vec![
+            Value::Text("hello".to_string()),
+            Value::U64(42),
+            Value::Bool(true),
+        ];
+        let encoded = bincode_encode_values(&values).expect("encoding should succeed");
+        assert_eq!(encoded.len(), 3);
+
+        let decoded = bincode_decode_values(encoded.iter()).expect("decoding should succeed");
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn test_bincode_decode_empty() {
+        let empty: Vec<Vec<u8>> = vec![];
+        let result = bincode_decode_values(empty.iter()).expect("empty input should succeed");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_bincode_decode_invalid() {
+        let garbage = vec![vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB]];
+        let result = bincode_decode_values(garbage.iter());
+        assert!(
+            result.is_err(),
+            "invalid bincode bytes should produce an error"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: ContestedDocumentVotePollDriveQueryResultType
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_result_type_roundtrip() {
+        use get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
+
+        let cases = vec![
+            (
+                GrpcResultType::Documents,
+                ContestedDocumentVotePollDriveQueryResultType::Documents,
+            ),
+            (
+                GrpcResultType::VoteTally,
+                ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            ),
+            (
+                GrpcResultType::DocumentsAndVoteTally,
+                ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            ),
+        ];
+
+        for (grpc_val, expected_drive) in cases {
+            // grpc -> drive
+            let drive_val =
+                ContestedDocumentVotePollDriveQueryResultType::try_from_request(grpc_val)
+                    .expect("try_from_request should succeed");
+            assert_eq!(drive_val, expected_drive);
+
+            // drive -> grpc
+            let back = drive_val
+                .try_to_request()
+                .expect("try_to_request should succeed");
+            assert_eq!(back, grpc_val);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: ContestedDocumentVotePollDriveQuery
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_query_roundtrip() {
+        let contract_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
+        let index_values = vec![Value::Text("dash".to_string())];
+
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id,
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: index_values.clone(),
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            offset: None,
+            limit: Some(10),
+            start_at: None,
+            allow_include_locked_and_abstaining_vote_tally: true,
+        };
+
+        let grpc_request = query
+            .try_to_request()
+            .expect("try_to_request should succeed");
+
+        let roundtripped = ContestedDocumentVotePollDriveQuery::try_from_request(grpc_request)
+            .expect("try_from_request should succeed");
+
+        assert_eq!(
+            roundtripped.vote_poll.contract_id,
+            query.vote_poll.contract_id
+        );
+        assert_eq!(
+            roundtripped.vote_poll.document_type_name,
+            query.vote_poll.document_type_name
+        );
+        assert_eq!(
+            roundtripped.vote_poll.index_name,
+            query.vote_poll.index_name
+        );
+        assert_eq!(
+            roundtripped.vote_poll.index_values,
+            query.vote_poll.index_values
+        );
+        assert_eq!(roundtripped.result_type, query.result_type);
+        assert_eq!(roundtripped.limit, query.limit);
+        assert_eq!(roundtripped.start_at, query.start_at);
+        assert_eq!(
+            roundtripped.allow_include_locked_and_abstaining_vote_tally,
+            query.allow_include_locked_and_abstaining_vote_tally
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: Identifier <-> GetPrefundedSpecializedBalanceRequest
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_identifier_prefunded_balance_roundtrip() {
+        let id = Identifier::from_bytes(&[7u8; 32]).unwrap();
+
+        let grpc_request: GetPrefundedSpecializedBalanceRequest =
+            id.try_to_request().expect("try_to_request should succeed");
+
+        let roundtripped =
+            Identifier::try_from_request(grpc_request).expect("try_from_request should succeed");
+
+        assert_eq!(roundtripped, id);
+    }
+
+    // ---------------------------------------------------------------
+    // Error path: SingleDocumentByContender is rejected in try_to_request
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_result_type_rejects_single_document_by_contender() {
+        let contender_id = Identifier::from_bytes(&[0xCC; 32]).unwrap();
+        let result_type =
+            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(contender_id);
+
+        let result = result_type.try_to_request();
+        assert!(
+            result.is_err(),
+            "SingleDocumentByContender should not be convertible to a gRPC request"
+        );
+
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("single document by contender"),
+            "error message should mention 'single document by contender', got: {}",
+            err_msg
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Error path: VotePollsByEndDateDriveQuery rejects offset in try_to_request
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_polls_by_end_date_rejects_offset() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: Some((2000, false)),
+            limit: Some(5),
+            offset: Some(10), // This should cause an error
+            order_ascending: true,
+        };
+
+        let result = query.try_to_request();
+        assert!(
+            result.is_err(),
+            "offset must be None for try_to_request to succeed"
+        );
+
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("offset"),
+            "error message should mention 'offset', got: {}",
+            err_msg
+        );
+    }
+}

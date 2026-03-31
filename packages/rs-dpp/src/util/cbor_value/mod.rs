@@ -211,3 +211,276 @@ pub fn cbor_map_into_json_map(
 
     Ok(serde_json::Value::Object(json_map))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ciborium::value::Value as CborValue;
+    use serde_json::json;
+
+    // --- get_key_from_cbor_map ---
+
+    #[test]
+    fn get_key_from_cbor_map_found() {
+        let map = vec![
+            (
+                CborValue::Text("name".to_string()),
+                CborValue::Text("Alice".to_string()),
+            ),
+            (
+                CborValue::Text("age".to_string()),
+                CborValue::Integer(30.into()),
+            ),
+        ];
+        let result = get_key_from_cbor_map(&map, "name");
+        assert_eq!(result, Some(&CborValue::Text("Alice".to_string())));
+    }
+
+    #[test]
+    fn get_key_from_cbor_map_not_found() {
+        let map = vec![(
+            CborValue::Text("name".to_string()),
+            CborValue::Text("Alice".to_string()),
+        )];
+        let result = get_key_from_cbor_map(&map, "missing");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_key_from_cbor_map_skips_non_text_keys() {
+        let map = vec![
+            (CborValue::Integer(1.into()), CborValue::Bool(true)),
+            (CborValue::Text("key".to_string()), CborValue::Bool(false)),
+        ];
+        let result = get_key_from_cbor_map(&map, "key");
+        assert_eq!(result, Some(&CborValue::Bool(false)));
+    }
+
+    // --- CborMapExtension for &Vec<(CborValue, CborValue)> ---
+
+    fn make_cbor_map(pairs: Vec<(&str, CborValue)>) -> Vec<(CborValue, CborValue)> {
+        pairs
+            .into_iter()
+            .map(|(k, v)| (CborValue::Text(k.to_string()), v))
+            .collect()
+    }
+
+    #[test]
+    fn cbor_map_extension_as_u16() {
+        let map = make_cbor_map(vec![("val", CborValue::Integer(1234.into()))]);
+        let result = (&map).as_u16("val", "err");
+        assert_eq!(result.unwrap(), 1234);
+    }
+
+    #[test]
+    fn cbor_map_extension_as_u16_missing() {
+        let map = make_cbor_map(vec![]);
+        let result = (&map).as_u16("val", "missing");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_u16_wrong_type() {
+        let map = make_cbor_map(vec![("val", CborValue::Text("hello".to_string()))]);
+        let result = (&map).as_u16("val", "err");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_u8() {
+        let map = make_cbor_map(vec![("val", CborValue::Integer(255.into()))]);
+        let result = (&map).as_u8("val", "err");
+        assert_eq!(result.unwrap(), 255);
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bool() {
+        let map = make_cbor_map(vec![("flag", CborValue::Bool(true))]);
+        let result = (&map).as_bool("flag", "err");
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bool_missing() {
+        let map = make_cbor_map(vec![]);
+        let result = (&map).as_bool("flag", "missing");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bool_wrong_type() {
+        let map = make_cbor_map(vec![("flag", CborValue::Integer(1.into()))]);
+        let result = (&map).as_bool("flag", "err");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bytes_from_bytes() {
+        let data = vec![1u8, 2, 3, 4];
+        let map = make_cbor_map(vec![("data", CborValue::Bytes(data.clone()))]);
+        let result = (&map).as_bytes("data", "err");
+        assert_eq!(result.unwrap(), data);
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bytes_from_array() {
+        let array = vec![CborValue::Integer(10.into()), CborValue::Integer(20.into())];
+        let map = make_cbor_map(vec![("data", CborValue::Array(array))]);
+        let result = (&map).as_bytes("data", "err");
+        assert_eq!(result.unwrap(), vec![10u8, 20]);
+    }
+
+    #[test]
+    fn cbor_map_extension_as_bytes_wrong_type() {
+        let map = make_cbor_map(vec![("data", CborValue::Bool(true))]);
+        let result = (&map).as_bytes("data", "err");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_string() {
+        let map = make_cbor_map(vec![("s", CborValue::Text("hello".to_string()))]);
+        let result = (&map).as_string("s", "err");
+        assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    fn cbor_map_extension_as_string_wrong_type() {
+        let map = make_cbor_map(vec![("s", CborValue::Integer(1.into()))]);
+        let result = (&map).as_string("s", "err");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cbor_map_extension_as_u64() {
+        let map = make_cbor_map(vec![("n", CborValue::Integer(999999.into()))]);
+        let result = (&map).as_u64("n", "err");
+        assert_eq!(result.unwrap(), 999999);
+    }
+
+    // --- cbor_value_to_json_value ---
+
+    #[test]
+    fn cbor_integer_to_json() {
+        let result = cbor_value_to_json_value(&CborValue::Integer(42.into())).unwrap();
+        assert_eq!(result, json!(42));
+    }
+
+    #[test]
+    fn cbor_text_to_json() {
+        let result = cbor_value_to_json_value(&CborValue::Text("hello".to_string())).unwrap();
+        assert_eq!(result, json!("hello"));
+    }
+
+    #[test]
+    fn cbor_bool_to_json() {
+        let result = cbor_value_to_json_value(&CborValue::Bool(true)).unwrap();
+        assert_eq!(result, json!(true));
+    }
+
+    #[test]
+    fn cbor_null_to_json() {
+        let result = cbor_value_to_json_value(&CborValue::Null).unwrap();
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn cbor_float_to_json() {
+        let result = cbor_value_to_json_value(&CborValue::Float(3.14)).unwrap();
+        assert_eq!(result, json!(3.14));
+    }
+
+    #[test]
+    fn cbor_bytes_to_json_array() {
+        let result = cbor_value_to_json_value(&CborValue::Bytes(vec![1, 2, 3])).unwrap();
+        assert_eq!(result, json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn cbor_array_to_json_array() {
+        let cbor = CborValue::Array(vec![
+            CborValue::Integer(1.into()),
+            CborValue::Text("two".to_string()),
+        ]);
+        let result = cbor_value_to_json_value(&cbor).unwrap();
+        assert_eq!(result, json!([1, "two"]));
+    }
+
+    #[test]
+    fn cbor_map_to_json_object() {
+        let cbor = CborValue::Map(vec![(
+            CborValue::Text("key".to_string()),
+            CborValue::Integer(10.into()),
+        )]);
+        let result = cbor_value_to_json_value(&cbor).unwrap();
+        assert_eq!(result, json!({"key": 10}));
+    }
+
+    // --- cbor_value_into_json_value (owned) ---
+
+    #[test]
+    fn cbor_into_json_integer() {
+        let result = cbor_value_into_json_value(CborValue::Integer(99.into())).unwrap();
+        assert_eq!(result, json!(99));
+    }
+
+    #[test]
+    fn cbor_into_json_text() {
+        let result = cbor_value_into_json_value(CborValue::Text("world".to_string())).unwrap();
+        assert_eq!(result, json!("world"));
+    }
+
+    #[test]
+    fn cbor_into_json_null() {
+        let result = cbor_value_into_json_value(CborValue::Null).unwrap();
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn cbor_into_json_nested_array() {
+        let cbor = CborValue::Array(vec![CborValue::Array(vec![CborValue::Integer(1.into())])]);
+        let result = cbor_value_into_json_value(cbor).unwrap();
+        assert_eq!(result, json!([[1]]));
+    }
+
+    // --- cbor_map_to_json_map ---
+
+    #[test]
+    fn test_cbor_map_to_json_map_valid() {
+        let map = vec![
+            (
+                CborValue::Text("a".to_string()),
+                CborValue::Integer(1.into()),
+            ),
+            (CborValue::Text("b".to_string()), CborValue::Bool(false)),
+        ];
+        let result = cbor_map_to_json_map(&map).unwrap();
+        assert_eq!(result, json!({"a": 1, "b": false}));
+    }
+
+    #[test]
+    fn test_cbor_map_to_json_map_non_string_key() {
+        let map = vec![(CborValue::Integer(1.into()), CborValue::Bool(true))];
+        let result = cbor_map_to_json_map(&map);
+        assert!(result.is_err());
+    }
+
+    // --- cbor_map_into_json_map (owned) ---
+
+    #[test]
+    fn test_cbor_map_into_json_map_valid() {
+        let map = vec![(
+            CborValue::Text("x".to_string()),
+            CborValue::Text("y".to_string()),
+        )];
+        let result = cbor_map_into_json_map(map).unwrap();
+        assert_eq!(result, json!({"x": "y"}));
+    }
+
+    #[test]
+    fn test_cbor_map_into_json_map_non_string_key() {
+        let map = vec![(CborValue::Integer(1.into()), CborValue::Bool(true))];
+        let result = cbor_map_into_json_map(map);
+        assert!(result.is_err());
+    }
+}

@@ -5,6 +5,8 @@ pub mod identity_token_balances;
 pub mod token_contract_info;
 /// Token info queries
 pub mod token_info;
+/// Token pre-programmed distributions query
+pub mod token_pre_programmed_distributions;
 /// Token status query
 pub mod token_status;
 /// Token total supply query

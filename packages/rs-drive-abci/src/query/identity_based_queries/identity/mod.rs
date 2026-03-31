@@ -56,3 +56,70 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_identity_with_none_version_returns_decoding_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityRequest { version: None };
+
+        let result = platform
+            .query_identity(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode identity query")
+        ));
+    }
+
+    #[test]
+    fn test_query_identity_with_valid_v0_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityRequest {
+            version: Some(RequestVersion::V0(GetIdentityRequestV0 {
+                id: vec![0; 32],
+                prove: false,
+            })),
+        };
+
+        let result = platform
+            .query_identity(request, &state, version)
+            .expect("expected query to succeed");
+
+        // Identity doesn't exist, so we get NotFound
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::NotFound(_)]
+        ));
+    }
+
+    #[test]
+    fn test_query_identity_with_valid_v0_version_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityRequest {
+            version: Some(RequestVersion::V0(GetIdentityRequestV0 {
+                id: vec![0; 32],
+                prove: true,
+            })),
+        };
+
+        let result = platform
+            .query_identity(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.is_valid());
+
+        let response = result.data.expect("expected response data");
+        assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
+    }
+}

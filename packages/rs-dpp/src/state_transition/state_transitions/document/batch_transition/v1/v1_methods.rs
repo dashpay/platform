@@ -92,7 +92,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut mint_transition = TokenMintTransition::V0(TokenMintTransitionV0 {
@@ -113,7 +113,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = mint_transition.calculate_action_id(owner_id);
+                    let action_id =
+                        mint_transition.calculate_action_id(owner_id, platform_version)?;
                     mint_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -168,7 +169,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut burn_transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
@@ -188,7 +189,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = burn_transition.calculate_action_id(owner_id);
+                    let action_id =
+                        burn_transition.calculate_action_id(owner_id, platform_version)?;
                     burn_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -309,7 +311,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut freeze_transition = TokenFreezeTransition::V0(TokenFreezeTransitionV0 {
@@ -329,7 +331,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = freeze_transition.calculate_action_id(owner_id);
+                    let action_id =
+                        freeze_transition.calculate_action_id(owner_id, platform_version)?;
                     freeze_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -386,7 +389,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut unfreeze_transition = TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
@@ -406,7 +409,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = unfreeze_transition.calculate_action_id(owner_id);
+                    let action_id =
+                        unfreeze_transition.calculate_action_id(owner_id, platform_version)?;
                     unfreeze_transition.base_mut().set_using_group_info(Some(
                         GroupStateTransitionInfo {
                             group_contract_position,
@@ -463,7 +467,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut destroy_frozen_funds_transition =
@@ -484,7 +488,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = destroy_frozen_funds_transition.calculate_action_id(owner_id);
+                    let action_id = destroy_frozen_funds_transition
+                        .calculate_action_id(owner_id, platform_version)?;
                     destroy_frozen_funds_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -542,7 +547,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut emergency_action_transition =
@@ -563,7 +568,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = emergency_action_transition.calculate_action_id(owner_id);
+                    let action_id = emergency_action_transition
+                        .calculate_action_id(owner_id, platform_version)?;
                     emergency_action_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -619,7 +625,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut config_update_transition =
@@ -640,7 +646,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id = config_update_transition.calculate_action_id(owner_id);
+                    let action_id =
+                        config_update_transition.calculate_action_id(owner_id, platform_version)?;
                     config_update_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {
@@ -749,7 +756,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
         signer: &S,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let mut change_direct_purchase_price_transition =
@@ -772,8 +779,8 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
                 GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(
                     group_contract_position,
                 ) => {
-                    let action_id =
-                        change_direct_purchase_price_transition.calculate_action_id(owner_id);
+                    let action_id = change_direct_purchase_price_transition
+                        .calculate_action_id(owner_id, platform_version)?;
                     change_direct_purchase_price_transition
                         .base_mut()
                         .set_using_group_info(Some(GroupStateTransitionInfo {

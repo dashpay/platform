@@ -126,4 +126,22 @@ pub trait AddressProvider: Send {
     fn last_sync_height(&self) -> u64 {
         0
     }
+
+    /// Get the last known recent block height from a previous sync.
+    ///
+    /// Returns the [`last_known_recent_block`](super::AddressSyncResult::last_known_recent_block)
+    /// value from the previous call. This is the highest block height that
+    /// was present in the most recent per-block address balance changes
+    /// batch.
+    ///
+    /// When non-zero, the SDK uses `RangeAfter` (exclusive start) for the
+    /// recent query, causing this height to appear as a boundary node in the
+    /// GroveDB proof. This enables `key_exists_as_boundary` to detect
+    /// whether the height has been compacted away, eliminating unnecessary
+    /// compacted queries on the hot path.
+    ///
+    /// Default returns `0` (no prior recent block; use inclusive `RangeFrom`).
+    fn last_known_recent_block_height(&self) -> u64 {
+        0
+    }
 }

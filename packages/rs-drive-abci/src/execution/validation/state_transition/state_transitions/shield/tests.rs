@@ -3,7 +3,8 @@ mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, create_dummy_witness, create_platform_address,
-        process_transition, setup_address_with_balance, setup_platform, TestAddressSigner,
+        get_proving_key, process_transition, serialize_authorized_bundle_with_flags,
+        setup_address_with_balance, setup_platform, TestAddressSigner,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
@@ -24,13 +25,12 @@ mod tests {
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
     use grovedb_commitment_tree::{
-        Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
-        Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+        Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey, NoteValue,
+        Scope, SpendingKey,
     };
     use platform_version::version::PlatformVersion;
     use rand::rngs::OsRng;
     use std::collections::BTreeMap;
-    use std::sync::OnceLock;
 
     // ==========================================
     // Helper Functions (transition-specific)
@@ -129,49 +129,8 @@ mod tests {
         )
     }
 
-    // ==========================================
-    // Orchard Proving Key (cached, ~30s to build)
-    // ==========================================
-
-    static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
-    fn get_proving_key() -> &'static ProvingKey {
-        TEST_PROVING_KEY.get_or_init(ProvingKey::build)
-    }
-
-    /// Extract serialized fields from an authorized Orchard bundle into the
-    /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
-    fn serialize_authorized_bundle(
-        bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-    ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-        let actions: Vec<SerializedAction> = bundle
-            .actions()
-            .iter()
-            .map(|action| {
-                let enc = action.encrypted_note();
-                let mut encrypted_note = Vec::with_capacity(216);
-                encrypted_note.extend_from_slice(&enc.epk_bytes);
-                encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
-                encrypted_note.extend_from_slice(&enc.out_ciphertext);
-
-                SerializedAction {
-                    nullifier: action.nullifier().to_bytes(),
-                    rk: <[u8; 32]>::from(action.rk()),
-                    cmx: action.cmx().to_bytes(),
-                    encrypted_note,
-                    cv_net: action.cv_net().to_bytes(),
-                    spend_auth_sig: <[u8; 64]>::from(action.authorization()),
-                }
-            })
-            .collect();
-
-        let flags = bundle.flags().to_byte();
-        let value_balance = *bundle.value_balance();
-        let anchor = bundle.anchor().to_bytes();
-        let proof = bundle.authorization().proof().as_ref().to_vec();
-        let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-
-        (actions, flags, value_balance, anchor, proof, binding_sig)
-    }
+    // (Orchard ProvingKey and serialize_authorized_bundle are now shared
+    //  via test_helpers::get_proving_key / serialize_authorized_bundle_with_flags)
 
     // ==========================================
     // STRUCTURE VALIDATION TESTS (BasicError)
@@ -838,7 +797,7 @@ mod tests {
 
             // --- Extract serialized fields from the authorized bundle ---
             let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                serialize_authorized_bundle(&bundle);
+                serialize_authorized_bundle_with_flags(&bundle);
 
             // value_balance should be negative for shield (money going into pool)
             assert!(value_balance < 0);
@@ -1016,7 +975,7 @@ mod tests {
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
             let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                serialize_authorized_bundle(&bundle);
+                serialize_authorized_bundle_with_flags(&bundle);
 
             assert!(value_balance < 0);
             let honest_shield_amount = (-value_balance) as u64;
@@ -1075,6 +1034,113 @@ mod tests {
                 )]
             );
         }
+
+        /// Regression test for shield input mismatch inflation bug.
+        ///
+        /// An attacker constructs a shield transition where the transparent inputs
+        /// provide far less than the declared shield `amount`. Without the
+        /// `sum(inputs) >= amount` check in structure validation, the pool would be
+        /// credited by `amount` while addresses are only debited by `requested_input_amount`,
+        /// minting credits from nothing.
+        ///
+        /// With the fix, the transition is rejected at structure validation.
+        ///
+        /// Based on reproducer by pasta (commit a85f4b74).
+        #[test]
+        fn test_rejects_shield_when_inputs_less_than_amount() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let initial_address_balance = dash_to_credits!(1.0);
+            let requested_input_amount = 100_000u64;
+            let forged_shield_amount = 50_000_000u64;
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([9u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_address_balance);
+
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(forged_shield_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+
+            assert_eq!(
+                (-value_balance) as u64,
+                forged_shield_amount,
+                "bundle should authorize the inflated shield amount",
+            );
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, requested_input_amount));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: forged_shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let witnesses: Vec<AddressWitness> = inputs
+                .keys()
+                .map(|address| {
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .expect("should sign")
+                })
+                .collect();
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let processing_result = process_transition(&mut platform, st, platform_version);
+
+            // The transition must be rejected — inputs (100k) < shield amount (50M).
+            // Structure validation catches this before any state reads or ZK proof verification.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
+            );
+        }
     }
 
     // ==========================================
@@ -1088,52 +1154,10 @@ mod tests {
         use dpp::state_transition::proof_result::StateTransitionProofResult;
         use drive::drive::Drive;
         use grovedb_commitment_tree::{
-            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType, DashMemo,
-            Flags as OrchardFlags, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+            Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey,
+            NoteValue, Scope, SpendingKey,
         };
         use rand::rngs::OsRng;
-        use std::sync::OnceLock;
-
-        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
-        fn get_proving_key() -> &'static ProvingKey {
-            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
-        }
-
-        /// Extract serialized fields from an authorized Orchard bundle into the
-        /// platform-compatible format: (actions, flags, value_balance, anchor, proof, binding_sig).
-        /// Returns `i64` for value_balance (shield bundles have negative value_balance).
-        fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, u8, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let actions: Vec<SerializedAction> = bundle
-                .actions()
-                .iter()
-                .map(|action| {
-                    let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(216);
-                    encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
-                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
-
-                    SerializedAction {
-                        nullifier: action.nullifier().to_bytes(),
-                        rk: <[u8; 32]>::from(action.rk()),
-                        cmx: action.cmx().to_bytes(),
-                        encrypted_note,
-                        cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
-                    }
-                })
-                .collect();
-
-            let flags = bundle.flags().to_byte();
-            let value_balance = *bundle.value_balance();
-            let anchor = bundle.anchor().to_bytes();
-            let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-
-            (actions, flags, value_balance, anchor, proof, binding_sig)
-        }
 
         #[test]
         fn test_shield_prove_and_verify_address_balances() {
@@ -1176,7 +1200,7 @@ mod tests {
 
             // --- Extract serialized fields from the authorized bundle ---
             let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                serialize_authorized_bundle(&bundle);
+                serialize_authorized_bundle_with_flags(&bundle);
 
             // value_balance should be negative for shield (money going into pool)
             assert!(value_balance < 0);

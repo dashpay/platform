@@ -44,7 +44,6 @@ use dpp::{
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
-    ProtocolError,
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
@@ -56,7 +55,7 @@ use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
-    dpp::version as platform_version,
+    dpp::{version as platform_version, ProtocolError},
     platform_serialization::{PlatformVersionEncode, PlatformVersionedDecode},
     platform_serialization_derive::{PlatformDeserialize, PlatformSerialize},
 };
@@ -364,7 +363,10 @@ impl FromIterator<ContestedResource> for ContestedResources {
     derive(PlatformSerialize, PlatformDeserialize, Encode, Decode),
     platform_serialize(unversioned)
 )]
-pub struct ContestedVote(ContestedDocumentResourceVotePoll, ResourceVoteChoice);
+pub struct ContestedVote(
+    pub ContestedDocumentResourceVotePoll,
+    pub ResourceVoteChoice,
+);
 
 /// Votes casted by some identity.
 pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
@@ -662,6 +664,37 @@ pub struct ProposerBlockCountById(pub u64);
 
 /// Prices for direct purchase of tokens. Retrieved by [TokenPricingSchedule::fetch_many()].
 pub type TokenDirectPurchasePrices = RetrievedObjects<Identifier, TokenPricingSchedule>;
+
+/// Pre-programmed token distributions grouped by timestamp.
+///
+/// Each entry maps a timestamp (in milliseconds) to a collection of
+/// `(Identifier, Credits)` pairs representing the recipients and their token amounts in credits.
+#[derive(Debug, Clone, Default, derive_more::From)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct TokenPreProgrammedDistributions(
+    pub BTreeMap<TimestampMillis, BTreeMap<Identifier, Credits>>,
+);
+
+impl TokenPreProgrammedDistributions {
+    /// Get the inner map.
+    pub fn into_inner(self) -> BTreeMap<TimestampMillis, BTreeMap<Identifier, Credits>> {
+        self.0
+    }
+}
+
+impl FromIterator<(TimestampMillis, BTreeMap<Identifier, Credits>)>
+    for TokenPreProgrammedDistributions
+{
+    fn from_iter<T: IntoIterator<Item = (TimestampMillis, BTreeMap<Identifier, Credits>)>>(
+        iter: T,
+    ) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
 
 /// Address balance changes for a single block.
 #[derive(Debug, Clone)]

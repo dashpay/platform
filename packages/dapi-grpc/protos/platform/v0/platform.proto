@@ -2077,6 +2077,11 @@ message GetRecentAddressBalanceChangesRequest {
   message GetRecentAddressBalanceChangesRequestV0 {
     uint64 start_height = 1 [ jstype = JS_STRING ];
     bool prove = 2;
+    // When true, use exclusive start (RangeAfter) instead of inclusive start
+    // (RangeFrom). The start_height key becomes a boundary node in the proof
+    // rather than a result element, enabling compaction detection via
+    // key_exists_as_boundary.
+    bool start_height_exclusive = 3;
   }
   oneof version { GetRecentAddressBalanceChangesRequestV0 v0 = 1; }
 }

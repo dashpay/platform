@@ -79,3 +79,201 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_no_upgrade_when_no_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // No votes have been cast, so no version should pass threshold
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_upgrade_when_sufficient_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // Simulate votes: put enough votes for the next version in the global cache
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            // With 100 active hpmns and 75% threshold, we need 76 votes (1 + 100*75/100 = 76)
+            counter.global_cache.insert(next_version, 80);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_no_upgrade_when_insufficient_votes() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // Simulate votes below threshold
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            // With 100 active hpmns and 75% threshold, we need 76 votes
+            // Only supply 50
+            counter.global_cache.insert(next_version, 50);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_error_when_multiple_versions_pass_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+        let another_version = platform_version.protocol_version + 2;
+
+        // Simulate two versions both passing the threshold (an incoherence situation)
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 80);
+            counter.global_cache.insert(another_version, 80);
+        }
+
+        let result = platform.check_for_desired_protocol_upgrade_v0(100, platform_version);
+
+        assert!(result.is_err());
+        match result {
+            Err(Error::Execution(ExecutionError::ProtocolUpgradeIncoherence(_))) => {}
+            _ => panic!("expected ProtocolUpgradeIncoherence error"),
+        }
+    }
+
+    #[test]
+    fn test_upgrade_with_votes_exactly_at_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // Calculate the exact threshold
+        let pct = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
+        let required = 1 + (100u64 * pct / 100);
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, required);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_no_upgrade_with_one_below_threshold() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // Calculate the exact threshold and supply one less
+        let pct = platform_version
+            .drive_abci
+            .methods
+            .protocol_upgrade
+            .protocol_version_upgrade_percentage_needed;
+        let required = 1 + (100u64 * pct / 100);
+
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, required - 1);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(100, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_upgrade_with_zero_active_hpmns() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // With 0 active hpmns, required = 1 + 0 = 1
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 1);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(0, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+
+    #[test]
+    fn test_upgrade_with_single_active_hpmn() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let next_version = platform_version.protocol_version + 1;
+
+        // With 1 active hpmn and 75% threshold: required = 1 + (1 * 75 / 100) = 1
+        // Since 1*75/100 = 0 in integer division, required = 1
+        {
+            let mut counter = platform.drive.cache.protocol_versions_counter.write();
+            counter.global_cache.insert(next_version, 1);
+        }
+
+        let result = platform
+            .check_for_desired_protocol_upgrade_v0(1, platform_version)
+            .expect("expected no error");
+
+        assert_eq!(result, Some(next_version));
+    }
+}

@@ -51,3 +51,156 @@ impl TokenBurnTransitionActionStructureValidationV0 for TokenBurnTransition {
         Ok(SimpleConsensusValidationResult::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::group::GroupStateTransitionInfo;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use crate::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+    use platform_value::Identifier;
+
+    fn make_base() -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::default(),
+            token_id: Identifier::new([1u8; 32]),
+            using_group_info: None,
+        })
+    }
+
+    fn make_base_with_group(is_proposer: bool) -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::default(),
+            token_id: Identifier::new([1u8; 32]),
+            using_group_info: Some(GroupStateTransitionInfo {
+                group_contract_position: 0,
+                action_id: Identifier::new([10u8; 32]),
+                action_is_proposer: is_proposer,
+            }),
+        })
+    }
+
+    fn make_valid_burn() -> TokenBurnTransition {
+        TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: 500,
+            public_note: None,
+        })
+    }
+
+    #[test]
+    fn valid_burn_passes() {
+        let transition = make_valid_burn();
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn zero_burn_amount_returns_invalid_token_amount_error() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: 0,
+            public_note: None,
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+        ));
+    }
+
+    #[test]
+    fn burn_amount_exceeding_max_returns_invalid_token_amount_error() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: MAX_DISTRIBUTION_PARAM + 1,
+            public_note: None,
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenAmountError(_))
+        ));
+    }
+
+    #[test]
+    fn burn_amount_at_max_distribution_param_passes() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: MAX_DISTRIBUTION_PARAM,
+            public_note: None,
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn public_note_too_big_returns_error() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: 100,
+            public_note: Some("x".repeat(MAX_TOKEN_NOTE_LEN + 1)),
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_))
+        ));
+    }
+
+    #[test]
+    fn public_note_at_max_length_passes() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: 100,
+            public_note: Some("x".repeat(MAX_TOKEN_NOTE_LEN)),
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn note_on_non_proposer_returns_error() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base_with_group(false),
+            burn_amount: 100,
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::TokenNoteOnlyAllowedWhenProposerError(_))
+        ));
+    }
+
+    #[test]
+    fn note_on_proposer_passes() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base_with_group(true),
+            burn_amount: 100,
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn note_without_group_info_passes() {
+        let transition = TokenBurnTransition::V0(TokenBurnTransitionV0 {
+            base: make_base(),
+            burn_amount: 100,
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition.validate_structure_v0().unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+}

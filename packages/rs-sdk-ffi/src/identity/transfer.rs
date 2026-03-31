@@ -1,4 +1,22 @@
 //! Identity credit transfer operations
+//!
+//! # Safety note on pointer validation
+//!
+//! Previous versions of this code used `std::panic::catch_unwind` around raw pointer
+//! dereferences in an attempt to detect invalid (dangling) pointers. This was removed
+//! because:
+//!
+//! 1. Dereferencing an invalid pointer is **undefined behavior** in Rust, regardless of
+//!    whether it is wrapped in `catch_unwind`. The UB occurs at the dereference itself,
+//!    before any panic could be raised.
+//! 2. The release profile sets `panic = "abort"`, which means `catch_unwind` is a
+//!    complete no-op in release builds -- the compiler eliminates it entirely.
+//! 3. `AssertUnwindSafe` further suppressed any soundness diagnostics.
+//!
+//! The only sound validation we can perform on a raw pointer without a handle registry
+//! is a null check, which is what we do now. Callers are responsible for ensuring that
+//! non-null pointers are valid and properly aligned as documented in each function's
+//! `# Safety` section.
 
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -77,56 +95,16 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
 
-    // Carefully validate the identity handle
-    eprintln!("🔵 dash_sdk_identity_transfer_credits: About to dereference identity handle...");
-    let from_identity = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        &*(from_identity_handle as *const Identity)
-    })) {
-        Ok(identity) => {
-            eprintln!(
-                "🔵 dash_sdk_identity_transfer_credits: Identity handle dereferenced successfully"
-            );
-            identity
-        }
-        Err(_) => {
-            eprintln!("❌ dash_sdk_identity_transfer_credits: Failed to dereference identity handle - invalid pointer");
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "Invalid identity handle - possible use after free".to_string(),
-            ));
-        }
-    };
-
+    // SAFETY: Null check was performed above. Caller must guarantee the pointer is valid
+    // and points to a live Identity. We cannot detect dangling pointers without a handle
+    // registry; null checks are the only sound validation available.
+    let from_identity = &*(from_identity_handle as *const Identity);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
-    eprintln!("🔵 dash_sdk_identity_transfer_credits: All handles dereferenced successfully");
     eprintln!(
         "🔵 dash_sdk_identity_transfer_credits: public_key_id = {}",
         public_key_id
     );
-
-    // Try to access identity fields safely
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        eprintln!(
-            "🔵 dash_sdk_identity_transfer_credits: Identity ID = {:?}",
-            from_identity.id()
-        );
-        eprintln!(
-            "🔵 dash_sdk_identity_transfer_credits: Identity balance = {}",
-            from_identity.balance()
-        );
-    })) {
-        Ok(_) => eprintln!(
-            "🔵 dash_sdk_identity_transfer_credits: Identity fields accessed successfully"
-        ),
-        Err(_) => {
-            eprintln!("❌ dash_sdk_identity_transfer_credits: Failed to access identity fields - corrupted identity");
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "Identity handle points to corrupted data".to_string(),
-            ));
-        }
-    };
 
     let to_identity_id_str = match CStr::from_ptr(to_identity_id).to_str() {
         Ok(s) => {
@@ -245,7 +223,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
 
         eprintln!("🔵 dash_sdk_identity_transfer_credits: Defensive checks complete");
 
-        // Additional check on the signing_key if present
+        // Log signing key details for diagnostics
         if let Some(key) = signing_key {
             eprintln!("🔵 dash_sdk_identity_transfer_credits: Signing key details:");
             eprintln!("  - Key ID: {}", key.id());
@@ -253,15 +231,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
             eprintln!("  - Security level: {:?}", key.security_level());
             eprintln!("  - Key type: {:?}", key.key_type());
             eprintln!("  - Read only: {}", key.read_only());
-
-            // Try to access the key data to see if it crashes here
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _data = key.data();
-                eprintln!("  - Key data length: {} bytes", key.data().len());
-            })) {
-                Ok(_) => eprintln!("  - Key data is accessible"),
-                Err(_) => eprintln!("  ❌ Key data access caused panic!"),
-            }
+            eprintln!("  - Key data length: {} bytes", key.data().len());
         }
 
         eprintln!("🔵 dash_sdk_identity_transfer_credits: About to call SDK's transfer_credits method");
@@ -309,5 +279,179 @@ pub unsafe extern "C" fn dash_sdk_transfer_credits_result_free(
 ) {
     if !result.is_null() {
         let _ = Box::from_raw(result);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::{
+        create_c_string, create_mock_sdk_handle, create_mock_signer, destroy_mock_sdk_handle,
+    };
+    use std::ffi::CString;
+
+    /// Verify that passing a null identity handle returns an error instead of crashing.
+    ///
+    /// This is the core test for the security fix: previous code wrapped the raw pointer
+    /// dereference in `catch_unwind`, which was undefined behavior and a no-op under
+    /// `panic = "abort"`. The replacement null check must correctly return an error.
+    #[test]
+    fn null_identity_handle_returns_error() {
+        let sdk_handle = create_mock_sdk_handle();
+        let to_id = create_c_string("11111111111111111111111111111111");
+        let signer = create_mock_signer();
+        let signer_ptr = Box::into_raw(signer) as *const crate::types::SignerHandle;
+
+        let result = unsafe {
+            dash_sdk_identity_transfer_credits(
+                sdk_handle,
+                std::ptr::null(), // null identity handle
+                to_id,
+                1000,
+                0,
+                signer_ptr,
+                std::ptr::null(),
+            )
+        };
+
+        // Should return an error, not crash
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null identity handle"
+        );
+        assert!(result.data.is_null(), "Expected null data on error");
+
+        // Verify error code is InvalidParameter
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up error message
+        if !error.message.is_null() {
+            let msg = unsafe { CString::from_raw(error.message as *mut _) };
+            let msg_str = msg.to_str().expect("valid utf-8");
+            assert!(
+                msg_str.contains("null"),
+                "Error message should mention null, got: {}",
+                msg_str
+            );
+        }
+
+        // Clean up
+        unsafe {
+            let _ = Box::from_raw(result.error);
+            let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
+            let _ = CString::from_raw(to_id as *mut _);
+            destroy_mock_sdk_handle(sdk_handle);
+        }
+    }
+
+    /// Verify that passing a null SDK handle returns an error instead of crashing.
+    #[test]
+    fn null_sdk_handle_returns_error() {
+        let to_id = create_c_string("11111111111111111111111111111111");
+        let signer = create_mock_signer();
+        let signer_ptr = Box::into_raw(signer) as *const crate::types::SignerHandle;
+
+        let result = unsafe {
+            dash_sdk_identity_transfer_credits(
+                std::ptr::null_mut(),         // null SDK handle
+                0x1 as *const IdentityHandle, // non-null but unused due to early return
+                to_id,
+                1000,
+                0,
+                signer_ptr,
+                std::ptr::null(),
+            )
+        };
+
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null SDK handle"
+        );
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up
+        unsafe {
+            if !error.message.is_null() {
+                let _ = CString::from_raw(error.message as *mut _);
+            }
+            let _ = Box::from_raw(result.error);
+            let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
+            let _ = CString::from_raw(to_id as *mut _);
+        }
+    }
+
+    /// Verify that passing a null signer handle returns an error instead of crashing.
+    #[test]
+    fn null_signer_handle_returns_error() {
+        let sdk_handle = create_mock_sdk_handle();
+        let to_id = create_c_string("11111111111111111111111111111111");
+
+        let result = unsafe {
+            dash_sdk_identity_transfer_credits(
+                sdk_handle,
+                0x1 as *const IdentityHandle, // non-null but unused due to early return
+                to_id,
+                1000,
+                0,
+                std::ptr::null(), // null signer handle
+                std::ptr::null(),
+            )
+        };
+
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null signer handle"
+        );
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up
+        unsafe {
+            if !error.message.is_null() {
+                let _ = CString::from_raw(error.message as *mut _);
+            }
+            let _ = Box::from_raw(result.error);
+            let _ = CString::from_raw(to_id as *mut _);
+            destroy_mock_sdk_handle(sdk_handle);
+        }
+    }
+
+    /// Verify that passing a null to_identity_id returns an error instead of crashing.
+    #[test]
+    fn null_to_identity_id_returns_error() {
+        let sdk_handle = create_mock_sdk_handle();
+        let signer = create_mock_signer();
+        let signer_ptr = Box::into_raw(signer) as *const crate::types::SignerHandle;
+
+        let result = unsafe {
+            dash_sdk_identity_transfer_credits(
+                sdk_handle,
+                0x1 as *const IdentityHandle, // non-null but unused due to early return
+                std::ptr::null(),             // null to_identity_id
+                1000,
+                0,
+                signer_ptr,
+                std::ptr::null(),
+            )
+        };
+
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null to_identity_id"
+        );
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up
+        unsafe {
+            if !error.message.is_null() {
+                let _ = CString::from_raw(error.message as *mut _);
+            }
+            let _ = Box::from_raw(result.error);
+            let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
+            destroy_mock_sdk_handle(sdk_handle);
+        }
     }
 }

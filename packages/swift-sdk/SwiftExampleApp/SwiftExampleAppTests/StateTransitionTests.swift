@@ -72,13 +72,6 @@ final class StateTransitionTests: XCTestCase {
     print("✅ SDK initialized successfully")
   }
 
-  func testSimpleAsync() async throws {
-    // Test that async tests work at all
-    print("Starting simple async test")
-    try await Task.sleep(nanoseconds: 100_000_000)  // 0.1 second
-    print("Simple async test completed")
-    XCTAssertTrue(true)
-  }
 
   func testIdentityCreditTransferDebug() async throws {
     print("Test started")
@@ -180,7 +173,6 @@ final class StateTransitionTests: XCTestCase {
 
     // This test just verifies setup is correct
     // The actual async transfer would be executed in testIdentityCreditTransferAsync
-    XCTAssertTrue(true)
   }
 
   func testBasicSetup() throws {

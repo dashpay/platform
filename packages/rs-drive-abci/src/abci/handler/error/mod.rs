@@ -196,3 +196,275 @@ pub fn error_into_exception(error: Error) -> proto::ResponseException {
         error: error.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::execution::ExecutionError;
+
+    #[test]
+    fn handler_error_code_cancelled() {
+        let err = HandlerError::Cancelled("cancelled".into());
+        assert_eq!(err.code(), HandlerErrorCode::Cancelled as u32);
+        assert_eq!(err.code(), 1);
+    }
+
+    #[test]
+    fn handler_error_code_unknown() {
+        let err = HandlerError::Unknown("unknown".into());
+        assert_eq!(err.code(), HandlerErrorCode::Unknown as u32);
+        assert_eq!(err.code(), 2);
+    }
+
+    #[test]
+    fn handler_error_code_invalid_argument() {
+        let err = HandlerError::InvalidArgument("bad arg".into());
+        assert_eq!(err.code(), HandlerErrorCode::InvalidArgument as u32);
+        assert_eq!(err.code(), 3);
+    }
+
+    #[test]
+    fn handler_error_code_deadline_exceeded() {
+        let err = HandlerError::DeadlineExceeded("timeout".into());
+        assert_eq!(err.code(), HandlerErrorCode::DeadlineExceeded as u32);
+        assert_eq!(err.code(), 4);
+    }
+
+    #[test]
+    fn handler_error_code_not_found() {
+        let err = HandlerError::NotFound("missing".into());
+        assert_eq!(err.code(), HandlerErrorCode::NotFound as u32);
+        assert_eq!(err.code(), 5);
+    }
+
+    #[test]
+    fn handler_error_code_already_exists() {
+        let err = HandlerError::AlreadyExists("exists".into());
+        assert_eq!(err.code(), HandlerErrorCode::AlreadyExists as u32);
+        assert_eq!(err.code(), 6);
+    }
+
+    #[test]
+    fn handler_error_code_permission_denied() {
+        let err = HandlerError::PermissionDenied("denied".into());
+        assert_eq!(err.code(), HandlerErrorCode::PermissionDenied as u32);
+        assert_eq!(err.code(), 7);
+    }
+
+    #[test]
+    fn handler_error_code_resource_exhausted() {
+        let err = HandlerError::ResourceExhausted("exhausted".into());
+        assert_eq!(err.code(), HandlerErrorCode::ResourceExhausted as u32);
+        assert_eq!(err.code(), 8);
+    }
+
+    #[test]
+    fn handler_error_code_failed_precondition() {
+        let err = HandlerError::FailedPrecondition("precondition".into());
+        assert_eq!(err.code(), HandlerErrorCode::FailedPrecondition as u32);
+        assert_eq!(err.code(), 9);
+    }
+
+    #[test]
+    fn handler_error_code_aborted() {
+        let err = HandlerError::Aborted("aborted".into());
+        assert_eq!(err.code(), HandlerErrorCode::Aborted as u32);
+        assert_eq!(err.code(), 10);
+    }
+
+    #[test]
+    fn handler_error_code_out_of_range() {
+        let err = HandlerError::OutOfRange("range".into());
+        assert_eq!(err.code(), HandlerErrorCode::OutOfRange as u32);
+        assert_eq!(err.code(), 11);
+    }
+
+    #[test]
+    fn handler_error_code_unimplemented() {
+        let err = HandlerError::Unimplemented("not impl".into());
+        assert_eq!(err.code(), HandlerErrorCode::Unimplemented as u32);
+        assert_eq!(err.code(), 12);
+    }
+
+    #[test]
+    fn handler_error_code_internal() {
+        let err = HandlerError::Internal("internal".into());
+        assert_eq!(err.code(), HandlerErrorCode::Internal as u32);
+        assert_eq!(err.code(), 13);
+    }
+
+    #[test]
+    fn handler_error_code_unavailable() {
+        let err = HandlerError::Unavailable("unavailable".into());
+        assert_eq!(err.code(), HandlerErrorCode::Unavailable as u32);
+        assert_eq!(err.code(), 14);
+    }
+
+    #[test]
+    fn handler_error_code_data_loss() {
+        let err = HandlerError::DataLoss("data lost".into());
+        assert_eq!(err.code(), HandlerErrorCode::DataLoss as u32);
+        assert_eq!(err.code(), 15);
+    }
+
+    #[test]
+    fn handler_error_code_unauthenticated() {
+        let err = HandlerError::Unauthenticated("unauth".into());
+        assert_eq!(err.code(), HandlerErrorCode::Unauthenticated as u32);
+        assert_eq!(err.code(), 16);
+    }
+
+    #[test]
+    fn handler_error_code_consensus_error() {
+        let consensus_error = ConsensusError::DefaultError;
+        let err = HandlerError::StateTransitionConsensusError(consensus_error);
+        // DefaultError has code 1
+        assert_eq!(err.code(), 1);
+    }
+
+    #[test]
+    fn handler_error_message_returns_inner_string() {
+        let test_cases = vec![
+            (
+                HandlerError::Cancelled("cancelled msg".into()),
+                "cancelled msg",
+            ),
+            (HandlerError::Unknown("unknown msg".into()), "unknown msg"),
+            (HandlerError::InvalidArgument("arg msg".into()), "arg msg"),
+            (
+                HandlerError::DeadlineExceeded("deadline msg".into()),
+                "deadline msg",
+            ),
+            (
+                HandlerError::NotFound("not found msg".into()),
+                "not found msg",
+            ),
+            (
+                HandlerError::AlreadyExists("exists msg".into()),
+                "exists msg",
+            ),
+            (
+                HandlerError::PermissionDenied("denied msg".into()),
+                "denied msg",
+            ),
+            (
+                HandlerError::ResourceExhausted("exhausted msg".into()),
+                "exhausted msg",
+            ),
+            (
+                HandlerError::FailedPrecondition("precond msg".into()),
+                "precond msg",
+            ),
+            (HandlerError::Aborted("aborted msg".into()), "aborted msg"),
+            (HandlerError::OutOfRange("range msg".into()), "range msg"),
+            (
+                HandlerError::Unimplemented("unimpl msg".into()),
+                "unimpl msg",
+            ),
+            (
+                HandlerError::Internal("internal msg".into()),
+                "internal msg",
+            ),
+            (
+                HandlerError::Unavailable("unavail msg".into()),
+                "unavail msg",
+            ),
+            (HandlerError::DataLoss("loss msg".into()), "loss msg"),
+            (
+                HandlerError::Unauthenticated("unauth msg".into()),
+                "unauth msg",
+            ),
+        ];
+
+        for (err, expected) in test_cases {
+            assert_eq!(err.message(), expected, "message mismatch for {:?}", err);
+        }
+    }
+
+    #[test]
+    fn handler_error_message_consensus_error() {
+        let consensus_error = ConsensusError::DefaultError;
+        let err = HandlerError::StateTransitionConsensusError(consensus_error);
+        // ConsensusError::DefaultError displays as "default error"
+        assert_eq!(err.message(), "default error");
+    }
+
+    #[test]
+    fn handler_error_response_info_returns_base64_encoded_cbor() {
+        let err = HandlerError::Internal("some internal error".into());
+        let info = err.response_info().expect("should produce response info");
+
+        // The result should be a non-empty base64 string
+        assert!(!info.is_empty());
+
+        // It should be valid base64
+        use dpp::platform_value::string_encoding::{decode, Encoding};
+        let decoded = decode(&info, Encoding::Base64).expect("should be valid base64");
+        assert!(!decoded.is_empty());
+    }
+
+    #[test]
+    fn handler_error_display_matches_message() {
+        let err = HandlerError::Internal("display test".into());
+        assert_eq!(err.to_string(), "display test");
+
+        let err = HandlerError::NotFound("missing item".into());
+        assert_eq!(err.to_string(), "missing item");
+    }
+
+    #[test]
+    fn handler_error_from_query_error_not_found() {
+        let query_err = QueryError::NotFound("item not found".to_string());
+        let handler_err = HandlerError::from(&query_err);
+        assert!(matches!(handler_err, HandlerError::NotFound(_)));
+        assert_eq!(handler_err.message(), "item not found");
+    }
+
+    #[test]
+    fn handler_error_from_query_error_invalid_argument() {
+        let query_err = QueryError::InvalidArgument("bad argument".to_string());
+        let handler_err = HandlerError::from(&query_err);
+        assert!(matches!(handler_err, HandlerError::InvalidArgument(_)));
+        assert_eq!(handler_err.message(), "bad argument");
+    }
+
+    #[test]
+    fn handler_error_from_query_error_query() {
+        use drive::error::query::QuerySyntaxError;
+        let query_err = QueryError::Query(QuerySyntaxError::InvalidSQL("bad sql".to_string()));
+        let handler_err = HandlerError::from(&query_err);
+        assert!(matches!(handler_err, HandlerError::InvalidArgument(_)));
+    }
+
+    #[test]
+    fn handler_error_from_query_error_other_maps_to_unknown() {
+        let query_err = QueryError::DecodingError("decoding failed".to_string());
+        let handler_err = HandlerError::from(&query_err);
+        assert!(matches!(handler_err, HandlerError::Unknown(_)));
+    }
+
+    #[test]
+    fn handler_error_from_consensus_error() {
+        let consensus_err = ConsensusError::DefaultError;
+        let handler_err = HandlerError::from(&consensus_err);
+        assert!(matches!(
+            handler_err,
+            HandlerError::StateTransitionConsensusError(_)
+        ));
+    }
+
+    #[test]
+    fn handler_error_from_error() {
+        let error = Error::Execution(ExecutionError::CorruptedCodeExecution("test failure"));
+        let handler_err = HandlerError::from(&error);
+        assert!(matches!(handler_err, HandlerError::Internal(_)));
+        assert!(handler_err.message().contains("test failure"));
+    }
+
+    #[test]
+    fn error_into_exception_produces_response_exception() {
+        let error = Error::Execution(ExecutionError::CorruptedCodeExecution("exception test"));
+        let exception = error_into_exception(error);
+        assert!(exception.error.contains("exception test"));
+    }
+}
