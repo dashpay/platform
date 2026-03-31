@@ -28,9 +28,9 @@ date: 2026-03-13
 6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
 7. **PR-7** ✅: Identity update + address fund flows + DPNS — update_identity, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, register/resolve/search DPNS
 8. **PR-8** ✅: Token operations — `TokenWallet` sub-wallet with per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim, set_price
-9. **PR-9**: Evo-tool integration — replace evo-tool backend tasks with platform-wallet calls, delete duplicate code (evo-tool keeps its own SpvManager)
+9. **PR-9**: Evo-tool integration — replace ALL backend tasks (tokens, identity, dashpay, core wallet) with platform-wallet calls. Evo-tool keeps SpvManager.
 10. **PR-10**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
-11. **PR-11**: SPV migration + AssetLockFinalityEvent — migrate evo-tool SpvManager to PlatformWalletManager.start_spv(), SPV-based finality proof waiting
+11. **PR-11**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 12. **PR-12**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 13. **PR-13**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 14. **PR-14**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
@@ -2306,31 +2306,81 @@ with `platform_wallet.tokens().*`. The per-identity watch registry replaces the
 
 ### PR-9: Evo-tool integration
 
-Replace evo-tool's duplicate wallet/identity/token backend tasks with platform-wallet calls.
-Evo-tool keeps its own `SpvManager` — SPV migration is a separate PR.
+Replace ALL evo-tool backend tasks with platform-wallet calls across every domain:
+tokens, identity, dashpay, core wallet, platform addresses. Evo-tool keeps its own
+`SpvManager` — SPV migration is PR-11.
 
-**Backend tasks to replace** (in `dash-evo-tool/src/backend_task/`):
+**Migration by domain** (in `dash-evo-tool/src/backend_task/`):
 
-| Domain | Evo-tool task files | Replaced by |
-|--------|-------------------|-------------|
-| Identity | `identity/register_identity.rs`, `identity/top_up_identity.rs`, `identity/withdraw_from_identity.rs`, `identity/transfer_credits.rs` | `wallet.identity().register_identity()`, `.top_up_identity()`, `.withdraw_credits()`, `.transfer_credits()` |
-| Identity update | (inline in identity tasks) | `wallet.identity().update_identity()` |
-| Identity discovery | `identity/load_identities.rs` | `wallet.identity().sync()` |
-| DashPay | `dashpay/send_contact_request.rs`, `dashpay/accept_contact_request.rs` | `wallet.dashpay().send_contact_request()`, `.accept_contact_request()` |
-| Platform addresses | `core/fund_platform_address.rs`, `core/transfer_platform_credits.rs` | `wallet.platform().transfer()`, `.withdraw()`, `.fund_from_asset_lock()` |
-| Tokens | `tokens/transfer_tokens.rs`, `tokens/mint_tokens.rs`, `tokens/burn_tokens.rs`, `tokens/query_my_token_balances.rs`, etc. | `wallet.tokens().transfer()`, `.mint()`, `.burn()`, `.sync()`, etc. |
-| Signing | 4+ callsites using old `Wallet` for `Signer<PlatformAddress>` | `wallet.platform()` as `Signer<PlatformAddress>` |
-| DPNS | `identity/register_dpns_name.rs` | `wallet.identity().register_name()`, `.resolve_name()` |
+**Phase 1 — Tokens** (~17 tasks, all trivial SDK wrappers):
+| Evo-tool task | Replaced by |
+|---------------|-------------|
+| `tokens/transfer_tokens.rs` | `wallet.tokens().transfer()` |
+| `tokens/mint_tokens.rs` | `wallet.tokens().mint()` |
+| `tokens/burn_tokens.rs` | `wallet.tokens().burn()` |
+| `tokens/freeze_tokens.rs` | `wallet.tokens().freeze()` |
+| `tokens/unfreeze_tokens.rs` | `wallet.tokens().unfreeze()` |
+| `tokens/claim_tokens.rs` | `wallet.tokens().claim()` |
+| `tokens/purchase_tokens.rs` | `wallet.tokens().purchase()` |
+| `tokens/set_token_price.rs` | `wallet.tokens().set_price()` |
+| `tokens/query_my_token_balances.rs` | `wallet.tokens().sync()` + `.balance()` |
 
-**Bridge changes** (in `dash-evo-tool/src/context/`):
-- `platform_wallet_bridge.rs` already exists from PR-1 — extend to cover all sub-wallets
-- Backend tasks call `require_platform_wallet()` then delegate to platform-wallet methods
-- Delete replaced evo-tool code after each domain is migrated
+**Phase 2 — Simple identity + DPNS** (trivial wrappers):
+| Evo-tool task | Replaced by |
+|---------------|-------------|
+| `identity/withdraw_from_identity.rs` | `wallet.identity().withdraw_credits()` |
+| `identity/transfer.rs` | `wallet.identity().transfer_credits()` |
+| `identity/refresh_identity.rs` | `wallet.identity().sync()` |
+| `identity/add_key_to_identity.rs` | `wallet.identity().update_identity()` |
+| `identity/register_dpns_name.rs` | `wallet.identity().register_name()` |
+| `identity/load_identity_by_dpns_name.rs` | `wallet.identity().resolve_name()` |
+
+**Phase 3 — Identity registration + top-up + discovery** (asset lock handling):
+| Evo-tool task | Replaced by |
+|---------------|-------------|
+| `identity/register_identity.rs` | `wallet.identity().register_identity()` (uses `wallet.core()` for asset locks) |
+| `identity/top_up_identity.rs` | `wallet.identity().top_up_identity()` |
+| `identity/discover_identities.rs` | `wallet.identity().sync()` |
+| `identity/load_identity.rs` | Adapter: fetch via SDK + register in `identity_manager` |
+| `identity/load_identity_from_wallet.rs` | Adapter: HD derivation + `wallet.identity().sync()` |
+
+**Phase 4 — DashPay contacts** (encryption via `rs-platform-encryption`):
+| Evo-tool task | Replaced by |
+|---------------|-------------|
+| `dashpay/contact_requests.rs` (send) | `wallet.dashpay().send_contact_request()` |
+| `dashpay/contact_requests.rs` (accept) | `wallet.dashpay().accept_contact_request()` |
+| `dashpay/contact_requests.rs` (load) | `wallet.dashpay().sync_contact_requests()` |
+| `dashpay/contacts.rs` | `wallet.dashpay().established_contacts()` |
+
+**Phase 5 — Core wallet + platform addresses**:
+| Evo-tool task | Replaced by |
+|---------------|-------------|
+| `core/create_asset_lock.rs` | `wallet.core().build_registration_asset_lock_transaction()` + `.broadcast_transaction()` |
+| `core/refresh_wallet_info.rs` | SPV feeds `ManagedWalletInfo` directly (no change needed) |
+| Platform address transfer | `wallet.platform().transfer()` |
+| Platform address withdraw | `wallet.platform().withdraw()` |
+| Platform address fund | `wallet.platform().fund_from_asset_lock()` |
+| Signing callsites (4+) | `wallet.platform()` as `Signer<PlatformAddress>` |
+
+**Bridge architecture** (in `dash-evo-tool/src/context/`):
+- `platform_wallet_bridge.rs` exists from PR-1 on `feat/platform-wallet` branch
+- Extend bridge: `register_with_platform_wallet_manager()` for all wallet types
+- Backend tasks call `require_platform_wallet()` → delegate to platform-wallet
+- Evo-tool DB persistence remains — platform-wallet results are persisted by evo-tool after each operation
 
 **What stays in evo-tool**:
-- `SpvManager` — keeps its own `DashSpvClient`, `ConnectionStatus` wiring, debounced reconciliation
-- Database persistence — evo-tool's SQLite stores wallet state across restarts
-- UI screens — presentation layer unchanged, just calls different backend
+- `SpvManager` — keeps its own `DashSpvClient`, `ConnectionStatus`, debounced reconciliation (→ PR-11)
+- Database layer — SQLite persistence for wallet state, identities, tokens, contacts
+- UI screens — presentation unchanged, backend calls change
+- `QualifiedIdentity` model — adapter maps to/from platform-wallet's `IdentityManager`
+
+**What gets deleted**:
+- Direct SDK calls in backend tasks (replaced by `wallet.*()` calls)
+- Duplicate crypto code (`dashpay/encryption.rs`, `dashpay/dip14_derivation.rs`) → use `rs-platform-encryption`
+- Duplicate wallet model code in `src/model/wallet/` (partially — full deletion in PR-14)
+
+**Done when**: All backend tasks delegate to platform-wallet. No direct SDK identity/token/address/dashpay
+calls remain in evo-tool backend tasks. SPV and database stay.
 
 **Done when**: All backend tasks delegate to platform-wallet. No direct SDK identity/token/address
 calls remain in evo-tool (except SPV and database). Duplicate wallet code deleted.
