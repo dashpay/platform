@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use dashcore::Address as DashAddress;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -19,11 +20,17 @@ use tokio::sync::RwLock;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
 use dash_sdk::platform::transition::transfer::TransferToIdentity;
+use dash_sdk::platform::transition::transfer_to_addresses::TransferToAddresses;
 use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
+
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::core::CoreWallet;
+use crate::wallet::platform_addresses::PlatformAddressWallet;
 use crate::wallet::signer::IdentitySigner;
 
 use super::manager::IdentityManager;
@@ -553,5 +560,321 @@ impl IdentityWallet {
         }
 
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Identity update (add/disable keys)
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Update an identity by adding or disabling public keys.
+    ///
+    /// Builds an `IdentityUpdateTransition`, signs it with the identity's
+    /// master key, and broadcasts it to Platform.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The identity to update.
+    /// * `add_public_keys` - New keys to add (key IDs are auto-assigned).
+    /// * `disable_public_keys` - Key IDs to disable.
+    pub async fn update_identity(
+        &self,
+        identity_id: &Identifier,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<u32>,
+    ) -> Result<(), PlatformWalletError> {
+        use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+
+        let (mut identity, identity_index) = {
+            let manager = self.identity_manager.read().await;
+            let identity = manager
+                .identity(identity_id)
+                .cloned()
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager.identity_index(identity_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*identity_id),
+            )?;
+            (identity, index)
+        };
+
+        // Increment revision for the update transition.
+        let original_revision = identity.revision();
+        identity.set_revision(original_revision + 1);
+
+        // Find a master key that the signer can use.
+        let signer = self.signer_for_identity(identity_index);
+
+        let master_key_id = identity
+            .public_keys()
+            .iter()
+            .find(|(_, key)| {
+                key.purpose() == Purpose::AUTHENTICATION
+                    && key.security_level() == SecurityLevel::MASTER
+                    && key.key_type() == KeyType::ECDSA_SECP256K1
+            })
+            .map(|(id, _)| *id)
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "No signable master key found on identity".to_string(),
+                )
+            })?;
+
+        // Get identity nonce from Platform.
+        let identity_nonce = self
+            .sdk
+            .get_identity_nonce(identity.id(), true, None)
+            .await?;
+
+        // Build the update transition.
+        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
+            &identity,
+            &master_key_id,
+            add_public_keys,
+            disable_public_keys,
+            identity_nonce,
+            0, // user_fee_increase
+            &signer,
+            self.sdk.version(),
+            None,
+        )
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to create identity update transition: {}",
+                e
+            ))
+        })?;
+
+        // Broadcast and wait for confirmation.
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to broadcast identity update: {}",
+                    e
+                ))
+            })?;
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Top-up from platform addresses
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Top up an identity by spending platform address balances.
+    ///
+    /// Uses the `TopUpIdentityFromAddresses` SDK trait. Address nonces are
+    /// looked up automatically.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The identity to top up.
+    /// * `inputs` - Map of platform addresses to credit amounts to spend.
+    /// * `platform_address_wallet` - The platform address wallet (provides signing).
+    pub async fn top_up_from_addresses(
+        &self,
+        identity_id: &Identifier,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        platform_address_wallet: &PlatformAddressWallet,
+    ) -> Result<Credits, PlatformWalletError> {
+        let identity = {
+            let manager = self.identity_manager.read().await;
+            manager
+                .identity(identity_id)
+                .cloned()
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
+        };
+
+        let (_address_infos, new_balance) = identity
+            .top_up_from_addresses(
+                &self.sdk,
+                inputs,
+                platform_address_wallet,
+                None, // settings
+            )
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to top up identity from addresses: {}",
+                    e
+                ))
+            })?;
+
+        // Update the identity's balance in the local manager.
+        {
+            let mut manager = self.identity_manager.write().await;
+            if let Some(identity) = manager.identity_mut(identity_id) {
+                identity.set_balance(new_balance);
+            }
+        }
+
+        Ok(new_balance)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transfer credits to platform addresses
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Transfer credits from an identity to multiple platform addresses.
+    ///
+    /// Uses the `TransferToAddresses` SDK trait.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The sending identity (must be owned by this wallet).
+    /// * `recipient_addresses` - Map of platform addresses to credit amounts.
+    pub async fn transfer_credits_to_addresses(
+        &self,
+        identity_id: &Identifier,
+        recipient_addresses: BTreeMap<PlatformAddress, Credits>,
+    ) -> Result<Credits, PlatformWalletError> {
+        let (identity, identity_index) = {
+            let manager = self.identity_manager.read().await;
+            let identity = manager
+                .identity(identity_id)
+                .cloned()
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager.identity_index(identity_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*identity_id),
+            )?;
+            (identity, index)
+        };
+
+        let signer = self.signer_for_identity(identity_index);
+
+        let (_address_infos, new_balance) = identity
+            .transfer_credits_to_addresses(
+                &self.sdk,
+                recipient_addresses,
+                None, // signing_transfer_key_to_use
+                &signer,
+                None, // settings
+            )
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to transfer credits to addresses: {}",
+                    e
+                ))
+            })?;
+
+        // Update the sender's balance in the local manager.
+        {
+            let mut manager = self.identity_manager.write().await;
+            if let Some(identity) = manager.identity_mut(identity_id) {
+                identity.set_balance(new_balance);
+            }
+        }
+
+        Ok(new_balance)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DPNS name operations
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Register a DPNS name for an identity.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The identity to register the name for.
+    /// * `name` - The desired username label (e.g., "alice").
+    pub async fn register_name(
+        &self,
+        identity_id: &Identifier,
+        name: &str,
+    ) -> Result<String, PlatformWalletError> {
+        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
+
+        let (identity, identity_index, auth_key) = {
+            let manager = self.identity_manager.read().await;
+            let identity = manager
+                .identity(identity_id)
+                .cloned()
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager.identity_index(identity_id).ok_or(
+                PlatformWalletError::IdentityIndexNotSet(*identity_id),
+            )?;
+            // Use the first authentication key (key_id 0).
+            let key = identity
+                .get_first_public_key_matching(
+                    Purpose::AUTHENTICATION,
+                    [SecurityLevel::MASTER, SecurityLevel::HIGH].into(),
+                    [KeyType::ECDSA_SECP256K1].into(),
+                    false,
+                )
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(
+                        "No authentication key found on identity".to_string(),
+                    )
+                })?
+                .clone();
+            (identity, index, key)
+        };
+
+        let signer = self.signer_for_identity(identity_index);
+
+        let input = RegisterDpnsNameInput {
+            label: name.to_string(),
+            identity,
+            identity_public_key: auth_key,
+            signer,
+            preorder_callback: None,
+        };
+
+        let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to register DPNS name '{}': {}",
+                name, e
+            ))
+        })?;
+
+        Ok(result.full_domain_name)
+    }
+
+    /// Resolve a DPNS name to an identity identifier.
+    ///
+    /// Accepts both "alice" and "alice.dash" formats.
+    pub async fn resolve_name(
+        &self,
+        name: &str,
+    ) -> Result<Option<Identifier>, PlatformWalletError> {
+        self.sdk
+            .resolve_dpns_name(name)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to resolve DPNS name '{}': {}",
+                    name, e
+                ))
+            })
+    }
+
+    /// Search for DPNS names by prefix.
+    pub async fn search_names(
+        &self,
+        prefix: &str,
+        limit: Option<u32>,
+    ) -> Result<Vec<dash_sdk::platform::dpns_usernames::DpnsUsername>, PlatformWalletError> {
+        self.sdk
+            .search_dpns_names(prefix, limit)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to search DPNS names with prefix '{}': {}",
+                    prefix, e
+                ))
+            })
     }
 }

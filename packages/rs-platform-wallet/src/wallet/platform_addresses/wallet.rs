@@ -16,9 +16,13 @@ use key_wallet::{Network, PlatformP2PKHAddress};
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
+use dashcore::PrivateKey;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+
 use crate::error::PlatformWalletError;
 use dash_sdk::platform::address_sync::AddressSyncResult;
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
+use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
 use super::provider::PlatformPaymentAddressProvider;
@@ -205,6 +209,58 @@ impl PlatformAddressWallet {
     pub async fn total_credits(&self) -> Credits {
         let balances = self.balances.read().await;
         balances.values().sum()
+    }
+
+    /// Fund platform addresses from a Core L1 asset lock.
+    ///
+    /// Broadcasts a top-up-address state transition that converts locked Dash
+    /// into platform credits on the specified addresses. The fee is deducted
+    /// from the first input address by default.
+    ///
+    /// # Arguments
+    ///
+    /// * `addresses` - Platform addresses to fund (with current balances for nonce lookup).
+    /// * `asset_lock_proof` - Proof of the asset lock transaction on Core chain.
+    /// * `asset_lock_private_key` - Private key corresponding to the asset lock.
+    pub async fn fund_from_asset_lock(
+        &self,
+        addresses: BTreeMap<PlatformAddress, Option<Credits>>,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: PrivateKey,
+    ) -> Result<(), PlatformWalletError> {
+        if addresses.is_empty() {
+            return Err(PlatformWalletError::AddressOperation(
+                "fund_from_asset_lock requires at least one address".to_string(),
+            ));
+        }
+
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let address_infos = addresses
+            .top_up(
+                &self.sdk,
+                asset_lock_proof,
+                asset_lock_private_key,
+                fee_strategy,
+                self,
+                None, // settings
+            )
+            .await?;
+
+        // Update cached balances from the proof-verified response.
+        let mut balances = self.balances.write().await;
+        for (addr, maybe_info) in address_infos.iter() {
+            match maybe_info {
+                Some(info) => {
+                    balances.insert(*addr, info.balance);
+                }
+                None => {
+                    balances.remove(addr);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Find the private key for a platform address by searching all platform
