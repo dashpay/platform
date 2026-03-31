@@ -12,6 +12,9 @@ pub mod identity_manager;
 pub mod managed_identity;
 pub mod platform_wallet_info;
 
+#[cfg(feature = "spv-context")]
+pub mod spv_context_provider;
+
 // Re-export main types at crate root
 pub use block_time::BlockTime;
 pub use contact_request::ContactRequest;

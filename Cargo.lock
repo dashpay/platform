@@ -4869,7 +4869,9 @@ name = "platform-wallet"
 version = "3.1.0-dev.1"
 dependencies = [
  "async-trait",
+ "dash-context-provider",
  "dash-sdk",
+ "dash-spv",
  "dashcore",
  "dpp",
  "indexmap 2.13.0",
@@ -4878,6 +4880,7 @@ dependencies = [
  "platform-encryption",
  "rand 0.8.5",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]

@@ -19,6 +19,11 @@ key-wallet-manager = { workspace = true, optional = true }
 # Core dependencies
 dashcore = { workspace = true }
 
+# SPV context provider dependencies (optional)
+dash-spv = { workspace = true, optional = true }
+dash-context-provider = { path = "../rs-context-provider", optional = true }
+tokio = { version = "1.41", optional = true }
+
 # Standard dependencies
 thiserror = "1.0"
 async-trait = "0.1"
@@ -35,3 +40,4 @@ default = ["bls", "eddsa", "manager"]
 bls = ["key-wallet/bls"]
 eddsa = ["key-wallet/eddsa"]
 manager = ["key-wallet-manager"]
+spv-context = ["dash-spv", "dash-context-provider", "tokio"]

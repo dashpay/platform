@@ -1,7 +1,17 @@
-//! SPV-based Context Provider
+//! SPV-based Context Provider (FFI bridge)
 //!
-//! Implements `ContextProvider` by calling the SPV client's FFI functions
-//! directly in Rust, avoiding a round-trip through Swift callbacks.
+//! Implements `ContextProvider` by calling the `dash-spv-ffi` crate's
+//! FFI functions directly in Rust (same binary, no actual FFI boundary
+//! crossing), avoiding a round-trip through Swift callbacks.
+//!
+//! # Migration path
+//!
+//! The long-term replacement is [`platform_wallet::spv_context_provider::SpvContextProvider`],
+//! which holds an `Arc<RwLock<MasternodeListEngine>>` directly and has zero FFI
+//! involvement. To use it, `dash-spv-ffi` needs to expose a public accessor for
+//! the `MasternodeListEngine` inside `FFIDashSpvClient` (its `inner` field is
+//! currently `pub(crate)`). Once that accessor exists, this bridge module can be
+//! removed and the pure-Rust provider used instead.
 
 use std::os::raw::c_void;
 use std::sync::Arc;
