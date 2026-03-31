@@ -1,4 +1,5 @@
 import Foundation
+import CommonCrypto
 import SwiftDashSDK
 
 /// Available send flow types based on source and destination.
@@ -119,13 +120,19 @@ class SendViewModel: ObservableObject {
     func executeSend(
         sdk: SDK,
         shieldedService: ShieldedService,
+        walletService: WalletService,
         platformState: AppState,
         wallet: HDWallet
     ) async {
         guard let flow = detectedFlow, let amount = amount else { return }
-        guard let poolClient = shieldedService.poolClient else {
-            error = "Shielded pool not initialized"
-            return
+
+        // Shielded flows need pool client; Core flows don't
+        let needsPoolClient = flow != .coreToPlatform && flow != .coreToCore
+        if needsPoolClient {
+            guard shieldedService.poolClient != nil else {
+                error = "Shielded pool not initialized"
+                return
+            }
         }
 
         isSending = true
@@ -136,7 +143,7 @@ class SendViewModel: ObservableObject {
         do {
             switch flow {
             case .platformToShielded:
-                let bundle = try await poolClient.buildShieldBundle(amount: amount)
+                let bundle = try await shieldedService.poolClient!.buildShieldBundle(amount: amount)
                 // Find an identity with sufficient balance to fund the shield
                 guard let identity = platformState.identities.first(where: {
                     $0.walletId == wallet.walletId &&
@@ -168,7 +175,7 @@ class SendViewModel: ObservableObject {
             case .shieldedToShielded:
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .orchard(let rawAddress) = parsed.type else { return }
-                let bundle = try await poolClient.buildTransferBundle(
+                let bundle = try await shieldedService.poolClient!.buildTransferBundle(
                     recipientAddress: rawAddress,
                     amount: amount
                 )
@@ -181,7 +188,7 @@ class SendViewModel: ObservableObject {
             case .shieldedToPlatform:
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .platform(let addressBytes) = parsed.type else { return }
-                let bundle = try await poolClient.buildUnshieldBundle(
+                let bundle = try await shieldedService.poolClient!.buildUnshieldBundle(
                     outputAddress: addressBytes,
                     amount: amount
                 )
@@ -195,7 +202,7 @@ class SendViewModel: ObservableObject {
             case .shieldedToCore:
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .core(let outputScript) = parsed.type else { return }
-                let bundle = try await poolClient.buildWithdrawalBundle(
+                let bundle = try await shieldedService.poolClient!.buildWithdrawalBundle(
                     outputScript: outputScript,
                     amount: amount,
                     coreFeePerByte: 1,
@@ -211,8 +218,42 @@ class SendViewModel: ObservableObject {
                 successMessage = "Withdrawal submitted"
 
             case .coreToPlatform:
-                // TODO: Implement asset lock / Core → Platform transfer
-                error = "Core to Platform transfer not yet implemented"
+                // Core → Platform via asset lock
+                let parsed = DashAddress.parse(recipientAddress, network: network)
+                guard case .platform(let addressBytes) = parsed.type else {
+                    error = "Invalid platform address"
+                    return
+                }
+
+                // 1. Build the asset lock transaction
+                let assetLockResult = try walletService.walletManager.buildAssetLockTransaction(
+                    for: wallet,
+                    creditOutputs: [(scriptPubKey: addressBytes, amount: amount)]
+                )
+
+                // 2. Broadcast on Core network
+                try walletService.broadcastTransaction(assetLockResult.transactionBytes)
+
+                // Compute txid from transaction bytes (double SHA256, reversed)
+                let txid = computeTxid(from: assetLockResult.transactionBytes)
+
+                // 3. Wait for InstantSend lock
+                let isLockData = try await walletService.waitForInstantLock(txid: txid, timeout: 30)
+
+                // 4. Submit to Platform
+                let outPoint = buildOutPoint(txid: txid, outputIndex: assetLockResult.outputIndex)
+                _ = try sdk.addresses.topUpAddressFromAssetLock(
+                    proofType: .instant,
+                    instantLockData: isLockData,
+                    transactionData: assetLockResult.transactionBytes,
+                    outputIndex: assetLockResult.outputIndex,
+                    coreChainLockedHeight: 0,
+                    outPoint: outPoint,
+                    assetLockPrivateKey: assetLockResult.privateKey,
+                    outputs: [Addresses.AddressTransferOutput(addressBytes: addressBytes, amount: amount)]
+                )
+
+                successMessage = "Transfer to Platform complete"
 
             case .coreToCore:
                 // TODO: Implement standard Core → Core transaction
@@ -225,5 +266,34 @@ class SendViewModel: ObservableObject {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Compute txid from raw transaction bytes (double SHA256, reversed).
+    private func computeTxid(from txBytes: Data) -> Data {
+        var hash1 = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+        var hash2 = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+        txBytes.withUnsafeBytes { ptr in
+            hash1.withUnsafeMutableBytes { out in
+                _ = CC_SHA256(ptr.baseAddress, CC_LONG(txBytes.count), out.bindMemory(to: UInt8.self).baseAddress)
+            }
+        }
+        hash1.withUnsafeBytes { ptr in
+            hash2.withUnsafeMutableBytes { out in
+                _ = CC_SHA256(ptr.baseAddress, CC_LONG(hash1.count), out.bindMemory(to: UInt8.self).baseAddress)
+            }
+        }
+        // Txid is the reversed double-SHA256
+        return Data(hash2.reversed())
+    }
+
+    /// Build a 36-byte OutPoint (txid + output index as little-endian u32).
+    private func buildOutPoint(txid: Data, outputIndex: UInt32) -> Data {
+        // OutPoint = txid (32 bytes, internal byte order) + index (4 bytes LE)
+        var outPoint = Data(txid.reversed()) // reversed back to internal order
+        var idx = outputIndex.littleEndian
+        outPoint.append(Data(bytes: &idx, count: 4))
+        return outPoint
     }
 }

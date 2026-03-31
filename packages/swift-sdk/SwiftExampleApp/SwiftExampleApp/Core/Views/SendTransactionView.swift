@@ -140,6 +140,7 @@ struct SendTransactionView: View {
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 shieldedService: shieldedService,
+                                walletService: walletService,
                                 platformState: unifiedAppState.platformState,
                                 wallet: wallet
                             )
