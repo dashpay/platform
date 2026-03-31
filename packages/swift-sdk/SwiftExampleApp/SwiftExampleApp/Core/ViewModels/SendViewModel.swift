@@ -225,10 +225,24 @@ class SendViewModel: ObservableObject {
                     return
                 }
 
+                // Convert platform address (21 bytes: type + hash) to P2PKH scriptPubKey (25 bytes)
+                // Platform type 0x00 = P2PKH: OP_DUP OP_HASH160 <20-byte-hash> OP_EQUALVERIFY OP_CHECKSIG
+                let creditScript: Data
+                if addressBytes.count == 21 && addressBytes[0] == 0x00 {
+                    let pubkeyHash = addressBytes.dropFirst() // 20-byte hash
+                    var script = Data([0x76, 0xa9, 0x14]) // OP_DUP OP_HASH160 PUSH20
+                    script.append(contentsOf: pubkeyHash)
+                    script.append(contentsOf: [0x88, 0xac]) // OP_EQUALVERIFY OP_CHECKSIG
+                    creditScript = script
+                } else {
+                    // Pass through as-is for other address types
+                    creditScript = addressBytes
+                }
+
                 // 1. Build the asset lock transaction
                 let assetLockResult = try walletService.walletManager.buildAssetLockTransaction(
                     for: wallet,
-                    creditOutputs: [(scriptPubKey: addressBytes, amount: amount)]
+                    creditOutputs: [(scriptPubKey: creditScript, amount: amount)]
                 )
 
                 // 2. Broadcast on Core network
