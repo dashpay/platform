@@ -28,12 +28,16 @@ date: 2026-03-13
 6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
 7. **PR-7** ✅: Identity update + address fund flows + DPNS — update_identity, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, register/resolve/search DPNS
 8. **PR-8** ✅: Token operations — `TokenWallet` sub-wallet with per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim, set_price
-9. **PR-9**: Evo-tool integration — replace ALL backend tasks (tokens, identity, dashpay, core wallet) with platform-wallet calls. Evo-tool keeps SpvManager.
-10. **PR-10**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
-11. **PR-11**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
-12. **PR-12**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
-13. **PR-13**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-14. **PR-14**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+9. **PR-9** (in progress): Evo-tool integration Phase 1+2 — token tasks + simple identity tasks migrated
+10. **PR-10**: Enrich ManagedIdentity — KeyStorage with WalletDerivationPath, IdentityStatus state machine, DPNS names, full key matching in discovery
+11. **PR-11**: Asset lock lifecycle + multi-mode funding — IS→CL fallback, unused lock pool, 4 registration modes, 3 top-up modes, recovery
+12. **PR-12**: DashPay completeness — DIP-14 256-bit derivation, contact payment addresses, account reference, gap limit management
+13. **PR-13**: Evo-tool integration Phase 3 — migrate remaining tasks (registration, top-up, discovery, DashPay, core wallet) using enriched library
+14. **PR-14**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
+15. **PR-15**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
+16. **PR-16**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
+17. **PR-17**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+18. **PR-18**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
 
 ---
 
@@ -2387,7 +2391,320 @@ calls remain in evo-tool (except SPV and database). Duplicate wallet code delete
 
 ---
 
-### PR-10: Shielded pool (feature-gated `shielded`)
+### PR-10: Enrich ManagedIdentity
+
+**Goal**: Make `ManagedIdentity` rich enough to replace evo-tool's `QualifiedIdentity` for
+wallet-based identities. Any app using platform-wallet should get full identity management
+without reimplementing key storage, status tracking, or discovery.
+
+**1. KeyStorage with lazy wallet derivation**
+
+Replace flat private key storage with a `PrivateKeyData` enum:
+
+```rust
+pub enum PrivateKeyData {
+    /// Raw key bytes in memory.
+    Clear(Zeroizing<[u8; 32]>),
+    /// Derive on-demand from wallet at this path (key not held in memory).
+    AtWalletDerivationPath {
+        wallet_seed_hash: [u8; 32],
+        derivation_path: DerivationPath,
+    },
+}
+```
+
+`ManagedIdentity` gets a `KeyStorage` map: `BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>`.
+
+When signing, if the key is `AtWalletDerivationPath`, the signer resolves it by finding the
+wallet by seed hash, acquiring a read lock, and deriving at the path. This avoids storing
+private keys in memory for wallet-backed identities.
+
+**2. IdentityStatus state machine**
+
+```rust
+pub enum IdentityStatus {
+    Unknown,            // Not yet checked against Platform
+    PendingCreation,    // Registration submitted, awaiting confirmation
+    Active,             // Confirmed on Platform
+    FailedCreation,     // Registration failed (can retry)
+    NotFound,           // Was active but no longer on Platform
+}
+```
+
+Status transitions: `Unknown → PendingCreation → Active` (happy path),
+`PendingCreation → FailedCreation → Active` (retry), `Active → NotFound → Active` (reappears).
+
+**3. DPNS name association**
+
+```rust
+pub struct DpnsNameInfo {
+    pub label: String,          // e.g., "alice"
+    pub acquired_at: Option<u64>,  // timestamp
+}
+```
+
+Add `dpns_names: Vec<DpnsNameInfo>` to `ManagedIdentity`. Populated during `sync()` by querying
+DPNS contract for documents with `records.identity == identity_id`.
+
+**4. Enhanced identity discovery**
+
+Current `sync()` only checks key_index 0 (primary auth key). Enhance to:
+- Scan key indices 0..12 per identity index (12-key lookup window)
+- Support ECDSA_HASH160 matching (not just full pubkey)
+- Fetch DPNS names for discovered identities
+- Store matched derivation paths in `KeyStorage` as `AtWalletDerivationPath`
+
+**5. Wallet association**
+
+Add `wallet_seed_hash: Option<[u8; 32]>` and `wallet_index: Option<u32>` to `ManagedIdentity`.
+These link an identity back to the wallet it was registered from, enabling key re-derivation
+on wallet recovery.
+
+**Files to modify:**
+- `src/wallet/identity/managed_identity/mod.rs` — KeyStorage, IdentityStatus, DpnsNameInfo, wallet fields
+- `src/wallet/identity/wallet.rs` — enhanced `sync()` with multi-key window + DPNS
+- `src/wallet/signer.rs` — support `AtWalletDerivationPath` resolution
+
+**Done when**: `ManagedIdentity` has rich key storage, status tracking, DPNS names, and wallet
+association. Discovery finds identities with any registered key, not just the primary.
+
+---
+
+### PR-11: Asset lock lifecycle + multi-mode funding
+
+**Goal**: Handle the full asset lock lifecycle and support all identity funding modes.
+Any app should be able to register/top-up identities without reimplementing IS→CL fallback
+or UTXO management.
+
+**1. Asset lock tracking**
+
+```rust
+pub struct TrackedAssetLock {
+    pub transaction: Transaction,
+    pub output_address: Address,
+    pub amount_duffs: u64,
+    pub proof: Option<AssetLockProof>,       // None until IS/CL arrives
+    pub identity_id: Option<Identifier>,     // None until used for registration
+    pub status: AssetLockStatus,
+}
+
+pub enum AssetLockStatus {
+    Broadcast,           // TX sent, waiting for proof
+    InstantLocked,       // IS proof received
+    ChainLocked,         // CL proof received (higher finality)
+    UsedForRegistration, // Linked to an identity
+    UsedForTopUp,        // Linked to an identity top-up
+}
+```
+
+Add `tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>` to `CoreWallet`.
+Methods: `unused_asset_locks()`, `track_asset_lock()`, `mark_used()`.
+
+**2. IS→CL fallback**
+
+When Platform rejects an InstantSend proof (`AssetLockInstantLockProofInvalid`):
+1. Query DAPI for the TX to check `is_chain_locked` and `height`
+2. If chain-locked and Platform has verified that height → retry with `ChainAssetLockProof`
+3. If not chain-locked → return `AssetLockExpired` error
+
+This logic lives in a shared `resolve_asset_lock_proof()` method used by both
+registration and top-up.
+
+**3. Multi-mode identity registration**
+
+```rust
+pub enum IdentityFundingMethod {
+    /// Use a pre-existing asset lock proof.
+    UseAssetLock {
+        proof: AssetLockProof,
+        private_key: PrivateKey,
+    },
+    /// Build asset lock from wallet UTXOs.
+    FundWithWallet {
+        amount_duffs: u64,
+    },
+    /// Use a specific UTXO.
+    FundWithUtxo {
+        outpoint: OutPoint,
+        txout: TxOut,
+        address: Address,
+    },
+    /// Fund from platform addresses (no asset lock needed).
+    FundFromAddresses {
+        inputs: BTreeMap<PlatformAddress, Credits>,
+    },
+}
+```
+
+`IdentityWallet::register_identity()` updated to accept `IdentityFundingMethod`.
+The `FundWithWallet` path builds the asset lock internally, broadcasts, waits for proof
+(with IS→CL fallback). `FundFromAddresses` uses `put_with_address_funding()`.
+
+**4. Multi-mode identity top-up**
+
+Same pattern with `TopUpFundingMethod` (UseAssetLock, FundWithWallet, FundWithUtxo).
+`FundFromAddresses` uses `top_up_from_addresses()` (already implemented in PR-7).
+
+**5. UTXO retry on exhaustion**
+
+When building an asset lock TX fails due to insufficient UTXOs:
+1. Release wallet lock
+2. Refresh UTXOs (if SPV running, trigger rescan; otherwise return error)
+3. Retry once
+
+**Files to create/modify:**
+- `src/wallet/core/asset_lock.rs` — new: TrackedAssetLock, AssetLockStatus, tracking methods
+- `src/wallet/core/wallet.rs` — add tracked_asset_locks field, resolve_asset_lock_proof()
+- `src/wallet/identity/wallet.rs` — multi-mode register_identity(), top_up_identity()
+- `src/wallet/identity/funding.rs` — new: IdentityFundingMethod, TopUpFundingMethod enums
+- `src/error.rs` — AssetLockExpired, AssetLockNotChainLocked error variants
+
+**Done when**: Identity registration/top-up works with all 4/3 funding modes.
+IS→CL fallback is automatic. Asset locks are tracked from broadcast to use.
+
+---
+
+### PR-12: DashPay completeness
+
+**Goal**: Move DashPay protocol-level crypto from evo-tool into platform-wallet.
+DIP-14 256-bit derivation, contact payment addresses, and account reference calculation
+are protocol specifications, not application logic.
+
+**1. DIP-14 256-bit key derivation**
+
+Move from evo-tool's `dip14_derivation.rs` into platform-wallet (or `rs-platform-encryption`):
+
+```rust
+/// Child key derivation with 256-bit index (DIP-14).
+/// For contact-based derivation paths where identity IDs (32 bytes) are used as indices.
+pub fn ckd_priv_256(
+    parent: &ExtendedPrivKey,
+    index: &[u8; 32],
+    hardened: bool,
+) -> Result<ExtendedPrivKey, Error>
+
+pub fn ckd_pub_256(
+    parent: &ExtendedPubKey,
+    index: &[u8; 32],
+) -> Result<ExtendedPubKey, Error>
+```
+
+**2. DashPay xpub derivation**
+
+```rust
+/// Derive the contact-specific extended public key.
+/// Path: m/9'/coin'/15'/account'/(sender_id)/(recipient_id)
+/// Uses DIP-14 256-bit derivation for the identity ID segments.
+pub fn derive_contact_xpub(
+    wallet: &Wallet,
+    network: Network,
+    account_index: u32,
+    sender_id: &Identifier,
+    recipient_id: &Identifier,
+) -> Result<(ExtendedPubKey, [u8; 4], [u8; 32], [u8; 33]), Error>
+// Returns: (xpub, parent_fingerprint, chain_code, compressed_pubkey)
+```
+
+**3. Account reference calculation (DIP-15)**
+
+```rust
+/// Calculate account reference per DIP-15.
+/// HMAC-SHA256(sender_secret, xpub_bytes) → take 28 MSBs → XOR with account bits.
+pub fn calculate_account_reference(
+    sender_secret_key: &[u8; 32],
+    contact_xpub: &ExtendedPubKey,
+    account_index: u32,
+    version: u32,
+) -> u32
+```
+
+**4. Contact payment address derivation**
+
+```rust
+/// Derive payment receiving address for a contact at a given index.
+/// Standard BIP32 from contact xpub: contact_xpub / index
+pub fn derive_contact_payment_address(
+    contact_xpub: &ExtendedPubKey,
+    index: u32,
+    network: Network,
+) -> Address
+```
+
+**5. Contact payment address registration + gap limit**
+
+Add to `DashPayWallet`:
+
+```rust
+/// Register payment addresses for all established contacts.
+/// Derives up to highest_receive_index + GAP_LIMIT addresses per contact.
+/// Returns new addresses that should be added to SPV bloom filter.
+pub async fn register_contact_payment_addresses(
+    &self,
+) -> Result<Vec<Address>, PlatformWalletError>
+
+/// Process an incoming payment detected at a contact address.
+/// Returns contact info if the address matches a known contact relationship.
+pub fn match_payment_to_contact(
+    &self,
+    address: &Address,
+) -> Option<(Identifier, Identifier, u32)>  // (owner_id, contact_id, address_index)
+```
+
+Gap limit = 20 per contact. When payment arrives at index N, extend registration to N + 20.
+
+**6. Account label encryption (optional)**
+
+Move from evo-tool to `DashPayWallet`:
+```rust
+pub fn encrypt_account_label(label: &str, shared_key: &[u8; 32]) -> Vec<u8>
+pub fn decrypt_account_label(encrypted: &[u8], shared_key: &[u8; 32]) -> Result<String, Error>
+```
+
+**Files to create/modify:**
+- `src/wallet/dashpay/dip14.rs` — new: ckd_priv_256, ckd_pub_256
+- `src/wallet/dashpay/contacts.rs` — new: derive_contact_xpub, account_reference, payment addresses
+- `src/wallet/dashpay/wallet.rs` — add register_contact_payment_addresses(), match_payment_to_contact()
+- `src/wallet/dashpay/payments.rs` — new: contact payment tracking, gap limit management
+
+**Done when**: All DashPay crypto operations (DIP-14 derivation, ECDH, xpub encryption,
+account reference, payment address derivation) are in platform-wallet. An app can build
+full DashPay contact + payment flows without reimplementing protocol-level crypto.
+
+---
+
+### PR-13: Evo-tool integration Phase 3
+
+With the enriched library (PR-10, PR-11, PR-12), migrate the remaining evo-tool tasks:
+
+**Identity tasks now migratable:**
+- `register_identity.rs` → `wallet.identity().register_identity(funding_method, keys)`
+- `top_up_identity.rs` → `wallet.identity().top_up_identity(funding_method)`
+- `discover_identities.rs` → `wallet.identity().sync()` (now with full key matching + DPNS)
+- `load_identity_from_wallet.rs` → `wallet.identity().sync()` + adapter for QualifiedIdentity
+
+**DashPay tasks now migratable:**
+- `contact_requests.rs` (send) → `wallet.dashpay().send_contact_request()` (now with full crypto)
+- `contact_requests.rs` (accept) → `wallet.dashpay().accept_contact_request()`
+- `incoming_payments.rs` → `wallet.dashpay().register_contact_payment_addresses()`
+
+**Core wallet tasks now migratable:**
+- `create_asset_lock.rs` → `wallet.core().build_and_track_asset_lock()`
+- Platform address ops → already migrated in PR-9 Phase 1
+
+**What stays in evo-tool:**
+- `load_identity.rs` — UI-driven identity import with manual key input, masternode types
+- `SpvManager` — stays until PR-15
+- Database persistence — evo-tool manages its own SQLite
+- QualifiedIdentity adapter — maps to/from ManagedIdentity for evo-tool UI
+
+**Done when**: Only `load_identity.rs`, SpvManager, and DB persistence remain as evo-tool-specific.
+All protocol-level operations go through platform-wallet.
+
+---
+
+### PR-14: Shielded pool (feature-gated `shielded`)
+
+(Renumbered from PR-10. Content unchanged.)
 
 **Library** (`rs-platform-wallet`):
 
@@ -2414,7 +2731,7 @@ calls remain in evo-tool (except SPV and database). Duplicate wallet code delete
 
 ---
 
-### PR-11: SPV migration + AssetLockFinalityEvent
+### PR-15: SPV migration + AssetLockFinalityEvent
 
 Migrate evo-tool's `SpvManager` to use `PlatformWalletManager.start_spv()` and add
 SPV-based asset lock finality proof waiting.
@@ -2437,7 +2754,7 @@ Evo-tool's SpvManager is deleted.
 
 ---
 
-### PR-12: Comprehensive test suite
+### PR-16: Comprehensive test suite
 
 **Infrastructure**:
 - `tests/common/mod.rs` — shared helpers: `create_test_wallet()`, `create_funded_wallet()`, `inject_utxos()`
@@ -2471,7 +2788,7 @@ Evo-tool's SpvManager is deleted.
 
 ---
 
-### PR-13: Merge Wallet + ManagedWalletInfo (dashcore)
+### PR-17: Merge Wallet + ManagedWalletInfo (dashcore)
 
 Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` — both are mutable and always used
 together. Single `Arc<RwLock<Wallet>>` containing all state.
@@ -2488,7 +2805,7 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 
 ---
 
-### PR-14: Serialization + Final Cleanup
+### PR-18: Serialization + Final Cleanup
 
 **Library** (`rs-platform-wallet`):
 
