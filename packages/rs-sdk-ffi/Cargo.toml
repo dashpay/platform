@@ -22,10 +22,6 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
 ] }
 simple-signer = { path = "../simple-signer" }
 
-
-# Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { workspace = true, optional = true }
-
 # Platform Wallet integration for DashPay support
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 
@@ -82,10 +78,7 @@ serde_json = "1.0"
 log = "0.4"
 
 [features]
-default = ["dash_spv"]
-
-# Enable linking with dash-spv-ffi (Core SDK integration)
-dash_spv = ["dep:dash-spv-ffi"]
+default = []
 
 # Optional mocks for development/testing; maps to dash-sdk's mocks
 mocks = ["dash-sdk/mocks"]

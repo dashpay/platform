@@ -7,12 +7,9 @@
 
 mod address;
 mod address_sync;
-mod callback_bridge;
 mod contested_resource;
 mod context_callbacks;
 pub mod context_provider;
-#[cfg(test)]
-mod context_provider_stubs;
 mod crypto;
 mod dashpay;
 mod data_contract;
@@ -40,7 +37,6 @@ mod test_utils;
 
 pub use address::*;
 pub use address_sync::*;
-pub use callback_bridge::*;
 pub use contested_resource::*;
 pub use context_callbacks::*;
 pub use context_provider::*;
@@ -66,10 +62,6 @@ pub use token::*;
 pub use types::*;
 pub use utils::*;
 pub use voting::*;
-
-// Re-export all Core SDK functions and types for unified access when linked
-#[cfg(feature = "dash_spv")]
-pub use dash_spv_ffi as core_ffi;
 
 // Re-export Platform Wallet FFI functions and types for DashPay support
 // Note: We re-export selectively to avoid conflicts with rs-sdk-ffi's own modules
