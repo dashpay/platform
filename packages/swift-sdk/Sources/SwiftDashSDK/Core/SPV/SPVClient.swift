@@ -191,7 +191,7 @@ class SPVClient: @unchecked Sendable {
     func destroy() {
         dash_spv_ffi_client_destroy(client)
         dash_spv_ffi_config_destroy(config)
-        
+
         client = nil
         config = nil
     }
