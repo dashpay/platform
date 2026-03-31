@@ -130,6 +130,13 @@ class SPVClient: @unchecked Sendable {
         config = configPtr
     }
 
+    /// Raw FFI client pointer for use as context provider handle.
+    /// The caller must not free or retain this pointer beyond the SPVClient's lifetime.
+    var unsafeFFIClientPointer: UnsafeMutableRawPointer? {
+        guard let client = client else { return nil }
+        return UnsafeMutableRawPointer(client)
+    }
+
     deinit {
         self.destroy()
     }

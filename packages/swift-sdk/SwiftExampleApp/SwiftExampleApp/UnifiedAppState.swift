@@ -68,9 +68,12 @@ class UnifiedAppState: ObservableObject {
     }
 
     func initialize() async {
-        // Initialize Platform SDK
+        // Get SPV client handle for Platform SDK quorum verification
+        let spvHandle = walletService.spvClientHandle
+
+        // Initialize Platform SDK with SPV quorums when available
         await MainActor.run {
-            platformState.initializeSDK(modelContext: modelContainer.mainContext)
+            platformState.initializeSDK(modelContext: modelContainer.mainContext, spvClientHandle: spvHandle)
         }
 
         // Wait for Platform SDK to be ready
@@ -120,8 +123,14 @@ class UnifiedAppState: ObservableObject {
 
     // Handle network switching - called when platformState.currentNetwork changes
     func handleNetworkSwitch(to network: AppNetwork) async {
-        // Switch wallet service to new network (convert to DashNetwork)
+        // Switch wallet service to new network (which recreates the SPV client)
         await walletService.switchNetwork(to: network)
+
+        // Update the SPV client handle in platform state (the old handle is now invalid)
+        let newSpvHandle = walletService.spvClientHandle
+        await MainActor.run {
+            platformState.updateSPVClientHandle(newSpvHandle)
+        }
 
         // Reinitialize shielded service for the new network
         initializeShieldedService()

@@ -42,9 +42,17 @@ class AppState: ObservableObject {
         }
     }
 
+    @Published var useTrustedQuorumFallback: Bool {
+        didSet {
+            UserDefaults.standard.set(useTrustedQuorumFallback, forKey: "useTrustedQuorumFallback")
+        }
+    }
+
     private let testSigner = TestSigner()
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
+    /// Stored SPV client handle for reuse during network switches.
+    private var spvClientHandle: UnsafeMutableRawPointer?
 
     init() {
         // Load saved network preference or use default
@@ -60,11 +68,16 @@ class AppState: ObservableObject {
         let hasCoreKey = UserDefaults.standard.object(forKey: "useLocalhostCore") != nil
         self.useLocalPlatform = hasPlatformKey ? UserDefaults.standard.bool(forKey: "useLocalhostPlatform") : legacyLocal
         self.useLocalCore = hasCoreKey ? UserDefaults.standard.bool(forKey: "useLocalhostCore") : legacyLocal
+        self.useTrustedQuorumFallback = UserDefaults.standard.object(forKey: "useTrustedQuorumFallback") != nil
+            ? UserDefaults.standard.bool(forKey: "useTrustedQuorumFallback")
+            : true // Default: ON (use trusted HTTP quorums as fallback)
     }
 
-    func initializeSDK(modelContext: ModelContext) {
+    func initializeSDK(modelContext: ModelContext, spvClientHandle: UnsafeMutableRawPointer? = nil) {
         // Save the model context for later use
         self.modelContext = modelContext
+        // Store the SPV handle for reuse during network switches
+        self.spvClientHandle = spvClientHandle
 
         // Initialize DataManager
         self.dataManager = DataManager(modelContext: modelContext, currentNetwork: currentNetwork)
@@ -73,22 +86,43 @@ class AppState: ObservableObject {
             do {
                 isLoading = true
 
-                NSLog("🔵 AppState: Initializing SDK library...")
+                NSLog("AppState: Initializing SDK library...")
                 // Initialize the SDK library
                 SDK.initialize()
 
                 // Enable debug logging to see gRPC endpoints
                 SDK.enableLogging(level: .debug)
-                NSLog("🔵 AppState: Enabled debug logging for gRPC requests")
+                NSLog("AppState: Enabled debug logging for gRPC requests")
 
-                NSLog("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
+                NSLog("AppState: Creating SDK instance for network: \(currentNetwork)")
                 // Create SDK instance for current network
                 let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
-                NSLog("🔵 AppState: SDK network value: \(sdkNetwork)")
+                NSLog("AppState: SDK network value: \(sdkNetwork)")
 
-                let newSDK = try SDK(network: sdkNetwork)
+                let newSDK: SDK
+
+                // Try SPV quorums first if handle is available
+                if let spvHandle = spvClientHandle {
+                    do {
+                        newSDK = try SDK(network: sdkNetwork, spvClientHandle: spvHandle)
+                        NSLog("AppState: SDK created with SPV quorum provider")
+                    } catch {
+                        if useTrustedQuorumFallback {
+                            NSLog("AppState: SPV quorum provider failed (\(error.localizedDescription)), falling back to trusted")
+                            newSDK = try SDK(network: sdkNetwork)
+                        } else {
+                            throw error
+                        }
+                    }
+                } else if useTrustedQuorumFallback {
+                    NSLog("AppState: No SPV client available, using trusted quorum provider")
+                    newSDK = try SDK(network: sdkNetwork)
+                } else {
+                    throw SDKError.invalidState("No SPV client available and trusted fallback disabled")
+                }
+
                 sdk = newSDK
-                NSLog("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
+                NSLog("AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
 
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
@@ -102,6 +136,11 @@ class AppState: ObservableObject {
                 isLoading = false
             }
         }
+    }
+
+    /// Update the stored SPV client handle (e.g., after a network switch recreates the SPV client).
+    func updateSPVClientHandle(_ handle: UnsafeMutableRawPointer?) {
+        self.spvClientHandle = handle
     }
 
     func loadPersistedData() async {
@@ -189,7 +228,28 @@ class AppState: ObservableObject {
 
             // Create new SDK instance for the network
             let sdkNetwork: DashSDKNetwork = network.sdkNetwork
-            let newSDK = try SDK(network: sdkNetwork)
+
+            let newSDK: SDK
+
+            // Try SPV quorums first if handle is available
+            if let spvHandle = spvClientHandle {
+                do {
+                    newSDK = try SDK(network: sdkNetwork, spvClientHandle: spvHandle)
+                    NSLog("AppState.switchNetwork: SDK created with SPV quorum provider")
+                } catch {
+                    if useTrustedQuorumFallback {
+                        NSLog("AppState.switchNetwork: SPV quorum provider failed (\(error.localizedDescription)), falling back to trusted")
+                        newSDK = try SDK(network: sdkNetwork)
+                    } else {
+                        throw error
+                    }
+                }
+            } else if useTrustedQuorumFallback {
+                newSDK = try SDK(network: sdkNetwork)
+            } else {
+                throw SDKError.invalidState("No SPV client available and trusted fallback disabled")
+            }
+
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider

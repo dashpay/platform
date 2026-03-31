@@ -55,6 +55,9 @@ struct OptionsView: View {
                         }
                         .help("When enabled, Core (SPV) connects only to configured peers (default 127.0.0.1 with network port). Override via 'corePeerAddresses'.")
 
+                    Toggle("Fallback to Trusted Quorums", isOn: $appState.useTrustedQuorumFallback)
+                        .help("When enabled, falls back to trusted HTTP quorum provider if SPV quorum data is unavailable. Disable to require SPV-synced quorums for proof verification.")
+
                     HStack {
                         Text("Network Status")
                         Spacer()

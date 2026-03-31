@@ -208,6 +208,57 @@ public final class SDK: @unchecked Sendable {
     self.network = network
   }
 
+  /// Create a new SDK instance using SPV-synced quorum data for proof verification.
+  ///
+  /// Instead of fetching quorum keys from a trusted HTTP endpoint, this uses
+  /// quorum data already synced by the SPV client (masternode list sync).
+  ///
+  /// - Parameters:
+  ///   - network: The Dash network to connect to.
+  ///   - spvClientHandle: Raw pointer to the SPV client's `FFIDashSpvClient` handle.
+  ///     Obtain this from `SPVClient.unsafeFFIClientPointer`.
+  ///     The SPV client must remain alive for the lifetime of this SDK instance.
+  public init(network: Network, spvClientHandle: UnsafeMutableRawPointer) throws {
+    NSLog("SDK.init: Creating SDK with SPV quorum provider, network: \(network)")
+    var config = DashSDKConfig()
+    config.network = network
+    config.dapi_addresses = nil
+    config.skip_asset_lock_proof_verification = false
+    config.request_retry_count = 1
+    config.request_timeout_ms = 8000
+
+    var callbacks = makeSPVContextProviderCallbacks(spvClientHandle: spvClientHandle)
+
+    let result: DashSDKResult
+    let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
+    if forceLocal {
+      let localAddresses = Self.platformDAPIAddresses
+      NSLog("SDK.init: Using local DAPI addresses with SPV quorums: \(localAddresses)")
+      result = localAddresses.withCString { addressesCStr -> DashSDKResult in
+        var mutableConfig = config
+        mutableConfig.dapi_addresses = addressesCStr
+        return dash_sdk_create_with_callbacks(&mutableConfig, &callbacks)
+      }
+    } else {
+      result = dash_sdk_create_with_callbacks(&config, &callbacks)
+    }
+
+    if result.error != nil {
+      let error = result.error!.pointee
+      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      defer { dash_sdk_error_free(result.error) }
+      throw SDKError.internalError("Failed to create SDK with SPV quorums: \(errorMessage)")
+    }
+
+    guard result.data != nil else {
+      throw SDKError.internalError("No SDK handle returned")
+    }
+
+    handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+    self.network = network
+    NSLog("SDK.init: SDK created with SPV quorum provider")
+  }
+
   /// Load known contracts into the trusted context provider
   /// This avoids network calls for these contracts when they're needed
   public func loadKnownContracts(_ contracts: [(id: String, data: Data)]) throws {

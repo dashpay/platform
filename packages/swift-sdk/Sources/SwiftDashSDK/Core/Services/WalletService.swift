@@ -104,6 +104,12 @@ public class WalletService: ObservableObject {
     private var spvClient: SPVClient
     public private(set) var walletManager: CoreWalletManager
 
+    /// Raw FFI client pointer for Platform SDK quorum callbacks.
+    /// The returned pointer is only valid while this WalletService (and its SPV client) is alive.
+    public var spvClientHandle: UnsafeMutableRawPointer? {
+        spvClient.unsafeFFIClientPointer
+    }
+
     public init(modelContainer: ModelContainer, network: AppNetwork) {
         self.modelContainer = modelContainer
         self.network = network
