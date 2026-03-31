@@ -26,6 +26,7 @@ mod sdk;
 mod shielded;
 mod signer;
 mod signer_simple;
+pub mod spv_context_provider;
 mod system;
 mod token;
 mod types;

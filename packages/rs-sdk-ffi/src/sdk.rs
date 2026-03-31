@@ -619,6 +619,60 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
     result
 }
 
+/// Create a new SDK instance using SPV-synced quorum data for proof verification.
+///
+/// Instead of fetching quorum keys from a trusted HTTP endpoint, this uses
+/// quorum data from the SPV client's locally synced masternode list.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure
+/// - `spv_client` must be a valid pointer to an FFIDashSpvClient that outlives the SDK
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_with_spv_context(
+    config: *const DashSDKConfig,
+    spv_client: *mut std::os::raw::c_void,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    if spv_client.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SPV client pointer is null".to_string(),
+        ));
+    }
+
+    info!("dash_sdk_create_with_spv_context: creating SDK with SPV quorum provider");
+
+    let context_provider = crate::spv_context_provider::SpvContextProvider::new(spv_client);
+    let wrapper = Box::new(ContextProviderWrapper::new(context_provider));
+    let context_provider_handle = Box::into_raw(wrapper) as *mut ContextProviderHandle;
+
+    let config_ref = &*config;
+    let extended_config = DashSDKConfigExtended {
+        base_config: DashSDKConfig {
+            network: config_ref.network,
+            dapi_addresses: config_ref.dapi_addresses,
+            skip_asset_lock_proof_verification: config_ref.skip_asset_lock_proof_verification,
+            request_retry_count: config_ref.request_retry_count,
+            request_timeout_ms: config_ref.request_timeout_ms,
+        },
+        context_provider: context_provider_handle,
+        core_sdk_handle: std::ptr::null_mut(),
+    };
+
+    let result = dash_sdk_create_extended(&extended_config);
+
+    // Reclaim the wrapper -- the SDK has already cloned what it needs
+    let _ = Box::from_raw(context_provider_handle as *mut ContextProviderWrapper);
+
+    result
+}
+
 /// Get the current network the SDK is connected to
 ///
 /// # Safety

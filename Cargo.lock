@@ -5850,6 +5850,7 @@ dependencies = [
  "bs58",
  "cbindgen 0.27.0",
  "dash-sdk",
+ "dash-spv-ffi",
  "dotenvy",
  "drive-proof-verifier",
  "env_logger 0.11.10",

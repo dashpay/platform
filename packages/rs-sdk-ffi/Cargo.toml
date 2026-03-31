@@ -22,6 +22,9 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
 ] }
 simple-signer = { path = "../simple-signer" }
 
+# SPV client integration for quorum-based proof verification
+dash-spv-ffi = { workspace = true }
+
 # Platform Wallet integration for DashPay support
 platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 

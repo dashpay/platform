@@ -227,8 +227,6 @@ public final class SDK: @unchecked Sendable {
     config.request_retry_count = 1
     config.request_timeout_ms = 8000
 
-    var callbacks = makeSPVContextProviderCallbacks(spvClientHandle: spvClientHandle)
-
     let result: DashSDKResult
     let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
     if forceLocal {
@@ -237,10 +235,10 @@ public final class SDK: @unchecked Sendable {
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in
         var mutableConfig = config
         mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_with_callbacks(&mutableConfig, &callbacks)
+        return dash_sdk_create_with_spv_context(&mutableConfig, spvClientHandle)
       }
     } else {
-      result = dash_sdk_create_with_callbacks(&config, &callbacks)
+      result = dash_sdk_create_with_spv_context(&config, spvClientHandle)
     }
 
     if result.error != nil {
