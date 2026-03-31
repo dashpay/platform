@@ -18,6 +18,8 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use tokio::sync::RwLock;
 
+use dpp::identity::signer::Signer;
+
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentityFromAddresses;
@@ -495,6 +497,38 @@ impl IdentityWallet {
 
         Ok(())
     }
+
+    /// Withdraw credits using an externally-provided identity and signer.
+    ///
+    /// Unlike [`withdraw_credits`](Self::withdraw_credits), this method does
+    /// **not** look up the identity in the internal `IdentityManager`. Instead,
+    /// the caller supplies the `Identity` object and a `Signer` implementation
+    /// directly. This is useful when the caller manages identities outside of
+    /// the platform-wallet `IdentityManager` (e.g. evo-tool's
+    /// `QualifiedIdentity`).
+    ///
+    /// Returns the remaining credit balance after the withdrawal.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn withdraw_credits_with_signer<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        identity: &Identity,
+        to_address: Option<DashAddress>,
+        amount: u64,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+    ) -> Result<u64, dash_sdk::Error> {
+        identity
+            .withdraw(
+                &self.sdk,
+                to_address,
+                amount,
+                Some(1), // core_fee_per_byte
+                signing_withdrawal_key_to_use,
+                signer,
+                None, // settings
+            )
+            .await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +594,33 @@ impl IdentityWallet {
         }
 
         Ok(())
+    }
+
+    /// Transfer credits using an externally-provided identity and signer.
+    ///
+    /// Unlike [`transfer_credits`](Self::transfer_credits), this method does
+    /// **not** look up the identity in the internal `IdentityManager`. The
+    /// caller supplies the `Identity` and a `Signer` directly.
+    ///
+    /// Returns `(sender_balance, receiver_balance)` after the transfer.
+    pub async fn transfer_credits_with_signer<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        identity: &Identity,
+        to_id: Identifier,
+        amount: u64,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+    ) -> Result<(u64, u64), dash_sdk::Error> {
+        identity
+            .transfer_credits(
+                &self.sdk,
+                to_id,
+                amount,
+                signing_transfer_key_to_use,
+                signer,
+                None, // settings
+            )
+            .await
     }
 }
 
@@ -660,6 +721,55 @@ impl IdentityWallet {
             })?;
 
         Ok(())
+    }
+
+    /// Update an identity using an externally-provided identity and signer.
+    ///
+    /// Unlike [`update_identity`](Self::update_identity), this method does
+    /// **not** look up the identity in the internal `IdentityManager`. The
+    /// caller supplies the `Identity`, master key ID, and a `Signer` directly.
+    ///
+    /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
+    /// can inspect proof-verified outcomes (e.g. updated keys, balance).
+    pub async fn update_identity_with_signer<S: Signer<IdentityPublicKey>>(
+        &self,
+        identity: &Identity,
+        master_key_id: &u32,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<u32>,
+        signer: &S,
+    ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
+    {
+        use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+
+        // Get identity nonce from Platform.
+        let identity_nonce = self
+            .sdk
+            .get_identity_nonce(identity.id(), true, None)
+            .await?;
+
+        // Build the update transition.
+        let state_transition = IdentityUpdateTransition::try_from_identity_with_signer(
+            identity,
+            master_key_id,
+            add_public_keys,
+            disable_public_keys,
+            identity_nonce,
+            0, // user_fee_increase
+            signer,
+            self.sdk.version(),
+            None,
+        )
+        .map_err(|e| dash_sdk::Error::Protocol(e))?;
+
+        // Broadcast and wait for confirmation.
+        let result = state_transition
+            .broadcast_and_wait(&self.sdk, None)
+            .await?;
+
+        Ok(result)
     }
 }
 
@@ -840,6 +950,34 @@ impl IdentityWallet {
             ))
         })?;
 
+        Ok(result.full_domain_name)
+    }
+
+    /// Register a DPNS name using an externally-provided identity and signer.
+    ///
+    /// Unlike [`register_name`](Self::register_name), this method does **not**
+    /// look up the identity in the internal `IdentityManager`. The caller
+    /// supplies the `Identity`, the signing key, and a `Signer` directly.
+    ///
+    /// Returns the full domain name (e.g. "alice.dash").
+    pub async fn register_name_with_signer<S: Signer<IdentityPublicKey>>(
+        &self,
+        identity: Identity,
+        name: &str,
+        identity_public_key: IdentityPublicKey,
+        signer: S,
+    ) -> Result<String, dash_sdk::Error> {
+        use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
+
+        let input = RegisterDpnsNameInput {
+            label: name.to_string(),
+            identity,
+            identity_public_key,
+            signer,
+            preorder_callback: None,
+        };
+
+        let result = self.sdk.register_dpns_name(input).await?;
         Ok(result.full_domain_name)
     }
 
