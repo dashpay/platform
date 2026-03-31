@@ -171,20 +171,13 @@ public class CoreWalletManager: ObservableObject {
             throw WalletError.walletError("At least one credit output required")
         }
 
-        // Prepare script pointers and lengths
-        var scriptPtrs: [UnsafePointer<UInt8>?] = []
-        var scriptLens: [Int] = []
-        var amounts: [UInt64] = []
-
-        // Keep Data alive for the duration of the FFI call
-        let scriptDatas = creditOutputs.map { $0.scriptPubKey }
-
-        for (i, output) in creditOutputs.enumerated() {
-            scriptDatas[i].withUnsafeBytes { buffer in
-                scriptPtrs.append(buffer.baseAddress?.assumingMemoryBound(to: UInt8.self))
-            }
-            scriptLens.append(output.scriptPubKey.count)
-            amounts.append(output.amount)
+        // Concatenate all scripts into a single contiguous buffer
+        // and build an array of pointers into it
+        var scriptLens: [Int] = creditOutputs.map { $0.scriptPubKey.count }
+        var amounts: [UInt64] = creditOutputs.map { $0.amount }
+        var concatenatedScripts = Data()
+        for output in creditOutputs {
+            concatenatedScripts.append(output.scriptPubKey)
         }
 
         var feeOut: UInt64 = 0
@@ -198,29 +191,43 @@ public class CoreWalletManager: ObservableObject {
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
         var ffiError = FFIError()
 
-        let success = scriptPtrs.withUnsafeMutableBufferPointer { scriptPtrsBuffer in
-            scriptLens.withUnsafeMutableBufferPointer { scriptLensBuffer in
-                amounts.withUnsafeMutableBufferPointer { amountsBuffer in
-                    wallet_build_and_sign_asset_lock_transaction(
-                        sdkWalletManager.handle,
-                        sdkWallet.handle,
-                        accountIndex,
-                        fundingType.rawValue,
-                        identityIndex,
-                        scriptPtrsBuffer.baseAddress,
-                        scriptLensBuffer.baseAddress,
-                        amountsBuffer.baseAddress,
-                        count,
-                        feePerKb,
-                        &feeOut,
-                        &txBytesOut,
-                        &txLenOut,
+        // Build pointers inside withUnsafeBytes so they remain valid
+        let success = concatenatedScripts.withUnsafeBytes { allScriptsBuffer -> Bool in
+            guard let allScriptsBase = allScriptsBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+            // Build array of pointers into the concatenated buffer
+            var scriptPtrs: [UnsafePointer<UInt8>?] = []
+            var offset = 0
+            for len in scriptLens {
+                scriptPtrs.append(allScriptsBase.advanced(by: offset))
+                offset += len
+            }
+
+            return scriptPtrs.withUnsafeMutableBufferPointer { scriptPtrsBuffer in
+                scriptLens.withUnsafeMutableBufferPointer { scriptLensBuffer in
+                    amounts.withUnsafeMutableBufferPointer { amountsBuffer in
+                        wallet_build_and_sign_asset_lock_transaction(
+                            sdkWalletManager.handle,
+                            sdkWallet.handle,
+                            accountIndex,
+                            fundingType.rawValue,
+                            identityIndex,
+                            scriptPtrsBuffer.baseAddress,
+                            scriptLensBuffer.baseAddress,
+                            amountsBuffer.baseAddress,
+                            count,
+                            feePerKb,
+                            &feeOut,
+                            &txBytesOut,
+                            &txLenOut,
                         &outputIndexOut,
                         &privateKeyOut,
                         &ffiError
                     )
                 }
             }
+        }
         }
 
         guard success else {
