@@ -117,6 +117,140 @@ public class CoreWalletManager: ObservableObject {
         }
     }
 
+    // MARK: - Asset Lock Transaction
+
+    /// Result of building an asset lock transaction.
+    public struct AssetLockTransactionResult {
+        /// Serialized transaction bytes.
+        public let transactionBytes: Data
+        /// Index of the asset lock output in the transaction.
+        public let outputIndex: UInt32
+        /// One-time private key for the asset lock proof (32 bytes).
+        public let privateKey: Data
+        /// Actual fee paid in duffs.
+        public let fee: UInt64
+    }
+
+    /// Asset lock funding type.
+    public enum AssetLockFundingType: UInt32 {
+        case identityRegistration = 0
+        case identityTopUp = 1
+        case identityTopUpNotBound = 2
+        case identityInvitation = 3
+        case assetLockAddressTopUp = 4
+        case assetLockShieldedAddressTopUp = 5
+    }
+
+    /// Build and sign an asset lock transaction for Core → Platform transfers.
+    ///
+    /// Creates a Core special transaction (type 8) with AssetLockPayload that locks
+    /// Dash for Platform credits.
+    ///
+    /// - Parameters:
+    ///   - wallet: The wallet to fund from.
+    ///   - accountIndex: BIP44 account index (typically 0).
+    ///   - fundingType: The type of asset lock funding account for key derivation.
+    ///   - identityIndex: Identity index for key derivation (0 for new).
+    ///   - creditOutputs: Array of (scriptPubKey, amount) pairs for platform credit outputs.
+    ///   - feePerKb: Fee rate in duffs per kilobyte (0 for default).
+    /// - Returns: `AssetLockTransactionResult` with tx bytes, output index, private key, and fee.
+    public func buildAssetLockTransaction(
+        for wallet: HDWallet,
+        accountIndex: UInt32 = 0,
+        fundingType: AssetLockFundingType = .assetLockAddressTopUp,
+        identityIndex: UInt32 = 0,
+        creditOutputs: [(scriptPubKey: Data, amount: UInt64)],
+        feePerKb: UInt64 = 1000
+    ) throws -> AssetLockTransactionResult {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: wallet.walletId) else {
+            throw WalletError.walletError("Wallet not found")
+        }
+
+        let count = creditOutputs.count
+        guard count > 0 else {
+            throw WalletError.walletError("At least one credit output required")
+        }
+
+        // Prepare script pointers and lengths
+        var scriptPtrs: [UnsafePointer<UInt8>?] = []
+        var scriptLens: [Int] = []
+        var amounts: [UInt64] = []
+
+        // Keep Data alive for the duration of the FFI call
+        let scriptDatas = creditOutputs.map { $0.scriptPubKey }
+
+        for (i, output) in creditOutputs.enumerated() {
+            scriptDatas[i].withUnsafeBytes { buffer in
+                scriptPtrs.append(buffer.baseAddress?.assumingMemoryBound(to: UInt8.self))
+            }
+            scriptLens.append(output.scriptPubKey.count)
+            amounts.append(output.amount)
+        }
+
+        var feeOut: UInt64 = 0
+        var txBytesOut: UnsafeMutablePointer<UInt8>? = nil
+        var txLenOut: Int = 0
+        var outputIndexOut: UInt32 = 0
+        var privateKeyOut: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var ffiError = FFIError()
+
+        let success = scriptPtrs.withUnsafeMutableBufferPointer { scriptPtrsBuffer in
+            scriptLens.withUnsafeMutableBufferPointer { scriptLensBuffer in
+                amounts.withUnsafeMutableBufferPointer { amountsBuffer in
+                    wallet_build_and_sign_asset_lock_transaction(
+                        sdkWalletManager.handle,
+                        sdkWallet.handle,
+                        accountIndex,
+                        fundingType.rawValue,
+                        identityIndex,
+                        scriptPtrsBuffer.baseAddress,
+                        scriptLensBuffer.baseAddress,
+                        amountsBuffer.baseAddress,
+                        count,
+                        feePerKb,
+                        &feeOut,
+                        &txBytesOut,
+                        &txLenOut,
+                        &outputIndexOut,
+                        &privateKeyOut,
+                        &ffiError
+                    )
+                }
+            }
+        }
+
+        guard success else {
+            let msg = ffiError.message != nil ? String(cString: ffiError.message!) : "Unknown error"
+            if ffiError.message != nil {
+                error_message_free(ffiError.message)
+            }
+            throw WalletError.walletError("Asset lock transaction failed: \(msg)")
+        }
+
+        // Copy transaction bytes
+        let txData: Data
+        if let ptr = txBytesOut, txLenOut > 0 {
+            txData = Data(bytes: ptr, count: txLenOut)
+            transaction_bytes_free(ptr)
+        } else {
+            throw WalletError.walletError("No transaction bytes returned")
+        }
+
+        // Copy private key from tuple to Data
+        let privateKeyData = withUnsafeBytes(of: privateKeyOut) { Data($0) }
+
+        return AssetLockTransactionResult(
+            transactionBytes: txData,
+            outputIndex: outputIndexOut,
+            privateKey: privateKeyData,
+            fee: feeOut
+        )
+    }
+
     public func deleteWallet(_ wallet: HDWallet) async throws {
         let walletId = wallet.id
 
