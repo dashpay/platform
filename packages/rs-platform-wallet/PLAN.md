@@ -261,20 +261,28 @@ rs-platform-wallet
 │   ├── core:     CoreWallet                       ← balance, UTXOs, addresses, tx building, asset locks
 │   │   ├── wallet:      Arc<RwLock<Wallet>>
 │   │   ├── wallet_info: Arc<RwLock<ManagedWalletInfo>>
+│   │   ├── transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>
 │   │   └── network:     Network (cached)
-│   ├── identity: IdentityWallet                   ← register, discover, top-up, withdraw, transfer, DPNS
+│   ├── identity: IdentityWallet                   ← register, discover, top-up, withdraw, transfer, update, DPNS
 │   │   ├── wallet, wallet_info, identity_manager: Arc<RwLock<...>>
 │   │   ├── network: Network (cached)
-│   │   └── signer_for_identity() → IdentitySigner
+│   │   ├── signer_for_identity() → IdentitySigner
+│   │   ├── update_identity(add_keys, disable_keys) ← IdentityUpdateTransition
+│   │   ├── top_up_from_addresses() / transfer_credits_to_addresses()
+│   │   └── register_name() / resolve_name() / search_names() ← DPNS
 │   ├── dashpay:  DashPayWallet                    ← send/accept contact requests, sync contacts
 │   │   ├── wallet, wallet_info, identity_manager: Arc<RwLock<...>>
 │   │   └── network: Network (cached)
-│   ├── platform: PlatformAddressWallet            ← DIP-17 sync, transfer, withdraw, fund
+│   ├── platform: PlatformAddressWallet            ← DIP-17 sync, transfer, withdraw, fund_from_asset_lock
 │   │   ├── wallet, wallet_info: Arc<RwLock<...>>
 │   │   ├── balances: Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>
 │   │   ├── network: Network (cached)
 │   │   └── implements Signer<PlatformAddress> (blocking_read bridge)
-│   └── [shielded: Option<ShieldedWallet>]         ← feature-gated, Orchard ZK pool (PR-9)
+│   ├── tokens:   TokenWallet                      ← per-identity registry, sync, transfer, mint, burn, etc.
+│   │   ├── watched: Arc<RwLock<Map<IdentityId, Set<TokenId>>>>
+│   │   ├── balances: Arc<RwLock<Map<(IdentityId, TokenId), TokenAmount>>>
+│   │   └── watch/unwatch/sync/transfer/mint/burn/freeze/purchase/claim/set_price
+│   └── [shielded: Option<ShieldedWallet>]         ← feature-gated, Orchard ZK pool (PR-10)
 │
 ├── PlatformWalletManager        ← multi-wallet + SPV coordinator
 │   ├── sdk, network, wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>
@@ -291,18 +299,10 @@ rs-platform-wallet
 │   └── PlatformAddressWallet    ← Signer<PlatformAddress> (ECDSA P2PKH, DIP-17 paths)
 │
 ├── Events
-│   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent) | Finality(FinalityEvent) | MempoolTransaction
-│   └── TransactionStatus        ← Unconfirmed | InstantSendLocked | Confirmed{h} | ChainLocked{h}
+│   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent) | Finality(FinalityEvent) | TransactionStatusChanged
+│   └── TransactionStatus        ← Unconfirmed | InstantSendLocked | Confirmed | ChainLocked (monotonic)
 │
-├── TokenWallet                  ← PR-8: per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim
-│   ├── watched: Map<IdentityId, Set<TokenId>>         ← per-identity token registry
-│   ├── balances: Map<(IdentityId, TokenId), TokenAmount>  ← cached from sync
-│   ├── watch/unwatch/watched_for                      ← registry management
-│   ├── sync()                                         ← FetchMany per identity × watched tokens
-│   ├── transfer/purchase/claim                        ← user operations
-│   └── mint/burn/freeze/unfreeze/set_price            ← admin operations
-│
-└── [ShieldedWallet]             ← PR-9: shield, unshield, transfer, withdraw (Orchard/Halo2)
+└── [ShieldedWallet]             ← PR-10: shield, unshield, transfer, withdraw (Orchard/Halo2)
     ├── keys.rs                  ← SpendingKey → FullViewingKey → OrchardAddress
     ├── note_store.rs            ← DecryptedNote persistence, SpendableNote selection
     ├── nullifier_store.rs       ← NullifierProvider impl
@@ -312,6 +312,7 @@ rs-platform-wallet
 
 rs-sdk (Dash Platform SDK) — operations used by platform-wallet
 ├── Identity: PutIdentity, TopUpIdentity, WithdrawFromIdentity, TransferToIdentity
+├── Identity update: IdentityUpdateTransition (add/disable keys, nonce-based)
 ├── Identity from addresses: TopUpIdentityFromAddresses, TransferToAddresses
 ├── DashPay: create/send_contact_request, fetch sent/received/all requests
 ├── Platform addresses: TransferAddressFunds, WithdrawAddressFunds, TopUpAddress
@@ -327,8 +328,8 @@ rs-sdk (Dash Platform SDK) — operations used by platform-wallet
 - **No WalletHandle — use PlatformWallet.clone()**: All fields are Arc-wrapped, clone is ~35 atomic
   ops (nanoseconds). A separate handle type added complexity without meaningful encapsulation.
 - **Wallet is mutable** (`Arc<RwLock<Wallet>>`): Accounts are added during DashPay contact
-  establishment and sync. The `check_core_transaction` trait takes `&Wallet` (read lock) for
-  transaction checking, but other operations need write access.
+  establishment and sync. The `check_core_transaction` trait takes `&mut Wallet` (write lock)
+  for transaction checking, as it may update wallet state (gap limit maintenance).
 - **Sub-wallets share state via Arc**: All hold `Arc<RwLock<ManagedWalletInfo>>` and
   `Arc<RwLock<Wallet>>`. SPV writes through the Arc — visible to all clones immediately.
 - **Lock ordering**: Always acquire `wallet` before `wallet_info` to prevent deadlocks.
@@ -370,6 +371,7 @@ pub struct PlatformWallet {
     identity: IdentityWallet,
     dashpay:  DashPayWallet,
     platform: PlatformAddressWallet,
+    tokens:   TokenWallet,
 }
 
 // Sub-wallets — stored fields, share wallet_info via Arc<RwLock<ManagedWalletInfo>>
@@ -378,6 +380,7 @@ pub struct CoreWallet {
     sdk:         Sdk,
     wallet:      Arc<RwLock<Wallet>>,
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+    transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,  // finality tracking
     network:     Network,  // cached at construction
 }
 
@@ -385,7 +388,7 @@ pub struct IdentityWallet {
     sdk:              Sdk,
     wallet:           Arc<RwLock<Wallet>>,
     wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
-    identity_manager: IdentityManager,
+    identity_manager: Arc<RwLock<IdentityManager>>,
     network:          Network,  // cached at construction
 }
 
@@ -393,7 +396,7 @@ pub struct DashPayWallet {
     sdk:              Sdk,
     wallet:           Arc<RwLock<Wallet>>,
     wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
-    identity_manager: IdentityManager,  // same instance as IdentityWallet (Arc clone)
+    identity_manager: Arc<RwLock<IdentityManager>>,  // same instance as IdentityWallet
     network:          Network,  // cached at construction
 }
 
@@ -403,6 +406,15 @@ pub struct PlatformAddressWallet {
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     balances:    Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>,  // balance cache
     network:     Network,  // cached at construction
+}
+
+pub struct TokenWallet {
+    sdk:              Sdk,
+    wallet:           Arc<RwLock<Wallet>>,
+    identity_manager: Arc<RwLock<IdentityManager>>,
+    network:          Network,
+    watched:          Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,  // identity → tokens
+    balances:         Arc<RwLock<BTreeMap<(Identifier, Identifier), TokenAmount>>>,  // cache
 }
 
 // Multi-wallet + SPV coordinator — no WalletManager<T> dependency
