@@ -196,6 +196,25 @@ class SPVClient: @unchecked Sendable {
         config = nil
     }
 
+    // MARK: - Broadcast Transactions
+
+    func broadcastTransaction(_ transactionData: Data) throws {
+        try transactionData.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+            guard let txBytes = ptr.bindMemory(to: UInt8.self).baseAddress else {
+                throw SPVError.transactionBroadcastFailed("Invalid transaction data pointer")
+            }
+            let result = dash_spv_ffi_client_broadcast_transaction(
+                client,
+                txBytes,
+                UInt(transactionData.count)
+            )
+
+            if result != 0 {
+                throw SPVError.transactionBroadcastFailed(SPVClient.getLastDashFFIError())
+            }
+        }
+    }
+
     // MARK: - Synchronization
 
     func startSync() async throws {
@@ -241,6 +260,7 @@ public enum SPVError: LocalizedError {
     case alreadySyncing
     case syncFailed(String)
     case storageOperationFailed(String)
+    case transactionBroadcastFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -260,6 +280,8 @@ public enum SPVError: LocalizedError {
             return "Sync failed: \(reason)"
         case let .storageOperationFailed(reason):
             return reason
+        case let .transactionBroadcastFailed(reason):
+            return "Transaction broadcast failed: \(reason)"
         }
     }
 }
