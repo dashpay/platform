@@ -47,17 +47,6 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "42eb1d698d4f178d3a8a80c72c9c0f9bbeddcc3e" }
-
-# Optimize heavy crypto crates even in dev/test builds so that
-# Halo 2 proof generation and verification run at near-release speed.
-# Without this, ZK operations are 10-100x slower (debug field arithmetic).
-[workspace.dependencies]
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5db46b4d2bdc50b0fbc8d9acbebe72775bb4132a" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5db46b4d2bdc50b0fbc8d9acbebe72775bb4132a" }
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "5db46b4d2bdc50b0fbc8d9acbebe72775bb4132a" }

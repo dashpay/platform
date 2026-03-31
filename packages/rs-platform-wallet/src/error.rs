@@ -74,4 +74,13 @@ pub enum PlatformWalletError {
 
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
+
+    #[error("SPV is already running — stop it before starting again")]
+    SpvAlreadyRunning,
+
+    #[error("No wallets configured — add a wallet before starting SPV")]
+    NoWalletsConfigured,
+
+    #[error("SPV error: {0}")]
+    SpvError(String),
 }

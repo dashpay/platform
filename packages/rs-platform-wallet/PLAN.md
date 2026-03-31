@@ -25,7 +25,7 @@ date: 2026-03-13
 3. **PR-3** ✅: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner`
 4. **PR-4** ✅: `DashPayWallet` — contact requests (simplified API), sync, accept
 5. **PR-5** ✅: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + review fixes
-6. **PR-6**: Dashcore upstream sync + mempool support — crate merge, TransactionContext, SPV lifecycle, TransactionStatus, event wiring
+6. **PR-6**: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
 7. **PR-7**: Missing identity/address operations + DPNS — add_key, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, DPNS module
 8. **PR-8**: Token operations — `TokenWallet` sub-wallet (transfer, balance, claim, purchase)
 9. **PR-9**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
@@ -35,46 +35,128 @@ date: 2026-03-13
 
 ---
 
-## PR-6: Dashcore upstream sync + mempool support
+## PR-6: SPV lifecycle + TransactionStatus + EventHandler
 
-### Dashcore changes to incorporate (v0.42-dev since 42eb1d69)
+### Status after v3.1-dev merge (2026-03-31)
 
-**Must fix (will not compile):**
+**Already done** (by merging v3.1-dev with dashcore rev `5db46b4d` and fixing compilation):
+- `TransactionContext::InBlock(BlockInfo)` — updated from named fields
+- `check_core_transaction(&mut wallet, update_state, update_balance)` — extra params adapted
+- `process_mempool_transaction(tx, is_instant_send) -> MempoolTransactionResult` — new signature
+- `watched_outpoints()` — implemented via `get_spendable_utxos()`
+- `TransactionContext::InstantSend` variant — used in mempool processing
 
-1. **`key-wallet-manager` crate merged into `key-wallet`** (5edf719f):
-   - All `use key_wallet_manager::*` → `use key_wallet::manager::*`
-   - Remove `key-wallet-manager` from Cargo.toml, use `key_wallet` with `manager` feature
-   - Affects: SPV adapter, events.rs, PlatformWalletManager, Cargo.toml
+**Cancelled**: `key-wallet-manager` crate merge into `key-wallet` — decision to keep them as separate crates. All imports remain `use key_wallet_manager::*`.
 
-2. **`TransactionContext` restructured** (213a9b4f, f2d2dfe8):
-   - `InBlock { height, block_hash: Option, timestamp: Option }` → `InBlock(BlockInfo)` where `BlockInfo { height, block_hash, timestamp }` (all required)
-   - New `TransactionContext::InstantSend` variant
-   - `check_core_transaction()` gained `update_balance: bool` parameter
-   - Affects: SPV adapter `process_block`, `process_mempool_transaction`
+### What PR-6 now delivers
 
-3. **`WalletInterface` trait expanded** (08ade6e8, e7c68d9d):
-   - `process_mempool_transaction()`: added `is_instant_send: bool` param, returns `MempoolTransactionResult`
-   - New required: `watched_outpoints() -> Vec<OutPoint>` (for bloom filter)
-   - New with defaults: `monitor_revision()`, `process_instant_send_lock()`
-   - Affects: SpvWalletAdapter must implement new methods
+**1. TransactionStatus lifecycle tracking**
 
-4. **`DashSpvClient` gained `EventHandler` generic** (c39db47d):
-   - Constructor: `DashSpvClient::new(config, network, storage, wallet, Arc::new(handler))`
-   - `DashSpvClient<W, N, S>` → `DashSpvClient<W, N, S, H: EventHandler>`
-   - New `EventHandler` trait: `on_sync_event`, `on_network_event`, `on_progress`, `on_wallet_event`, `on_error`
-   - Affects: `PlatformWalletManager::start_spv()` when wired up
+Add `TransactionStatus` enum to `events.rs` and per-transaction status tracking in `CoreWallet`:
 
-**Should implement (defaults exist but functionality needs it):**
-- `mark_instant_send_utxos()` on `WalletInfoInterface`
-- `EventHandler` impl for SPV progress/wallet event forwarding to `PlatformWalletEvent`
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum TransactionStatus {
+    Unconfirmed = 0,           // In mempool, no IS lock
+    InstantSendLocked = 1,     // IS-locked, not yet mined
+    Confirmed = 2,             // Mined in a block
+    ChainLocked = 3,           // In a chain-locked block (highest finality)
+}
+```
 
-### Evo-tool changes to backport (v1.0-dev since 7647ccf1)
+- Track status per txid in `CoreWallet` (or via `SpvWalletAdapter`)
+- Emit `PlatformWalletEvent::Wallet(WalletEvent::TransactionStatusChanged)` on transitions
+- `process_instant_send_lock()` on `SpvWalletAdapter`: update status, call `mark_instant_send_utxos()` on WalletInfoInterface
+- Pattern from evo-tool: `src/model/wallet/mod.rs` lines 520-577
 
-1. **Mempool support** (0f01edd9): `TransactionStatus` enum, `MempoolStrategy::BloomFilter`, transaction deduplication
-2. **Key-only address balances** (917b3471): RPC fallback for transaction history, provider account registration
-3. **DAPI error classification** (65358ef4): Typed `TaskError` variants instead of raw gRPC errors
-4. **DB migration** (8937c1c9): Consolidated migrations, `Network::Dash` → `Network::Mainnet` in DB
-5. **E2E test harness** (fffc649e): `BackendTestContext` pattern for integration tests
+**2. EventHandler implementation**
+
+Implement `dash_spv::EventHandler` trait on a new `SpvEventForwarder` struct that forwards SPV events to `PlatformWalletEvent` broadcast channel:
+
+```rust
+pub(crate) struct SpvEventForwarder {
+    event_tx: broadcast::Sender<PlatformWalletEvent>,
+}
+
+impl EventHandler for SpvEventForwarder {
+    fn on_sync_event(&self, event: &SyncEvent)     { /* → PlatformWalletEvent::Spv(SpvEvent::SyncProgress) */ }
+    fn on_network_event(&self, event: &NetworkEvent) { /* → PlatformWalletEvent::Spv(PeerConnected/Disconnected) */ }
+    fn on_wallet_event(&self, event: &WalletEvent)  { /* → PlatformWalletEvent::Wallet(event) */ }
+    fn on_error(&self, error: &str)                  { /* → tracing::error! */ }
+}
+```
+
+`EventHandler` trait (from `dash-spv/src/client/event_handler.rs`):
+- `on_sync_event(&self, event: &SyncEvent)` — sync lifecycle (headers stored, sync complete)
+- `on_network_event(&self, event: &NetworkEvent)` — peer connection changes
+- `on_progress(&self, progress: &SyncProgress)` — overall sync progress
+- `on_wallet_event(&self, event: &WalletEvent)` — transaction received, balance updated
+- `on_error(&self, error: &str)` — fatal errors
+- All have default no-op implementations
+
+**3. Wire `start_spv()` / `stop_spv()`**
+
+Replace stubs in `PlatformWalletManager` with real `DashSpvClient` lifecycle:
+
+```rust
+// DashSpvClient generic signature:
+// DashSpvClient<W: WalletInterface, N: NetworkManager, S: StorageManager, H: EventHandler>
+// Constructor: DashSpvClient::new(config, network, storage, Arc<RwLock<wallet>>, Arc::new(handler))
+
+pub async fn start_spv(&mut self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+    let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(/* ... */)));
+    let handler = Arc::new(SpvEventForwarder::new(self.event_tx.clone()));
+    let client = DashSpvClient::new(config, network, storage, adapter, handler).await?;
+    client.start().await?;
+    self.spv_client = Some(client);
+    Ok(())
+}
+```
+
+Need to determine concrete types for `N: NetworkManager` and `S: StorageManager` — check what evo-tool uses (likely `PeerNetworkManager` and `DiskStorageManager` from dash-spv).
+
+**4. AssetLockFinalityEvent tracking**
+
+Add finality proof tracking for asset lock transactions (needed by identity registration/top-up):
+
+```rust
+pub enum AssetLockFinalityEvent {
+    InstantLock { txid: Txid, instant_lock: Box<InstantLock> },
+    ChainLock { height: u32 },
+}
+```
+
+- Subscribe to finality channel from SPV manager
+- Update `transactions_waiting_for_finality` map when proofs arrive
+- Pattern from evo-tool: `src/spv/manager.rs` lines 128-137, `src/context/wallet_lifecycle.rs`
+
+### Files to modify
+
+| File | Changes |
+|------|---------|
+| `src/events.rs` | Add `TransactionStatus` enum, `AssetLockFinalityEvent` |
+| `src/manager/spv_wallet_adapter.rs` | Add `process_instant_send_lock()` impl, `monitor_revision()` |
+| `src/manager/spv_event_forwarder.rs` | **New** — `EventHandler` impl forwarding to `PlatformWalletEvent` |
+| `src/manager/platform_wallet_manager.rs` | Wire `start_spv()`/`stop_spv()` with `DashSpvClient`, finality tracking |
+| `src/wallet/core/wallet.rs` | Per-tx status tracking map, status query methods |
+| `Cargo.toml` | Add `dash-spv = { workspace = true, optional = true }` under `manager` feature |
+
+### Evo-tool patterns to adopt (reference, not backport)
+
+These are implemented in evo-tool and serve as reference for platform-wallet's own implementation:
+
+1. **SPV status tracking** — `SpvStatus` enum (Idle/Starting/Syncing/Running/Stopping/Stopped/Error) from `src/spv/manager.rs`
+2. **Debounced event reconciliation** — 300ms debounce windows to avoid thrashing from rapid events
+3. **MempoolStrategy::BloomFilter** — configured during SPV client init for efficient mempool tracking
+4. **Four event channels** — SyncEvent, WalletEvent, NetworkEvent, AssetLockFinalityEvent (each with its own handler)
+
+### NOT in PR-6 scope (moved to later PRs or not needed)
+
+- ~~key-wallet-manager crate merge~~ — cancelled, keep separate
+- DAPI error classification — evo-tool concern, not platform-wallet library
+- DB migration consolidation — evo-tool concern
+- E2E test harness — PR-10
 
 ---
 
@@ -191,8 +273,6 @@ key-wallet (rust-dashcore) — reused types
 ├── ManagedAccountCollection     ← BIP44 + DashPay + PlatformPayment + Identity accounts
 ├── TransactionRouter            ← transaction classification + checking
 ├── WalletTransactionChecker     ← trait for tx matching (impl on ManagedWalletInfo)
-├── key_wallet::manager          ← WalletInterface, WalletEvent, BlockProcessingResult,
-│                                   MempoolTransactionResult (merged from key-wallet-manager)
 ├── TransactionContext           ← Mempool | InstantSend | InBlock(BlockInfo) | InChainLockedBlock(BlockInfo)
 └── BlockInfo                    ← { height, block_hash, timestamp } (all required)
 
@@ -268,9 +348,9 @@ rs-sdk (Dash Platform SDK) — operations used by platform-wallet
   `Arc<RwLock<Wallet>>`. SPV writes through the Arc — visible to all clones immediately.
 - **Lock ordering**: Always acquire `wallet` before `wallet_info` to prevent deadlocks.
   Signers use sequential `blocking_read()` (drop first lock before acquiring second).
-- **key-wallet-manager merged into key-wallet**: All imports use `key_wallet::manager::*`.
+- **key-wallet-manager stays as separate crate**: Imports use `key_wallet_manager::*`.
   The `WalletInterface` trait, `WalletEvent`, `BlockProcessingResult`, `MempoolTransactionResult`
-  are in `key_wallet::manager`.
+  are in `key_wallet_manager`.
 - **Mempool support**: `SpvWalletAdapter` implements the full `WalletInterface` including
   `process_mempool_transaction(tx, is_instant_send)`, `watched_outpoints()`, `monitor_revision()`.
   `DashSpvClient` is parameterized with `EventHandler` for SPV event forwarding.
@@ -370,7 +450,7 @@ pub struct IdentityManager {
 
 **No dashcore changes required.** Only `key-wallet` crate types are used directly (`Wallet`,
 `ManagedWalletInfo`, `ManagedAccountCollection`, `TransactionRouter`, `WalletTransactionChecker`).
-`key-wallet-manager` is merged into `key-wallet` — all imports use `key_wallet::manager::*`.
+`key-wallet-manager` remains a separate crate — imports use `key_wallet_manager::*`.
 
 **Concurrency model**: Sub-wallets share `Arc<RwLock<ManagedWalletInfo>>` — this is the synchronization
 point between SPV (writes UTXO state) and wallet operations (reads balance, builds transactions).
@@ -795,7 +875,7 @@ Tracked per transaction in CoreWallet. Events emitted on state changes.
 block filters** (not Bloom filters). It accepts `Arc<RwLock<W: WalletInterface>>`.
 `DashSpvClient` is now parameterized with `EventHandler` (generic `H`) for SPV event forwarding.
 
-**`SpvWalletAdapter`** implements the full `WalletInterface` trait (from `key_wallet::manager`):
+**`SpvWalletAdapter`** implements the full `WalletInterface` trait (from `key_wallet_manager`):
 - `process_block()` — iterates wallets, locks each `wallet_info`, calls `check_core_transaction` per tx
 - `process_mempool_transaction(tx, is_instant_send: bool)` → `MempoolTransactionResult`
 - `watched_outpoints() -> Vec<OutPoint>` — for bloom filter construction
@@ -851,9 +931,9 @@ manager forwards `WalletEvent`s into the `PlatformWalletEvent` channel.
 **No reorg notification**: `WalletInterface` has no `process_reorg` method — reorgs are handled
 only at the `ChainTipManager` level in dash-spv; the wallet is never notified.
 
-`key-wallet-manager` is merged into `key-wallet` — all imports use `key_wallet::manager::*`.
+`key-wallet-manager` remains a separate crate — imports use `key_wallet_manager::*`.
 `WalletInterface`, `WalletEvent`, `BlockProcessingResult`, `MempoolTransactionResult` are in
-`key_wallet::manager`.
+`key_wallet_manager`.
 
 Transaction broadcasting goes through `DashSpvClient::broadcast_transaction(tx)` — P2P
 to connected peers (see §1.3.4). `dash-spv` also delivers InstantLock and ChainLock events
@@ -929,8 +1009,8 @@ and attempts to recover or rebroadcast them. Mirrors evo-tool's
 - `packages/rs-platform-wallet/src/wallet/core/wallet.rs` (new)
 - Depends on: `key-wallet` (`ManagedWalletInfo`, `TransactionBuilder`, `WalletInfoInterface`,
   `ManagedAccountOperations`, `FeeRate`, `SelectionStrategy`)
-- Depends on: `key-wallet` with `manager` feature — `WalletInterface`, `WalletEvent`,
-  `BlockProcessingResult`, `MempoolTransactionResult` (merged from key-wallet-manager)
+- Depends on: `key-wallet-manager` — `WalletInterface`, `WalletEvent`,
+  `BlockProcessingResult`, `MempoolTransactionResult`
 - Depends on: `dash-spv` (`broadcast_transaction`, InstantLock/ChainLock events)
 
 ---
@@ -1650,7 +1730,7 @@ pub enum TransactionStatus {
 Lifecycle: `Unconfirmed → InstantSendLocked → Confirmed → ChainLocked`.
 Tracked per transaction in CoreWallet. `PlatformWalletEvent::MempoolTransaction` emitted on transitions.
 
-**SpvWalletAdapter** implements the full `WalletInterface` (from `key_wallet::manager`):
+**SpvWalletAdapter** implements the full `WalletInterface` (from `key_wallet_manager`):
 
 ```rust
 impl WalletInterface for SpvWalletAdapter {

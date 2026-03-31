@@ -13,6 +13,15 @@ use crate::events::PlatformWalletEvent;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
+#[cfg(feature = "manager")]
+use {
+    crate::manager::spv_event_forwarder::SpvEventForwarder,
+    crate::manager::spv_wallet_adapter::SpvWalletAdapter,
+    dash_spv::{ClientConfig, DashSpvClient},
+    dash_spv::network::PeerNetworkManager,
+    dash_spv::storage::DiskStorageManager,
+};
+
 /// Manages multiple platform wallets and coordinates SPV sync.
 pub struct PlatformWalletManager {
     sdk: dash_sdk::Sdk,
@@ -20,6 +29,8 @@ pub struct PlatformWalletManager {
     wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
+    #[cfg(feature = "manager")]
+    spv_client: RwLock<Option<DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>>>,
 }
 
 impl PlatformWalletManager {
@@ -32,6 +43,8 @@ impl PlatformWalletManager {
             wallets: RwLock::new(BTreeMap::new()),
             event_tx,
             synced_height: AtomicU32::new(0),
+            #[cfg(feature = "manager")]
+            spv_client: RwLock::new(None),
         }
     }
 
@@ -112,15 +125,72 @@ impl PlatformWalletManager {
         self.synced_height.load(Ordering::Relaxed)
     }
 
-    /// Start SPV sync (stub — to be implemented with dash-spv integration).
-    pub async fn start_spv(&self) -> Result<(), PlatformWalletError> {
-        // TODO: Integrate with dash-spv DashSpvClient
+    /// Start SPV sync with the given configuration.
+    ///
+    /// Creates a `DashSpvClient` that connects to the Dash P2P network,
+    /// syncs block headers and compact block filters, and processes
+    /// matching blocks through the wallet adapter.
+    #[cfg(feature = "manager")]
+    pub async fn start_spv(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        // Check if already running
+        {
+            let client = self.spv_client.read().await;
+            if client.is_some() {
+                return Err(PlatformWalletError::SpvAlreadyRunning);
+            }
+        }
+
+        // Build the wallet adapter from all managed wallets.
+        // For now we use the first wallet — multi-wallet SPV will be handled
+        // by WalletManager<ManagedWalletInfo> in a future PR.
+        let wallet = {
+            let wallets = self.wallets.read().await;
+            wallets.values().next().cloned()
+                .ok_or(PlatformWalletError::NoWalletsConfigured)?
+        };
+
+        let adapter = SpvWalletAdapter::new(wallet);
+        let forwarder = SpvEventForwarder::new(self.event_tx.clone());
+
+        let network_manager = PeerNetworkManager::new(&config).await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        let storage_manager = DiskStorageManager::new(&config).await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+
+        let client = DashSpvClient::new(
+            config,
+            network_manager,
+            storage_manager,
+            Arc::new(RwLock::new(adapter)),
+            Arc::new(forwarder),
+        ).await.map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+
+        let mut spv_client = self.spv_client.write().await;
+        *spv_client = Some(client);
+
         Ok(())
     }
 
-    /// Stop SPV sync (stub — to be implemented with dash-spv integration).
+    /// Stop SPV sync.
+    #[cfg(feature = "manager")]
     pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
-        // TODO: Integrate with dash-spv DashSpvClient
+        let mut spv_client = self.spv_client.write().await;
+        if let Some(client) = spv_client.take() {
+            client.stop().await
+                .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Start SPV sync (stub — requires `manager` feature).
+    #[cfg(not(feature = "manager"))]
+    pub async fn start_spv(&self) -> Result<(), PlatformWalletError> {
+        Err(PlatformWalletError::SpvError("SPV requires the 'manager' feature".to_string()))
+    }
+
+    /// Stop SPV sync (stub — requires `manager` feature).
+    #[cfg(not(feature = "manager"))]
+    pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
         Ok(())
     }
 
