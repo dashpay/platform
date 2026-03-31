@@ -25,9 +25,9 @@ date: 2026-03-13
 3. **PR-3** ✅: `IdentityWallet` — register, discover, top-up, withdraw, transfer, `IdentitySigner`
 4. **PR-4** ✅: `DashPayWallet` — contact requests (simplified API), sync, accept
 5. **PR-5** ✅: `PlatformAddressWallet` — DIP-17 sync, send, withdraw + review fixes
-6. **PR-6**: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
-7. **PR-7**: Missing identity/address operations + DPNS — add_key, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, DPNS module
-8. **PR-8**: Token operations — `TokenWallet` sub-wallet (transfer, balance, claim, purchase)
+6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
+7. **PR-7** ✅: Identity update + address fund flows + DPNS — update_identity, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, register/resolve/search DPNS
+8. **PR-8** ✅: Token operations — `TokenWallet` sub-wallet with per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim, set_price
 9. **PR-9**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 10. **PR-10**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 11. **PR-11**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
@@ -315,7 +315,13 @@ rs-platform-wallet
 │   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent) | Finality(FinalityEvent) | MempoolTransaction
 │   └── TransactionStatus        ← Unconfirmed | InstantSendLocked | Confirmed{h} | ChainLocked{h}
 │
-├── [TokenWallet]                ← PR-8: transfer, balance, claim, purchase
+├── TokenWallet                  ← PR-8: per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim
+│   ├── watched: Map<IdentityId, Set<TokenId>>         ← per-identity token registry
+│   ├── balances: Map<(IdentityId, TokenId), TokenAmount>  ← cached from sync
+│   ├── watch/unwatch/watched_for                      ← registry management
+│   ├── sync()                                         ← FetchMany per identity × watched tokens
+│   ├── transfer/purchase/claim                        ← user operations
+│   └── mint/burn/freeze/unfreeze/set_price            ← admin operations
 │
 └── [ShieldedWallet]             ← PR-9: shield, unshield, transfer, withdraw (Orchard/Halo2)
     ├── keys.rs                  ← SpendingKey → FullViewingKey → OrchardAddress
@@ -1793,65 +1799,81 @@ watched outpoints change (new UTXOs received).
 
 ### 1.8 Token Operations
 
-> `TokenWallet` sub-wallet for platform token management.
+> `TokenWallet` sub-wallet with per-identity registry-based balance tracking.
 
-**TokenWallet** is a new sub-wallet on `PlatformWallet`:
+#### Status: Complete (PR-8)
+
+**Design**: Platform has no "list all tokens for an identity" query —
+callers must specify which token IDs to track. `TokenWallet` uses a per-identity
+registry: consumers call `watch(identity_id, token_id)` to register interest,
+then `sync()` queries Platform for balances of all watched identity+token pairs.
+This mirrors evo-tool's `identity_token_balances` DB table pattern.
 
 ```rust
 pub struct TokenWallet {
     sdk:              Sdk,
     wallet:           Arc<RwLock<Wallet>>,
-    wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
-    identity_manager: IdentityManager,
+    identity_manager: Arc<RwLock<IdentityManager>>,
     network:          Network,
+    watched:          Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,  // identity → tokens
+    balances:         Arc<RwLock<BTreeMap<(Identifier, Identifier), TokenAmount>>>,  // cache
 }
 ```
 
-**Core operations**:
+**Registry** (per-identity):
 
 ```rust
-pub async fn transfer(
-    &self, identity_id: &Identifier, token_id: &Identifier,
-    to_identity_id: &Identifier, amount: u64,
-) -> Result<(), PlatformWalletError>
-
-pub async fn balance(
-    &self, identity_id: &Identifier, token_id: &Identifier,
-) -> Result<u64, PlatformWalletError>
-
-pub async fn claim_rewards(
-    &self, identity_id: &Identifier, token_id: &Identifier,
-) -> Result<u64, PlatformWalletError>
+wallet.tokens().watch(identity_id, token_id).await;
+wallet.tokens().unwatch(&identity_id, &token_id).await;
+wallet.tokens().unwatch_identity(&identity_id).await;
+wallet.tokens().watched_for(&identity_id).await;  // → Vec<TokenId>
+wallet.tokens().watched().await;                   // → Vec<(IdentityId, TokenId)>
 ```
 
-**Market operations**:
+**Sync** (queries Platform, updates cache):
 
 ```rust
-pub async fn purchase(
-    &self, identity_id: &Identifier, token_id: &Identifier, amount: u64,
-) -> Result<(), PlatformWalletError>
-
-pub async fn set_price(
-    &self, identity_id: &Identifier, token_id: &Identifier, price: u64,
-) -> Result<(), PlatformWalletError>
+wallet.tokens().sync().await?;  // fetches per identity × watched tokens
 ```
 
-**Admin operations** (optional — only for token contract owners):
+**Balance queries** (from cache):
 
 ```rust
-pub async fn mint(&self, identity_id: &Identifier, token_id: &Identifier, amount: u64, to: &Identifier) -> Result<(), PlatformWalletError>
-pub async fn burn(&self, identity_id: &Identifier, token_id: &Identifier, amount: u64) -> Result<(), PlatformWalletError>
-pub async fn freeze(&self, identity_id: &Identifier, token_id: &Identifier, target: &Identifier) -> Result<(), PlatformWalletError>
-pub async fn pause(&self, identity_id: &Identifier, token_id: &Identifier) -> Result<(), PlatformWalletError>
+wallet.tokens().balance(&identity_id, &token_id).await;       // → Option<TokenAmount>
+wallet.tokens().balances_for_identity(&identity_id).await;     // → Map<TokenId, TokenAmount>
+wallet.tokens().all_balances().await;                          // → Map<(IdentityId, TokenId), TokenAmount>
 ```
 
-All operations use the corresponding SDK token transition traits. Balance queries support
-per-identity and per-address lookups.
+**User operations** (all take `Arc<DataContract>` + `TokenContractPosition` + identity):
+
+```rust
+wallet.tokens().transfer(contract, pos, &from_id, to_id, amount).await?;
+wallet.tokens().purchase(contract, pos, &id, amount, total_price).await?;
+wallet.tokens().claim(contract, pos, &id, distribution_type).await?;
+```
+
+**Admin operations**:
+
+```rust
+wallet.tokens().mint(contract, pos, &id, amount, recipient).await?;
+wallet.tokens().burn(contract, pos, &id, amount).await?;
+wallet.tokens().freeze(contract, pos, &id, target_id).await?;
+wallet.tokens().unfreeze(contract, pos, &id, target_id).await?;
+wallet.tokens().set_price(contract, pos, &id, price).await?;
+```
+
+All operations use SDK builders (`TokenTransferTransitionBuilder`, etc.) internally.
+The `resolve_identity_and_signer()` helper resolves identity + HD index + signing key
+from the identity manager for each operation.
+
+**Evo-tool integration** (future PR): Replace direct SDK calls in
+`backend_task/tokens/*.rs` with `platform_wallet.tokens().*` calls. The
+per-identity watch registry replaces evo-tool's `identity_token_balances` DB table.
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/tokens/mod.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/tokens/wallet.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/tokens/mod.rs`
+- `packages/rs-platform-wallet/src/wallet/tokens/wallet.rs`
 
 ---
 
@@ -2250,33 +2272,44 @@ Note: `contactRequest` documents are immutable — do not expose update/delete o
 
 ---
 
-### PR-7: Missing identity/address operations + DPNS
+### PR-7 Status: Complete
 
-**Library** (`rs-platform-wallet`):
+### What was delivered
 
-- `IdentityWallet`: `add_key_to_identity()` — build `IdentityUpdateTransition` via DPP, broadcast
-- `IdentityWallet`: `top_up_from_addresses()` — `TopUpIdentityFromAddresses` SDK trait
-- `IdentityWallet`: `transfer_to_addresses()` — `TransferToAddresses` SDK trait
-- `IdentityWallet`: `register_name()`, `resolve_name()` — convenience wrappers around SDK DPNS methods
-- `PlatformAddressWallet`: `fund_from_asset_lock()` — `TopUpAddress` SDK trait
+- `IdentityWallet::update_identity(add_keys, disable_keys)` — `IdentityUpdateTransition` via DPP
+  (nonce lookup, master key signing, broadcast_and_wait)
+- `IdentityWallet::top_up_from_addresses()` — `TopUpIdentityFromAddresses` SDK trait
+- `IdentityWallet::transfer_credits_to_addresses()` — `TransferToAddresses` SDK trait
+- `IdentityWallet::register_name()` — DPNS username registration via `Sdk::register_dpns_name`
+- `IdentityWallet::resolve_name()` — DPNS resolution via `Sdk::resolve_dpns_name`
+- `IdentityWallet::search_names()` — DPNS prefix search via `Sdk::search_dpns_names`
+- `PlatformAddressWallet::fund_from_asset_lock()` — `TopUpAddress` SDK trait
 
-**Done when**: All identity fund flows work (L1→identity, address→identity, identity→address).
-DPNS names can be registered and resolved via IdentityWallet convenience methods.
+All identity fund flows now work: L1→identity, address→identity, identity→address.
+Identity keys can be added/disabled. DPNS names can be registered, resolved, and searched.
 
 ---
 
-### PR-8: Token operations
+### PR-8 Status: Complete
 
-**Library** (`rs-platform-wallet`):
+### What was delivered
 
-- New `wallet/tokens/` module with `TokenWallet` sub-wallet
-- Core operations: `transfer()`, `balance()`, `claim_rewards()`
-- Market operations: `purchase()`, `set_price()`
-- Admin operations (optional): `mint()`, `burn()`, `freeze()`, `pause()`
-- Token balance queries: per-identity, per-address
-- Feature-gated if deps are heavy
+**TokenWallet** — per-identity registry-based token balance tracking and operations:
 
-**Done when**: Token transfers and balance queries work through platform-wallet.
+- **Registry**: `watch(identity_id, token_id)` / `unwatch()` / `unwatch_identity()` / `watched_for()` / `watched()`
+  — per-identity token watch list (mirrors evo-tool's `identity_token_balances` DB pattern)
+- **Sync**: `sync()` queries Platform via `FetchMany<IdentityTokenBalancesQuery>` for each
+  identity's watched tokens, updates local `BTreeMap<(IdentityId, TokenId), TokenAmount>` cache
+- **Balance queries**: `balance()`, `balances_for_identity()`, `all_balances()` — read from cache
+- **User operations**: `transfer()`, `purchase()`, `claim()` — SDK builders + broadcast
+- **Admin operations**: `mint()`, `burn()`, `freeze()`, `unfreeze()`, `set_price()` — SDK builders + broadcast
+- All operations take `Arc<DataContract>` + `TokenContractPosition` to identify the token
+  (wallet doesn't store contract metadata, only balances)
+- Shared `resolve_identity_and_signer()` helper for all token operations
+
+**Evo-tool integration** (future PR): Replace direct SDK calls in `backend_task/tokens/*.rs`
+with `platform_wallet.tokens().*`. The per-identity watch registry replaces the
+`identity_token_balances` SQLite table.
 
 ---
 
