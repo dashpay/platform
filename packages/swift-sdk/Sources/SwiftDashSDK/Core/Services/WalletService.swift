@@ -418,67 +418,38 @@ extension Data {
 /// Supports async waiting for a specific txid's IS lock to arrive.
 internal final class InstantLockStore: @unchecked Sendable {
     private var locks: [Data: Data] = [:]
-    private var waiters: [Data: [(id: UUID, continuation: CheckedContinuation<Data, Error>)]] = [:]
+    private var continuations: [Data: CheckedContinuation<Data, Error>] = [:]
     private let queue = DispatchQueue(label: "com.dash.instantlock-store")
 
-    /// Store an IS lock. Resumes any waiters for this txid.
+    /// Store an IS lock. Resumes waiter if one exists for this txid.
     func store(txid: Data, lockData: Data) {
+        var cont: CheckedContinuation<Data, Error>?
         queue.sync {
             locks[txid] = lockData
-            if let entries = waiters.removeValue(forKey: txid) {
-                for entry in entries {
-                    entry.continuation.resume(returning: lockData)
-                }
-            }
+            cont = continuations.removeValue(forKey: txid)
         }
+        cont?.resume(returning: lockData)
     }
 
     /// Wait for an IS lock for a specific txid.
-    /// Returns immediately if already cached, otherwise suspends until received or timeout.
+    /// Returns immediately if already cached, otherwise polls until received or timeout.
     func waitForLock(txid: Data, timeout: TimeInterval = 30) async throws -> Data {
         // Check if already available
         if let existing = queue.sync(execute: { locks[txid] }) {
             return existing
         }
 
-        let waiterId = UUID()
-
-        return try await withCheckedThrowingContinuation { continuation in
-            var alreadyResumed = false
-
-            queue.sync {
-                // Double-check under lock
-                if let existing = locks[txid] {
-                    continuation.resume(returning: existing)
-                    alreadyResumed = true
-                    return
-                }
-                waiters[txid, default: []].append((id: waiterId, continuation: continuation))
-            }
-
-            guard !alreadyResumed else { return }
-
-            // Schedule timeout
-            queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-                guard let self else { return }
-                var timedOutContinuation: CheckedContinuation<Data, Error>?
-                self.queue.sync {
-                    if var list = self.waiters[txid] {
-                        if let idx = list.firstIndex(where: { $0.id == waiterId }) {
-                            timedOutContinuation = list[idx].continuation
-                            list.remove(at: idx)
-                            if list.isEmpty {
-                                self.waiters.removeValue(forKey: txid)
-                            } else {
-                                self.waiters[txid] = list
-                            }
-                        }
-                    }
-                }
-                timedOutContinuation?.resume(throwing: SPVError.transactionBroadcastFailed(
-                    "InstantSend lock timeout after \(Int(timeout))s for txid \(txid.hexString)"
-                ))
+        // Poll-based approach — simpler and avoids continuation resume races
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try await Task.sleep(nanoseconds: 250_000_000) // 250ms
+            if let existing = queue.sync(execute: { locks[txid] }) {
+                return existing
             }
         }
+
+        throw SPVError.transactionBroadcastFailed(
+            "InstantSend lock timeout after \(Int(timeout))s for txid \(txid.hexString)"
+        )
     }
 }
