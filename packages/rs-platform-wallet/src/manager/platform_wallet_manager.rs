@@ -149,7 +149,7 @@ impl PlatformWalletManager {
                 .ok_or(PlatformWalletError::NoWalletsConfigured)?
         };
 
-        let adapter = SpvWalletAdapter::new(wallet);
+        let adapter = SpvWalletAdapter::new(wallet, self.event_tx.clone());
         let forwarder = SpvEventForwarder::new(self.event_tx.clone());
 
         let network_manager = PeerNetworkManager::new(&config).await

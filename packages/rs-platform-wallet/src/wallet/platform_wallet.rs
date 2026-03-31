@@ -98,6 +98,7 @@ impl PlatformWallet {
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             network,
+            transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
         };
 
         let identity = IdentityWallet {

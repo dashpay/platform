@@ -9,6 +9,7 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet_manager::{BlockProcessingResult, MempoolTransactionResult, WalletEvent, WalletInterface};
 use tokio::sync::broadcast;
 
+use crate::events::{PlatformWalletEvent, TransactionStatus};
 use crate::wallet::PlatformWallet;
 
 /// Adapter that bridges `PlatformWallet` to `key-wallet-manager`'s `WalletInterface`.
@@ -17,6 +18,7 @@ use crate::wallet::PlatformWallet;
 pub(crate) struct SpvWalletAdapter {
     wallet: PlatformWallet,
     event_tx: broadcast::Sender<WalletEvent>,
+    platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
     filter_committed_height: AtomicU32,
     /// Monotonic counter incremented when monitored addresses or watched outpoints change.
@@ -26,14 +28,29 @@ pub(crate) struct SpvWalletAdapter {
 
 impl SpvWalletAdapter {
     /// Create a new adapter for a platform wallet.
-    pub(crate) fn new(wallet: PlatformWallet) -> Self {
+    pub(crate) fn new(
+        wallet: PlatformWallet,
+        platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         Self {
             wallet,
             event_tx,
+            platform_event_tx,
             synced_height: AtomicU32::new(0),
             filter_committed_height: AtomicU32::new(0),
             monitor_revision: AtomicU64::new(0),
+        }
+    }
+
+    /// Update transaction status in CoreWallet and emit event if changed.
+    async fn track_status(&self, txid: Txid, new_status: TransactionStatus) {
+        if let Some(old_status) = self.wallet.core.update_transaction_status(txid, new_status).await {
+            let _ = self.platform_event_tx.send(PlatformWalletEvent::TransactionStatusChanged {
+                txid,
+                old_status,
+                new_status,
+            });
         }
     }
 }
@@ -82,6 +99,11 @@ impl WalletInterface for SpvWalletAdapter {
             self.monitor_revision.fetch_add(1, Ordering::Relaxed);
         }
 
+        // Track all relevant transactions as Confirmed.
+        for txid in new_txids.iter().chain(existing_txids.iter()) {
+            self.track_status(*txid, TransactionStatus::Confirmed).await;
+        }
+
         BlockProcessingResult {
             new_txids,
             existing_txids,
@@ -109,6 +131,16 @@ impl WalletInterface for SpvWalletAdapter {
 
         if !result.new_addresses.is_empty() {
             self.monitor_revision.fetch_add(1, Ordering::Relaxed);
+        }
+
+        // Track relevant mempool transactions.
+        if result.is_relevant {
+            let status = if is_instant_send {
+                TransactionStatus::InstantSendLocked
+            } else {
+                TransactionStatus::Unconfirmed
+            };
+            self.track_status(tx.txid(), status).await;
         }
 
         MempoolTransactionResult {
@@ -159,6 +191,21 @@ impl WalletInterface for SpvWalletAdapter {
     fn process_instant_send_lock(&mut self, txid: Txid) {
         if let Ok(mut wallet_info) = self.wallet.core.wallet_info.try_write() {
             wallet_info.mark_instant_send_utxos(&txid);
+        }
+        // Update status — can't await in a sync method, so use try_write.
+        if let Ok(mut statuses) = self.wallet.core.transaction_statuses.try_write() {
+            let old = statuses.get(&txid).copied();
+            let new_status = TransactionStatus::InstantSendLocked;
+            if old.map_or(true, |old| new_status > old) {
+                statuses.insert(txid, new_status);
+                if let Some(old_status) = old {
+                    let _ = self.platform_event_tx.send(PlatformWalletEvent::TransactionStatusChanged {
+                        txid,
+                        old_status,
+                        new_status,
+                    });
+                }
+            }
         }
     }
 

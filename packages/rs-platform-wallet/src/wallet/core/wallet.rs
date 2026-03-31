@@ -23,6 +23,9 @@ use crate::error::PlatformWalletError;
 
 use super::types::{CoreAccountSummary, CoreAddressInfo};
 
+use dashcore::Txid;
+use crate::events::TransactionStatus;
+
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
 pub struct CoreWallet {
@@ -30,6 +33,8 @@ pub struct CoreWallet {
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) network: Network,
+    /// Per-transaction finality status tracking.
+    pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
 }
 
 impl CoreWallet {
@@ -285,6 +290,47 @@ impl CoreWallet {
                 e
             ))
         })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transaction status tracking
+// ---------------------------------------------------------------------------
+
+impl CoreWallet {
+    /// Get the finality status of a tracked transaction.
+    pub async fn transaction_status(&self, txid: &Txid) -> Option<TransactionStatus> {
+        let statuses = self.transaction_statuses.read().await;
+        statuses.get(txid).copied()
+    }
+
+    /// Get all tracked transaction statuses.
+    pub async fn all_transaction_statuses(&self) -> BTreeMap<Txid, TransactionStatus> {
+        let statuses = self.transaction_statuses.read().await;
+        statuses.clone()
+    }
+
+    /// Update a transaction's status. Returns the old status if the transaction
+    /// was already tracked and the status actually changed (new > old).
+    /// Returns `None` if no change occurred.
+    pub(crate) async fn update_transaction_status(
+        &self,
+        txid: Txid,
+        new_status: TransactionStatus,
+    ) -> Option<TransactionStatus> {
+        let mut statuses = self.transaction_statuses.write().await;
+        let old_status = statuses.get(&txid).copied();
+        match old_status {
+            Some(old) if new_status > old => {
+                statuses.insert(txid, new_status);
+                Some(old)
+            }
+            None => {
+                statuses.insert(txid, new_status);
+                None
+            }
+            _ => None, // new_status <= old, no change
+        }
     }
 }
 
