@@ -16,6 +16,7 @@ use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
+use platform_encryption::CryptoError;
 use tokio::sync::RwLock;
 
 use dash_sdk::platform::dashpay::{EcdhProvider, SendContactRequestInput};
@@ -602,5 +603,232 @@ impl DashPayWallet {
             count,
             self.network,
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Account label encryption / decryption (DIP-15)
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Encrypt an account label using CBC-AES-256 with a shared ECDH key.
+    ///
+    /// Uses the `platform_encryption` crate which prepends a random 16-byte IV
+    /// to the ciphertext.
+    ///
+    /// # Arguments
+    ///
+    /// * `label`      - The account label to encrypt.
+    /// * `shared_key` - 32-byte shared secret derived via ECDH.
+    ///
+    /// # Returns
+    ///
+    /// Encrypted label bytes (48-80 bytes: 16-byte IV + 32-64 byte ciphertext).
+    pub fn encrypt_account_label(
+        label: &str,
+        shared_key: &[u8; 32],
+    ) -> Result<Vec<u8>, PlatformWalletError> {
+        use dashcore::secp256k1::rand::{thread_rng, RngCore};
+
+        let mut iv = [0u8; 16];
+        thread_rng().fill_bytes(&mut iv);
+
+        let encrypted = platform_encryption::encrypt_account_label(shared_key, &iv, label);
+
+        Ok(encrypted)
+    }
+
+    /// Decrypt an account label using CBC-AES-256 with a shared ECDH key.
+    ///
+    /// The first 16 bytes of `encrypted` are taken as the IV.
+    ///
+    /// # Arguments
+    ///
+    /// * `encrypted`  - Encrypted label bytes (48-80 bytes).
+    /// * `shared_key` - 32-byte shared secret derived via ECDH.
+    ///
+    /// # Returns
+    ///
+    /// The decrypted label string.
+    pub fn decrypt_account_label(
+        encrypted: &[u8],
+        shared_key: &[u8; 32],
+    ) -> Result<String, PlatformWalletError> {
+        platform_encryption::decrypt_account_label(shared_key, encrypted).map_err(|e| match e {
+            CryptoError::DecryptionFailed => {
+                PlatformWalletError::InvalidIdentityData("Account label decryption failed".into())
+            }
+            CryptoError::InvalidUtf8 => PlatformWalletError::InvalidIdentityData(
+                "Decrypted account label is not valid UTF-8".into(),
+            ),
+            CryptoError::InvalidCiphertextLength => PlatformWalletError::InvalidIdentityData(
+                "Invalid encrypted account label length".into(),
+            ),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sent contact requests query
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Fetch sent contact requests for a specific identity from Platform.
+    ///
+    /// Queries the DashPay contract for `contactRequest` documents where
+    /// `$ownerId == identity_id`, ordered by `$createdAt`.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id` - The identity whose sent requests to fetch.
+    ///
+    /// # Returns
+    ///
+    /// A list of [`ContactRequest`] structs representing the sent requests.
+    pub async fn sent_contact_requests(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Vec<ContactRequest>, PlatformWalletError> {
+        let sent_docs = self
+            .sdk
+            .fetch_sent_contact_requests(*identity_id, None)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch sent contact requests: {e}"
+                ))
+            })?;
+
+        let mut requests = Vec::new();
+
+        for (_doc_id, maybe_doc) in sent_docs.iter() {
+            let doc = match maybe_doc {
+                Some(d) => d,
+                None => continue,
+            };
+
+            let sender_id = doc.owner_id();
+
+            let props = doc.properties();
+
+            let to_user_id = match props
+                .get("toUserId")
+                .and_then(|v: &Value| v.to_identifier().ok())
+            {
+                Some(v) => v,
+                None => continue,
+            };
+            let sender_key_index = match props
+                .get("senderKeyIndex")
+                .and_then(|v: &Value| v.to_integer::<u32>().ok())
+            {
+                Some(v) => v,
+                None => continue,
+            };
+            let recipient_key_index = match props
+                .get("recipientKeyIndex")
+                .and_then(|v: &Value| v.to_integer::<u32>().ok())
+            {
+                Some(v) => v,
+                None => continue,
+            };
+            let account_reference = match props
+                .get("accountReference")
+                .and_then(|v: &Value| v.to_integer::<u32>().ok())
+            {
+                Some(v) => v,
+                None => continue,
+            };
+            let encrypted_public_key = match props
+                .get("encryptedPublicKey")
+                .and_then(|v: &Value| v.as_bytes())
+                .cloned()
+            {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let mut contact_request = ContactRequest::new(
+                sender_id,
+                to_user_id,
+                sender_key_index,
+                recipient_key_index,
+                account_reference,
+                encrypted_public_key,
+                doc.created_at_core_block_height().unwrap_or(0),
+                doc.created_at().unwrap_or(0),
+            );
+
+            // Attach optional encrypted account label if present.
+            contact_request.encrypted_account_label = props
+                .get("encryptedAccountLabel")
+                .and_then(|v: &Value| v.as_bytes())
+                .cloned();
+
+            // Attach optional auto-accept proof if present.
+            contact_request.auto_accept_proof = props
+                .get("autoAcceptProof")
+                .and_then(|v: &Value| v.as_bytes())
+                .cloned();
+
+            requests.push(contact_request);
+        }
+
+        // Sort by creation time ascending.
+        requests.sort_by_key(|r| r.created_at);
+
+        Ok(requests)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reject contact request
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Reject a contact request by hiding the contact.
+    ///
+    /// This marks the contact as hidden in the local identity manager so that
+    /// the UI no longer surfaces it. A full DashPay implementation would also
+    /// create or update a `contactInfo` document on Platform with
+    /// `display_hidden: true`; that part requires SDK support for document
+    /// creation on arbitrary contracts which is not yet available here.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id`         - Our identity.
+    /// * `contact_identity_id` - The identity whose request we reject.
+    pub async fn reject_contact_request(
+        &self,
+        identity_id: &Identifier,
+        contact_identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let mut manager = self.identity_manager.write().await;
+        let managed = manager
+            .managed_identity_mut(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+
+        // Remove from incoming requests (if present).
+        if managed
+            .incoming_contact_requests
+            .remove(contact_identity_id)
+            .is_none()
+        {
+            return Err(PlatformWalletError::ContactRequestNotFound(
+                *contact_identity_id,
+            ));
+        }
+
+        // TODO: When the SDK supports creating/updating arbitrary DashPay
+        // documents (contactInfo), submit a `display_hidden: true` document to
+        // Platform here so the rejection is persisted across devices.
+
+        tracing::info!(
+            identity = %identity_id,
+            rejected_contact = %contact_identity_id,
+            "Contact request rejected (hidden locally)"
+        );
+
+        Ok(())
     }
 }
