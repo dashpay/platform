@@ -2350,73 +2350,270 @@ per-identity watch registry replaces evo-tool's `identity_token_balances` DB tab
 
 ### 1.9 Shielded Pool
 
-> Feature-gated shielded transactions using Orchard/Halo2. Behind `feature = "shielded"`.
+> Feature-gated (`shielded`) ZK-private transactions using Orchard/Halo2.
+> `ShieldedWallet<S: ShieldedStore>` is generic over storage backend.
 
-**ShieldedWallet** is fundamentally different from other sub-wallets — it maintains client-side
-state (note store, nullifier set, commitment tree) that cannot be derived from Platform queries alone.
+#### Design
+
+ShieldedWallet is fundamentally different from other sub-wallets:
+- Maintains **client-side state** (notes, nullifiers, commitment tree) that cannot be derived from Platform queries
+- Requires a **storage backend** for persistence — abstracted via `ShieldedStore` trait
+- Requires a **proving key** (~30s cold start, ~5MB memory) for ZK proof generation
+- Uses **trial decryption** to discover incoming notes (scan all encrypted notes with viewing key)
+
+Generic over storage: `ShieldedWallet<S: ShieldedStore>` — consumers provide in-memory (tests) or SQLite (production) storage.
+
+#### ShieldedStore trait
 
 ```rust
-#[cfg(feature = "shielded")]
-pub struct ShieldedWallet {
-    spending_key:       SpendingKey,
-    full_viewing_key:   FullViewingKey,
-    orchard_address:    OrchardAddress,
-    note_store:         NoteStore,          // DecryptedNote persistence, SpendableNote selection
-    nullifier_store:    NullifierStore,     // NullifierProvider impl for spent-note detection
-    commitment_tree:    CommitmentTree,     // local Sinsemilla tree (SQLite-backed)
-    prover:             CachedOrchardProver,// OrchardProver with cached ProvingKey (~30s init)
-    sdk:                Sdk,
-    network:            Network,
+/// Storage abstraction for shielded wallet state.
+/// Consumers implement this for their persistence layer.
+pub trait ShieldedStore: Send + Sync {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    // --- Notes ---
+    fn save_note(&mut self, note: &ShieldedNote) -> Result<(), Self::Error>;
+    fn get_unspent_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error>;
+    fn get_all_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error>;
+    fn mark_spent(&mut self, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
+
+    // --- Commitment tree ---
+    fn append_commitment(&mut self, cmx: &[u8; 32], retention: Retention) -> Result<(), Self::Error>;
+    fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
+    fn witness(&self, position: u64) -> Result<MerklePath, Self::Error>;
+    fn tree_anchor(&self) -> Result<[u8; 32], Self::Error>;
+
+    // --- Sync state ---
+    fn last_synced_note_index(&self) -> Result<u64, Self::Error>;
+    fn set_last_synced_note_index(&mut self, index: u64) -> Result<(), Self::Error>;
+    fn nullifier_checkpoint(&self) -> Result<Option<NullifierSyncCheckpoint>, Self::Error>;
+    fn set_nullifier_checkpoint(&mut self, checkpoint: NullifierSyncCheckpoint) -> Result<(), Self::Error>;
 }
 ```
 
-**Orchard key hierarchy**: `SpendingKey → FullViewingKey → OrchardAddress`.
-The spending key is derived from the wallet's master seed.
+Built-in implementations:
+- `InMemoryShieldedStore` — for tests and short-lived wallets (Vec + BTreeMap + in-memory tree)
+- No SQLite in the library — evo-tool implements `ShieldedStore` using its existing `database/shielded.rs`
 
-**Note sync**: Trial decryption of all Orchard output notes using the `FullViewingKey`.
-Notes that decrypt successfully belong to this wallet and are stored in the `NoteStore`.
-
-**Nullifier sync**: Monitors the global nullifier set to detect when owned notes have been
-spent. Updates the `NoteStore` to mark spent notes.
-
-**5 transition types**:
+#### ShieldedNote
 
 ```rust
-// Platform addresses → shielded pool (needs Signer<PlatformAddress>)
-pub async fn shield(&self, from_addresses: BTreeMap<PlatformAddress, Credits>) -> Result<()>
-
-// Core L1 → shielded pool (via asset lock)
-pub async fn shield_from_asset_lock(&self, amount_duffs: u64) -> Result<()>
-
-// Shielded pool → platform address
-pub async fn unshield(&self, to_address: &PlatformAddress, amount: Credits) -> Result<()>
-
-// Shielded pool → shielded pool (private transfer)
-pub async fn transfer(&self, to_address: &OrchardAddress, amount: Credits) -> Result<()>
-
-// Shielded pool → Core L1
-pub async fn withdraw(&self, to_address: &Address, amount: Credits) -> Result<()>
+pub struct ShieldedNote {
+    pub note: orchard::Note,          // Orchard note (value, rseed, rho)
+    pub position: u64,                // Global position in commitment tree
+    pub cmx: [u8; 32],               // Note commitment
+    pub nullifier: [u8; 32],          // For detecting when spent
+    pub block_height: u64,            // Where it appeared
+    pub is_spent: bool,               // Nullifier was seen in global set
+    pub value: u64,                   // Credits (convenience, same as note.value())
+}
 ```
 
-**Implementation notes**:
-- Uses DPP `build_*_transition()` builders (not raw SDK traits) for the Orchard pipeline
-- Local Sinsemilla commitment tree is SQLite-backed (wraps `grovedb-commitment-tree`)
-- `CachedOrchardProver`: caches the `ProvingKey` after first initialization (~30s cold start)
-- SDK traits: `ShieldFunds`, `UnshieldFunds`, `TransferShielded`, `WithdrawShielded`, `ShieldFromAssetLock`
+#### OrchardKeySet
 
-**Sync integration**: `ShieldedWallet::sync()` orchestrates note sync + nullifier sync + tree updates.
-Called as part of `PlatformWallet::sync()` when the shielded feature is enabled.
+```rust
+/// ZIP-32 derived Orchard key hierarchy.
+/// Derivation path: m/32'/coin_type'/account' (coin_type: 5=Mainnet, 1=Testnet)
+pub struct OrchardKeySet {
+    pub spending_key: SpendingKey,
+    pub full_viewing_key: FullViewingKey,
+    pub spend_auth_key: SpendAuthorizingKey,
+    pub incoming_viewing_key: IncomingViewingKey,
+    pub outgoing_viewing_key: OutgoingViewingKey,
+    pub default_address: PaymentAddress,
+}
+
+impl OrchardKeySet {
+    /// Derive from wallet seed bytes using ZIP-32.
+    pub fn from_seed(seed: &[u8], network: Network, account: u32) -> Result<Self, Error>;
+
+    /// Derive payment address at index.
+    pub fn address_at(&self, index: u32) -> PaymentAddress;
+
+    /// Prepare incoming viewing key for efficient trial decryption.
+    pub fn prepared_ivk(&self) -> PreparedIncomingViewingKey;
+}
+```
+
+#### ShieldedWallet<S>
+
+```rust
+pub struct ShieldedWallet<S: ShieldedStore> {
+    sdk: Sdk,
+    keys: OrchardKeySet,
+    store: Arc<RwLock<S>>,
+    network: Network,
+}
+```
+
+**Construction:**
+```rust
+impl<S: ShieldedStore> ShieldedWallet<S> {
+    pub fn new(sdk: Sdk, keys: OrchardKeySet, store: S, network: Network) -> Self;
+
+    /// Derive keys from wallet seed and create shielded wallet.
+    pub fn from_seed(sdk: Sdk, seed: &[u8], network: Network, account: u32, store: S) -> Result<Self, Error>;
+}
+```
+
+**Sync operations:**
+```rust
+impl<S: ShieldedStore> ShieldedWallet<S> {
+    /// Sync notes from Platform — trial decrypts all new encrypted notes.
+    /// Appends all notes to commitment tree (for witness generation).
+    /// Stores decrypted notes that belong to us.
+    /// Returns count of new notes found.
+    pub async fn sync_notes(&self) -> Result<SyncNotesResult, PlatformWalletError>;
+
+    /// Check which owned notes have been spent (nullifier sync).
+    /// Privacy-preserving: uses trunk/branch tree scan.
+    /// Marks spent notes in store.
+    /// Returns count of newly spent notes.
+    pub async fn check_nullifiers(&self) -> Result<usize, PlatformWalletError>;
+
+    /// Full sync: notes + nullifiers + balance update.
+    pub async fn sync(&self) -> Result<ShieldedSyncSummary, PlatformWalletError>;
+}
+
+pub struct SyncNotesResult {
+    pub new_notes: usize,
+    pub total_scanned: u64,
+}
+
+pub struct ShieldedSyncSummary {
+    pub notes_result: SyncNotesResult,
+    pub newly_spent: usize,
+    pub balance: u64,
+}
+```
+
+**Balance queries:**
+```rust
+impl<S: ShieldedStore> ShieldedWallet<S> {
+    /// Total unspent shielded balance.
+    pub async fn balance(&self) -> Result<u64, PlatformWalletError>;
+
+    /// Default payment address for receiving shielded funds.
+    pub fn default_address(&self) -> &PaymentAddress;
+
+    /// Derive address at specific index.
+    pub fn address_at(&self, index: u32) -> PaymentAddress;
+}
+```
+
+**Operations (5 transition types):**
+
+Each operation:
+1. Selects spendable notes (if spending)
+2. Generates Merkle witness paths from commitment tree
+3. Builds Orchard bundle via DPP `build_*_transition()` builders
+4. Broadcasts via SDK traits (`ShieldFunds`, `UnshieldFunds`, `TransferShielded`, `WithdrawShielded`, `ShieldFromAssetLock`)
+5. Marks spent notes in store
+
+```rust
+impl<S: ShieldedStore> ShieldedWallet<S> {
+    /// Shield: platform addresses -> shielded pool.
+    /// Uses Signer<PlatformAddress> for input authorization.
+    pub async fn shield<Signer: dpp::identity::signer::Signer<PlatformAddress>>(
+        &self,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        amount: u64,
+        signer: &Signer,
+    ) -> Result<(), PlatformWalletError>;
+
+    /// Shield from asset lock: Core L1 -> shielded pool.
+    pub async fn shield_from_asset_lock(
+        &self,
+        asset_lock_proof: AssetLockProof,
+        private_key: &[u8],
+        amount: u64,
+    ) -> Result<(), PlatformWalletError>;
+
+    /// Unshield: shielded pool -> platform address.
+    pub async fn unshield(
+        &self,
+        to_address: &PlatformAddress,
+        amount: u64,
+    ) -> Result<(), PlatformWalletError>;
+
+    /// Transfer: shielded pool -> shielded pool (private).
+    pub async fn transfer(
+        &self,
+        to_address: &PaymentAddress,
+        amount: u64,
+    ) -> Result<(), PlatformWalletError>;
+
+    /// Withdraw: shielded pool -> Core L1 address.
+    pub async fn withdraw(
+        &self,
+        to_address: &Address,
+        amount: u64,
+        core_fee_per_byte: u32,
+    ) -> Result<(), PlatformWalletError>;
+}
+```
+
+**Proving key management:**
+```rust
+/// Cached proving key — built once (~30s), reused for all proofs.
+/// Use `warm_up()` at app startup to avoid blocking first operation.
+pub struct CachedOrchardProver {
+    key: OnceLock<ProvingKey>,
+}
+
+impl CachedOrchardProver {
+    pub fn new() -> Self;
+    pub fn warm_up(&self);  // Build key in background
+    pub fn is_ready(&self) -> bool;
+}
+
+impl OrchardProver for CachedOrchardProver {
+    fn proving_key(&self) -> &ProvingKey { self.key.get_or_init(ProvingKey::build) }
+}
+```
+
+The `CachedOrchardProver` is held as a static or on `PlatformWalletManager`. All `ShieldedWallet` instances share it.
+
+**Note selection for spending:**
+```rust
+/// Select notes to cover the requested amount + fee.
+/// Returns selected notes with Merkle witness paths from commitment tree.
+fn select_spendable_notes(
+    store: &S,
+    amount: u64,
+    fee: u64,
+) -> Result<Vec<SpendableNote>, PlatformWalletError>;
+```
+
+Greedy selection: sort unspent notes by value descending, accumulate until >= amount + fee.
+
+#### Integration with PlatformWallet
+
+`ShieldedWallet` is a **standalone component** — not a field on `PlatformWallet`. This avoids
+infecting `PlatformWallet` with the `S: ShieldedStore` type parameter. Consumers create
+`ShieldedWallet` separately, providing their own `ShieldedStore` implementation:
+
+```rust
+// Consumer creates ShieldedWallet separately
+let shielded = ShieldedWallet::from_seed(
+    sdk, &seed_bytes, network, 0, InMemoryShieldedStore::new()
+)?;
+shielded.sync().await?;
+shielded.shield(inputs, amount, &platform_signer).await?;
+```
+
+`ShieldedWallet` shares the `Sdk` with `PlatformWallet` but manages its own state through
+the `ShieldedStore` backend.
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/shielded/mod.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/keys.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/note_store.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/nullifier_store.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/commitment_tree.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/prover.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/sync.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/shielded/operations.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/shielded/mod.rs` — ShieldedWallet, re-exports
+- `packages/rs-platform-wallet/src/wallet/shielded/keys.rs` — OrchardKeySet, ZIP-32 derivation
+- `packages/rs-platform-wallet/src/wallet/shielded/store.rs` — ShieldedStore trait, ShieldedNote, InMemoryShieldedStore
+- `packages/rs-platform-wallet/src/wallet/shielded/sync.rs` — sync_notes, check_nullifiers, sync
+- `packages/rs-platform-wallet/src/wallet/shielded/operations.rs` — shield, unshield, transfer, withdraw, shield_from_asset_lock
+- `packages/rs-platform-wallet/src/wallet/shielded/prover.rs` — CachedOrchardProver
+- `packages/rs-platform-wallet/src/wallet/shielded/note_selection.rs` — select_spendable_notes
 
 ---
 
@@ -3261,30 +3458,63 @@ with masternode types) remains evo-tool-specific.
 
 ### PR-15: Shielded pool (feature-gated `shielded`)
 
-(Renumbered from PR-10. Content unchanged.)
+**Goal**: Implement `ShieldedWallet<S: ShieldedStore>` — a standalone, storage-generic shielded
+transaction component using Orchard/Halo2 ZK proofs. All code behind `#[cfg(feature = "shielded")]`.
+
+**Key design decision**: Storage is abstracted via the `ShieldedStore` trait. The library provides
+`InMemoryShieldedStore` for tests; consumers (evo-tool) bring their own persistence (SQLite).
+This keeps the library dependency-light and testable without database infrastructure.
+
+**Architectural note**: `ShieldedWallet` is **not** a field on `PlatformWallet`. It is a standalone
+component that consumers create separately with their own `ShieldedStore` implementation. This
+avoids infecting `PlatformWallet` with the `S: ShieldedStore` generic parameter. `ShieldedWallet`
+shares the `Sdk` with `PlatformWallet` but manages its own state.
 
 **Library** (`rs-platform-wallet`):
 
-- New `wallet/shielded/` module behind `#[cfg(feature = "shielded")]`:
-  - `ShieldedWallet` struct: SpendingKey, FullViewingKey, SpendAuthorizingKey, note store
-  - `keys.rs` — Orchard key derivation and management
-  - `note_store.rs` — DecryptedNote persistence, SpendableNote selection
-  - `nullifier_store.rs` — NullifierProvider impl for privacy-preserving spent-note detection
-  - `commitment_tree.rs` — local Sinsemilla tree (wraps grovedb-commitment-tree SQLite)
-  - `prover.rs` — OrchardProver impl with cached ProvingKey
-  - `sync.rs` — orchestrates note sync + nullifier sync + tree updates
-  - `operations.rs` — shield, unshield, transfer, withdraw, shield_from_asset_lock
-- Uses DPP `build_*_transition()` builders (not raw SDK traits) for Orchard pipeline
-- `PlatformWallet`: `shielded: Option<ShieldedWallet>` (None if not set up)
+New `wallet/shielded/` module behind `#[cfg(feature = "shielded")]`:
 
-5 transition types:
-- Shield: platform addresses → shielded pool (needs `Signer<PlatformAddress>`)
-- ShieldFromAssetLock: Core L1 → shielded pool
-- Unshield: shielded pool → platform address
-- ShieldedTransfer: shielded pool → shielded pool (private)
-- ShieldedWithdrawal: shielded pool → Core L1
+- `mod.rs` — `ShieldedWallet<S>` struct (`Sdk`, `OrchardKeySet`, `Arc<RwLock<S>>`, `Network`),
+  constructors (`new`, `from_seed`), re-exports
+- `keys.rs` — `OrchardKeySet` (ZIP-32 key hierarchy: `SpendingKey`, `FullViewingKey`,
+  `SpendAuthorizingKey`, `IncomingViewingKey`, `OutgoingViewingKey`, `PaymentAddress`),
+  derivation from seed, address generation, `PreparedIncomingViewingKey` for trial decryption
+- `store.rs` — `ShieldedStore` trait (note CRUD, commitment tree ops, sync state checkpoints),
+  `ShieldedNote` struct, `InMemoryShieldedStore` (Vec + BTreeMap + in-memory tree)
+- `sync.rs` — `sync_notes()` (trial decryption of encrypted notes, commitment tree append),
+  `check_nullifiers()` (privacy-preserving trunk/branch scan), `sync()` (full orchestration),
+  result types (`SyncNotesResult`, `ShieldedSyncSummary`)
+- `operations.rs` — 5 transition types, each using DPP `build_*_transition()` builders and
+  broadcasting via SDK traits (`ShieldFunds`, `UnshieldFunds`, `TransferShielded`,
+  `WithdrawShielded`, `ShieldFromAssetLock`):
+  - `shield()` — platform addresses to shielded pool (needs `Signer<PlatformAddress>`)
+  - `shield_from_asset_lock()` — Core L1 to shielded pool via asset lock proof
+  - `unshield()` — shielded pool to platform address
+  - `transfer()` — shielded pool to shielded pool (private, to `PaymentAddress`)
+  - `withdraw()` — shielded pool to Core L1 address
+- `prover.rs` — `CachedOrchardProver` (`OnceLock<ProvingKey>`, `warm_up()` for background
+  init, implements `OrchardProver` trait), shared across all `ShieldedWallet` instances
+- `note_selection.rs` — `select_spendable_notes()` (greedy: sort by value descending,
+  accumulate until >= amount + fee, returns notes with Merkle witness paths)
 
-**Done when**: Full shielded lifecycle works. Note sync discovers incoming funds.
+**Files**:
+- `packages/rs-platform-wallet/src/wallet/shielded/mod.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/keys.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/store.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/sync.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/operations.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/prover.rs`
+- `packages/rs-platform-wallet/src/wallet/shielded/note_selection.rs`
+
+**Done when**:
+- `ShieldedStore` trait compiles with `InMemoryShieldedStore` passing unit tests
+- `OrchardKeySet::from_seed()` derives correct keys (verified against reference vectors)
+- `sync_notes()` trial-decrypts test notes and populates store
+- `check_nullifiers()` detects spent notes and marks them
+- All 5 operations build valid Orchard bundles via DPP builders and broadcast via SDK traits
+- `CachedOrchardProver` initializes and generates valid proofs
+- Note selection covers amount + fee or returns insufficient-funds error
+- Full round-trip test: shield, sync, check balance, transfer, unshield
 
 ---
 
