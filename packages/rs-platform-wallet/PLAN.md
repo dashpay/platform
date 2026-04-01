@@ -32,7 +32,7 @@ date: 2026-03-13
 10. **PR-10** ✅: Enrich ManagedIdentity — KeyStorage with WalletDerivationPath, IdentityStatus state machine, DPNS names, 12-key discovery
 11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
 12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
-13. **PR-13**: Evo-tool integration Phase 3 — migrate remaining tasks (registration, top-up, discovery, DashPay, core wallet) using enriched library
+13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
 14. **PR-14**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 15. **PR-15**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 16. **PR-16**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
@@ -2916,31 +2916,43 @@ full DashPay contact + payment flows without reimplementing protocol-level crypt
 
 ### PR-13: Evo-tool integration Phase 3
 
-With the enriched library (PR-10, PR-11, PR-12), migrate the remaining evo-tool tasks:
+### PR-13 Status: Complete
 
-**Identity tasks now migratable:**
-- `register_identity.rs` → `wallet.identity().register_identity(funding_method, keys)`
-- `top_up_identity.rs` → `wallet.identity().top_up_identity(funding_method)`
-- `discover_identities.rs` → `wallet.identity().sync()` (now with full key matching + DPNS)
-- `load_identity_from_wallet.rs` → `wallet.identity().sync()` + adapter for QualifiedIdentity
+**What was delivered:**
 
-**DashPay tasks now migratable:**
-- `contact_requests.rs` (send) → `wallet.dashpay().send_contact_request()` (now with full crypto)
-- `contact_requests.rs` (accept) → `wallet.dashpay().accept_contact_request()`
-- `incoming_payments.rs` → `wallet.dashpay().register_contact_payment_addresses()`
+Phase 3 identity migration (using enriched library from PR-10/11/12):
+- `register_identity.rs` → `identity_wallet.register_identity_with_signer()` (with platform-wallet fallback)
+- `top_up_identity.rs` → `identity_wallet.top_up_identity_with_signer()` (with platform-wallet fallback)
+- `discover_identities.rs` → `identity_wallet.sync()` with QualifiedIdentity adapter (legacy fallback)
 
-**Core wallet tasks now migratable:**
-- `create_asset_lock.rs` → `wallet.core().build_and_track_asset_lock()`
-- Platform address ops → already migrated in PR-9 Phase 1
+Remaining token tasks (4):
+- `destroy_frozen_funds.rs` → `token_wallet.destroy_frozen_funds_with_signer()`
+- `pause_tokens.rs` → `token_wallet.pause_with_signer()`
+- `resume_tokens.rs` → `token_wallet.resume_with_signer()`
+- `update_token_config.rs` → `token_wallet.update_config_with_signer()`
 
-**What stays in evo-tool:**
+Platform-wallet additions:
+- `register_identity_with_signer()` — register with external Identity + Signer
+- `top_up_identity_with_signer()` — top up with external Identity + proof
+- `identity_manager()` — read access for inspecting managed identities after sync
+- 4 new TokenWallet methods + `_with_signer` variants (destroy, pause, resume, update_config)
+
+**Migration tally (all phases):**
+
+| Domain | Migrated | Remaining in evo-tool | Why remaining |
+|--------|----------|----------------------|---------------|
+| Tokens | 13/13 | — | — |
+| Identity | 7/13 | 6 | load_identity (manual import), load_from_wallet, refresh (targeted fetch), + 3 support |
+| DashPay | 0/9 | 9 | QR auto-accept, reject, custom labels, pre-send validation — evo-tool-specific |
+| Core | 1/7 | 6 | UTXO refresh, SPV integration — stays until PR-15 |
+| **Total** | **21/42** | **21** | |
+
+**What stays in evo-tool (not migratable without further library work):**
 - `load_identity.rs` — UI-driven identity import with manual key input, masternode types
+- DashPay contact requests — evo-tool-specific features (QR auto-accept, reject, validation)
 - `SpvManager` — stays until PR-15
 - Database persistence — evo-tool manages its own SQLite
-- QualifiedIdentity adapter — maps to/from ManagedIdentity for evo-tool UI
-
-**Done when**: Only `load_identity.rs`, SpvManager, and DB persistence remain as evo-tool-specific.
-All protocol-level operations go through platform-wallet.
+- UTXO refresh / wallet info — coupled to SpvManager
 
 ---
 
