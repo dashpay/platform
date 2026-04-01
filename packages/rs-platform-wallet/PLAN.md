@@ -28,10 +28,10 @@ date: 2026-03-13
 6. **PR-6** ✅: SPV lifecycle + TransactionStatus + EventHandler — wire start_spv/stop_spv, transaction lifecycle tracking, event forwarding
 7. **PR-7** ✅: Identity update + address fund flows + DPNS — update_identity, top_up_from_addresses, transfer_to_addresses, fund_from_asset_lock, register/resolve/search DPNS
 8. **PR-8** ✅: Token operations — `TokenWallet` sub-wallet with per-identity registry, sync, transfer, mint, burn, freeze, purchase, claim, set_price
-9. **PR-9** (in progress): Evo-tool integration Phase 1+2 — token tasks + simple identity tasks migrated
-10. **PR-10**: Enrich ManagedIdentity — KeyStorage with WalletDerivationPath, IdentityStatus state machine, DPNS names, full key matching in discovery
-11. **PR-11**: Asset lock lifecycle + multi-mode funding — IS→CL fallback, unused lock pool, 4 registration modes, 3 top-up modes, recovery
-12. **PR-12**: DashPay completeness — DIP-14 256-bit derivation, contact payment addresses, account reference, gap limit management
+9. **PR-9** ✅: Evo-tool integration Phase 1+2 — token tasks (9) + simple identity tasks (4) migrated via *_with_signer pattern
+10. **PR-10** ✅: Enrich ManagedIdentity — KeyStorage with WalletDerivationPath, IdentityStatus state machine, DPNS names, 12-key discovery
+11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
+12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
 13. **PR-13**: Evo-tool integration Phase 3 — migrate remaining tasks (registration, top-up, discovery, DashPay, core wallet) using enriched library
 14. **PR-14**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 15. **PR-15**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
