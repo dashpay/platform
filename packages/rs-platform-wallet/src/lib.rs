@@ -19,7 +19,9 @@ pub use wallet::dashpay::{
 };
 pub use wallet::identity::IdentityManager;
 pub use wallet::identity::ManagedIdentity;
+pub use wallet::identity::WatchedIdentity;
 pub use wallet::identity::{DpnsNameInfo, IdentityFundingMethod, IdentityStatus, KeyStorage, PrivateKeyData, TopUpFundingMethod};
+pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 

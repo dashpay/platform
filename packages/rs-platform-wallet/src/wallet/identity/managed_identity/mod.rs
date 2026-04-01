@@ -10,7 +10,7 @@ pub mod key_storage;
 mod label;
 mod sync;
 
-pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};
+pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData, WatchedIdentity};
 
 use crate::{BlockTime, ContactRequest, EstablishedContact};
 use dpp::identity::Identity;

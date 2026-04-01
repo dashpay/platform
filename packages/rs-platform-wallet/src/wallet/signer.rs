@@ -213,3 +213,184 @@ impl std::fmt::Debug for IdentitySigner {
             .finish()
     }
 }
+
+// ---------------------------------------------------------------------------
+// ManagedIdentitySigner
+// ---------------------------------------------------------------------------
+
+use crate::wallet::identity::managed_identity::key_storage::{KeyStorage, PrivateKeyData};
+
+/// Signer that resolves keys from a [`ManagedIdentity`]'s `key_storage`.
+///
+/// For [`PrivateKeyData::AtWalletDerivationPath`] keys the wallet is used to
+/// derive the private key on demand. For [`PrivateKeyData::Clear`] keys the
+/// stored bytes are used directly. If a key is not found in `key_storage`
+/// the signer falls back to the standard DIP-9 identity authentication path
+/// derivation (same logic as [`IdentitySigner`]).
+pub struct ManagedIdentitySigner {
+    key_storage: KeyStorage,
+    wallet: Arc<RwLock<Wallet>>,
+    identity_index: u32,
+    network: Network,
+}
+
+impl ManagedIdentitySigner {
+    /// Create a new `ManagedIdentitySigner`.
+    pub fn new(
+        key_storage: KeyStorage,
+        wallet: Arc<RwLock<Wallet>>,
+        identity_index: u32,
+        network: Network,
+    ) -> Self {
+        Self {
+            key_storage,
+            wallet,
+            identity_index,
+            network,
+        }
+    }
+
+    /// Derive private key bytes for a given identity public key.
+    ///
+    /// 1. If the key is in `key_storage` with `Clear` data, return those bytes.
+    /// 2. If the key is in `key_storage` with `AtWalletDerivationPath`, derive
+    ///    from the wallet at that path.
+    /// 3. Otherwise fall back to the standard IdentitySigner derivation.
+    fn derive_private_key_bytes(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
+        let key_id = identity_public_key.id();
+
+        // Check key_storage first.
+        if let Some((_pub_key, private_key_data)) = self.key_storage.get(&key_id) {
+            return match private_key_data {
+                PrivateKeyData::Clear(bytes) => Ok(bytes.clone()),
+                PrivateKeyData::AtWalletDerivationPath {
+                    derivation_path, ..
+                } => {
+                    let wallet = self.wallet.blocking_read();
+                    let secret_key =
+                        wallet.derive_private_key(derivation_path).map_err(|e| {
+                            ProtocolError::Generic(format!(
+                                "Failed to derive private key for identity key {}: {}",
+                                key_id, e
+                            ))
+                        })?;
+                    Ok(Zeroizing::new(secret_key.secret_bytes()))
+                }
+            };
+        }
+
+        // Fallback: standard IdentitySigner derivation from identity_index + key_id.
+        let fallback = IdentitySigner::new(
+            self.wallet.clone(),
+            self.network,
+            self.identity_index,
+        );
+        fallback.derive_private_key_bytes_for(identity_public_key)
+    }
+}
+
+impl IdentitySigner {
+    /// Derive private key bytes — exposed for internal reuse by `ManagedIdentitySigner`.
+    fn derive_private_key_bytes_for(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
+        self.derive_private_key_bytes(identity_public_key)
+    }
+}
+
+impl Signer<IdentityPublicKey> for ManagedIdentitySigner {
+    fn sign(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        let private_key_bytes = self.derive_private_key_bytes(identity_public_key)?;
+
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                let signature =
+                    dashcore::signer::sign(data, private_key_bytes.as_ref()).map_err(|e| {
+                        ProtocolError::Generic(format!("ECDSA signing failed: {}", e))
+                    })?;
+                Ok(BinaryData::new(signature.to_vec()))
+            }
+            #[cfg(feature = "bls")]
+            KeyType::BLS12_381 => {
+                use dashcore::blsful::{Bls12381G2Impl, SignatureSchemes};
+
+                let secret_key =
+                    dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+                        &*private_key_bytes,
+                    )
+                    .into_option()
+                    .ok_or_else(|| {
+                        ProtocolError::Generic(
+                            "BLS private key from bytes is not valid".to_string(),
+                        )
+                    })?;
+                let signature = secret_key.sign(SignatureSchemes::Basic, data).map_err(|e| {
+                    ProtocolError::Generic(format!("BLS signing failed: {}", e))
+                })?;
+                Ok(BinaryData::new(
+                    signature.as_raw_value().to_compressed().to_vec(),
+                ))
+            }
+            #[cfg(not(feature = "bls"))]
+            KeyType::BLS12_381 => Err(ProtocolError::Generic(
+                "BLS signing is not enabled (missing 'bls' feature)".to_string(),
+            )),
+            #[cfg(feature = "eddsa")]
+            KeyType::EDDSA_25519_HASH160 => {
+                use dashcore::ed25519_dalek::Signer as _;
+
+                let signing_key =
+                    dashcore::ed25519_dalek::SigningKey::from_bytes(&*private_key_bytes);
+                let signature = signing_key.sign(data);
+                Ok(BinaryData::new(signature.to_vec()))
+            }
+            #[cfg(not(feature = "eddsa"))]
+            KeyType::EDDSA_25519_HASH160 => Err(ProtocolError::Generic(
+                "EdDSA signing is not enabled (missing 'eddsa' feature)".to_string(),
+            )),
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::Generic(
+                "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
+            )),
+        }
+    }
+
+    fn sign_create_witness(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        let signature = self.sign(identity_public_key, data)?;
+
+        match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                Ok(AddressWitness::P2pkh { signature })
+            }
+            _ => Err(ProtocolError::Generic(format!(
+                "Key type {:?} is not supported for address witnesses",
+                identity_public_key.key_type()
+            ))),
+        }
+    }
+
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
+        self.derive_private_key_bytes(identity_public_key).is_ok()
+    }
+}
+
+impl std::fmt::Debug for ManagedIdentitySigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ManagedIdentitySigner")
+            .field("network", &self.network)
+            .field("identity_index", &self.identity_index)
+            .field("key_storage_keys", &self.key_storage.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}

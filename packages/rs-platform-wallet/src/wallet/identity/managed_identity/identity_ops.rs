@@ -2,10 +2,15 @@
 
 use super::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
 use super::ManagedIdentity;
+use crate::wallet::signer::ManagedIdentitySigner;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::prelude::Identifier;
+use key_wallet::wallet::Wallet;
+use key_wallet::Network;
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 impl ManagedIdentity {
     /// Create a new managed identity with its BIP-9 HD identity index.
@@ -71,5 +76,21 @@ impl ManagedIdentity {
     /// Record a top-up by index and amount.
     pub fn record_top_up(&mut self, index: u32, amount: u64) {
         self.top_ups.insert(index, amount);
+    }
+
+    /// Create a [`ManagedIdentitySigner`] for this identity.
+    ///
+    /// The signer resolves keys from this identity's `key_storage`. For keys
+    /// stored with [`PrivateKeyData::AtWalletDerivationPath`] the wallet is
+    /// used to derive the private key on demand. For keys not in the storage
+    /// the signer falls back to the standard DIP-9 identity authentication
+    /// path derivation.
+    pub fn signer(&self, wallet: Arc<RwLock<Wallet>>, network: Network) -> ManagedIdentitySigner {
+        ManagedIdentitySigner::new(
+            self.key_storage.clone(),
+            wallet,
+            self.identity_index,
+            network,
+        )
     }
 }

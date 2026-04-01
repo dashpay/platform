@@ -1,5 +1,6 @@
 //! Key storage types, identity status, and DPNS name metadata for managed identities.
 
+use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
 use key_wallet::bip32::DerivationPath;
@@ -38,3 +39,11 @@ pub struct DpnsNameInfo {
 
 /// Private key storage mapping KeyID to public key metadata + private key data.
 pub type KeyStorage = BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>;
+
+/// An identity we observe but don't own — read-only, no signing capability.
+#[derive(Debug, Clone)]
+pub struct WatchedIdentity {
+    pub identity: Identity,
+    pub dpns_names: Vec<DpnsNameInfo>,
+    pub status: IdentityStatus,
+}

@@ -33,7 +33,7 @@ use dpp::fee::Credits;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::CoreWallet;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
-use crate::wallet::signer::IdentitySigner;
+use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
 use super::funding::{IdentityFundingMethod, TopUpFundingMethod};
 use super::manager::IdentityManager;
@@ -117,6 +117,21 @@ impl IdentityWallet {
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
         IdentitySigner::new(self.wallet.clone(), self.network, identity_index)
+    }
+
+    /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
+    ///
+    /// The signer resolves keys from the identity's `key_storage`, falling
+    /// back to the standard DIP-9 derivation when a key is not in storage.
+    pub async fn signer_for(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<ManagedIdentitySigner, PlatformWalletError> {
+        let manager = self.identity_manager.read().await;
+        let managed = manager
+            .managed_identity(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+        Ok(managed.signer(self.wallet.clone(), self.network))
     }
 
     /// Get a read-lock handle to the [`IdentityManager`].
@@ -1600,9 +1615,9 @@ impl IdentityWallet {
     ///
     /// Resolves the given `name` to an identity identifier via
     /// [`resolve_name`](Self::resolve_name), fetches the identity from
-    /// Platform, and adds it to the local [`IdentityManager`] with
-    /// `identity_index` 0 (since the wallet derivation index is unknown for
-    /// externally-resolved names). The status is set to `Active`.
+    /// Platform, and adds it to the **watched** identities collection (since
+    /// the wallet derivation index is unknown for externally-resolved names
+    /// and we cannot sign on their behalf).
     ///
     /// Returns the identity if the name resolves successfully, or `None` if
     /// the name does not exist.
@@ -1611,7 +1626,6 @@ impl IdentityWallet {
         name: &str,
     ) -> Result<Option<Identity>, PlatformWalletError> {
         use dash_sdk::platform::Fetch;
-        use super::managed_identity::key_storage::IdentityStatus;
 
         // Resolve the DPNS name to an identity ID.
         let identity_id = match self.resolve_name(name).await? {
@@ -1635,16 +1649,11 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Add to the identity manager.
+        // Add to watched identities (read-only — we don't know the wallet
+        // index and cannot sign).
         {
             let mut manager = self.identity_manager.write().await;
-            if manager.identity(&identity_id).is_none() {
-                manager.add_identity(identity.clone(), 0)?;
-            }
-
-            if let Some(managed) = manager.managed_identity_mut(&identity_id) {
-                managed.set_status(IdentityStatus::Active);
-            }
+            manager.add_watched_identity(identity.clone())?;
         }
 
         Ok(Some(identity))

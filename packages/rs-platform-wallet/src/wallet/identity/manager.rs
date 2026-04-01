@@ -4,6 +4,8 @@
 //! associated with a wallet.
 
 use super::managed_identity::ManagedIdentity;
+use super::managed_identity::WatchedIdentity;
+use super::managed_identity::key_storage::IdentityStatus;
 use crate::error::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -16,6 +18,9 @@ pub struct IdentityManager {
     /// All managed identities owned by this wallet, indexed by identity ID
     pub(crate) identities: IndexMap<Identifier, ManagedIdentity>,
 
+    /// Watched (observed, read-only) identities — we can see them but cannot sign
+    pub(crate) watched_identities: IndexMap<Identifier, WatchedIdentity>,
+
     /// The primary identity ID (if set)
     pub(crate) primary_identity_id: Option<Identifier>,
 
@@ -27,6 +32,7 @@ impl Default for IdentityManager {
     fn default() -> Self {
         Self {
             identities: IndexMap::new(),
+            watched_identities: IndexMap::new(),
             primary_identity_id: None,
             last_scanned_index: 0,
         }
@@ -198,6 +204,50 @@ impl IdentityManager {
     /// Set the last scanned identity index.
     pub fn set_last_scanned_index(&mut self, index: u32) {
         self.last_scanned_index = index;
+    }
+}
+
+// --- Watched identities ---
+
+impl IdentityManager {
+    /// Add a watched (read-only) identity.
+    ///
+    /// Watched identities are observed but not owned — we cannot sign on their
+    /// behalf. If an identity with the same ID already exists in either the
+    /// managed or watched collection, this is a no-op.
+    pub fn add_watched_identity(
+        &mut self,
+        identity: Identity,
+    ) -> Result<(), PlatformWalletError> {
+        let identity_id = identity.id();
+
+        // Already managed or watched — nothing to do.
+        if self.identities.contains_key(&identity_id)
+            || self.watched_identities.contains_key(&identity_id)
+        {
+            return Ok(());
+        }
+
+        self.watched_identities.insert(
+            identity_id,
+            WatchedIdentity {
+                identity,
+                dpns_names: Vec::new(),
+                status: IdentityStatus::Active,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Look up a watched identity by ID.
+    pub fn watched_identity(&self, identity_id: &Identifier) -> Option<&WatchedIdentity> {
+        self.watched_identities.get(identity_id)
+    }
+
+    /// Get all watched identities.
+    pub fn all_watched_identities(&self) -> Vec<&WatchedIdentity> {
+        self.watched_identities.values().collect()
     }
 }
 
