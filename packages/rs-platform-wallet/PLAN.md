@@ -35,7 +35,7 @@ date: 2026-03-13
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
 14. **PR-14** ✅: Protocol completeness + evo-tool convergence — DashPay (auto-accept, validation, labels, send/accept migrated) + Identity (load_by_index, refresh, DPNS) + ManagedIdentity (owned/watched split, ManagedIdentitySigner) + identity routing (all identities synced to IdentityManager via DB chokepoints) + DPNS boilerplate eliminated. 27/42 evo-tool tasks migrated.
 15. **PR-15** ✅: Shielded pool (feature-gated `shielded`) — ShieldedWallet<S: ShieldedStore> with ZIP-32 keys, note/nullifier sync, 5 transitions, CachedOrchardProver, InMemoryShieldedStore. TODO: MerklePath witness for spending ops.
-16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
+16. **PR-16**: AssetLockFinalityEvent — add wait_for_finality(txid) to PlatformWalletManager using SPV events. Evo-tool keeps SpvManager (app-specific orchestration).
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 18. **PR-18**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 19. **PR-19**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
@@ -3518,26 +3518,54 @@ New `wallet/shielded/` module behind `#[cfg(feature = "shielded")]`:
 
 ---
 
-### PR-16: SPV migration + AssetLockFinalityEvent
+### PR-16: AssetLockFinalityEvent
 
-Migrate evo-tool's `SpvManager` to use `PlatformWalletManager.start_spv()` and add
-SPV-based asset lock finality proof waiting.
+**Scope change**: Originally planned to replace evo-tool's SpvManager with
+PlatformWalletManager. After research, SpvManager has ~1,500 lines of app-specific
+orchestration (ConnectionStatus push updates, 300ms debounced reconciliation, wallet-to-DB
+sync, peer count tracking, quorum lookups, RPC/SPV mode switching) that is NOT protocol-level.
 
-**SPV migration**:
-- Replace evo-tool's `SpvManager` wrapping of `DashSpvClient` with `PlatformWalletManager.start_spv()`
-- Wire `ConnectionStatus` updates from `PlatformWalletEvent::Spv` events
-- Implement debounced reconciliation pattern in platform-wallet or as evo-tool adapter
-- Delete evo-tool's `src/spv/manager.rs` SPV setup code
+**Decision**: Keep evo-tool's SpvManager. It coexists with platform-wallet — both share
+the same `ManagedWalletInfo` via `Arc<RwLock<>>`. Only add the protocol-level finality
+tracking to platform-wallet.
 
-**AssetLockFinalityEvent** (deferred from PR-6):
-- Add `transactions_waiting_for_finality: BTreeMap<Txid, Option<AssetLockProof>>` to `PlatformWalletManager`
-- Subscribe to `PlatformWalletEvent::Finality` for InstantLock/ChainLock events
-- Provide `wait_for_finality(txid) -> AssetLockProof` that blocks until proof arrives
-- Replace `CoreWallet`'s DAPI-polling `wait_for_asset_lock_proof_for_transaction()` with SPV-based waiting
-- Pattern from evo-tool: `src/spv/manager.rs` (AssetLockFinalityEvent), `src/context/wallet_lifecycle.rs` (handle_spv_finality_event)
+**What to implement:**
 
-**Done when**: SPV runs through platform-wallet. Asset lock proofs arrive via SPV events.
-Evo-tool's SpvManager is deleted.
+```rust
+impl PlatformWalletManager {
+    /// Register a transaction to wait for finality (InstantLock or ChainLock).
+    /// Call BEFORE broadcasting the transaction.
+    pub fn register_for_finality(&self, txid: Txid);
+
+    /// Wait for a finality proof for a previously registered transaction.
+    /// Listens to PlatformWalletEvent::Finality events.
+    /// Returns the proof once an InstantLock or ChainLock is received.
+    /// Timeout: configurable (default 5 minutes).
+    pub async fn wait_for_finality(
+        &self,
+        txid: &Txid,
+        timeout: Duration,
+    ) -> Result<AssetLockProof, PlatformWalletError>;
+}
+```
+
+Internal state:
+- `finality_waiters: Arc<RwLock<BTreeMap<Txid, Option<AssetLockProof>>>>` on PlatformWalletManager
+- `SpvEventForwarder` already forwards `InstantLockReceived` / `ChainLockReceived` as `FinalityEvent`
+- Add a listener that updates `finality_waiters` when matching events arrive
+- `wait_for_finality()` polls the map with sleep intervals (like evo-tool's pattern)
+
+Critical invariant: call `register_for_finality()` BEFORE broadcasting to prevent
+race where proof arrives before registration.
+
+**Files to modify:**
+- `src/manager/platform_wallet_manager.rs` — add finality_waiters field + methods
+- `src/manager/spv_event_forwarder.rs` — forward finality events to waiter map
+- `src/error.rs` — add FinalityTimeout variant
+
+**Done when**: `wait_for_finality(txid)` returns an AssetLockProof when IS/CL event
+arrives via SPV. CoreWallet's register_identity/top_up can optionally use this instead
+of DAPI polling.
 
 ---
 
