@@ -38,7 +38,7 @@ date: 2026-03-13
 16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 18. **PR-18**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-19. **PR-19**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+19. **PR-19**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
 
 ---
 
@@ -3644,6 +3644,11 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 | **Read starvation during block processing** — SPV `process_block()` holds write lock on both Wallet and ManagedWalletInfo for the entire block. During this time, CoreWallet read methods (`balance()`, `utxos()`, `all_address_info()`) are blocked. UI shows stale data until the block is fully processed. | Consider: (a) process transactions individually (release lock between txs), (b) use snapshot/MVCC pattern (clone state, process, swap), (c) accept the latency for now (blocks process in ms). |
 | **Non-atomic state updates across structs** — Wallet, ManagedWalletInfo, and IdentityManager are separate structs behind separate locks. Operations that touch multiple (e.g., adding a DashPay account to Wallet + updating MWI addresses + updating IdentityManager contacts) cannot be atomic. A crash mid-operation leaves inconsistent state. | Investigate: (a) merge structs (PR-6), (b) WAL/journaling for multi-struct updates, (c) accept eventual consistency with recovery on restart. |
 | `contactRequest` documents are immutable | Do not expose update/delete API; note in `send_contact_request` docs that retries create new documents |
+| **`blocking_read()` deadlock risk in Signer::sign()** | DPP's `Signer` trait has sync `sign()` method but we use `tokio::sync::RwLock`. `blocking_read()` will deadlock if wallet write lock is held by same task. Document constraint: never call `sign()` while holding wallet write lock. Consider `std::sync::RwLock` for wallet in future. |
+| **Signer code duplication** (IdentitySigner vs ManagedIdentitySigner) | Both have identical `sign()`/`sign_create_witness()`/`can_sign_with()` bodies. Extract shared `sign_with_key_bytes()` helper. Low priority — no correctness impact. |
+| **ShieldedWallet spending ops incomplete** | `unshield()`, `transfer()`, `withdraw()` return runtime error — MerklePath witness deserialization not implemented. Output-only ops (`shield`, `shield_from_asset_lock`) work. Fix when integrating with evo-tool's SQLite `ClientPersistentCommitmentTree`. |
+| **`rs-platform-wallet-ffi` broken type paths** | FFI crate references old type paths (`platform_wallet_info`, `identity_manager`, `managed_identity`) that were refactored. Fix in PR-19 by updating FFI imports to match new module structure. |
+| **Auto-accept `account_reference` behavior change** | Platform-wallet uses `account_index` (0) as `account_reference`, not DIP-15 calculated value. Documented in evo-tool code. QR codes are session-scoped so old codes expire anyway. |
 
 ---
 
