@@ -87,6 +87,9 @@ pub enum PlatformWalletError {
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
+    #[error("Timed out waiting for finality proof for transaction {0}")]
+    FinalityTimeout(dashcore::Txid),
+
     #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
     AssetLockExpired(String),
 

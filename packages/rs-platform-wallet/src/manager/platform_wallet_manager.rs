@@ -3,13 +3,15 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use dashcore::Txid;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::{Mnemonic, Network};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex, RwLock};
 
 use crate::error::PlatformWalletError;
-use crate::events::PlatformWalletEvent;
+use crate::events::{FinalityEvent, PlatformWalletEvent};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -29,6 +31,9 @@ pub struct PlatformWalletManager {
     wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
+    /// Transactions waiting for finality proof (InstantLock or ChainLock).
+    /// Registered BEFORE broadcast, updated when SPV event arrives.
+    finality_waiters: Mutex<BTreeMap<Txid, Option<dpp::prelude::AssetLockProof>>>,
     #[cfg(feature = "manager")]
     spv_client: RwLock<
         Option<
@@ -52,6 +57,7 @@ impl PlatformWalletManager {
             wallets: RwLock::new(BTreeMap::new()),
             event_tx,
             synced_height: AtomicU32::new(0),
+            finality_waiters: Mutex::new(BTreeMap::new()),
             #[cfg(feature = "manager")]
             spv_client: RwLock::new(None),
         }
@@ -215,6 +221,89 @@ impl PlatformWalletManager {
     #[cfg(not(feature = "manager"))]
     pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
         Ok(())
+    }
+
+    // ── Finality tracking ──────────────────────────────────────────────
+
+    /// Register a transaction to wait for finality proof.
+    /// Call BEFORE broadcasting to prevent race where proof arrives first.
+    pub async fn register_for_finality(&self, txid: Txid) {
+        let mut waiters = self.finality_waiters.lock().await;
+        waiters.insert(txid, None);
+    }
+
+    /// Wait for a finality proof (InstantLock or ChainLock) for a registered transaction.
+    ///
+    /// Subscribes to `PlatformWalletEvent::Finality` events and polls the
+    /// finality_waiters map until a proof arrives or timeout expires.
+    pub async fn wait_for_finality(
+        &self,
+        txid: &Txid,
+        timeout: Duration,
+    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut rx = self.event_tx.subscribe();
+
+        loop {
+            // Check if proof already arrived
+            {
+                let waiters = self.finality_waiters.lock().await;
+                if let Some(Some(proof)) = waiters.get(txid) {
+                    let proof = proof.clone();
+                    drop(waiters);
+                    self.finality_waiters.lock().await.remove(txid);
+                    return Ok(proof);
+                }
+            }
+
+            // Wait for next event or timeout
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                self.finality_waiters.lock().await.remove(txid);
+                return Err(PlatformWalletError::FinalityTimeout(*txid));
+            }
+
+            tokio::select! {
+                event = rx.recv() => {
+                    match event {
+                        Ok(PlatformWalletEvent::Finality(FinalityEvent::InstantLock { txid: lock_txid })) => {
+                            if lock_txid == *txid {
+                                // Mark as received with default proof.
+                                // TODO: Store actual InstantLock data from SPV event
+                                // when FinalityEvent carries the full proof.
+                                let mut waiters = self.finality_waiters.lock().await;
+                                if let Some(entry) = waiters.get_mut(txid) {
+                                    *entry = Some(dpp::prelude::AssetLockProof::default());
+                                }
+                            }
+                        }
+                        Ok(PlatformWalletEvent::Finality(FinalityEvent::ChainLock { .. })) => {
+                            // ChainLock: mark pending waiters as finalized.
+                            // TODO: Build proper ChainAssetLockProof with height + outpoint
+                            // when FinalityEvent carries the full data.
+                            let mut waiters = self.finality_waiters.lock().await;
+                            if let Some(entry) = waiters.get_mut(txid) {
+                                if entry.is_none() {
+                                    *entry = Some(dpp::prelude::AssetLockProof::default());
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => {
+                            self.finality_waiters.lock().await.remove(txid);
+                            return Err(PlatformWalletError::SpvError(
+                                "Event channel closed".to_string(),
+                            ));
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(remaining) => {
+                    self.finality_waiters.lock().await.remove(txid);
+                    return Err(PlatformWalletError::FinalityTimeout(*txid));
+                }
+            }
+        }
     }
 
     /// Insert a wallet into the manager and return a clone.
