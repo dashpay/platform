@@ -35,7 +35,7 @@ date: 2026-03-13
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
 14. **PR-14** ✅: Protocol completeness + evo-tool convergence — DashPay (auto-accept, validation, labels, send/accept migrated) + Identity (load_by_index, refresh, DPNS) + ManagedIdentity (owned/watched split, ManagedIdentitySigner) + identity routing (all identities synced to IdentityManager via DB chokepoints) + DPNS boilerplate eliminated. 27/42 evo-tool tasks migrated.
 15. **PR-15** ✅: Shielded pool (feature-gated `shielded`) — ShieldedWallet<S: ShieldedStore> with ZIP-32 keys, note/nullifier sync, 5 transitions, CachedOrchardProver, InMemoryShieldedStore. TODO: MerklePath witness for spending ops.
-16. **PR-16**: AssetLockFinalityEvent — add wait_for_finality(txid) to PlatformWalletManager using SPV events. Evo-tool keeps SpvManager (app-specific orchestration).
+16. **PR-16** ✅: AssetLockFinalityEvent — register_for_finality + wait_for_finality on PlatformWalletManager. Evo-tool keeps SpvManager. TODO: FinalityEvent should carry full proof data.
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 18. **PR-18**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 19. **PR-19**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
