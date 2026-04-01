@@ -6,8 +6,11 @@
 mod contact_requests;
 mod contacts;
 mod identity_ops;
+pub mod key_storage;
 mod label;
 mod sync;
+
+pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};
 
 use crate::{BlockTime, ContactRequest, EstablishedContact};
 use dpp::identity::Identity;
@@ -44,6 +47,21 @@ pub struct ManagedIdentity {
 
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
+
+    /// Private key storage mapping KeyID to (public key, private key data).
+    pub key_storage: KeyStorage,
+
+    /// Identity lifecycle status on Platform.
+    pub status: IdentityStatus,
+
+    /// DPNS usernames associated with this identity.
+    pub dpns_names: Vec<DpnsNameInfo>,
+
+    /// Hash of the wallet seed that owns this identity, if known.
+    pub wallet_seed_hash: Option<[u8; 32]>,
+
+    /// Top-up history: maps top-up index to amount (in duffs).
+    pub top_ups: BTreeMap<u32, u64>,
 }
 
 #[cfg(test)]

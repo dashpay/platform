@@ -15,6 +15,7 @@ pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
 pub use wallet::identity::IdentityManager;
 pub use wallet::identity::ManagedIdentity;
+pub use wallet::identity::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};
 pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 

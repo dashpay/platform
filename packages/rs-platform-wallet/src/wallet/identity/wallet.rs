@@ -285,8 +285,17 @@ impl IdentityWallet {
     ///
     /// Starting from the last scanned index stored in the identity manager,
     /// derives consecutive ECDSA authentication keys from the wallet's BIP-32
-    /// tree and queries Platform for registered identities. Scanning stops
-    /// after `IDENTITY_GAP_LIMIT` (5) consecutive misses.
+    /// tree and queries Platform for registered identities. For each identity
+    /// index, key indices 0 through 11 are scanned (covering the typical range
+    /// of authentication keys an identity may have been registered with).
+    /// Scanning stops after `IDENTITY_GAP_LIMIT` (5) consecutive identity-index
+    /// misses (i.e. none of the 12 key indices matched).
+    ///
+    /// For every discovered identity this method also:
+    /// - queries DPNS for associated usernames,
+    /// - stores the matched derivation path in the identity's key storage,
+    /// - records the wallet seed hash, and
+    /// - sets the identity status to `Active`.
     ///
     /// Any discovered identities are added to the local identity manager and
     /// returned. The `last_scanned_index` is updated so subsequent calls
@@ -294,6 +303,18 @@ impl IdentityWallet {
     pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::util::hash::ripemd160_sha256;
+        use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
+        use key_wallet::dip9::{
+            IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+        };
+        use super::managed_identity::key_storage::{
+            DpnsNameInfo, IdentityStatus, PrivateKeyData,
+        };
+
+        /// Number of key indices to scan per identity index.
+        const KEY_INDEX_SCAN_LIMIT: u32 = 12;
 
         let network = {
             let wallet = self.wallet.read().await;
@@ -305,51 +326,155 @@ impl IdentityWallet {
             manager.last_scanned_index()
         };
 
+        // Use the wallet ID as the seed hash — it is a 32-byte identifier
+        // derived from the wallet seed during wallet creation.
+        let wallet_seed_hash: [u8; 32] = {
+            let info = self.wallet_info.read().await;
+            info.wallet_id
+        };
+
         let mut consecutive_misses = 0u32;
         let mut identity_index = start_index;
         let mut discovered: Vec<Identity> = Vec::new();
 
         while consecutive_misses < IDENTITY_GAP_LIMIT {
-            // Derive the authentication key hash for this identity index
-            // (key_index 0 is the primary authentication key).
-            let key_hash_array = {
-                let wallet = self.wallet.read().await;
-                derive_identity_auth_key_hash(&wallet, network, identity_index, 0)?
-            };
+            let mut found_at_this_index = false;
 
-            // Query Platform for an identity registered with this key hash.
-            // No locks are held during this network call.
-            match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
-                Ok(Some(identity)) => {
-                    let identity_id = identity.id();
+            // Scan key indices 0..KEY_INDEX_SCAN_LIMIT for this identity index.
+            for key_index in 0..KEY_INDEX_SCAN_LIMIT {
+                let key_hash_array = {
+                    let wallet = self.wallet.read().await;
+                    derive_identity_auth_key_hash(&wallet, network, identity_index, key_index)?
+                };
 
-                    // Acquire write lock only when adding an identity.
-                    let mut manager = self.identity_manager.write().await;
-                    if manager.identity(&identity_id).is_none() {
-                        manager.add_identity(identity.clone(), identity_index)?;
+                // Query Platform for an identity registered with this key hash.
+                // No locks are held during this network call.
+                match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
+                    Ok(Some(identity)) => {
+                        let identity_id = identity.id();
+
+                        // Build the full derivation path for the matched key.
+                        let base_path: DerivationPath = match network {
+                            key_wallet::Network::Mainnet => {
+                                IDENTITY_AUTHENTICATION_PATH_MAINNET
+                            }
+                            _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+                        }
+                        .into();
+                        let key_type_index: u32 = KeyDerivationType::ECDSA.into();
+                        let full_path = base_path.extend([
+                            ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+                                PlatformWalletError::InvalidIdentityData(format!(
+                                    "Invalid key type index: {}", e
+                                ))
+                            })?,
+                            ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
+                                PlatformWalletError::InvalidIdentityData(format!(
+                                    "Invalid identity index: {}", e
+                                ))
+                            })?,
+                            ChildNumber::from_hardened_idx(key_index).map_err(|e| {
+                                PlatformWalletError::InvalidIdentityData(format!(
+                                    "Invalid key index: {}", e
+                                ))
+                            })?,
+                        ]);
+
+                        // Find which KeyID in the on-chain identity matches this
+                        // key hash so we can store the derivation path against it.
+                        let matched_key_id_and_pub = identity
+                            .public_keys()
+                            .iter()
+                            .find(|(_, pk)| {
+                                let pk_hash = ripemd160_sha256(pk.data().as_slice());
+                                pk_hash.as_slice() == key_hash_array
+                            })
+                            .map(|(kid, pk)| (*kid, pk.clone()));
+
+                        // Acquire write lock to add/enrich the identity.
+                        let mut manager = self.identity_manager.write().await;
+                        let is_new = manager.identity(&identity_id).is_none();
+                        if is_new {
+                            manager.add_identity(identity.clone(), identity_index)?;
+                        }
+
+                        if let Some(managed) =
+                            manager.managed_identity_mut(&identity_id)
+                        {
+                            managed.set_status(IdentityStatus::Active);
+                            managed.wallet_seed_hash = Some(wallet_seed_hash);
+
+                            if let Some((kid, pub_key)) = matched_key_id_and_pub {
+                                managed.add_key(
+                                    kid,
+                                    pub_key,
+                                    PrivateKeyData::AtWalletDerivationPath {
+                                        wallet_seed_hash,
+                                        derivation_path: full_path,
+                                    },
+                                );
+                            }
+                        }
+                        drop(manager);
+
+                        if is_new {
+                            discovered.push(identity.clone());
+                        }
+                        found_at_this_index = true;
+
+                        // An identity was found at this key_index; no need to
+                        // continue scanning further key indices for this
+                        // identity_index.
+                        break;
                     }
-                    drop(manager);
-
-                    discovered.push(identity);
-                    consecutive_misses = 0;
-                }
-                Ok(None) => {
-                    consecutive_misses += 1;
-                }
-                Err(e) => {
-                    // Log the error but treat it as a miss so scanning
-                    // continues. A transient network error should not
-                    // silently stop discovery.
-                    tracing::warn!(
-                        "Failed to query identity at index {}: {}",
-                        identity_index,
-                        e
-                    );
-                    consecutive_misses += 1;
+                    Ok(None) => {
+                        // This key_index did not match; try the next one.
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to query identity at index {} key {}: {}",
+                            identity_index,
+                            key_index,
+                            e
+                        );
+                        // Treat individual key-index errors as a miss and
+                        // continue scanning the remaining key indices.
+                    }
                 }
             }
 
+            if found_at_this_index {
+                consecutive_misses = 0;
+            } else {
+                consecutive_misses += 1;
+            }
+
             identity_index += 1;
+        }
+
+        // --- DPNS lookup for all discovered identities ---
+        for identity in &discovered {
+            let identity_id = identity.id();
+            match self.sdk.get_dpns_usernames_by_identity(identity_id, None).await {
+                Ok(usernames) => {
+                    let mut manager = self.identity_manager.write().await;
+                    if let Some(managed) = manager.managed_identity_mut(&identity_id) {
+                        for username in usernames {
+                            managed.add_dpns_name(DpnsNameInfo {
+                                label: username.label,
+                                acquired_at: None,
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to fetch DPNS names for identity {}: {}",
+                        identity_id,
+                        e
+                    );
+                }
+            }
         }
 
         // Update the last scanned index so the next sync resumes here.
