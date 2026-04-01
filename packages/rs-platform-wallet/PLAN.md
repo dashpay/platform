@@ -33,11 +33,12 @@ date: 2026-03-13
 11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
 12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
-14. **PR-14**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
-15. **PR-15**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
-16. **PR-16**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
-17. **PR-17**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
-18. **PR-18**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
+14. **PR-14**: DashPay protocol completeness — reject, auto-accept proof, validation, account labels, payment address registration
+15. **PR-15**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
+16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
+17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
+18. **PR-18**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+19. **PR-19**: Serialization / persistence, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
 
 ---
 
@@ -292,7 +293,7 @@ rs-platform-wallet
 │   │   ├── watched: Arc<RwLock<Map<IdentityId, Set<TokenId>>>>
 │   │   ├── balances: Arc<RwLock<Map<(IdentityId, TokenId), TokenAmount>>>
 │   │   └── watch/unwatch/sync/transfer/mint/burn/freeze/purchase/claim/set_price
-│   └── [shielded: Option<ShieldedWallet>]         ← feature-gated, Orchard ZK pool (PR-14)
+│   └── [shielded: Option<ShieldedWallet>]         ← feature-gated, Orchard ZK pool (PR-15)
 │
 ├── PlatformWalletManager        ← multi-wallet + SPV coordinator
 │   ├── sdk, network, wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>
@@ -1781,13 +1782,141 @@ pub fn verify_auto_accept_proof(
 ) -> bool
 ```
 
+#### 1.5.12 — Reject Contact Request (PR-14)
+
+```rust
+/// Reject an incoming contact request by hiding it via contactInfo document.
+/// Contact requests are immutable — rejection is done by creating/updating
+/// a contactInfo document with display_hidden=true.
+pub async fn reject_contact_request(
+    &self,
+    identity_id: &Identifier,
+    contact_identity_id: &Identifier,
+) -> Result<(), PlatformWalletError>
+```
+
+- Document type: `contactInfo` (DashPay contract)
+- Sets `display_hidden: true`, other fields empty (nickname: None, note: None, accepted_accounts: [])
+
+#### 1.5.13 — QR Auto-Accept Proof (PR-14)
+
+```rust
+/// Generate auto-accept proof for QR code sharing.
+/// Derivation path: m/9'/coin'/16'/timestamp'
+/// Signs: SHA256(sender_id || recipient_id || account_reference)
+pub fn generate_auto_accept_proof(
+    &self,
+    sender_id: &Identifier,
+    recipient_id: &Identifier,
+    account_reference: u32,
+    timestamp: u32,
+) -> Result<Vec<u8>, PlatformWalletError>
+
+/// Verify an auto-accept proof from a scanned QR code.
+pub fn verify_auto_accept_proof(
+    proof_bytes: &[u8],
+    sender_id: &Identifier,
+    recipient_id: &Identifier,
+    account_reference: u32,
+) -> Result<bool, PlatformWalletError>
+```
+
+- Proof format: key_type(1B) + timestamp(4B BE) + sig_size(1B) + signature(64B)
+- Message: SHA256(sender_id(32B) || recipient_id(32B) || account_ref(4B LE))
+
+#### 1.5.14 — Pre-Send Validation (PR-14)
+
+```rust
+/// Validate a contact request before sending.
+/// Checks sender/recipient key types, purposes, security levels,
+/// core height freshness, and account reference range.
+pub fn validate_contact_request(
+    sender_identity: &Identity,
+    sender_key_index: u32,
+    recipient_identity: &Identity,
+    recipient_key_index: u32,
+    account_reference: u32,
+    core_height: u32,
+) -> ContactRequestValidation
+
+pub struct ContactRequestValidation {
+    pub is_valid: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+```
+
+Validation rules:
+- Sender key must be ECDSA_SECP256K1, Purpose::ENCRYPTION, not disabled
+- Recipient key must exist and be compatible with ECDH
+- Core height within +-200 blocks of current
+- Account reference within reasonable range
+
+#### 1.5.15 — Account Label Encryption (PR-14)
+
+```rust
+/// Encrypt an account label for inclusion in contact request.
+/// Uses ECDH shared key, CBC-AES-256 with PKCS7 padding.
+/// Format: IV(16B) + ciphertext(32-64B). Max label: 62 bytes.
+pub fn encrypt_account_label(label: &str, shared_key: &[u8; 32]) -> Result<Vec<u8>, PlatformWalletError>
+pub fn decrypt_account_label(encrypted: &[u8], shared_key: &[u8; 32]) -> Result<String, PlatformWalletError>
+```
+
+#### 1.5.16 — Payment Address Registration (PR-14)
+
+```rust
+/// Register payment addresses for all established contacts.
+/// Per contact: derives addresses up to highest_receive_index + GAP_LIMIT (20).
+/// Returns new addresses for SPV bloom filter registration.
+pub async fn register_contact_payment_addresses(
+    &self,
+) -> Result<ContactAddressRegistration, PlatformWalletError>
+
+/// Match an incoming payment to a contact relationship.
+pub fn match_payment_to_contact(
+    &self,
+    address: &Address,
+) -> Option<ContactPaymentMatch>
+
+pub struct ContactPaymentMatch {
+    pub owner_id: Identifier,
+    pub contact_id: Identifier,
+    pub address_index: u32,
+}
+
+pub struct ContactAddressRegistration {
+    pub new_addresses: Vec<Address>,
+    pub contacts_processed: usize,
+}
+```
+
+- Gap limit: 20 per contact
+- Derivation path: m/9'/coin'/15'/0'/(our_id)/(contact_id)/index
+- Track per-contact: highest_receive_index, registered_count
+- When payment at index N arrives, extend to N + 20
+
+#### 1.5.17 — Sent Contact Requests Query (PR-14)
+
+```rust
+/// Fetch sent (outgoing) contact requests from Platform.
+pub async fn sent_contact_requests(
+    &self,
+    identity_id: &Identifier,
+) -> Result<Vec<ContactRequest>, PlatformWalletError>
+```
+
+- Query: `$ownerId == identity_id`, order by `$createdAt`
+- Currently only `sync_contact_requests()` fetches incoming; need both directions
+
 #### Files
 
 - `packages/rs-platform-wallet/src/platform_wallet/dashpay/dip14.rs` (new — DIP-14 CKDpriv256/CKDpub256, PR-12: moved from evo-tool)
 - `packages/rs-platform-wallet/src/platform_wallet/dashpay/mod.rs` (new — consolidates `platform_wallet_info/contact_requests.rs`)
 - `packages/rs-platform-wallet/src/wallet/dashpay/contacts.rs` (PR-12) — derive_contact_xpub, account_reference, payment addresses
-- `packages/rs-platform-wallet/src/wallet/dashpay/wallet.rs` (PR-12) — register_contact_payment_addresses(), match_payment_to_contact()
-- `packages/rs-platform-wallet/src/wallet/dashpay/payments.rs` (PR-12) — contact payment tracking, gap limit management
+- `packages/rs-platform-wallet/src/wallet/dashpay/wallet.rs` (PR-12) — register_contact_payment_addresses(), match_payment_to_contact(); (PR-14) — reject, sent_requests, label encryption, _with_signer methods
+- `packages/rs-platform-wallet/src/wallet/dashpay/payments.rs` (PR-12) — contact payment tracking, gap limit management; (PR-14) — payment address registration + matching with typed return structs
+- `packages/rs-platform-wallet/src/wallet/dashpay/auto_accept.rs` (PR-14) — proof generation + verification
+- `packages/rs-platform-wallet/src/wallet/dashpay/validation.rs` (PR-14) — pre-send validation
 - Reuses: `packages/rs-platform-encryption/` (DIP-15 crypto — do NOT duplicate)
 
 ---
@@ -2623,7 +2752,7 @@ tokens, identity, dashpay, core wallet, platform addresses. Evo-tool keeps its o
 **What gets deleted**:
 - Direct SDK calls in backend tasks (replaced by `wallet.*()` calls)
 - Duplicate crypto code (`dashpay/encryption.rs`, `dashpay/dip14_derivation.rs`) → use `rs-platform-encryption`
-- Duplicate wallet model code in `src/model/wallet/` (partially — full deletion in PR-14)
+- Duplicate wallet model code in `src/model/wallet/` (partially — full deletion in PR-15)
 
 **Done when**: All backend tasks delegate to platform-wallet. No direct SDK identity/token/address/dashpay
 calls remain in evo-tool backend tasks. SPV and database stay.
@@ -2944,19 +3073,46 @@ Platform-wallet additions:
 | Tokens | 13/13 | — | — |
 | Identity | 7/13 | 6 | load_identity (manual import), load_from_wallet, refresh (targeted fetch), + 3 support |
 | DashPay | 0/9 | 9 | QR auto-accept, reject, custom labels, pre-send validation — evo-tool-specific |
-| Core | 1/7 | 6 | UTXO refresh, SPV integration — stays until PR-15 |
+| Core | 1/7 | 6 | UTXO refresh, SPV integration — stays until PR-16 |
 | **Total** | **21/42** | **21** | |
 
 **What stays in evo-tool (not migratable without further library work):**
 - `load_identity.rs` — UI-driven identity import with manual key input, masternode types
 - DashPay contact requests — evo-tool-specific features (QR auto-accept, reject, validation)
-- `SpvManager` — stays until PR-15
+- `SpvManager` — stays until PR-16
 - Database persistence — evo-tool manages its own SQLite
 - UTXO refresh / wallet info — coupled to SpvManager
 
 ---
 
-### PR-14: Shielded pool (feature-gated `shielded`)
+### PR-14: DashPay protocol completeness
+
+**Goal**: Complete DashPay protocol support so any app can build full contact +
+payment flows without reimplementing protocol-level logic.
+
+**What to add to DashPayWallet:**
+- reject_contact_request() — contactInfo document with display_hidden=true
+- generate_auto_accept_proof() / verify_auto_accept_proof() — DIP-15 QR auto-accept
+- validate_contact_request() — pre-send key/height/reference validation
+- encrypt_account_label() / decrypt_account_label() — CBC-AES-256 with ECDH key
+- register_contact_payment_addresses() — bulk address derivation + gap limit tracking
+- match_payment_to_contact() — address -> (owner, contact, index) lookup
+- sent_contact_requests() — query outgoing requests from Platform
+- send_contact_request_with_signer() / accept_contact_request_with_signer() — external signer variants
+
+**Files to create/modify:**
+- src/wallet/dashpay/auto_accept.rs — new: proof generation + verification
+- src/wallet/dashpay/validation.rs — new: pre-send validation
+- src/wallet/dashpay/payments.rs — new: payment address registration + matching
+- src/wallet/dashpay/wallet.rs — add reject, sent_requests, label encryption, _with_signer methods
+
+**Done when**: Full DashPay protocol coverage. An app can send/accept/reject contact requests,
+auto-accept via QR, validate before sending, encrypt labels, and track incoming payments —
+all through platform-wallet.
+
+---
+
+### PR-15: Shielded pool (feature-gated `shielded`)
 
 (Renumbered from PR-10. Content unchanged.)
 
@@ -2985,7 +3141,7 @@ Platform-wallet additions:
 
 ---
 
-### PR-15: SPV migration + AssetLockFinalityEvent
+### PR-16: SPV migration + AssetLockFinalityEvent
 
 Migrate evo-tool's `SpvManager` to use `PlatformWalletManager.start_spv()` and add
 SPV-based asset lock finality proof waiting.
@@ -3008,7 +3164,7 @@ Evo-tool's SpvManager is deleted.
 
 ---
 
-### PR-16: Comprehensive test suite
+### PR-17: Comprehensive test suite
 
 **Infrastructure**:
 - `tests/common/mod.rs` — shared helpers: `create_test_wallet()`, `create_funded_wallet()`, `inject_utxos()`
@@ -3042,7 +3198,7 @@ Evo-tool's SpvManager is deleted.
 
 ---
 
-### PR-17: Merge Wallet + ManagedWalletInfo (dashcore)
+### PR-18: Merge Wallet + ManagedWalletInfo (dashcore)
 
 Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` — both are mutable and always used
 together. Single `Arc<RwLock<Wallet>>` containing all state.
@@ -3059,7 +3215,7 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 
 ---
 
-### PR-18: Serialization + Final Cleanup
+### PR-19: Serialization + Final Cleanup
 
 **Library** (`rs-platform-wallet`):
 
