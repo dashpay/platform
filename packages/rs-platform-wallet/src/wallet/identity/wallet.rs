@@ -13,7 +13,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use tokio::sync::RwLock;
@@ -117,6 +117,15 @@ impl IdentityWallet {
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
         IdentitySigner::new(self.wallet.clone(), self.network, identity_index)
+    }
+
+    /// Get a read-lock handle to the [`IdentityManager`].
+    ///
+    /// This allows callers to inspect managed identities (e.g. after a
+    /// [`sync()`](Self::sync) call) without exposing the internal `RwLock`
+    /// directly.
+    pub async fn identity_manager(&self) -> tokio::sync::RwLockReadGuard<'_, IdentityManager> {
+        self.identity_manager.read().await
     }
 }
 
@@ -335,6 +344,68 @@ impl IdentityWallet {
         manager.add_identity(identity.clone(), identity_index)?;
 
         Ok(identity)
+    }
+
+    /// Register a new identity using an externally-provided identity, asset
+    /// lock proof, and signer.
+    ///
+    /// Unlike [`register_identity_with_funding`](Self::register_identity_with_funding),
+    /// this method does **not** derive keys or manage the internal
+    /// `IdentityManager`. The caller supplies a fully-constructed `Identity`
+    /// object, the asset lock proof + private key, and a `Signer`
+    /// implementation directly.
+    ///
+    /// This is useful when the caller manages identities outside of the
+    /// platform-wallet `IdentityManager` (e.g. evo-tool's
+    /// `QualifiedIdentity`).
+    ///
+    /// Returns the confirmed `Identity` from Platform.
+    pub async fn register_identity_with_signer<S: Signer<IdentityPublicKey>>(
+        &self,
+        identity: &Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: &dashcore::PrivateKey,
+        signer: &S,
+    ) -> Result<Identity, dash_sdk::Error> {
+        identity
+            .put_to_platform_and_wait_for_response(
+                &self.sdk,
+                asset_lock_proof,
+                asset_lock_private_key,
+                signer,
+                None,
+            )
+            .await
+    }
+
+    /// Top up an identity's credit balance using an externally-provided
+    /// identity and asset lock proof.
+    ///
+    /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
+    /// this method does **not** look up the identity in the internal
+    /// `IdentityManager`. The caller supplies the `Identity` object and the
+    /// asset lock proof + private key directly.
+    ///
+    /// This is useful when the caller manages identities outside of the
+    /// platform-wallet `IdentityManager` (e.g. evo-tool's
+    /// `QualifiedIdentity`).
+    ///
+    /// Returns the new credit balance.
+    pub async fn top_up_identity_with_signer(
+        &self,
+        identity: &Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: &dashcore::PrivateKey,
+    ) -> Result<u64, dash_sdk::Error> {
+        identity
+            .top_up_identity(
+                &self.sdk,
+                asset_lock_proof,
+                asset_lock_private_key,
+                None, // user_fee_increase
+                None, // settings
+            )
+            .await
     }
 }
 
