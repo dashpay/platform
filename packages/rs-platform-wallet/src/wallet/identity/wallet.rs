@@ -35,6 +35,7 @@ use crate::wallet::core::CoreWallet;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
 use crate::wallet::signer::IdentitySigner;
 
+use super::funding::{IdentityFundingMethod, TopUpFundingMethod};
 use super::manager::IdentityManager;
 
 /// Default gap limit for identity discovery scanning.
@@ -132,13 +133,8 @@ impl std::fmt::Debug for IdentityWallet {
 impl IdentityWallet {
     /// Register a new identity on Platform.
     ///
-    /// High-level flow:
-    /// 1. Build an asset lock proof via the core wallet (funds the identity).
-    /// 2. Generate `key_count` identity authentication keys at DIP-9 paths
-    ///    for the given `identity_index`.
-    /// 3. Call the SDK's `Identity::put_to_platform_and_wait_for_response()`
-    ///    to broadcast the identity-create state transition.
-    /// 4. Add the new identity to the local `identity_manager`.
+    /// Convenience wrapper that uses `FundWithWallet` funding. For other
+    /// funding methods, use [`register_identity_with_funding`](Self::register_identity_with_funding).
     ///
     /// # Arguments
     ///
@@ -155,17 +151,80 @@ impl IdentityWallet {
         identity_index: u32,
         key_count: u32,
     ) -> Result<Identity, PlatformWalletError> {
+        self.register_identity_with_funding(
+            core_wallet,
+            IdentityFundingMethod::FundWithWallet { amount_duffs },
+            identity_index,
+            key_count,
+        )
+        .await
+    }
+
+    /// Register a new identity on Platform with a specified funding method.
+    ///
+    /// High-level flow:
+    /// 1. Obtain an asset lock proof according to the chosen `funding` method.
+    /// 2. Generate `key_count` identity authentication keys at DIP-9 paths
+    ///    for the given `identity_index`.
+    /// 3. Call the SDK's `Identity::put_to_platform_and_wait_for_response()`
+    ///    to broadcast the identity-create state transition.
+    /// 4. Add the new identity to the local `identity_manager`.
+    ///
+    /// # Funding methods
+    ///
+    /// * `UseAssetLock` - Use a pre-existing proof and private key directly.
+    /// * `FundWithWallet` - Build an asset lock from wallet UTXOs (default).
+    /// * `FundWithUtxo` - Build an asset lock from a specific UTXO (TODO:
+    ///   requires a dedicated CoreWallet method; currently falls back to
+    ///   `FundWithWallet` using the UTXO's value).
+    ///
+    /// # IS -> CL fallback
+    ///
+    /// When the Platform submission fails because an InstantSend proof has
+    /// expired, callers should retry with a ChainLock proof. The fallback
+    /// logic lives in the error-handling layer above this method (e.g. in the
+    /// `PlatformWalletManager`) because it requires waiting for chain-lock
+    /// confirmation via DAPI queries that are not available at this level.
+    /// The [`PlatformWalletError::AssetLockExpired`] and
+    /// [`PlatformWalletError::AssetLockNotChainLocked`] error variants are
+    /// provided for this purpose.
+    pub async fn register_identity_with_funding(
+        &self,
+        core_wallet: &CoreWallet,
+        funding: IdentityFundingMethod,
+        identity_index: u32,
+        key_count: u32,
+    ) -> Result<Identity, PlatformWalletError> {
         if key_count == 0 {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "key_count must be at least 1".to_string(),
             ));
         }
 
-        // Step 1: Build and broadcast the asset lock transaction, then wait
-        // for the instant-send lock proof.
-        let (asset_lock_proof, asset_lock_private_key) = core_wallet
-            .create_registration_asset_lock_proof(amount_duffs, identity_index)
-            .await?;
+        // Step 1: Obtain the asset lock proof and private key.
+        let (asset_lock_proof, asset_lock_private_key) = match funding {
+            IdentityFundingMethod::UseAssetLock { proof, private_key } => {
+                (proof, private_key)
+            }
+            IdentityFundingMethod::FundWithWallet { amount_duffs } => {
+                core_wallet
+                    .create_registration_asset_lock_proof(amount_duffs, identity_index)
+                    .await?
+            }
+            IdentityFundingMethod::FundWithUtxo {
+                outpoint: _,
+                txout,
+                address: _,
+            } => {
+                // TODO: Add a CoreWallet method that builds an asset lock from
+                // a specific UTXO instead of selecting from the full UTXO set.
+                // For now, fall back to FundWithWallet using the UTXO's value.
+                let amount_duffs = txout.value;
+                core_wallet
+                    .create_registration_asset_lock_proof(amount_duffs, identity_index)
+                    .await?
+            }
+        };
 
         // Step 2: Derive identity authentication keys at DIP-9 paths.
         let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
@@ -262,6 +321,9 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
+                // TODO: IS->CL fallback — detect expired IS proof errors here
+                // and return AssetLockExpired so the caller can retry with a
+                // ChainLock proof.
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register identity on Platform: {}",
                     e
@@ -492,8 +554,8 @@ impl IdentityWallet {
 impl IdentityWallet {
     /// Top up an existing identity's credit balance.
     ///
-    /// Builds an asset lock transaction for the given amount and submits an
-    /// `IdentityTopUpTransition` to Platform.
+    /// Convenience wrapper that uses `FundWithWallet` funding. For other
+    /// funding methods, use [`top_up_identity_with_funding`](Self::top_up_identity_with_funding).
     ///
     /// # Arguments
     ///
@@ -509,6 +571,36 @@ impl IdentityWallet {
         topup_index: u32,
         amount_duffs: u64,
     ) -> Result<(), PlatformWalletError> {
+        self.top_up_identity_with_funding(
+            core_wallet,
+            identity_id,
+            TopUpFundingMethod::FundWithWallet { amount_duffs },
+            topup_index,
+        )
+        .await
+    }
+
+    /// Top up an existing identity's credit balance with a specified funding method.
+    ///
+    /// # Funding methods
+    ///
+    /// * `UseAssetLock` - Use a pre-existing proof and private key directly.
+    /// * `FundWithWallet` - Build an asset lock from wallet UTXOs (default).
+    /// * `FundWithUtxo` - Build an asset lock from a specific UTXO (TODO:
+    ///   requires a dedicated CoreWallet method; currently falls back to
+    ///   `FundWithWallet` using the UTXO's value).
+    ///
+    /// # IS -> CL fallback
+    ///
+    /// See [`register_identity_with_funding`](Self::register_identity_with_funding)
+    /// for details on the IS -> CL fallback strategy.
+    pub async fn top_up_identity_with_funding(
+        &self,
+        core_wallet: &CoreWallet,
+        identity_id: &Identifier,
+        funding: TopUpFundingMethod,
+        topup_index: u32,
+    ) -> Result<(), PlatformWalletError> {
         // Retrieve the identity and its HD index from the manager.
         let (identity, identity_index) = {
             let manager = self.identity_manager.read().await;
@@ -522,11 +614,30 @@ impl IdentityWallet {
             (identity, index)
         };
 
-        // Step 1: Build and broadcast the top-up asset lock transaction,
-        // then wait for the instant-send lock proof.
-        let (asset_lock_proof, asset_lock_private_key) = core_wallet
-            .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
-            .await?;
+        // Step 1: Obtain the asset lock proof and private key.
+        let (asset_lock_proof, asset_lock_private_key) = match funding {
+            TopUpFundingMethod::UseAssetLock { proof, private_key } => {
+                (proof, private_key)
+            }
+            TopUpFundingMethod::FundWithWallet { amount_duffs } => {
+                core_wallet
+                    .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
+                    .await?
+            }
+            TopUpFundingMethod::FundWithUtxo {
+                outpoint: _,
+                txout,
+                address: _,
+            } => {
+                // TODO: Add a CoreWallet method that builds an asset lock from
+                // a specific UTXO instead of selecting from the full UTXO set.
+                // For now, fall back to FundWithWallet using the UTXO's value.
+                let amount_duffs = txout.value;
+                core_wallet
+                    .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
+                    .await?
+            }
+        };
 
         // Step 2: Submit the top-up state transition.
         let new_balance = identity
@@ -539,6 +650,9 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
+                // TODO: IS->CL fallback — detect expired IS proof errors here
+                // and return AssetLockExpired so the caller can retry with a
+                // ChainLock proof.
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to top up identity: {}",
                     e

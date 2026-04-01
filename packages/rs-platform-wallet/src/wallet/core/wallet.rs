@@ -26,6 +26,8 @@ use super::types::{CoreAccountSummary, CoreAddressInfo};
 use dashcore::Txid;
 use crate::events::TransactionStatus;
 
+use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
+
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
 pub struct CoreWallet {
@@ -35,6 +37,8 @@ pub struct CoreWallet {
     pub(crate) network: Network,
     /// Per-transaction finality status tracking.
     pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
+    /// Tracked asset lock transactions and their lifecycle status.
+    pub(crate) tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,
 }
 
 impl CoreWallet {
@@ -330,6 +334,44 @@ impl CoreWallet {
                 None
             }
             _ => None, // new_status <= old, no change
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Asset lock tracking
+// ---------------------------------------------------------------------------
+
+impl CoreWallet {
+    /// Track a new asset lock transaction.
+    pub async fn track_asset_lock(&self, lock: TrackedAssetLock) {
+        let mut locks = self.tracked_asset_locks.write().await;
+        locks.push(lock);
+    }
+
+    /// Return all asset locks that have not been consumed (status is not Used*).
+    pub async fn unused_asset_locks(&self) -> Vec<TrackedAssetLock> {
+        let locks = self.tracked_asset_locks.read().await;
+        locks.iter().filter(|l| !l.status.is_used()).cloned().collect()
+    }
+
+    /// Mark an asset lock as used for registration or top-up.
+    pub async fn mark_asset_lock_used(&self, txid: &Txid, usage: AssetLockStatus) {
+        let mut locks = self.tracked_asset_locks.write().await;
+        if let Some(lock) = locks.iter_mut().find(|l| &l.txid == txid) {
+            lock.status = usage;
+        }
+    }
+
+    /// Update the proof on a tracked asset lock (e.g. when IS or CL arrives).
+    pub async fn update_asset_lock_proof(
+        &self,
+        txid: &Txid,
+        proof: dpp::prelude::AssetLockProof,
+    ) {
+        let mut locks = self.tracked_asset_locks.write().await;
+        if let Some(lock) = locks.iter_mut().find(|l| &l.txid == txid) {
+            lock.proof = Some(proof);
         }
     }
 }

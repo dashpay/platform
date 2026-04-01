@@ -86,4 +86,10 @@ pub enum PlatformWalletError {
 
     #[error("Token operation failed: {0}")]
     TokenError(String),
+
+    #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
+    AssetLockExpired(String),
+
+    #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {0}")]
+    AssetLockNotChainLocked(String),
 }
