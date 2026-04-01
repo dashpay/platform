@@ -149,12 +149,14 @@ impl TokenWallet {
             };
 
             let result: dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalances =
-                TokenAmount::fetch_many(&self.sdk, query).await.map_err(|e| {
-                    PlatformWalletError::TokenError(format!(
-                        "Failed to fetch token balances for identity {}: {}",
-                        identity_id, e
-                    ))
-                })?;
+                TokenAmount::fetch_many(&self.sdk, query)
+                    .await
+                    .map_err(|e| {
+                        PlatformWalletError::TokenError(format!(
+                            "Failed to fetch token balances for identity {}: {}",
+                            identity_id, e
+                        ))
+                    })?;
 
             let mut balances = self.balances.write().await;
             for (token_id, maybe_balance) in result.iter() {
@@ -218,14 +220,8 @@ impl TokenWallet {
     async fn resolve_identity_and_signer(
         &self,
         identity_id: &Identifier,
-    ) -> Result<
-        (
-            dpp::identity::Identity,
-            IdentitySigner,
-            IdentityPublicKey,
-        ),
-        PlatformWalletError,
-    > {
+    ) -> Result<(dpp::identity::Identity, IdentitySigner, IdentityPublicKey), PlatformWalletError>
+    {
         let manager = self.identity_manager.read().await;
 
         let identity = manager
@@ -233,9 +229,9 @@ impl TokenWallet {
             .cloned()
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        let identity_index = manager.identity_index(identity_id).ok_or(
-            PlatformWalletError::IdentityIndexNotSet(*identity_id),
-        )?;
+        let identity_index = manager
+            .identity_index(identity_id)
+            .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
 
         let signer = IdentitySigner::new(self.wallet.clone(), self.network, identity_index);
 
@@ -302,12 +298,8 @@ impl TokenWallet {
         let (_identity, signer, signing_key) =
             self.resolve_identity_and_signer(identity_id).await?;
 
-        let mut builder = TokenMintTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-            amount,
-        );
+        let mut builder =
+            TokenMintTransitionBuilder::new(data_contract, token_position, *identity_id, amount);
 
         if let Some(recipient) = recipient_id {
             builder.recipient_id = Some(recipient);
@@ -316,9 +308,7 @@ impl TokenWallet {
         self.sdk
             .token_mint(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token mint failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token mint failed: {}", e)))?;
 
         Ok(())
     }
@@ -336,19 +326,13 @@ impl TokenWallet {
         let (_identity, signer, signing_key) =
             self.resolve_identity_and_signer(identity_id).await?;
 
-        let builder = TokenBurnTransitionBuilder::new(
-            data_contract,
-            token_position,
-            *identity_id,
-            amount,
-        );
+        let builder =
+            TokenBurnTransitionBuilder::new(data_contract, token_position, *identity_id, amount);
 
         self.sdk
             .token_burn(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token burn failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token burn failed: {}", e)))?;
 
         Ok(())
     }
@@ -376,9 +360,7 @@ impl TokenWallet {
         self.sdk
             .token_freeze(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token freeze failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token freeze failed: {}", e)))?;
 
         Ok(())
     }
@@ -498,9 +480,7 @@ impl TokenWallet {
         self.sdk
             .token_claim(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token claim failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token claim failed: {}", e)))?;
 
         Ok(())
     }
@@ -556,9 +536,7 @@ impl TokenWallet {
         self.sdk
             .token_emergency_action(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token pause failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token pause failed: {}", e)))?;
 
         Ok(())
     }
@@ -584,9 +562,7 @@ impl TokenWallet {
         self.sdk
             .token_emergency_action(builder, &signing_key, &signer)
             .await
-            .map_err(|e| {
-                PlatformWalletError::TokenError(format!("Token resume failed: {}", e))
-            })?;
+            .map_err(|e| PlatformWalletError::TokenError(format!("Token resume failed: {}", e)))?;
 
         Ok(())
     }
@@ -644,7 +620,9 @@ impl TokenWallet {
         signing_key: &IdentityPublicKey,
         signer: &S,
         public_note: Option<String>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::TransferResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::transfer::TokenTransferTransitionBuilder;
 
@@ -680,16 +658,14 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
 
-        let builder = TokenMintTransitionBuilder::new(
-            data_contract,
-            token_position,
-            identity_id,
-            amount,
-        );
+        let builder =
+            TokenMintTransitionBuilder::new(data_contract, token_position, identity_id, amount);
 
         let mut builder = if let Some(recipient) = recipient_id {
             builder.issued_to_identity_id(recipient)
@@ -724,16 +700,14 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::BurnResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
 
-        let mut builder = TokenBurnTransitionBuilder::new(
-            data_contract,
-            token_position,
-            identity_id,
-            amount,
-        );
+        let mut builder =
+            TokenBurnTransitionBuilder::new(data_contract, token_position, identity_id, amount);
 
         if let Some(note) = public_note {
             builder = builder.with_public_note(note);
@@ -762,7 +736,9 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::FreezeResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::freeze::TokenFreezeTransitionBuilder;
 
@@ -800,7 +776,9 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::UnfreezeResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::unfreeze::TokenUnfreezeTransitionBuilder;
 
@@ -840,7 +818,9 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::SetPriceResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 
@@ -882,8 +862,11 @@ impl TokenWallet {
         total_agreed_price: dpp::fee::Credits,
         signing_key: &IdentityPublicKey,
         signer: &S,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
-    ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, dash_sdk::Error> {
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
+    ) -> Result<dash_sdk::platform::tokens::transitions::DirectPurchaseResult, dash_sdk::Error>
+    {
         use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
 
         let mut builder = TokenDirectPurchaseTransitionBuilder::new(
@@ -912,7 +895,9 @@ impl TokenWallet {
         signing_key: &IdentityPublicKey,
         signer: &S,
         public_note: Option<String>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::ClaimResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
 
@@ -936,7 +921,9 @@ impl TokenWallet {
 
     /// Destroy frozen funds using an external signer.
     #[allow(clippy::too_many_arguments)]
-    pub async fn destroy_frozen_funds_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+    pub async fn destroy_frozen_funds_with_signer<
+        S: dpp::identity::signer::Signer<IdentityPublicKey>,
+    >(
         &self,
         data_contract: Arc<DataContract>,
         token_position: TokenContractPosition,
@@ -946,8 +933,11 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
-    ) -> Result<dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult, dash_sdk::Error> {
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
+    ) -> Result<dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult, dash_sdk::Error>
+    {
         use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
 
         let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
@@ -967,7 +957,9 @@ impl TokenWallet {
             builder = builder.with_state_transition_creation_options(opts);
         }
 
-        self.sdk.token_destroy_frozen_funds(builder, signing_key, signer).await
+        self.sdk
+            .token_destroy_frozen_funds(builder, signing_key, signer)
+            .await
     }
 
     /// Pause token using an external signer.
@@ -981,8 +973,11 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
-    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error> {
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error>
+    {
         use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
 
         let mut builder = TokenEmergencyActionTransitionBuilder::pause(
@@ -1001,7 +996,9 @@ impl TokenWallet {
             builder = builder.with_state_transition_creation_options(opts);
         }
 
-        self.sdk.token_emergency_action(builder, signing_key, signer).await
+        self.sdk
+            .token_emergency_action(builder, signing_key, signer)
+            .await
     }
 
     /// Resume token using an external signer.
@@ -1015,8 +1012,11 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
-    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error> {
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error>
+    {
         use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
 
         let mut builder = TokenEmergencyActionTransitionBuilder::resume(
@@ -1035,7 +1035,9 @@ impl TokenWallet {
             builder = builder.with_state_transition_creation_options(opts);
         }
 
-        self.sdk.token_emergency_action(builder, signing_key, signer).await
+        self.sdk
+            .token_emergency_action(builder, signing_key, signer)
+            .await
     }
 
     /// Update token config using an external signer.
@@ -1050,7 +1052,9 @@ impl TokenWallet {
         signer: &S,
         public_note: Option<String>,
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
-        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+        options: Option<
+            dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
+        >,
     ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 
@@ -1071,7 +1075,9 @@ impl TokenWallet {
             builder = builder.with_state_transition_creation_options(opts);
         }
 
-        self.sdk.token_update_contract_token_configuration(builder, signing_key, signer).await
+        self.sdk
+            .token_update_contract_token_configuration(builder, signing_key, signer)
+            .await
     }
 }
 

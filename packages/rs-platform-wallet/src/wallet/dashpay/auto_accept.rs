@@ -71,18 +71,12 @@ fn derive_auto_accept_private_key(
         ChildNumber::from_hardened_idx(coin_type).expect("valid"),
         ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE).expect("valid"),
         ChildNumber::from_hardened_idx(timestamp).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Invalid timestamp index: {}",
-                e
-            ))
+            PlatformWalletError::InvalidIdentityData(format!("Invalid timestamp index: {}", e))
         })?,
     ]);
 
     let ext_priv = wallet.derive_extended_private_key(&path).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to derive auto-accept key: {}",
-            e
-        ))
+        PlatformWalletError::InvalidIdentityData(format!("Failed to derive auto-accept key: {}", e))
     })?;
 
     let secret_bytes = zeroize::Zeroizing::new(ext_priv.private_key.secret_bytes());
@@ -327,27 +321,14 @@ mod tests {
         .expect("generate");
 
         // Wrong sender
-        let valid = verify_auto_accept_proof(
-            &wallet,
-            Network::Testnet,
-            &proof,
-            &other,
-            &recipient,
-            0,
-        )
-        .expect("verify");
+        let valid =
+            verify_auto_accept_proof(&wallet, Network::Testnet, &proof, &other, &recipient, 0)
+                .expect("verify");
         assert!(!valid);
 
         // Wrong recipient
-        let valid = verify_auto_accept_proof(
-            &wallet,
-            Network::Testnet,
-            &proof,
-            &sender,
-            &other,
-            0,
-        )
-        .expect("verify");
+        let valid = verify_auto_accept_proof(&wallet, Network::Testnet, &proof, &sender, &other, 0)
+            .expect("verify");
         assert!(!valid);
     }
 

@@ -1,7 +1,7 @@
 //! Forwards SPV events from `DashSpvClient` to the unified `PlatformWalletEvent` channel.
 
-use dash_spv::EventHandler;
 use dash_spv::sync::ProgressPercentage;
+use dash_spv::EventHandler;
 use key_wallet_manager::WalletEvent;
 use tokio::sync::broadcast;
 
@@ -63,7 +63,9 @@ impl EventHandler for SpvEventForwarder {
                     address: address.to_string(),
                 }));
             }
-            NetworkEvent::PeersUpdated { connected_count, .. } => {
+            NetworkEvent::PeersUpdated {
+                connected_count, ..
+            } => {
                 self.send(PlatformWalletEvent::Spv(SpvEvent::PeersUpdated {
                     connected_count: *connected_count,
                 }));

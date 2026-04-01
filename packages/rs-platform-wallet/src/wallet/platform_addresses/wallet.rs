@@ -67,14 +67,13 @@ impl PlatformAddressWallet {
     pub async fn sync_balances(&self) -> Result<AddressSyncResult, PlatformWalletError> {
         // Build the address provider from the wallet.
         let mut provider =
-            PlatformPaymentAddressProvider::from_wallet(self.wallet.clone(), self.network).map_err(
-                |e| {
+            PlatformPaymentAddressProvider::from_wallet(self.wallet.clone(), self.network)
+                .map_err(|e| {
                     PlatformWalletError::AddressSync(format!(
                         "Failed to create address provider: {}",
                         e
                     ))
-                },
-            )?;
+                })?;
 
         let result = self
             .sdk
@@ -286,8 +285,7 @@ impl PlatformAddressWallet {
             let mut found_path = None;
             for account in wallet_info.accounts.platform_payment_accounts.values() {
                 for addr_info in account.addresses.addresses.values() {
-                    let Ok(pool_addr) =
-                        PlatformP2PKHAddress::from_address(&addr_info.address)
+                    let Ok(pool_addr) = PlatformP2PKHAddress::from_address(&addr_info.address)
                     else {
                         continue;
                     };
@@ -331,9 +329,8 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
     ) -> Result<BinaryData, ProtocolError> {
         let private_key_bytes = self.find_private_key_for_platform_address(platform_address)?;
 
-        let signature =
-            dashcore::signer::sign(data, private_key_bytes.as_ref())
-                .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
+        let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
+            .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
 
         Ok(BinaryData::new(signature.to_vec()))
     }
@@ -345,9 +342,8 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
     ) -> Result<AddressWitness, ProtocolError> {
         let private_key_bytes = self.find_private_key_for_platform_address(platform_address)?;
 
-        let signature =
-            dashcore::signer::sign(data, private_key_bytes.as_ref())
-                .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
+        let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
+            .map_err(|e| ProtocolError::Generic(format!("Failed to sign: {}", e)))?;
 
         Ok(AddressWitness::P2pkh {
             signature: BinaryData::new(signature.to_vec()),

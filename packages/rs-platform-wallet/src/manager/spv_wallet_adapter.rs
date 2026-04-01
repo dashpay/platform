@@ -6,7 +6,9 @@ use async_trait::async_trait;
 use dashcore::{Address as DashAddress, Block, OutPoint, Transaction, Txid};
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet_manager::{BlockProcessingResult, MempoolTransactionResult, WalletEvent, WalletInterface};
+use key_wallet_manager::{
+    BlockProcessingResult, MempoolTransactionResult, WalletEvent, WalletInterface,
+};
 use tokio::sync::broadcast;
 
 use crate::events::{PlatformWalletEvent, TransactionStatus};
@@ -45,23 +47,26 @@ impl SpvWalletAdapter {
 
     /// Update transaction status in CoreWallet and emit event if changed.
     async fn track_status(&self, txid: Txid, new_status: TransactionStatus) {
-        if let Some(old_status) = self.wallet.core.update_transaction_status(txid, new_status).await {
-            let _ = self.platform_event_tx.send(PlatformWalletEvent::TransactionStatusChanged {
-                txid,
-                old_status,
-                new_status,
-            });
+        if let Some(old_status) = self
+            .wallet
+            .core
+            .update_transaction_status(txid, new_status)
+            .await
+        {
+            let _ = self
+                .platform_event_tx
+                .send(PlatformWalletEvent::TransactionStatusChanged {
+                    txid,
+                    old_status,
+                    new_status,
+                });
         }
     }
 }
 
 #[async_trait]
 impl WalletInterface for SpvWalletAdapter {
-    async fn process_block(
-        &mut self,
-        block: &Block,
-        block_height: u32,
-    ) -> BlockProcessingResult {
+    async fn process_block(&mut self, block: &Block, block_height: u32) -> BlockProcessingResult {
         let mut wallet = self.wallet.core.wallet.write().await;
         let mut wallet_info = self.wallet.core.wallet_info.write().await;
 
@@ -162,7 +167,11 @@ impl WalletInterface for SpvWalletAdapter {
 
     fn watched_outpoints(&self) -> Vec<OutPoint> {
         if let Ok(wallet_info) = self.wallet.core.wallet_info.try_read() {
-            wallet_info.get_spendable_utxos().iter().map(|utxo| utxo.outpoint).collect()
+            wallet_info
+                .get_spendable_utxos()
+                .iter()
+                .map(|utxo| utxo.outpoint)
+                .collect()
         } else {
             Vec::new()
         }
@@ -181,7 +190,8 @@ impl WalletInterface for SpvWalletAdapter {
     }
 
     fn update_filter_committed_height(&mut self, height: u32) {
-        self.filter_committed_height.store(height, Ordering::Relaxed);
+        self.filter_committed_height
+            .store(height, Ordering::Relaxed);
     }
 
     fn monitor_revision(&self) -> u64 {
@@ -199,11 +209,13 @@ impl WalletInterface for SpvWalletAdapter {
             if old.map_or(true, |old| new_status > old) {
                 statuses.insert(txid, new_status);
                 if let Some(old_status) = old {
-                    let _ = self.platform_event_tx.send(PlatformWalletEvent::TransactionStatusChanged {
-                        txid,
-                        old_status,
-                        new_status,
-                    });
+                    let _ = self.platform_event_tx.send(
+                        PlatformWalletEvent::TransactionStatusChanged {
+                            txid,
+                            old_status,
+                            new_status,
+                        },
+                    );
                 }
             }
         }

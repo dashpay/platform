@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use dpp::address_funds::AddressWitness;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::KeyType;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
 use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
@@ -27,11 +27,7 @@ pub struct IdentitySigner {
 
 impl IdentitySigner {
     /// Create a new IdentitySigner for a specific identity index.
-    pub(crate) fn new(
-        wallet: Arc<RwLock<Wallet>>,
-        network: Network,
-        identity_index: u32,
-    ) -> Self {
+    pub(crate) fn new(wallet: Arc<RwLock<Wallet>>, network: Network, identity_index: u32) -> Self {
         Self {
             wallet,
             network,
@@ -68,15 +64,12 @@ impl IdentitySigner {
         let key_type_index: u32 = key_derivation_type.into();
 
         Ok(base_path.extend([
-            ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
-                ProtocolError::Generic(format!("Invalid key type index: {}", e))
-            })?,
-            ChildNumber::from_hardened_idx(self.identity_index).map_err(|e| {
-                ProtocolError::Generic(format!("Invalid identity index: {}", e))
-            })?,
-            ChildNumber::from_hardened_idx(key_id).map_err(|e| {
-                ProtocolError::Generic(format!("Invalid key ID: {}", e))
-            })?,
+            ChildNumber::from_hardened_idx(key_type_index)
+                .map_err(|e| ProtocolError::Generic(format!("Invalid key type index: {}", e)))?,
+            ChildNumber::from_hardened_idx(self.identity_index)
+                .map_err(|e| ProtocolError::Generic(format!("Invalid identity index: {}", e)))?,
+            ChildNumber::from_hardened_idx(key_id)
+                .map_err(|e| ProtocolError::Generic(format!("Invalid key ID: {}", e)))?,
         ]))
     }
 
@@ -128,35 +121,26 @@ impl Signer<IdentityPublicKey> for IdentitySigner {
 
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature =
-                    dashcore::signer::sign(data, private_key_bytes.as_ref())
-                        .map_err(|e| {
-                            ProtocolError::Generic(format!("ECDSA signing failed: {}", e))
-                        })?;
+                let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
+                    .map_err(|e| ProtocolError::Generic(format!("ECDSA signing failed: {}", e)))?;
                 Ok(BinaryData::new(signature.to_vec()))
             }
             #[cfg(feature = "bls")]
             KeyType::BLS12_381 => {
                 use dashcore::blsful::{Bls12381G2Impl, SignatureSchemes};
 
-                let secret_key =
-                    dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                        &*private_key_bytes,
-                    )
-                    .into_option()
-                    .ok_or_else(|| {
-                        ProtocolError::Generic(
-                            "BLS private key from bytes is not valid".to_string(),
-                        )
-                    })?;
-                let signature = secret_key.sign(SignatureSchemes::Basic, data).map_err(|e| {
-                    ProtocolError::Generic(format!("BLS signing failed: {}", e))
+                let secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+                    &*private_key_bytes,
+                )
+                .into_option()
+                .ok_or_else(|| {
+                    ProtocolError::Generic("BLS private key from bytes is not valid".to_string())
                 })?;
+                let signature = secret_key
+                    .sign(SignatureSchemes::Basic, data)
+                    .map_err(|e| ProtocolError::Generic(format!("BLS signing failed: {}", e)))?;
                 Ok(BinaryData::new(
-                    signature
-                        .as_raw_value()
-                        .to_compressed()
-                        .to_vec(),
+                    signature.as_raw_value().to_compressed().to_vec(),
                 ))
             }
             #[cfg(not(feature = "bls"))]
@@ -270,24 +254,19 @@ impl ManagedIdentitySigner {
                     derivation_path, ..
                 } => {
                     let wallet = self.wallet.blocking_read();
-                    let secret_key =
-                        wallet.derive_private_key(derivation_path).map_err(|e| {
-                            ProtocolError::Generic(format!(
-                                "Failed to derive private key for identity key {}: {}",
-                                key_id, e
-                            ))
-                        })?;
+                    let secret_key = wallet.derive_private_key(derivation_path).map_err(|e| {
+                        ProtocolError::Generic(format!(
+                            "Failed to derive private key for identity key {}: {}",
+                            key_id, e
+                        ))
+                    })?;
                     Ok(Zeroizing::new(secret_key.secret_bytes()))
                 }
             };
         }
 
         // Fallback: standard IdentitySigner derivation from identity_index + key_id.
-        let fallback = IdentitySigner::new(
-            self.wallet.clone(),
-            self.network,
-            self.identity_index,
-        );
+        let fallback = IdentitySigner::new(self.wallet.clone(), self.network, self.identity_index);
         fallback.derive_private_key_bytes_for(identity_public_key)
     }
 }
@@ -312,29 +291,24 @@ impl Signer<IdentityPublicKey> for ManagedIdentitySigner {
 
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature =
-                    dashcore::signer::sign(data, private_key_bytes.as_ref()).map_err(|e| {
-                        ProtocolError::Generic(format!("ECDSA signing failed: {}", e))
-                    })?;
+                let signature = dashcore::signer::sign(data, private_key_bytes.as_ref())
+                    .map_err(|e| ProtocolError::Generic(format!("ECDSA signing failed: {}", e)))?;
                 Ok(BinaryData::new(signature.to_vec()))
             }
             #[cfg(feature = "bls")]
             KeyType::BLS12_381 => {
                 use dashcore::blsful::{Bls12381G2Impl, SignatureSchemes};
 
-                let secret_key =
-                    dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
-                        &*private_key_bytes,
-                    )
-                    .into_option()
-                    .ok_or_else(|| {
-                        ProtocolError::Generic(
-                            "BLS private key from bytes is not valid".to_string(),
-                        )
-                    })?;
-                let signature = secret_key.sign(SignatureSchemes::Basic, data).map_err(|e| {
-                    ProtocolError::Generic(format!("BLS signing failed: {}", e))
+                let secret_key = dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(
+                    &*private_key_bytes,
+                )
+                .into_option()
+                .ok_or_else(|| {
+                    ProtocolError::Generic("BLS private key from bytes is not valid".to_string())
                 })?;
+                let signature = secret_key
+                    .sign(SignatureSchemes::Basic, data)
+                    .map_err(|e| ProtocolError::Generic(format!("BLS signing failed: {}", e)))?;
                 Ok(BinaryData::new(
                     signature.as_raw_value().to_compressed().to_vec(),
                 ))
@@ -390,7 +364,10 @@ impl std::fmt::Debug for ManagedIdentitySigner {
         f.debug_struct("ManagedIdentitySigner")
             .field("network", &self.network)
             .field("identity_index", &self.identity_index)
-            .field("key_storage_keys", &self.key_storage.keys().collect::<Vec<_>>())
+            .field(
+                "key_storage_keys",
+                &self.key_storage.keys().collect::<Vec<_>>(),
+            )
             .finish()
     }
 }

@@ -597,12 +597,7 @@ impl DashPayWallet {
             sender_id,
             recipient_id,
         )?;
-        super::dip14::derive_contact_payment_addresses(
-            &data.xpub,
-            start_index,
-            count,
-            self.network,
-        )
+        super::dip14::derive_contact_payment_addresses(&data.xpub, start_index, count, self.network)
     }
 }
 

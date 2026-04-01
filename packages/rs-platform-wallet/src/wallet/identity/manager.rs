@@ -3,9 +3,9 @@
 //! This module handles the storage and management of Dash Platform identities
 //! associated with a wallet.
 
+use super::managed_identity::key_storage::IdentityStatus;
 use super::managed_identity::ManagedIdentity;
 use super::managed_identity::WatchedIdentity;
-use super::managed_identity::key_storage::IdentityStatus;
 use crate::error::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -77,9 +77,7 @@ impl IdentityManager {
     ///
     /// Returns `None` if the identity is not managed or its index was not recorded.
     pub fn identity_index(&self, identity_id: &Identifier) -> Option<u32> {
-        self.identities
-            .get(identity_id)
-            .map(|m| m.identity_index)
+        self.identities.get(identity_id).map(|m| m.identity_index)
     }
 
     /// Remove an identity from the manager
@@ -215,10 +213,7 @@ impl IdentityManager {
     /// Watched identities are observed but not owned — we cannot sign on their
     /// behalf. If an identity with the same ID already exists in either the
     /// managed or watched collection, this is a no-op.
-    pub fn add_watched_identity(
-        &mut self,
-        identity: Identity,
-    ) -> Result<(), PlatformWalletError> {
+    pub fn add_watched_identity(&mut self, identity: Identity) -> Result<(), PlatformWalletError> {
         let identity_id = identity.id();
 
         // Already managed or watched — nothing to do.

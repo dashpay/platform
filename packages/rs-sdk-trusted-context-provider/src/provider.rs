@@ -802,7 +802,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         // Return the L1 locked height for each network
         match self.network {
-            Network::Mainnet => Ok(2132092),    // Mainnet L1 locked height
+            Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
             Network::Devnet => Ok(1),        // Devnet activation height
             _ => Err(ContextProviderError::Generic(

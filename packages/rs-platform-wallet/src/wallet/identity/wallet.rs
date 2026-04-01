@@ -142,6 +142,26 @@ impl IdentityWallet {
     pub async fn identity_manager(&self) -> tokio::sync::RwLockReadGuard<'_, IdentityManager> {
         self.identity_manager.read().await
     }
+
+    /// Get a write-lock handle to the [`IdentityManager`].
+    ///
+    /// This allows callers to mutate managed identities (e.g. adding or
+    /// updating identities from an external persistence layer).
+    pub async fn identity_manager_mut(
+        &self,
+    ) -> tokio::sync::RwLockWriteGuard<'_, IdentityManager> {
+        self.identity_manager.write().await
+    }
+
+    /// Try to acquire a write-lock on the [`IdentityManager`] without blocking.
+    ///
+    /// Returns `None` if the lock is currently held by another task.
+    /// Useful for synchronous callers that cannot await.
+    pub fn try_identity_manager_mut(
+        &self,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'_, IdentityManager>> {
+        self.identity_manager.try_write().ok()
+    }
 }
 
 impl std::fmt::Debug for IdentityWallet {
@@ -227,9 +247,7 @@ impl IdentityWallet {
 
         // Step 1: Obtain the asset lock proof and private key.
         let (asset_lock_proof, asset_lock_private_key) = match funding {
-            IdentityFundingMethod::UseAssetLock { proof, private_key } => {
-                (proof, private_key)
-            }
+            IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             IdentityFundingMethod::FundWithWallet { amount_duffs } => {
                 core_wallet
                     .create_registration_asset_lock_proof(amount_duffs, identity_index)
@@ -254,7 +272,9 @@ impl IdentityWallet {
         let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
         {
             use dashcore::secp256k1::Secp256k1;
-            use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey, KeyDerivationType};
+            use key_wallet::bip32::{
+                ChildNumber, DerivationPath, ExtendedPubKey, KeyDerivationType,
+            };
             use key_wallet::dip9::{
                 IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
             };
@@ -292,12 +312,14 @@ impl IdentityWallet {
                     })?,
                 ]);
 
-                let ext_priv = wallet.derive_extended_private_key(&full_path).map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive authentication key: {}",
-                        e
-                    ))
-                })?;
+                let ext_priv = wallet
+                    .derive_extended_private_key(&full_path)
+                    .map_err(|e| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to derive authentication key: {}",
+                            e
+                        ))
+                    })?;
 
                 let ext_pub = ExtendedPubKey::from_priv(&secp, &ext_priv);
                 let compressed_pubkey = ext_pub.public_key.serialize();
@@ -309,17 +331,16 @@ impl IdentityWallet {
                     SecurityLevel::HIGH
                 };
 
-                let identity_public_key =
-                    IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                        id: key_index,
-                        purpose: Purpose::AUTHENTICATION,
-                        security_level,
-                        contract_bounds: None,
-                        key_type: KeyType::ECDSA_SECP256K1,
-                        read_only: false,
-                        data: BinaryData::new(compressed_pubkey.to_vec()),
-                        disabled_at: None,
-                    });
+                let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: key_index,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(compressed_pubkey.to_vec()),
+                    disabled_at: None,
+                });
 
                 keys_map.insert(key_index, identity_public_key);
             }
@@ -449,6 +470,7 @@ impl IdentityWallet {
     /// returned. The `last_scanned_index` is updated so subsequent calls
     /// resume where this one left off.
     pub async fn sync(&self) -> Result<Vec<Identity>, PlatformWalletError> {
+        use super::managed_identity::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -456,9 +478,6 @@ impl IdentityWallet {
         use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
         use key_wallet::dip9::{
             IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        };
-        use super::managed_identity::key_storage::{
-            DpnsNameInfo, IdentityStatus, PrivateKeyData,
         };
 
         /// Number of key indices to scan per identity index.
@@ -503,9 +522,7 @@ impl IdentityWallet {
 
                         // Build the full derivation path for the matched key.
                         let base_path: DerivationPath = match network {
-                            key_wallet::Network::Mainnet => {
-                                IDENTITY_AUTHENTICATION_PATH_MAINNET
-                            }
+                            key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
                             _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
                         }
                         .into();
@@ -513,17 +530,20 @@ impl IdentityWallet {
                         let full_path = base_path.extend([
                             ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
                                 PlatformWalletError::InvalidIdentityData(format!(
-                                    "Invalid key type index: {}", e
+                                    "Invalid key type index: {}",
+                                    e
                                 ))
                             })?,
                             ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
                                 PlatformWalletError::InvalidIdentityData(format!(
-                                    "Invalid identity index: {}", e
+                                    "Invalid identity index: {}",
+                                    e
                                 ))
                             })?,
                             ChildNumber::from_hardened_idx(key_index).map_err(|e| {
                                 PlatformWalletError::InvalidIdentityData(format!(
-                                    "Invalid key index: {}", e
+                                    "Invalid key index: {}",
+                                    e
                                 ))
                             })?,
                         ]);
@@ -546,9 +566,7 @@ impl IdentityWallet {
                             manager.add_identity(identity.clone(), identity_index)?;
                         }
 
-                        if let Some(managed) =
-                            manager.managed_identity_mut(&identity_id)
-                        {
+                        if let Some(managed) = manager.managed_identity_mut(&identity_id) {
                             managed.set_status(IdentityStatus::Active);
                             managed.wallet_seed_hash = Some(wallet_seed_hash);
 
@@ -603,7 +621,11 @@ impl IdentityWallet {
         // --- DPNS lookup for all discovered identities ---
         for identity in &discovered {
             let identity_id = identity.id();
-            match self.sdk.get_dpns_usernames_by_identity(identity_id, None).await {
+            match self
+                .sdk
+                .get_dpns_usernames_by_identity(identity_id, None)
+                .await
+            {
                 Ok(usernames) => {
                     let mut manager = self.identity_manager.write().await;
                     if let Some(managed) = manager.managed_identity_mut(&identity_id) {
@@ -694,17 +716,15 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager.identity_index(identity_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*identity_id),
-            )?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             (identity, index)
         };
 
         // Step 1: Obtain the asset lock proof and private key.
         let (asset_lock_proof, asset_lock_private_key) = match funding {
-            TopUpFundingMethod::UseAssetLock { proof, private_key } => {
-                (proof, private_key)
-            }
+            TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             TopUpFundingMethod::FundWithWallet { amount_duffs } => {
                 core_wallet
                     .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
@@ -786,9 +806,9 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager.identity_index(identity_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*identity_id),
-            )?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             (identity, index)
         };
 
@@ -885,9 +905,9 @@ impl IdentityWallet {
                 .identity(from_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?;
-            let index = manager.identity_index(from_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*from_id),
-            )?;
+            let index = manager
+                .identity_index(from_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*from_id))?;
             (identity, index)
         };
 
@@ -895,12 +915,8 @@ impl IdentityWallet {
 
         let (sender_balance, _receiver_balance) = identity
             .transfer_credits(
-                &self.sdk,
-                *to_id,
-                amount,
-                None, // signing_transfer_key_to_use
-                signer,
-                None, // settings
+                &self.sdk, *to_id, amount, None, // signing_transfer_key_to_use
+                signer, None, // settings
             )
             .await
             .map_err(|e| {
@@ -970,10 +986,10 @@ impl IdentityWallet {
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<u32>,
     ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
-        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 
         let (mut identity, identity_index) = {
             let manager = self.identity_manager.read().await;
@@ -981,9 +997,9 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager.identity_index(identity_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*identity_id),
-            )?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             (identity, index)
         };
 
@@ -1065,9 +1081,9 @@ impl IdentityWallet {
         signer: &S,
     ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
     {
+        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-        use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 
         // Get identity nonce from Platform.
         let identity_nonce = self
@@ -1090,9 +1106,7 @@ impl IdentityWallet {
         .map_err(|e| dash_sdk::Error::Protocol(e))?;
 
         // Broadcast and wait for confirmation.
-        let result = state_transition
-            .broadcast_and_wait(&self.sdk, None)
-            .await?;
+        let result = state_transition.broadcast_and_wait(&self.sdk, None).await?;
 
         Ok(result)
     }
@@ -1178,9 +1192,9 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager.identity_index(identity_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*identity_id),
-            )?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             (identity, index)
         };
 
@@ -1238,9 +1252,9 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .cloned()
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager.identity_index(identity_id).ok_or(
-                PlatformWalletError::IdentityIndexNotSet(*identity_id),
-            )?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
             // Use the first authentication key (key_id 0).
             let key = identity
                 .get_first_public_key_matching(
@@ -1313,15 +1327,12 @@ impl IdentityWallet {
         &self,
         name: &str,
     ) -> Result<Option<Identifier>, PlatformWalletError> {
-        self.sdk
-            .resolve_dpns_name(name)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to resolve DPNS name '{}': {}",
-                    name, e
-                ))
-            })
+        self.sdk.resolve_dpns_name(name).await.map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to resolve DPNS name '{}': {}",
+                name, e
+            ))
+        })
     }
 
     /// Search for DPNS names by prefix.
@@ -1361,15 +1372,13 @@ impl IdentityWallet {
         &self,
         identity_index: u32,
     ) -> Result<Option<Identity>, PlatformWalletError> {
+        use super::managed_identity::key_storage::{DpnsNameInfo, IdentityStatus, PrivateKeyData};
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
         use dpp::util::hash::ripemd160_sha256;
         use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
         use key_wallet::dip9::{
             IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        };
-        use super::managed_identity::key_storage::{
-            DpnsNameInfo, IdentityStatus, PrivateKeyData,
         };
 
         let network = {
@@ -1411,19 +1420,13 @@ impl IdentityWallet {
         let key_type_index: u32 = KeyDerivationType::ECDSA.into();
         let full_path = base_path.extend([
             ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Invalid key type index: {}", e
-                ))
+                PlatformWalletError::InvalidIdentityData(format!("Invalid key type index: {}", e))
             })?,
             ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Invalid identity index: {}", e
-                ))
+                PlatformWalletError::InvalidIdentityData(format!("Invalid identity index: {}", e))
             })?,
             ChildNumber::from_hardened_idx(0u32).map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Invalid key index: {}", e
-                ))
+                PlatformWalletError::InvalidIdentityData(format!("Invalid key index: {}", e))
             })?,
         ]);
 
@@ -1462,7 +1465,11 @@ impl IdentityWallet {
         }
 
         // Query DPNS names for the discovered identity.
-        match self.sdk.get_dpns_usernames_by_identity(identity_id, None).await {
+        match self
+            .sdk
+            .get_dpns_usernames_by_identity(identity_id, None)
+            .await
+        {
             Ok(usernames) => {
                 let mut manager = self.identity_manager.write().await;
                 if let Some(managed) = manager.managed_identity_mut(&identity_id) {
@@ -1505,8 +1512,8 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        use dash_sdk::platform::Fetch;
         use super::managed_identity::key_storage::IdentityStatus;
+        use dash_sdk::platform::Fetch;
 
         // Verify identity exists in the manager.
         {
@@ -1563,10 +1570,7 @@ impl IdentityWallet {
         Identity::fetch(&self.sdk, *identity_id)
             .await?
             .ok_or_else(|| {
-                dash_sdk::Error::Generic(format!(
-                    "Identity {} not found on Platform",
-                    identity_id
-                ))
+                dash_sdk::Error::Generic(format!("Identity {} not found on Platform", identity_id))
             })
     }
 
@@ -1585,7 +1589,11 @@ impl IdentityWallet {
         };
 
         for identity_id in identity_ids {
-            match self.sdk.get_dpns_usernames_by_identity(identity_id, None).await {
+            match self
+                .sdk
+                .get_dpns_usernames_by_identity(identity_id, None)
+                .await
+            {
                 Ok(usernames) => {
                     let mut manager = self.identity_manager.write().await;
                     if let Some(managed) = manager.managed_identity_mut(&identity_id) {

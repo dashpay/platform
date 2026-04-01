@@ -17,9 +17,9 @@ use crate::wallet::PlatformWallet;
 use {
     crate::manager::spv_event_forwarder::SpvEventForwarder,
     crate::manager::spv_wallet_adapter::SpvWalletAdapter,
-    dash_spv::{ClientConfig, DashSpvClient},
     dash_spv::network::PeerNetworkManager,
     dash_spv::storage::DiskStorageManager,
+    dash_spv::{ClientConfig, DashSpvClient},
 };
 
 /// Manages multiple platform wallets and coordinates SPV sync.
@@ -30,7 +30,16 @@ pub struct PlatformWalletManager {
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
     #[cfg(feature = "manager")]
-    spv_client: RwLock<Option<DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>>>,
+    spv_client: RwLock<
+        Option<
+            DashSpvClient<
+                SpvWalletAdapter,
+                PeerNetworkManager,
+                DiskStorageManager,
+                SpvEventForwarder,
+            >,
+        >,
+    >,
 }
 
 impl PlatformWalletManager {
@@ -55,8 +64,13 @@ impl PlatformWalletManager {
         passphrase: &str,
         options: WalletAccountCreationOptions,
     ) -> Result<PlatformWallet, PlatformWalletError> {
-        let wallet =
-            PlatformWallet::from_mnemonic(self.sdk.clone(), self.network, mnemonic, passphrase, options)?;
+        let wallet = PlatformWallet::from_mnemonic(
+            self.sdk.clone(),
+            self.network,
+            mnemonic,
+            passphrase,
+            options,
+        )?;
         self.insert_and_return(wallet).await
     }
 
@@ -66,8 +80,7 @@ impl PlatformWalletManager {
         &self,
         options: WalletAccountCreationOptions,
     ) -> Result<(PlatformWallet, Mnemonic), PlatformWalletError> {
-        let (wallet, mnemonic) =
-            PlatformWallet::random(self.sdk.clone(), self.network, options)?;
+        let (wallet, mnemonic) = PlatformWallet::random(self.sdk.clone(), self.network, options)?;
         let wallet = self.insert_and_return(wallet).await?;
         Ok((wallet, mnemonic))
     }
@@ -78,8 +91,7 @@ impl PlatformWalletManager {
         xprv: &str,
         options: WalletAccountCreationOptions,
     ) -> Result<PlatformWallet, PlatformWalletError> {
-        let wallet =
-            PlatformWallet::from_extended_key(self.sdk.clone(), xprv, options)?;
+        let wallet = PlatformWallet::from_extended_key(self.sdk.clone(), xprv, options)?;
         self.insert_and_return(wallet).await
     }
 
@@ -145,16 +157,21 @@ impl PlatformWalletManager {
         // by WalletManager<ManagedWalletInfo> in a future PR.
         let wallet = {
             let wallets = self.wallets.read().await;
-            wallets.values().next().cloned()
+            wallets
+                .values()
+                .next()
+                .cloned()
                 .ok_or(PlatformWalletError::NoWalletsConfigured)?
         };
 
         let adapter = SpvWalletAdapter::new(wallet, self.event_tx.clone());
         let forwarder = SpvEventForwarder::new(self.event_tx.clone());
 
-        let network_manager = PeerNetworkManager::new(&config).await
+        let network_manager = PeerNetworkManager::new(&config)
+            .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        let storage_manager = DiskStorageManager::new(&config).await
+        let storage_manager = DiskStorageManager::new(&config)
+            .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
         let client = DashSpvClient::new(
@@ -163,7 +180,9 @@ impl PlatformWalletManager {
             storage_manager,
             Arc::new(RwLock::new(adapter)),
             Arc::new(forwarder),
-        ).await.map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        )
+        .await
+        .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
         let mut spv_client = self.spv_client.write().await;
         *spv_client = Some(client);
@@ -176,7 +195,9 @@ impl PlatformWalletManager {
     pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
         let mut spv_client = self.spv_client.write().await;
         if let Some(client) = spv_client.take() {
-            client.stop().await
+            client
+                .stop()
+                .await
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
         }
         Ok(())
@@ -185,7 +206,9 @@ impl PlatformWalletManager {
     /// Start SPV sync (stub — requires `manager` feature).
     #[cfg(not(feature = "manager"))]
     pub async fn start_spv(&self) -> Result<(), PlatformWalletError> {
-        Err(PlatformWalletError::SpvError("SPV requires the 'manager' feature".to_string()))
+        Err(PlatformWalletError::SpvError(
+            "SPV requires the 'manager' feature".to_string(),
+        ))
     }
 
     /// Stop SPV sync (stub — requires `manager` feature).

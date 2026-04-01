@@ -106,10 +106,7 @@ pub fn derive_contact_xpub(
     // segments, this goes through derive_extended_private_key internally and
     // then converts to the public key.
     let xpub = wallet.derive_extended_public_key(&path).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Failed to derive contact xpub: {}",
-            e
-        ))
+        PlatformWalletError::InvalidIdentityData(format!("Failed to derive contact xpub: {}", e))
     })?;
 
     let parent_fingerprint = xpub.parent_fingerprint.to_bytes();
@@ -165,8 +162,7 @@ pub fn calculate_account_reference(
     // Take the 28 most significant bits: read first 4 bytes as big-endian u32,
     // then right-shift by 4 to discard the 4 least significant bits.
     let ask_bytes = ask.to_byte_array();
-    let ask28 =
-        u32::from_be_bytes([ask_bytes[0], ask_bytes[1], ask_bytes[2], ask_bytes[3]]) >> 4;
+    let ask28 = u32::from_be_bytes([ask_bytes[0], ask_bytes[1], ask_bytes[2], ask_bytes[3]]) >> 4;
 
     // Combine version (4 high bits) with XOR of ASK28 and shortened account bits.
     let shortened_account_bits = account_index & 0x0FFF_FFFF;
@@ -198,10 +194,7 @@ pub fn derive_contact_payment_address(
     let secp = Secp256k1::new();
 
     let child_number = ChildNumber::from_normal_idx(index).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Invalid payment address index: {}",
-            e
-        ))
+        PlatformWalletError::InvalidIdentityData(format!("Invalid payment address index: {}", e))
     })?;
 
     let address_key = contact_xpub.ckd_pub(&secp, child_number).map_err(|e| {
@@ -260,16 +253,14 @@ mod tests {
 
     fn test_identifiers() -> (Identifier, Identifier) {
         let sender_bytes = [
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x11,
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee,
+            0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
+            0xdd, 0xee, 0xff, 0x11,
         ];
         let recipient_bytes = [
-            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
-            0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
-            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
-            0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+            0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+            0x66, 0x77, 0x88, 0x99,
         ];
         (
             Identifier::from_bytes(&sender_bytes).unwrap(),
@@ -343,8 +334,7 @@ mod tests {
     #[test]
     fn test_account_reference_version_bits() {
         let secret_key = [1u8; 32];
-        let master_xprv =
-            ExtendedPrivKey::new_master(Network::Testnet, &[2u8; 64]).unwrap();
+        let master_xprv = ExtendedPrivKey::new_master(Network::Testnet, &[2u8; 64]).unwrap();
         let secp = Secp256k1::new();
         let xpub = ExtendedPubKey::from_priv(&secp, &master_xprv);
 
@@ -364,15 +354,17 @@ mod tests {
     #[test]
     fn test_account_reference_deterministic() {
         let secret_key = [0xABu8; 32];
-        let master_xprv =
-            ExtendedPrivKey::new_master(Network::Testnet, &[0xCDu8; 64]).unwrap();
+        let master_xprv = ExtendedPrivKey::new_master(Network::Testnet, &[0xCDu8; 64]).unwrap();
         let secp = Secp256k1::new();
         let xpub = ExtendedPubKey::from_priv(&secp, &master_xprv);
 
         let ref1 = calculate_account_reference(&secret_key, &xpub, 0, 0);
         let ref2 = calculate_account_reference(&secret_key, &xpub, 0, 0);
 
-        assert_eq!(ref1, ref2, "Same inputs should produce same account reference");
+        assert_eq!(
+            ref1, ref2,
+            "Same inputs should produce same account reference"
+        );
     }
 
     #[test]
@@ -383,10 +375,10 @@ mod tests {
         let data = derive_contact_xpub(&wallet, Network::Testnet, 0, &sender, &recipient)
             .expect("derive xpub");
 
-        let addr0 = derive_contact_payment_address(&data.xpub, 0, Network::Testnet)
-            .expect("address 0");
-        let addr1 = derive_contact_payment_address(&data.xpub, 1, Network::Testnet)
-            .expect("address 1");
+        let addr0 =
+            derive_contact_payment_address(&data.xpub, 0, Network::Testnet).expect("address 0");
+        let addr1 =
+            derive_contact_payment_address(&data.xpub, 1, Network::Testnet).expect("address 1");
 
         // Different indices produce different addresses.
         assert_ne!(addr0, addr1);
@@ -400,10 +392,10 @@ mod tests {
         let data = derive_contact_xpub(&wallet, Network::Testnet, 0, &sender, &recipient)
             .expect("derive xpub");
 
-        let addr_a = derive_contact_payment_address(&data.xpub, 5, Network::Testnet)
-            .expect("first call");
-        let addr_b = derive_contact_payment_address(&data.xpub, 5, Network::Testnet)
-            .expect("second call");
+        let addr_a =
+            derive_contact_payment_address(&data.xpub, 5, Network::Testnet).expect("first call");
+        let addr_b =
+            derive_contact_payment_address(&data.xpub, 5, Network::Testnet).expect("second call");
 
         assert_eq!(addr_a, addr_b, "Same index should yield same address");
     }
@@ -423,7 +415,11 @@ mod tests {
         // All addresses should be unique.
         for i in 0..addrs.len() {
             for j in (i + 1)..addrs.len() {
-                assert_ne!(addrs[i], addrs[j], "Addresses at index {} and {} collide", i, j);
+                assert_ne!(
+                    addrs[i], addrs[j],
+                    "Addresses at index {} and {} collide",
+                    i, j
+                );
             }
         }
 
@@ -431,7 +427,11 @@ mod tests {
         for (i, addr) in addrs.iter().enumerate() {
             let single = derive_contact_payment_address(&data.xpub, i as u32, Network::Testnet)
                 .expect("single derive");
-            assert_eq!(addr, &single, "Batch and single derivation mismatch at index {}", i);
+            assert_eq!(
+                addr, &single,
+                "Batch and single derivation mismatch at index {}",
+                i
+            );
         }
     }
 

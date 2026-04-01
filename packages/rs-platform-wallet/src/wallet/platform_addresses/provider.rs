@@ -9,9 +9,7 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use tokio::sync::RwLock;
 
-use dash_sdk::platform::address_sync::{
-    AddressFunds, AddressIndex, AddressKey, AddressProvider,
-};
+use dash_sdk::platform::address_sync::{AddressFunds, AddressIndex, AddressKey, AddressProvider};
 
 /// Default gap limit for HD wallet address scanning.
 pub(crate) const DEFAULT_GAP_LIMIT: u32 = 20;

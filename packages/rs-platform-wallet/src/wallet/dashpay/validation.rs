@@ -238,11 +238,7 @@ mod tests {
 
     #[test]
     fn test_sender_wrong_key_type() {
-        let sender = make_identity(vec![make_key(
-            0,
-            KeyType::BLS12_381,
-            Purpose::ENCRYPTION,
-        )]);
+        let sender = make_identity(vec![make_key(0, KeyType::BLS12_381, Purpose::ENCRYPTION)]);
         let recipient = make_identity(vec![make_key(
             0,
             KeyType::ECDSA_SECP256K1,
@@ -296,11 +292,7 @@ mod tests {
             KeyType::ECDSA_SECP256K1,
             Purpose::ENCRYPTION,
         )]);
-        let recipient = make_identity(vec![make_key(
-            0,
-            KeyType::BLS12_381,
-            Purpose::DECRYPTION,
-        )]);
+        let recipient = make_identity(vec![make_key(0, KeyType::BLS12_381, Purpose::DECRYPTION)]);
 
         let result = validate_contact_request(&sender, 0, &recipient, 0);
         assert!(!result.is_valid);

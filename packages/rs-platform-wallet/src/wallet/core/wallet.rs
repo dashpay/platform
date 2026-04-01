@@ -23,8 +23,8 @@ use crate::error::PlatformWalletError;
 
 use super::types::{CoreAccountSummary, CoreAddressInfo};
 
-use dashcore::Txid;
 use crate::events::TransactionStatus;
+use dashcore::Txid;
 
 use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
 
@@ -178,10 +178,7 @@ impl CoreWallet {
                         derivation_path: addr_info.path.clone(),
                         balance: addr_info.balance,
                         total_received: addr_info.total_received,
-                        utxo_count: utxo_counts
-                            .get(&addr_info.address)
-                            .copied()
-                            .unwrap_or(0),
+                        utxo_count: utxo_counts.get(&addr_info.address).copied().unwrap_or(0),
                         is_used: addr_info.used,
                         index: addr_info.index,
                         account_index,
@@ -352,7 +349,11 @@ impl CoreWallet {
     /// Return all asset locks that have not been consumed (status is not Used*).
     pub async fn unused_asset_locks(&self) -> Vec<TrackedAssetLock> {
         let locks = self.tracked_asset_locks.read().await;
-        locks.iter().filter(|l| !l.status.is_used()).cloned().collect()
+        locks
+            .iter()
+            .filter(|l| !l.status.is_used())
+            .cloned()
+            .collect()
     }
 
     /// Mark an asset lock as used for registration or top-up.
@@ -364,11 +365,7 @@ impl CoreWallet {
     }
 
     /// Update the proof on a tracked asset lock (e.g. when IS or CL arrives).
-    pub async fn update_asset_lock_proof(
-        &self,
-        txid: &Txid,
-        proof: dpp::prelude::AssetLockProof,
-    ) {
+    pub async fn update_asset_lock_proof(&self, txid: &Txid, proof: dpp::prelude::AssetLockProof) {
         let mut locks = self.tracked_asset_locks.write().await;
         if let Some(lock) = locks.iter_mut().find(|l| &l.txid == txid) {
             lock.proof = Some(proof);
@@ -409,10 +406,7 @@ impl CoreWallet {
             .await
             .into_inner()
             .map_err(|e| {
-                PlatformWalletError::TransactionBroadcast(format!(
-                    "DAPI broadcast failed: {}",
-                    e
-                ))
+                PlatformWalletError::TransactionBroadcast(format!("DAPI broadcast failed: {}", e))
             })?;
 
         Ok(transaction.txid())
@@ -626,8 +620,7 @@ impl CoreWallet {
         amount_duffs: u64,
         identity_index: u32,
     ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
-        let funding_path =
-            DerivationPath::identity_registration_path(self.network, identity_index);
+        let funding_path = DerivationPath::identity_registration_path(self.network, identity_index);
         self.build_asset_lock_transaction(amount_duffs, &funding_path)
             .await
     }
@@ -793,7 +786,9 @@ impl CoreWallet {
             .build_registration_asset_lock_transaction(amount_duffs, identity_index)
             .await?;
 
-        let proof = self.broadcast_and_wait_for_asset_lock_proof(&tx, &key).await?;
+        let proof = self
+            .broadcast_and_wait_for_asset_lock_proof(&tx, &key)
+            .await?;
 
         Ok((proof, key))
     }
@@ -817,7 +812,9 @@ impl CoreWallet {
             .build_topup_asset_lock_transaction(amount_duffs, identity_index, topup_index)
             .await?;
 
-        let proof = self.broadcast_and_wait_for_asset_lock_proof(&tx, &key).await?;
+        let proof = self
+            .broadcast_and_wait_for_asset_lock_proof(&tx, &key)
+            .await?;
 
         Ok((proof, key))
     }
@@ -931,11 +928,7 @@ impl CoreWallet {
                 if total_input >= target {
                     break;
                 }
-                selected.push((
-                    utxo.outpoint,
-                    utxo.txout.clone(),
-                    utxo.address.clone(),
-                ));
+                selected.push((utxo.outpoint, utxo.txout.clone(), utxo.address.clone()));
                 total_input += utxo.value();
             }
 
@@ -951,10 +944,8 @@ impl CoreWallet {
                 Err(_) if fee_estimate == MIN_ASSET_LOCK_FEE => {
                     // Real fee exceeds initial estimate. Recompute with a better
                     // estimate and retry so we can pick up additional UTXOs.
-                    fee_estimate = std::cmp::max(
-                        MIN_ASSET_LOCK_FEE,
-                        estimate_tx_size(selected.len(), 2),
-                    );
+                    fee_estimate =
+                        std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_tx_size(selected.len(), 2));
                     continue;
                 }
                 Err(e) => {
@@ -998,11 +989,7 @@ impl CoreWallet {
                 if total_input >= target {
                     break;
                 }
-                selected.push((
-                    utxo.outpoint,
-                    utxo.txout.clone(),
-                    utxo.address.clone(),
-                ));
+                selected.push((utxo.outpoint, utxo.txout.clone(), utxo.address.clone()));
                 total_input += utxo.value();
             }
 
@@ -1015,8 +1002,10 @@ impl CoreWallet {
 
             // Recompute fee based on actual input count.
             // Assume outputs count = requested outputs + 1 change.
-            let fee_with_change =
-                std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_standard_tx_size(selected.len(), num_payment_outputs + 1) as u64);
+            let fee_with_change = std::cmp::max(
+                MIN_ASSET_LOCK_FEE,
+                estimate_standard_tx_size(selected.len(), num_payment_outputs + 1) as u64,
+            );
             let tentative_change = total_input
                 .checked_sub(total_output)
                 .and_then(|r| r.checked_sub(fee_with_change));
@@ -1028,8 +1017,10 @@ impl CoreWallet {
             }
 
             // No change (or dust): recompute fee without change output.
-            let fee_no_change =
-                std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_standard_tx_size(selected.len(), num_payment_outputs) as u64);
+            let fee_no_change = std::cmp::max(
+                MIN_ASSET_LOCK_FEE,
+                estimate_standard_tx_size(selected.len(), num_payment_outputs) as u64,
+            );
 
             if total_input >= total_output.saturating_add(fee_no_change) {
                 let actual_fee = total_input - total_output;

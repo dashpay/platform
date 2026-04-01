@@ -118,12 +118,8 @@ impl PlatformWallet {
             network,
         };
 
-        let platform = PlatformAddressWallet::new(
-            sdk.clone(),
-            wallet.clone(),
-            wallet_info.clone(),
-            network,
-        );
+        let platform =
+            PlatformAddressWallet::new(sdk.clone(), wallet.clone(), wallet_info.clone(), network);
 
         let tokens = TokenWallet::new(
             sdk.clone(),
@@ -193,13 +189,12 @@ impl PlatformWallet {
             ))
         })?;
 
-        let wallet =
-            Wallet::from_extended_key(extended_key, options).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to create wallet from extended key: {}",
-                    e
-                ))
-            })?;
+        let wallet = Wallet::from_extended_key(extended_key, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from extended key: {}",
+                e
+            ))
+        })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
         Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
@@ -270,12 +265,13 @@ impl PlatformWallet {
         network: Network,
         options: WalletAccountCreationOptions,
     ) -> Result<(Self, Mnemonic), PlatformWalletError> {
-        let mnemonic = Mnemonic::generate(12, key_wallet::mnemonic::Language::English).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to generate random mnemonic: {}",
-                e
-            ))
-        })?;
+        let mnemonic =
+            Mnemonic::generate(12, key_wallet::mnemonic::Language::English).map_err(|e| {
+                PlatformWalletError::WalletCreation(format!(
+                    "Failed to generate random mnemonic: {}",
+                    e
+                ))
+            })?;
 
         let wallet = Wallet::from_mnemonic(mnemonic.clone(), network, options).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
@@ -285,7 +281,10 @@ impl PlatformWallet {
         })?;
 
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok((Self::from_wallet_and_info(sdk, wallet, wallet_info), mnemonic))
+        Ok((
+            Self::from_wallet_and_info(sdk, wallet, wallet_info),
+            mnemonic,
+        ))
     }
 }
 
