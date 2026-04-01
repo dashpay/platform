@@ -70,8 +70,8 @@ fn test_send_and_accept_contact_request_same_wallet() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
-    let mut managed_b = ManagedIdentity::new(identity_b);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
+    let mut managed_b = ManagedIdentity::new(identity_b, 1);
 
     // Identity A sends friend request to Identity B
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1234567890);
@@ -126,8 +126,8 @@ fn test_send_and_accept_contact_request_different_wallets() {
     let id_1 = identity_1.id();
     let id_2 = identity_2.id();
 
-    let mut managed_1 = ManagedIdentity::new(identity_1);
-    let mut managed_2 = ManagedIdentity::new(identity_2);
+    let mut managed_1 = ManagedIdentity::new(identity_1, 0);
+    let mut managed_2 = ManagedIdentity::new(identity_2, 1);
 
     // Identity 1 sends friend request to Identity 2
     let request_1_to_2 = create_contact_request(id_1, id_2, 0, 1234567900);
@@ -173,7 +173,7 @@ fn test_multiple_contact_requests_workflow() {
     let id_friend2 = identity_friend2.id();
     let id_friend3 = identity_friend3.id();
 
-    let mut managed_main = ManagedIdentity::new(identity_main);
+    let mut managed_main = ManagedIdentity::new(identity_main, 0);
 
     // Send requests to three different identities
     managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend1, 0, 1000));
@@ -218,7 +218,7 @@ fn test_contact_alias_and_metadata() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Establish contact
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
@@ -268,7 +268,7 @@ fn test_reject_contact_request() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Receive incoming request
     managed_a.add_incoming_contact_request(create_contact_request(id_b, id_a, 0, 1000));
@@ -291,7 +291,7 @@ fn test_cancel_sent_contact_request() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Send request
     managed_a.add_sent_contact_request(create_contact_request(id_a, id_b, 0, 1000));
@@ -315,7 +315,7 @@ fn test_contact_request_with_different_account_references() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
 
     // Send request with account reference 0
     let mut request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
@@ -340,7 +340,7 @@ fn test_identity_label_management() {
     // Test setting and clearing labels on managed identities
 
     let identity = create_test_identity([1u8; 32]);
-    let mut managed = ManagedIdentity::new(identity);
+    let mut managed = ManagedIdentity::new(identity, 0);
 
     assert_eq!(managed.label, None);
 
@@ -365,8 +365,8 @@ fn test_concurrent_bidirectional_requests() {
     let id_a = identity_a.id();
     let id_b = identity_b.id();
 
-    let mut managed_a = ManagedIdentity::new(identity_a);
-    let mut managed_b = ManagedIdentity::new(identity_b);
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
+    let mut managed_b = ManagedIdentity::new(identity_b, 1);
 
     // Both send requests "simultaneously"
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
