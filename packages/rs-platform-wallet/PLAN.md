@@ -33,7 +33,7 @@ date: 2026-03-13
 11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
 12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
-14. **PR-14** ✅: Protocol completeness — DashPay (reject, auto-accept QR, validation, labels, sent_requests) + Identity (load_by_index, refresh, DPNS refresh, load_by_name) + ManagedIdentity refactor (owned/watched split, WatchedIdentity, ManagedIdentitySigner)
+14. **PR-14** ✅: Protocol completeness + evo-tool convergence — DashPay (auto-accept, validation, labels, send/accept migrated) + Identity (load_by_index, refresh, DPNS) + ManagedIdentity (owned/watched split, ManagedIdentitySigner) + identity routing (all identities synced to IdentityManager via DB chokepoints) + DPNS boilerplate eliminated. 27/42 evo-tool tasks migrated.
 15. **PR-15**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
