@@ -13,6 +13,10 @@ pub use manager::PlatformWalletManager;
 pub use wallet::core::{AssetLockStatus, CoreAccountSummary, CoreAddressInfo, CoreWallet, TrackedAssetLock};
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
+pub use wallet::dashpay::{
+    ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT, calculate_account_reference,
+    derive_contact_payment_address, derive_contact_payment_addresses, derive_contact_xpub,
+};
 pub use wallet::identity::IdentityManager;
 pub use wallet::identity::ManagedIdentity;
 pub use wallet::identity::{DpnsNameInfo, IdentityFundingMethod, IdentityStatus, KeyStorage, PrivateKeyData, TopUpFundingMethod};

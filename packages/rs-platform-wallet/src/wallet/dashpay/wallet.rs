@@ -534,3 +534,73 @@ impl DashPayWallet {
             .collect()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Contact xpub and payment address derivation (DIP-14 / DIP-15)
+// ---------------------------------------------------------------------------
+
+impl DashPayWallet {
+    /// Get the contact xpub data for a specific contact relationship.
+    ///
+    /// Derives the extended public key along path:
+    /// `m/9'/coin'/15'/account'/(sender_id)/(recipient_id)`
+    ///
+    /// The last two segments use DIP-14 256-bit non-hardened derivation.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_index` - Account index (hardened) in the derivation path.
+    /// * `sender_id`     - Our identity identifier.
+    /// * `recipient_id`  - The contact's identity identifier.
+    pub async fn contact_xpub(
+        &self,
+        account_index: u32,
+        sender_id: &Identifier,
+        recipient_id: &Identifier,
+    ) -> Result<super::dip14::ContactXpubData, PlatformWalletError> {
+        let wallet = self.wallet.read().await;
+        super::dip14::derive_contact_xpub(
+            &wallet,
+            self.network,
+            account_index,
+            sender_id,
+            recipient_id,
+        )
+    }
+
+    /// Derive payment addresses for a contact (for receiving payments from them).
+    ///
+    /// Returns `count` addresses starting from `start_index`, derived via
+    /// standard BIP32 from the contact xpub.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_index` - Account index (hardened) in the derivation path.
+    /// * `sender_id`     - Our identity identifier.
+    /// * `recipient_id`  - The contact's identity identifier.
+    /// * `start_index`   - First payment address index.
+    /// * `count`         - Number of addresses to derive.
+    pub async fn contact_payment_addresses(
+        &self,
+        account_index: u32,
+        sender_id: &Identifier,
+        recipient_id: &Identifier,
+        start_index: u32,
+        count: u32,
+    ) -> Result<Vec<dashcore::Address>, PlatformWalletError> {
+        let wallet = self.wallet.read().await;
+        let data = super::dip14::derive_contact_xpub(
+            &wallet,
+            self.network,
+            account_index,
+            sender_id,
+            recipient_id,
+        )?;
+        super::dip14::derive_contact_payment_addresses(
+            &data.xpub,
+            start_index,
+            count,
+            self.network,
+        )
+    }
+}
