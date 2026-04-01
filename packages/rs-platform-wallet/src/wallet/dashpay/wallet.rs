@@ -138,10 +138,14 @@ impl DashPayWallet {
     ///
     /// * `sender_identity_id`    - Identity that owns the contact request.
     /// * `recipient_identity_id` - Identity the request is sent to.
+    /// * `account_label`         - Optional account label (plaintext; encrypted by SDK).
+    /// * `auto_accept_proof`     - Optional auto-accept proof bytes (38-102 bytes).
     pub async fn send_contact_request(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
+        account_label: Option<String>,
+        auto_accept_proof: Option<Vec<u8>>,
     ) -> Result<(), PlatformWalletError> {
         // 1. Retrieve the sender identity and its HD index from the local manager
         //    via a single managed_identity() call.
@@ -249,8 +253,8 @@ impl DashPayWallet {
             sender_key_index,
             recipient_key_index,
             account_reference: account_index,
-            account_label: None,
-            auto_accept_proof: None,
+            account_label,
+            auto_accept_proof,
         };
 
         let send_input = SendContactRequestInput {
@@ -500,7 +504,7 @@ impl DashPayWallet {
         // 2. Send reciprocal request (this also stores it as a sent request
         //    in the managed identity which, combined with the existing
         //    incoming request, will auto-establish the contact).
-        self.send_contact_request(&our_identity_id, &sender_id)
+        self.send_contact_request(&our_identity_id, &sender_id, None, None)
             .await?;
 
         // 3. The auto-establish logic in ManagedIdentity should have created
