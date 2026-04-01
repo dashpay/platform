@@ -33,7 +33,7 @@ date: 2026-03-13
 11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
 12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
-14. **PR-14**: DashPay protocol completeness — reject, auto-accept proof, validation, account labels, payment address registration
+14. **PR-14**: Protocol completeness — DashPay (reject, auto-accept, validation, labels, payments) + Identity (load_by_index, refresh, batch DPNS refresh, resolve_by_dpns)
 15. **PR-15**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
@@ -1420,6 +1420,65 @@ pub async fn resolve_name(
 
 `register_name` wraps `sdk.register_dpns_name()`. `resolve_name` wraps
 `sdk.resolve_dpns_name_to_identity()`.
+
+#### 1.4.11 — Load Identity by Index (PR-14)
+
+Targeted lookup for a single wallet identity index (unlike `sync()` which does a gap scan).
+
+```rust
+/// Derives auth key at identity_index, queries Platform by key hash.
+/// If found, adds to IdentityManager with KeyStorage + DPNS names.
+/// Returns None if no identity is registered at this index.
+pub async fn load_identity_by_index(
+    &self,
+    identity_index: u32,
+) -> Result<Option<Identity>, PlatformWalletError>
+```
+
+Used when the caller knows the specific index (e.g., wallet recovery, user-selected index).
+
+#### 1.4.12 — Refresh Identity (PR-14)
+
+Fetch latest state for a known identity from Platform (balance, keys, revision).
+
+```rust
+/// Re-fetches the identity from Platform and updates the local ManagedIdentity.
+/// Unlike sync() which discovers NEW identities, this updates an EXISTING one.
+pub async fn refresh_identity(
+    &self,
+    identity_id: &Identifier,
+) -> Result<Identity, PlatformWalletError>
+```
+
+Updates: `identity` field (balance, revision, keys), `status` → Active (if found),
+`last_updated_balance_block_time`.
+
+#### 1.4.13 — Batch DPNS Refresh (PR-14)
+
+Refresh DPNS names for all managed identities.
+
+```rust
+/// Queries Platform for current DPNS names for each identity in the manager.
+/// Updates ManagedIdentity.dpns_names for all identities.
+pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError>
+```
+
+Used on app startup or periodic refresh to keep names current.
+
+#### 1.4.14 — Load Identity by DPNS Name (PR-14)
+
+Resolve a DPNS name and load the identity into the manager.
+
+```rust
+/// Resolves name → identity ID, fetches identity from Platform, adds to manager.
+/// Returns None if name doesn't resolve.
+pub async fn load_identity_by_dpns_name(
+    &self,
+    name: &str,
+) -> Result<Option<Identity>, PlatformWalletError>
+```
+
+Combines `resolve_name()` + `Identity::fetch()` + `identity_manager.add_identity()`.
 
 #### Files
 
@@ -3085,30 +3144,72 @@ Platform-wallet additions:
 
 ---
 
-### PR-14: DashPay protocol completeness
+### PR-14: Protocol completeness — DashPay + Identity
 
-**Goal**: Complete DashPay protocol support so any app can build full contact +
-payment flows without reimplementing protocol-level logic.
+**Goal**: Complete protocol-level support so any app can build full DashPay contact +
+payment flows AND full identity management without reimplementing protocol logic.
 
-**What to add to DashPayWallet:**
-- reject_contact_request() — contactInfo document with display_hidden=true
-- generate_auto_accept_proof() / verify_auto_accept_proof() — DIP-15 QR auto-accept
-- validate_contact_request() — pre-send key/height/reference validation
-- encrypt_account_label() / decrypt_account_label() — CBC-AES-256 with ECDH key
-- register_contact_payment_addresses() — bulk address derivation + gap limit tracking
-- match_payment_to_contact() — address -> (owner, contact, index) lookup
-- sent_contact_requests() — query outgoing requests from Platform
-- send_contact_request_with_signer() / accept_contact_request_with_signer() — external signer variants
+**DashPayWallet additions:**
+- `reject_contact_request()` — contactInfo document with display_hidden=true
+- `generate_auto_accept_proof()` / `verify_auto_accept_proof()` — DIP-15 QR auto-accept
+- `validate_contact_request()` — pre-send key/height/reference validation
+- `encrypt_account_label()` / `decrypt_account_label()` — CBC-AES-256 with ECDH key
+- `register_contact_payment_addresses()` — bulk address derivation + gap limit tracking
+- `match_payment_to_contact()` — address → (owner, contact, index) lookup
+- `sent_contact_requests()` — query outgoing requests from Platform
+- `send_contact_request_with_signer()` / `accept_contact_request_with_signer()` — external signer variants
+
+**IdentityWallet additions:**
+
+```rust
+/// Load a single identity by wallet index (not gap scan — targeted lookup).
+/// Derives auth key at identity_index, queries Platform, adds to manager.
+pub async fn load_identity_by_index(
+    &self,
+    identity_index: u32,
+) -> Result<Option<Identity>, PlatformWalletError>
+```
+
+```rust
+/// Refresh a known identity's state from Platform (balance, keys, revision).
+/// Unlike sync() which discovers new identities, this updates an existing one.
+pub async fn refresh_identity(
+    &self,
+    identity_id: &Identifier,
+) -> Result<Identity, PlatformWalletError>
+```
+
+```rust
+/// Refresh DPNS names for all managed identities.
+/// Queries Platform for current names, updates ManagedIdentity.dpns_names.
+pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError>
+```
+
+```rust
+/// Load an identity by DPNS name resolution + fetch.
+/// Combines resolve_name() + fetch identity + add to manager.
+pub async fn load_identity_by_dpns_name(
+    &self,
+    name: &str,
+) -> Result<Option<Identity>, PlatformWalletError>
+```
 
 **Files to create/modify:**
-- src/wallet/dashpay/auto_accept.rs — new: proof generation + verification
-- src/wallet/dashpay/validation.rs — new: pre-send validation
-- src/wallet/dashpay/payments.rs — new: payment address registration + matching
-- src/wallet/dashpay/wallet.rs — add reject, sent_requests, label encryption, _with_signer methods
+- `src/wallet/dashpay/auto_accept.rs` — new: proof generation + verification
+- `src/wallet/dashpay/validation.rs` — new: pre-send validation
+- `src/wallet/dashpay/payments.rs` — new: payment address registration + matching
+- `src/wallet/dashpay/wallet.rs` — reject, sent_requests, label encryption, _with_signer methods
+- `src/wallet/identity/wallet.rs` — load_identity_by_index, refresh_identity, refresh_dpns_names, load_identity_by_dpns_name
 
-**Done when**: Full DashPay protocol coverage. An app can send/accept/reject contact requests,
-auto-accept via QR, validate before sending, encrypt labels, and track incoming payments —
-all through platform-wallet.
+**Evo-tool migration** (same PR or follow-up):
+- `load_identity_from_wallet.rs` → `wallet.identity().load_identity_by_index()`
+- `refresh_identity.rs` → `wallet.identity().refresh_identity()`
+- `refresh_loaded_identities_dpns_names.rs` → `wallet.identity().refresh_dpns_names()`
+- `load_identity_by_dpns_name.rs` → `wallet.identity().load_identity_by_dpns_name()`
+- DashPay tasks → `wallet.dashpay().*_with_signer()` methods
+
+**Done when**: Full DashPay + identity protocol coverage. Only `load_identity.rs` (manual import
+with masternode types) remains evo-tool-specific.
 
 ---
 
