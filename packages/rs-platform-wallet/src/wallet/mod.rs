@@ -3,6 +3,8 @@ pub mod dashpay;
 pub mod identity;
 pub mod platform_addresses;
 pub mod platform_wallet;
+#[cfg(feature = "shielded")]
+pub mod shielded;
 pub mod signer;
 pub mod tokens;
 

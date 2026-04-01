@@ -4873,6 +4873,7 @@ dependencies = [
  "dash-spv",
  "dashcore",
  "dpp",
+ "grovedb-commitment-tree",
  "hex",
  "indexmap 2.13.0",
  "key-wallet",
@@ -4884,6 +4885,7 @@ dependencies = [
  "tokio",
  "tracing",
  "zeroize",
+ "zip32",
 ]
 
 [[package]]

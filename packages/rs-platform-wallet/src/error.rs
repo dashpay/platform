@@ -92,4 +92,35 @@ pub enum PlatformWalletError {
 
     #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {0}")]
     AssetLockNotChainLocked(String),
+
+    // --- Shielded pool errors (feature-gated) ---
+    #[error("No unspent shielded notes available")]
+    ShieldedNoUnspentNotes,
+
+    #[error("Insufficient shielded balance: available {available}, required {required}")]
+    ShieldedInsufficientBalance { available: u64, required: u64 },
+
+    #[error("Shielded build error: {0}")]
+    ShieldedBuildError(String),
+
+    #[error("Shielded broadcast failed: {0}")]
+    ShieldedBroadcastFailed(String),
+
+    #[error("Shielded sync failed: {0}")]
+    ShieldedSyncFailed(String),
+
+    #[error("Shielded commitment tree update failed: {0}")]
+    ShieldedTreeUpdateFailed(String),
+
+    #[error("Shielded store error: {0}")]
+    ShieldedStoreError(String),
+
+    #[error("Shielded nullifier sync failed: {0}")]
+    ShieldedNullifierSyncFailed(String),
+
+    #[error("Shielded Merkle witness unavailable: {0}")]
+    ShieldedMerkleWitnessUnavailable(String),
+
+    #[error("Shielded key derivation failed: {0}")]
+    ShieldedKeyDerivation(String),
 }
