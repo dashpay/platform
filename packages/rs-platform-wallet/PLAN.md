@@ -33,7 +33,7 @@ date: 2026-03-13
 11. **PR-11** ✅: Asset lock lifecycle + multi-mode funding — TrackedAssetLock, 3 registration modes, 3 top-up modes, IS→CL fallback error variants
 12. **PR-12** ✅: DashPay DIP-14/15 — 256-bit key derivation, contact xpub, account reference, payment address derivation, gap limit
 13. **PR-13** ✅: Evo-tool integration Phase 3 — registration, top-up, discovery migrated + all 13 token tasks complete. 20 tasks total migrated.
-14. **PR-14** ✅: Protocol completeness — DashPay (reject, auto-accept QR, validation, labels, sent_requests) + Identity (load_by_index, refresh, DPNS refresh, load_by_name)
+14. **PR-14** ✅: Protocol completeness — DashPay (reject, auto-accept QR, validation, labels, sent_requests) + Identity (load_by_index, refresh, DPNS refresh, load_by_name) + ManagedIdentity refactor (owned/watched split, WatchedIdentity, ManagedIdentitySigner)
 15. **PR-15**: Shielded pool (feature-gated `shielded`) — `ShieldedWallet` with Orchard key management, note/nullifier sync, 5 transition types
 16. **PR-16**: SPV migration + AssetLockFinalityEvent — replace evo-tool SpvManager with PlatformWalletManager.start_spv(), SPV-based finality proof waiting
 17. **PR-17**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
@@ -272,7 +272,7 @@ rs-platform-wallet
 │   ├── identity: IdentityWallet                   ← register, discover, top-up, withdraw, transfer, update, DPNS
 │   │   ├── wallet, wallet_info, identity_manager: Arc<RwLock<...>>
 │   │   ├── network: Network (cached)
-│   │   ├── signer_for_identity() → IdentitySigner
+│   │   ├── signer_for(identity_id) → ManagedIdentitySigner (key_storage + IdentitySigner fallback)
 │   │   ├── update_identity(add_keys, disable_keys) ← IdentityUpdateTransition
 │   │   ├── top_up_from_addresses() / transfer_credits_to_addresses()
 │   │   ├── register_name() / resolve_name() / search_names() ← DPNS
@@ -307,6 +307,7 @@ rs-platform-wallet
 │
 ├── Signing
 │   ├── IdentitySigner           ← Signer<IdentityPublicKey> (ECDSA/BLS/EdDSA, DIP-9 paths)
+│   ├── ManagedIdentitySigner    ← Signer<IdentityPublicKey> wrapping key_storage + IdentitySigner fallback
 │   └── PlatformAddressWallet    ← Signer<PlatformAddress> (ECDSA P2PKH, DIP-17 paths)
 │
 ├── Events
@@ -370,6 +371,13 @@ rs-sdk (Dash Platform SDK) — operations used by platform-wallet
   choose between wallet UTXOs, pre-existing proofs, specific UTXOs, or platform addresses.
 - **DashPay protocol crypto in library** (PR-12): DIP-14 256-bit derivation, contact payment address
   registration with gap limit, account reference calculation — protocol specs, not app logic.
+- **Owned vs watched identity split** (PR-14): `ManagedIdentity` (owned, has key_storage, can sign,
+  identity_index required) vs `WatchedIdentity` (observed, read-only, no keys). Type system enforces
+  the distinction — no runtime "can I sign?" checks. Loaded-by-DPNS-name identities go to watched.
+- **ManagedIdentitySigner resolves from key_storage** (PR-14): Three-step key resolution: (1) clear
+  bytes from storage, (2) derive from wallet at stored path, (3) fall back to standard IdentitySigner
+  derivation. Created via `managed_identity.signer(wallet, network)` or
+  `identity_wallet.signer_for(identity_id)`.
 
 ---
 
@@ -454,8 +462,10 @@ pub struct PlatformWalletManager {
 // Implements Clone — all fields are cheap to clone (just Arc clones).
 // IdentityWallet and DashPayWallet share the same IdentityManager
 // instance because PlatformWallet constructs them from the same source at build time.
+// Two collections: `managed` for owned identities (can sign), `watched` for observed (read-only).
 pub struct IdentityManager {
-    identities:          Arc<RwLock<IndexMap<Identifier, ManagedIdentity>>>,
+    managed:             Arc<RwLock<IndexMap<Identifier, ManagedIdentity>>>,   // owned, has key_storage
+    watched:             Arc<RwLock<IndexMap<Identifier, WatchedIdentity>>>,   // observed, read-only
     primary_identity_id: Arc<RwLock<Option<Identifier>>>,
     last_scanned_index:  Arc<RwLock<u32>>,  // persisted gap scan state
     // REMOVED: sdk: Option<Arc<Sdk>> — SDK flows through caller struct
@@ -463,12 +473,14 @@ pub struct IdentityManager {
 // Clone is cheap — just Arc clones. IdentityWallet and DashPayWallet hold
 // the same Arc pointers — mutations visible to both.
 
-// ManagedIdentity requires identity_index: u32 (not Optional) — set during
+// ManagedIdentity — an owned identity with key material. Can sign transitions.
+// Requires identity_index: u32 (always required, not Optional) — set during
 // registration or discovery. Used for DIP-9 key derivation paths.
 // (PR-10) Enhanced with KeyStorage, IdentityStatus, DPNS names, wallet association.
+// (PR-14) identity_index is always required — type system enforces this.
 pub struct ManagedIdentity {
     pub identity: Identity,
-    pub identity_index: u32,                           // required, not Optional
+    pub identity_index: u32,                           // always required (not Optional)
     pub key_storage: BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>,  // (PR-10)
     pub status: IdentityStatus,                        // (PR-10) state machine
     pub dpns_names: Vec<DpnsNameInfo>,                 // (PR-10) associated DPNS names
@@ -477,6 +489,27 @@ pub struct ManagedIdentity {
     pub sent_contact_requests: Vec<ContactRequest>,
     pub received_contact_requests: Vec<ContactRequest>,
     pub established_contacts: Vec<EstablishedContact>,
+}
+
+// WatchedIdentity — an observed identity without key material. Read-only, cannot sign.
+// Loaded via load_identity_by_dpns_name() or other external lookups.
+// No key_storage, no identity_index — just identity data + DPNS names + status.
+pub struct WatchedIdentity {
+    pub identity: Identity,
+    pub dpns_names: Vec<DpnsNameInfo>,
+    pub status: IdentityStatus,
+}
+
+// ManagedIdentitySigner — Signer<IdentityPublicKey> that resolves keys from a
+// ManagedIdentity's key_storage with IdentitySigner fallback.
+// Three-step key resolution:
+//   1. Clear bytes from key_storage (PrivateKeyData::Clear)
+//   2. Derive from wallet at stored path (PrivateKeyData::AtWalletDerivationPath)
+//   3. Fall back to standard IdentitySigner derivation (DIP-9 path from identity_index)
+// Created via managed_identity.signer(wallet, network) or identity_wallet.signer_for(identity_id).
+pub struct ManagedIdentitySigner {
+    key_storage: BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>,
+    identity_signer: IdentitySigner,  // fallback for keys not in storage
 }
 
 // (PR-10) Private key data — either raw bytes or lazy wallet derivation.
@@ -1162,7 +1195,13 @@ pub async fn build_asset_lock_with_retry(
 
 All methods are on `IdentityWallet` which holds `sdk`, `wallet: Arc<RwLock<Wallet>>`, and `identity_manager`.
 No `wallet: &Wallet` parameter anywhere — key derivation and signing use `self.wallet` directly.
-`identity_index` is stored on `ManagedIdentity` as `u32` (required, not Optional).
+`identity_index` is stored on `ManagedIdentity` as `u32` (always required, not Optional).
+
+**Managed vs watched routing** (PR-14):
+- `sync()` adds discovered identities to `managed` collection (owned, with key_storage)
+- `load_identity_by_index()` adds to `managed` collection (owned, with key_storage)
+- `load_identity_by_dpns_name()` adds to `watched` collection (observed, read-only, no keys)
+- `signer_for(identity_id)` creates `ManagedIdentitySigner` from the managed identity's key_storage
 
 **ManagedIdentity enrichments** (PR-10):
 - `key_storage: BTreeMap<KeyID, (IdentityPublicKey, PrivateKeyData)>` — lazy wallet derivation via `AtWalletDerivationPath`; avoids storing raw private keys in memory for wallet-backed identities
@@ -1235,16 +1274,18 @@ where `key_type` is: `0'` = ECDSA, `1'` = BLS. The existing `key_derivation.rs` 
 `key_type'` segment — this must be fixed. The `key_type'` level enables multi-algorithm keys
 under the same identity index.
 
-**`signer_for_identity` factory** on `IdentityWallet`:
+**`signer_for` factory** on `IdentityWallet`:
 ```rust
-pub fn signer_for_identity(
+pub fn signer_for(
     &self,
     identity_id: &Identifier,
-) -> Result<IdentitySigner, PlatformWalletError>
+) -> Result<ManagedIdentitySigner, PlatformWalletError>
 ```
-Looks up the `identity_index: u32` from the `ManagedIdentity` (required field), constructs an
-`IdentitySigner` with the wallet Arc and index. Returns `IdentityIndexNotSet` if the identity
-was added without an index.
+Looks up the `ManagedIdentity` from the `managed` collection (errors if identity is only watched),
+clones its `key_storage`, and constructs a `ManagedIdentitySigner` with an `IdentitySigner` fallback.
+Three-step key resolution: (1) clear bytes from storage, (2) derive from wallet at stored path,
+(3) fall back to standard IdentitySigner derivation from `identity_index`.
+Also available as `managed_identity.signer(wallet, network)` for direct construction.
 
 #### 1.4.2 — Identity Discovery (DIP-9 gap-limit scan)
 
@@ -1278,6 +1319,8 @@ Current behaviour (pre-PR-10):
 ```rust
 pub async fn sync(&self) -> Result<Vec<Identifier>, PlatformWalletError>
 ```
+
+Discovered identities are added to the `managed` collection (owned, with key_storage).
 
 #### 1.4.3 — Refresh Identity
 
@@ -1427,7 +1470,7 @@ Targeted lookup for a single wallet identity index (unlike `sync()` which does a
 
 ```rust
 /// Derives auth key at identity_index, queries Platform by key hash.
-/// If found, adds to IdentityManager with KeyStorage + DPNS names.
+/// If found, adds to IdentityManager's `managed` collection with KeyStorage + DPNS names.
 /// Returns None if no identity is registered at this index.
 pub async fn load_identity_by_index(
     &self,
@@ -1436,6 +1479,7 @@ pub async fn load_identity_by_index(
 ```
 
 Used when the caller knows the specific index (e.g., wallet recovery, user-selected index).
+Adds to `managed` collection (owned, with key_storage derived from wallet).
 
 #### 1.4.12 — Refresh Identity (PR-14)
 
@@ -1470,7 +1514,8 @@ Used on app startup or periodic refresh to keep names current.
 Resolve a DPNS name and load the identity into the manager.
 
 ```rust
-/// Resolves name → identity ID, fetches identity from Platform, adds to manager.
+/// Resolves name → identity ID, fetches identity from Platform, adds to manager's
+/// `watched` collection (read-only, no key material).
 /// Returns None if name doesn't resolve.
 pub async fn load_identity_by_dpns_name(
     &self,
@@ -1478,14 +1523,15 @@ pub async fn load_identity_by_dpns_name(
 ) -> Result<Option<Identity>, PlatformWalletError>
 ```
 
-Combines `resolve_name()` + `Identity::fetch()` + `identity_manager.add_identity()`.
+Combines `resolve_name()` + `Identity::fetch()` + adds to `watched` collection as `WatchedIdentity`
+(observed, read-only, no keys). Cannot sign transitions for watched identities.
 
 #### Files
 
 - `packages/rs-platform-wallet/src/wallet/identity/wallet.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs` — (PR-10) KeyStorage, IdentityStatus, DpnsNameInfo, wallet fields
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs` — (PR-10) KeyStorage, IdentityStatus, DpnsNameInfo, wallet fields; (PR-14) WatchedIdentity
 - `packages/rs-platform-wallet/src/wallet/identity/funding.rs` — (PR-11) IdentityFundingMethod, TopUpFundingMethod enums
-- `packages/rs-platform-wallet/src/wallet/signer.rs` — (PR-10) support `AtWalletDerivationPath` resolution
+- `packages/rs-platform-wallet/src/wallet/signer.rs` — (PR-10) support `AtWalletDerivationPath` resolution; (PR-14) ManagedIdentitySigner
 - Consolidates: `platform_wallet_info/identity_discovery.rs`, `platform_wallet_info/key_derivation.rs`
 
 ---
