@@ -504,6 +504,122 @@ impl TokenWallet {
 
         Ok(())
     }
+
+    /// Destroy frozen funds for a target identity (admin operation).
+    pub async fn destroy_frozen_funds(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: &Identifier,
+        frozen_identity_id: Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
+
+        let (_identity, signer, signing_key) =
+            self.resolve_identity_and_signer(identity_id).await?;
+
+        let builder = TokenDestroyFrozenFundsTransitionBuilder::new(
+            data_contract,
+            token_position,
+            *identity_id,
+            frozen_identity_id,
+        );
+
+        self.sdk
+            .token_destroy_frozen_funds(builder, &signing_key, &signer)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::TokenError(format!("Destroy frozen funds failed: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Pause a token (emergency action, admin operation).
+    pub async fn pause(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
+
+        let (_identity, signer, signing_key) =
+            self.resolve_identity_and_signer(identity_id).await?;
+
+        let builder = TokenEmergencyActionTransitionBuilder::pause(
+            data_contract,
+            token_position,
+            *identity_id,
+        );
+
+        self.sdk
+            .token_emergency_action(builder, &signing_key, &signer)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::TokenError(format!("Token pause failed: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Resume a paused token (emergency action, admin operation).
+    pub async fn resume(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
+
+        let (_identity, signer, signing_key) =
+            self.resolve_identity_and_signer(identity_id).await?;
+
+        let builder = TokenEmergencyActionTransitionBuilder::resume(
+            data_contract,
+            token_position,
+            *identity_id,
+        );
+
+        self.sdk
+            .token_emergency_action(builder, &signing_key, &signer)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::TokenError(format!("Token resume failed: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Update token configuration (admin operation).
+    pub async fn update_config(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: &Identifier,
+        config_change: dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
+
+        let (_identity, signer, signing_key) =
+            self.resolve_identity_and_signer(identity_id).await?;
+
+        let builder = TokenConfigUpdateTransitionBuilder::new(
+            data_contract,
+            token_position,
+            *identity_id,
+            config_change,
+        );
+
+        self.sdk
+            .token_update_contract_token_configuration(builder, &signing_key, &signer)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::TokenError(format!("Token config update failed: {}", e))
+            })?;
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -816,6 +932,146 @@ impl TokenWallet {
         }
 
         self.sdk.token_claim(builder, signing_key, signer).await
+    }
+
+    /// Destroy frozen funds using an external signer.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn destroy_frozen_funds_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        frozen_identity_id: Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::DestroyFrozenFundsResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::destroy::TokenDestroyFrozenFundsTransitionBuilder;
+
+        let mut builder = TokenDestroyFrozenFundsTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            frozen_identity_id,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_destroy_frozen_funds(builder, signing_key, signer).await
+    }
+
+    /// Pause token using an external signer.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn pause_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
+
+        let mut builder = TokenEmergencyActionTransitionBuilder::pause(
+            data_contract,
+            token_position,
+            identity_id,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_emergency_action(builder, signing_key, signer).await
+    }
+
+    /// Resume token using an external signer.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn resume_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::EmergencyActionResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::emergency_action::TokenEmergencyActionTransitionBuilder;
+
+        let mut builder = TokenEmergencyActionTransitionBuilder::resume(
+            data_contract,
+            token_position,
+            identity_id,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_emergency_action(builder, signing_key, signer).await
+    }
+
+    /// Update token config using an external signer.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_config_with_signer<S: dpp::identity::signer::Signer<IdentityPublicKey>>(
+        &self,
+        data_contract: Arc<DataContract>,
+        token_position: TokenContractPosition,
+        identity_id: Identifier,
+        config_change: dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+        public_note: Option<String>,
+        group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
+        options: Option<dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions>,
+    ) -> Result<dash_sdk::platform::tokens::transitions::ConfigUpdateResult, dash_sdk::Error> {
+        use dash_sdk::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
+
+        let mut builder = TokenConfigUpdateTransitionBuilder::new(
+            data_contract,
+            token_position,
+            identity_id,
+            config_change,
+        );
+
+        if let Some(note) = public_note {
+            builder = builder.with_public_note(note);
+        }
+        if let Some(gi) = group_info {
+            builder = builder.with_using_group_info(gi);
+        }
+        if let Some(opts) = options {
+            builder = builder.with_state_transition_creation_options(opts);
+        }
+
+        self.sdk.token_update_contract_token_configuration(builder, signing_key, signer).await
     }
 }
 
