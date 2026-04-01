@@ -33,12 +33,12 @@ const DASH_COIN_TYPE_TESTNET: u32 = 1;
 /// - `outgoing_viewing_key` — recovers sent notes (wallet recovery)
 /// - `default_address` — the default payment address at index 0
 pub struct OrchardKeySet {
-    /// The spending key (master secret).
-    pub spending_key: SpendingKey,
+    /// The spending key (master secret). Crate-private — never expose externally.
+    pub(crate) spending_key: SpendingKey,
     /// Full viewing key derived from the spending key.
     pub full_viewing_key: FullViewingKey,
-    /// Spend authorization key for signing spends.
-    pub spend_auth_key: SpendAuthorizingKey,
+    /// Spend authorization key for signing spends. Crate-private.
+    pub(crate) spend_auth_key: SpendAuthorizingKey,
     /// Incoming viewing key for trial decryption.
     pub incoming_viewing_key: IncomingViewingKey,
     /// Outgoing viewing key for wallet recovery.

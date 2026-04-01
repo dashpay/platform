@@ -24,7 +24,11 @@ pub fn select_notes<'a>(
     amount: u64,
     fee: u64,
 ) -> Result<Vec<&'a ShieldedNote>, PlatformWalletError> {
-    if unspent.is_empty() {
+    // Filter out any spent notes defensively (caller should pass unspent only,
+    // but this prevents double-spend if called with get_all_notes()).
+    let unspent_only: Vec<&ShieldedNote> = unspent.iter().filter(|n| !n.is_spent).collect();
+
+    if unspent_only.is_empty() {
         return Err(PlatformWalletError::ShieldedNoUnspentNotes);
     }
 
@@ -34,7 +38,7 @@ pub fn select_notes<'a>(
         )
     })?;
 
-    let total_available: u64 = unspent.iter().map(|n| n.value).sum();
+    let total_available: u64 = unspent_only.iter().map(|n| n.value).sum();
     if total_available < required {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
             available: total_available,
@@ -43,7 +47,7 @@ pub fn select_notes<'a>(
     }
 
     // Sort by value descending (largest first)
-    let mut sorted: Vec<&ShieldedNote> = unspent.iter().collect();
+    let mut sorted = unspent_only;
     sorted.sort_by(|a, b| b.value.cmp(&a.value));
 
     let mut selected = Vec::new();

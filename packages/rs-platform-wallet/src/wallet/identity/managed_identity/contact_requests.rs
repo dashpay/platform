@@ -58,13 +58,19 @@ impl ManagedIdentity {
         self.incoming_contact_requests.remove(sender_id)
     }
 
-    /// Accept an incoming contact request and establish the contact
-    /// Returns the established contact if successful
+    /// Accept an incoming contact request and establish the contact.
+    /// Returns the established contact if both incoming and outgoing requests exist.
+    /// Returns None without modifying state if either request is missing.
     pub fn accept_incoming_request(
         &mut self,
         sender_id: &Identifier,
     ) -> Option<EstablishedContact> {
-        // Remove both requests
+        // Check both exist before removing either (prevents data loss)
+        if !self.incoming_contact_requests.contains_key(sender_id)
+            || !self.sent_contact_requests.contains_key(sender_id)
+        {
+            return None;
+        }
         let incoming_request = self.incoming_contact_requests.remove(sender_id)?;
         let outgoing_request = self.sent_contact_requests.remove(sender_id)?;
 
