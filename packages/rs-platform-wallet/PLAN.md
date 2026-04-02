@@ -3371,20 +3371,62 @@ Platform-wallet additions:
 
 **Migration tally (all phases):**
 
-| Domain | Migrated | Remaining in evo-tool | Why remaining |
-|--------|----------|----------------------|---------------|
-| Tokens | 13/13 | — | — |
-| Identity | 7/13 | 6 | load_identity (manual import), load_from_wallet, refresh (targeted fetch), + 3 support |
-| DashPay | 0/9 | 9 | QR auto-accept, reject, custom labels, pre-send validation — evo-tool-specific |
-| Core | 1/7 | 6 | UTXO refresh, SPV integration — stays until PR-16 |
-| **Total** | **21/42** | **21** | |
+| Domain | Migrated | Total | Remaining | Details |
+|--------|----------|-------|-----------|---------|
+| **Tokens** | 13 | 13 | — | All complete |
+| **Identity** | 11 | 13 | 2 | See details below |
+| **DashPay** | 2 | 9 | 7 | See details below |
+| **Core** | 1 | 7 | 6 | See details below |
+| **Total** | **27** | **42** | **15** | |
 
-**What stays in evo-tool (not migratable without further library work):**
-- `load_identity.rs` — UI-driven identity import with manual key input, masternode types
-- DashPay contact requests — evo-tool-specific features (QR auto-accept, reject, validation)
-- `SpvManager` — stays until PR-16
-- Database persistence — evo-tool manages its own SQLite
-- UTXO refresh / wallet info — coupled to SpvManager
+**Tokens — 13/13 migrated:**
+- ✅ `transfer_tokens.rs` → `token_wallet.transfer_with_signer()`
+- ✅ `mint_tokens.rs` → `token_wallet.mint_with_signer()`
+- ✅ `burn_tokens.rs` → `token_wallet.burn_with_signer()`
+- ✅ `freeze_tokens.rs` → `token_wallet.freeze_with_signer()`
+- ✅ `unfreeze_tokens.rs` → `token_wallet.unfreeze_with_signer()`
+- ✅ `claim_tokens.rs` → `token_wallet.claim_with_signer()`
+- ✅ `purchase_tokens.rs` → `token_wallet.purchase_with_signer()`
+- ✅ `set_token_price.rs` → `token_wallet.set_price_with_signer()`
+- ✅ `destroy_frozen_funds.rs` → `token_wallet.destroy_frozen_funds_with_signer()`
+- ✅ `pause_tokens.rs` → `token_wallet.pause_with_signer()`
+- ✅ `resume_tokens.rs` → `token_wallet.resume_with_signer()`
+- ✅ `update_token_config.rs` → `token_wallet.update_config_with_signer()`
+- ✅ `query_my_token_balances.rs` → `token_wallet.watch()` + `.sync()` + `.balance()`
+
+**Identity — 11/13 migrated:**
+- ✅ `withdraw_from_identity.rs` → `identity_wallet.withdraw_credits_with_signer()`
+- ✅ `transfer.rs` → `identity_wallet.transfer_credits_with_signer()`
+- ✅ `add_key_to_identity.rs` → `identity_wallet.update_identity_with_signer()`
+- ✅ `register_dpns_name.rs` → `identity_wallet.register_name_with_signer()`
+- ✅ `register_identity.rs` → `identity_wallet.register_identity_with_signer()` (with fallback)
+- ✅ `top_up_identity.rs` → `identity_wallet.top_up_identity_with_signer()` (with fallback)
+- ✅ `discover_identities.rs` → `identity_wallet.sync()` (with legacy fallback)
+- ✅ `refresh_identity.rs` → `identity_wallet.refresh_identity_with_signer()` (with fallback)
+- ✅ `load_identity_from_wallet.rs` → `identity_wallet.load_identity_by_index()` (with legacy fallback)
+- ✅ `load_identity_by_dpns_name.rs` → `sdk.resolve_dpns_name()` + platform wallet watched identity
+- ✅ `refresh_loaded_identities_dpns_names.rs` → `sdk.get_dpns_usernames_by_identity()`
+- ❌ `load_identity.rs` — UI-driven manual import (user pastes ID, masternode types, manual key input). Genuinely app-level.
+- ❌ Support files (`encryption.rs`, `dip14_derivation.rs`, `hd_derivation.rs`) — crypto utilities still used by non-migrated DashPay tasks
+
+**DashPay — 2/9 migrated:**
+- ✅ `contact_requests.rs` (send) → `platform_wallet.dashpay().send_contact_request()`
+- ✅ `contact_requests.rs` (accept) → `platform_wallet.dashpay().send_contact_request()` (reciprocal)
+- ❌ `contact_requests.rs` (load) — UI expects raw `Vec<(Identifier, Document)>`, platform-wallet returns `Vec<ContactRequest>` (different shape)
+- ❌ `contact_requests.rs` (reject) — platform-wallet only does local removal, evo-tool persists rejection to Platform via contactInfo document
+- ❌ `contacts.rs` — UI-specific contact list management
+- ❌ `incoming_payments.rs` — SPV payment address registration, gap limit tracking
+- ❌ `auto_accept_handler.rs` — evo-tool orchestration of auto-accept batching
+- ❌ Support files (`encryption.rs`, `dip14_derivation.rs`, `hd_derivation.rs`, `validation.rs`) — still used by non-migrated tasks
+
+**Core — 1/7 migrated:**
+- ✅ `create_asset_lock.rs` — partial (uses `CoreWallet.build_asset_lock_transaction()` with fallback)
+- ❌ `refresh_wallet_info.rs` — UTXO refresh from RPC/SPV, tightly coupled to evo-tool's SpvManager
+- ❌ `refresh_single_key_wallet_info.rs` — single-key wallet refresh
+- ❌ `send_single_key_wallet_payment.rs` — Core transaction from single-key wallet
+- ❌ `recover_asset_locks.rs` — unused asset lock recovery from DB
+- ❌ `start_dash_qt.rs` — subprocess launcher (not platform-related)
+- ❌ `mod.rs` core task dispatch — orchestration logic
 
 ---
 
