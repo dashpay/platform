@@ -1,6 +1,6 @@
 //! Core wallet functionality: balance, UTXOs, addresses, transaction history.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dashcore::consensus;
@@ -8,20 +8,16 @@ use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut};
-use dpp::prelude::CoreBlockHeight;
-use key_wallet::account::TransactionRecord;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{Utxo, WalletCoreBalance};
+use key_wallet::Utxo;
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
-
-use super::types::{CoreAccountSummary, CoreAddressInfo};
 
 use crate::events::TransactionStatus;
 use dashcore::Txid;
@@ -59,24 +55,6 @@ impl CoreWallet {
         self.wallet.read().await
     }
 
-    /// Get the wallet balance (spendable, unconfirmed, total).
-    pub async fn balance(&self) -> WalletCoreBalance {
-        let info = self.wallet_info.read().await;
-        info.balance()
-    }
-
-    /// Get all UTXOs.
-    pub async fn utxos(&self) -> BTreeSet<Utxo> {
-        let info = self.wallet_info.read().await;
-        info.utxos().into_iter().cloned().collect()
-    }
-
-    /// Get spendable UTXOs (confirmed, non-dust, unlocked).
-    pub async fn spendable_utxos(&self) -> BTreeSet<Utxo> {
-        let info = self.wallet_info.read().await;
-        info.get_spendable_utxos().into_iter().cloned().collect()
-    }
-
     /// Get the next unused receive address for the default account.
     pub async fn next_receive_address(
         &self,
@@ -89,7 +67,7 @@ impl CoreWallet {
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        let xpub = self.account_xpub(account_index).await?;
+        let xpub = self.derive_account_xpub(account_index).await?;
         let mut info = self.wallet_info.write().await;
         let account = info
             .accounts
@@ -118,7 +96,7 @@ impl CoreWallet {
         &self,
         account_index: u32,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
-        let xpub = self.account_xpub(account_index).await?;
+        let xpub = self.derive_account_xpub(account_index).await?;
         let mut info = self.wallet_info.write().await;
         let account = info
             .accounts
@@ -135,150 +113,17 @@ impl CoreWallet {
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
-    /// Get all monitored addresses across all account types.
-    pub async fn monitored_addresses(&self) -> Vec<DashAddress> {
-        let info = self.wallet_info.read().await;
-        info.monitored_addresses()
-    }
-
-    /// Get the current synced height.
-    pub async fn synced_height(&self) -> CoreBlockHeight {
-        let info = self.wallet_info.read().await;
-        info.synced_height()
-    }
-
-    /// Get the wallet birth height.
-    pub async fn birth_height(&self) -> CoreBlockHeight {
-        let info = self.wallet_info.read().await;
-        info.birth_height()
-    }
-
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
     }
 
-    /// Get the transaction history.
-    pub async fn transaction_history(&self) -> Vec<TransactionRecord> {
-        let info = self.wallet_info.read().await;
-        info.transaction_history().into_iter().cloned().collect()
-    }
-
-    /// Get immature transactions (coinbase outputs not yet mature).
-    pub async fn immature_transactions(&self) -> Vec<Transaction> {
-        let info = self.wallet_info.read().await;
-        info.immature_transactions()
-    }
-
-    /// Get detailed info for every address across all accounts.
+    /// Derive the BIP-44 account-level extended public key at
+    /// `m/44'/coin_type'/account_index'`.
     ///
-    /// Iterates all managed accounts and their address pools, building a
-    /// [`CoreAddressInfo`] for each generated address. UTXO counts are
-    /// computed by scanning the account's UTXO map.
-    pub async fn all_address_info(&self) -> Vec<CoreAddressInfo> {
-        let info = self.wallet_info.read().await;
-        let mut result = Vec::new();
-
-        for account in info.accounts.all_accounts() {
-            let account_index = account.index();
-
-            // Build a quick per-address UTXO count from the account's utxo map.
-            let mut utxo_counts: BTreeMap<DashAddress, usize> = BTreeMap::new();
-            for utxo in account.utxos.values() {
-                *utxo_counts.entry(utxo.address.clone()).or_default() += 1;
-            }
-
-            for pool in account.account_type.address_pools() {
-                for addr_info in pool.addresses.values() {
-                    result.push(CoreAddressInfo {
-                        address: addr_info.address.clone(),
-                        derivation_path: addr_info.path.clone(),
-                        balance: addr_info.balance,
-                        total_received: addr_info.total_received,
-                        utxo_count: utxo_counts.get(&addr_info.address).copied().unwrap_or(0),
-                        is_used: addr_info.used,
-                        index: addr_info.index,
-                        account_index,
-                    });
-                }
-            }
-        }
-
-        result
-    }
-
-    /// Get detailed info for a single address, if it belongs to this wallet.
-    ///
-    /// Searches all accounts and their address pools for the given address.
-    pub async fn address_info(&self, address: &DashAddress) -> Option<CoreAddressInfo> {
-        let info = self.wallet_info.read().await;
-
-        for account in info.accounts.all_accounts() {
-            if let Some(addr_info) = account.get_address_info(address) {
-                let utxo_count = account
-                    .utxos
-                    .values()
-                    .filter(|u| &u.address == address)
-                    .count();
-
-                return Some(CoreAddressInfo {
-                    address: addr_info.address.clone(),
-                    derivation_path: addr_info.path.clone(),
-                    balance: addr_info.balance,
-                    total_received: addr_info.total_received,
-                    utxo_count,
-                    is_used: addr_info.used,
-                    index: addr_info.index,
-                    account_index: account.index(),
-                });
-            }
-        }
-
-        None
-    }
-
-    /// Get a summary for each managed account.
-    ///
-    /// Returns one [`CoreAccountSummary`] per account with aggregate
-    /// balance, address count, and used-address count.
-    pub async fn account_summaries(&self) -> Vec<CoreAccountSummary> {
-        let info = self.wallet_info.read().await;
-
-        info.accounts
-            .all_accounts()
-            .iter()
-            .map(|account| CoreAccountSummary {
-                account_index: account.index(),
-                balance: account.balance,
-                address_count: account.total_address_count(),
-                used_address_count: account.used_address_count(),
-            })
-            .collect()
-    }
-
-    /// Get all UTXOs grouped by their owning address.
-    ///
-    /// Iterates every account's UTXO set and groups the entries by
-    /// the address field.
-    pub async fn utxos_by_address(&self) -> BTreeMap<DashAddress, Vec<Utxo>> {
-        let info = self.wallet_info.read().await;
-        let mut map: BTreeMap<DashAddress, Vec<Utxo>> = BTreeMap::new();
-
-        for account in info.accounts.all_accounts() {
-            for utxo in account.utxos.values() {
-                map.entry(utxo.address.clone())
-                    .or_default()
-                    .push(utxo.clone());
-            }
-        }
-
-        map
-    }
-
-    /// Get the extended public key for a specific account index.
-    ///
-    /// Derives the BIP-44 account-level key at `m/44'/coin_type'/account_index'`.
-    pub async fn account_xpub(
+    /// Used internally by address-generation methods that need the xpub
+    /// to derive child addresses.
+    async fn derive_account_xpub(
         &self,
         account_index: u32,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {

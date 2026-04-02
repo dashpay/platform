@@ -17,7 +17,7 @@ pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 pub use wallet::core::{
-    AssetLockStatus, CoreAccountSummary, CoreAddressInfo, CoreWallet, TrackedAssetLock,
+    AssetLockStatus, CoreAddressInfo, CoreWallet, TrackedAssetLock,
 };
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;

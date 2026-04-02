@@ -1,8 +1,10 @@
-//! Per-address and per-account data types for UI consumption.
+//! Per-address data types for UI consumption.
+
+use std::collections::BTreeMap;
 
 use dashcore::Address;
 use key_wallet::bip32::DerivationPath;
-use key_wallet::WalletCoreBalance;
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
 /// Per-address info for UI consumption.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,15 +27,40 @@ pub struct CoreAddressInfo {
     pub account_index: Option<u32>,
 }
 
-/// Account-level summary.
-#[derive(Debug, Clone)]
-pub struct CoreAccountSummary {
-    /// Account index, if applicable.
-    pub account_index: Option<u32>,
-    /// Aggregate balance for this account.
-    pub balance: WalletCoreBalance,
-    /// Total number of generated addresses across all pools.
-    pub address_count: usize,
-    /// Number of addresses that have been used.
-    pub used_address_count: usize,
+impl CoreAddressInfo {
+    /// Build a `CoreAddressInfo` list for every address across all accounts.
+    ///
+    /// Iterates all managed accounts and their address pools, building a
+    /// `CoreAddressInfo` for each generated address. UTXO counts are
+    /// computed by scanning the account's UTXO map.
+    pub fn all_from_wallet_info(info: &ManagedWalletInfo) -> Vec<Self> {
+        let mut result = Vec::new();
+
+        for account in info.accounts.all_accounts() {
+            let account_index = account.index();
+
+            // Build a quick per-address UTXO count from the account's utxo map.
+            let mut utxo_counts: BTreeMap<Address, usize> = BTreeMap::new();
+            for utxo in account.utxos.values() {
+                *utxo_counts.entry(utxo.address.clone()).or_default() += 1;
+            }
+
+            for pool in account.account_type.address_pools() {
+                for addr_info in pool.addresses.values() {
+                    result.push(CoreAddressInfo {
+                        address: addr_info.address.clone(),
+                        derivation_path: addr_info.path.clone(),
+                        balance: addr_info.balance,
+                        total_received: addr_info.total_received,
+                        utxo_count: utxo_counts.get(&addr_info.address).copied().unwrap_or(0),
+                        is_used: addr_info.used,
+                        index: addr_info.index,
+                        account_index,
+                    });
+                }
+            }
+        }
+
+        result
+    }
 }
