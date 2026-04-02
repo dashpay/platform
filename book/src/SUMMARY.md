@@ -74,6 +74,10 @@
 - [State Transitions](evo-sdk/state-transitions.md)
 - [Wallet Utilities](evo-sdk/wallet-utilities.md)
 - [Networks and Environments](evo-sdk/networks-and-environments.md)
+- [Tutorials]()
+  - [Car Sales Management](evo-sdk/tutorials/car-sales.md)
+  - [Creating a Basic Token](evo-sdk/tutorials/basic-token.md)
+  - [Card Game with Tokens](evo-sdk/tutorials/card-game.md)
 
 # Rust SDK
 
