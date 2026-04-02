@@ -6,13 +6,13 @@ use std::sync::Arc;
 use dashcore::consensus;
 use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
-use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
-use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut};
 use dpp::prelude::CoreBlockHeight;
 use key_wallet::account::TransactionRecord;
-use key_wallet::bip32::DerivationPath;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
+    AssetLockFundingType, CreditOutputFunding,
+};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -529,14 +529,6 @@ const MIN_ASSET_LOCK_FEE: u64 = 3_000;
 /// considered dust and will be rejected by the network.
 const DUST_THRESHOLD: u64 = 546;
 
-/// Estimate the transaction size in bytes for an asset lock transaction.
-///
-/// Assumes P2PKH inputs (~148 B each), standard outputs (~34 B each),
-/// a ~10 B header, and a ~60 B asset-lock payload.
-fn estimate_tx_size(num_inputs: usize, num_outputs: usize) -> u64 {
-    (10 + (num_inputs * 148) + (num_outputs * 34) + 60) as u64
-}
-
 /// Estimate the transaction size in bytes for a standard (non-special) transaction.
 ///
 /// Assumes P2PKH inputs (~148 B each), standard outputs (~34 B each),
@@ -545,90 +537,34 @@ fn estimate_standard_tx_size(num_inputs: usize, num_outputs: usize) -> usize {
     10 + (num_inputs * 148) + (num_outputs * 34)
 }
 
-/// Result of asset lock fee calculation.
-struct AssetLockFeeResult {
-    /// Transaction fee in duffs. Retained for diagnostics and future use.
-    #[allow(dead_code)]
-    fee: u64,
-    actual_amount: u64,
-    change: Option<u64>,
-}
-
-/// Calculate fee, actual amount, and change for an asset lock transaction.
-///
-/// Uses an iterative approach: starts assuming a change output exists, then
-/// recomputes if the change disappears under the real fee.
-fn calculate_asset_lock_fee(
-    total_input_value: u64,
-    requested_amount: u64,
-    num_inputs: usize,
-) -> Result<AssetLockFeeResult, String> {
-    // First pass: assume 2 outputs (1 burn + 1 change).
-    let fee_with_change = std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_tx_size(num_inputs, 2));
-
-    let required_with_change = requested_amount
-        .checked_add(fee_with_change)
-        .ok_or("Overflow computing required amount + fee")?;
-    let tentative_change = total_input_value.checked_sub(required_with_change);
-
-    // If change exceeds dust threshold, include it as an output.
-    if let Some(change) = tentative_change {
-        if change >= DUST_THRESHOLD {
-            return Ok(AssetLockFeeResult {
-                fee: fee_with_change,
-                actual_amount: requested_amount,
-                change: Some(change),
-            });
-        }
-    }
-
-    // Change is zero or below dust under the 2-output fee.
-    // Recompute with 1 output (no change).
-    let fee_no_change = std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_tx_size(num_inputs, 1));
-
-    let required_no_change = requested_amount
-        .checked_add(fee_no_change)
-        .ok_or("Overflow computing required amount + fee")?;
-
-    if total_input_value >= required_no_change {
-        // Enough funds without a change output. Any leftover becomes additional fee.
-        return Ok(AssetLockFeeResult {
-            fee: total_input_value - requested_amount,
-            actual_amount: requested_amount,
-            change: None,
-        });
-    }
-
-    Err(format!(
-        "Insufficient funds: need {} + {} fee, have {}",
-        requested_amount, fee_no_change, total_input_value
-    ))
-}
+/// Default fee rate in duffs per kilobyte for asset lock transactions.
+const DEFAULT_FEE_PER_KB: u64 = 1000;
 
 impl CoreWallet {
     // -- Public API ----------------------------------------------------------
 
     /// Build an asset lock transaction for identity registration.
     ///
-    /// Derives the funding key at the DIP-9 registration path:
-    /// `m/9'/coin_type'/5'/1'/identity_index'`
+    /// Uses the key-wallet `build_asset_lock` builder with
+    /// `AssetLockFundingType::IdentityRegistration`.  The one-time funding key
+    /// is derived from the identity-registration account's address pool.
     ///
     /// Returns the signed transaction and the one-time private key whose
     /// corresponding public key is embedded in the asset lock payload.
     pub async fn build_registration_asset_lock_transaction(
         &self,
         amount_duffs: u64,
-        identity_index: u32,
+        _identity_index: u32,
     ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
-        let funding_path = DerivationPath::identity_registration_path(self.network, identity_index);
-        self.build_asset_lock_transaction(amount_duffs, &funding_path)
+        self.build_asset_lock_with_builder(amount_duffs, AssetLockFundingType::IdentityRegistration, 0)
             .await
     }
 
     /// Build an asset lock transaction for identity top-up.
     ///
-    /// Derives the funding key at the DIP-9 top-up path:
-    /// `m/9'/coin_type'/5'/2'/identity_index'/topup_index`
+    /// Uses the key-wallet `build_asset_lock` builder with
+    /// `AssetLockFundingType::IdentityTopUp`.  The one-time funding key is
+    /// derived from the identity-topup account for the given `identity_index`.
     ///
     /// Returns the signed transaction and the one-time private key whose
     /// corresponding public key is embedded in the asset lock payload.
@@ -636,36 +572,31 @@ impl CoreWallet {
         &self,
         amount_duffs: u64,
         identity_index: u32,
-        topup_index: u32,
+        _topup_index: u32,
     ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
-        let funding_path =
-            DerivationPath::identity_top_up_path(self.network, identity_index, topup_index);
-        self.build_asset_lock_transaction(amount_duffs, &funding_path)
+        self.build_asset_lock_with_builder(amount_duffs, AssetLockFundingType::IdentityTopUp, identity_index)
             .await
     }
 
-    /// Build an asset lock transaction using the given DIP-9 funding key path.
+    /// Build an asset lock transaction using the key-wallet builder.
     ///
     /// This is the shared implementation for both registration and top-up.
-    /// The caller provides the full derivation path for the one-time funding
-    /// key that will appear in the asset lock payload's `credit_outputs`.
+    /// Delegates UTXO selection, fee calculation, change handling, and signing
+    /// to `ManagedWalletInfo::build_asset_lock`.
     ///
     /// # Steps
     ///
-    /// 1. Derive the one-time private key from the wallet at `funding_key_path`.
-    /// 2. Select spendable UTXOs covering `amount_duffs + estimated_fee`.
-    /// 3. Build a v3 special transaction with:
-    ///    - Output 0: `OP_RETURN` burn (value = actual amount).
-    ///    - Output 1 (optional): change back to the wallet.
-    ///    - `AssetLockPayload` with a single credit output (P2PKH to the
-    ///      one-time key).
-    /// 4. Sign each input using the private key looked up from the wallet for
-    ///    the UTXO's owning address.
-    /// 5. Return the signed transaction and the one-time private key.
-    pub async fn build_asset_lock_transaction(
+    /// 1. Peek at the next unused address in the funding account's pool
+    ///    to construct the P2PKH credit output.
+    /// 2. Call `ManagedWalletInfo::build_asset_lock` which handles coin
+    ///    selection, fee estimation, transaction building, signing, and
+    ///    one-time key derivation.
+    /// 3. Convert the raw 32-byte key to a `PrivateKey`.
+    async fn build_asset_lock_with_builder(
         &self,
         amount_duffs: u64,
-        funding_key_path: &DerivationPath,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
     ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
         if amount_duffs == 0 {
             return Err(PlatformWalletError::AssetLockTransaction(
@@ -673,98 +604,125 @@ impl CoreWallet {
             ));
         }
 
-        let secp = Secp256k1::new();
+        let wallet = self.wallet.read().await;
+        let mut wallet_info = self.wallet_info.write().await;
 
-        // 1. Derive the one-time funding key.
-        let one_time_private_key = {
-            let wallet = self.wallet.read().await;
-            let extended_key = wallet
-                .derive_extended_private_key(funding_key_path)
-                .map_err(|e| {
-                    PlatformWalletError::AssetLockTransaction(format!(
-                        "Failed to derive funding key: {}",
-                        e
-                    ))
-                })?;
-            extended_key.to_priv()
+        // 1. Peek at the next unused address from the funding account to
+        //    build the credit output P2PKH script.
+        let funding_address = Self::peek_next_funding_address(
+            &mut wallet_info,
+            &wallet,
+            funding_type,
+            identity_index,
+        )?;
+
+        // 2. Build the credit output for the asset lock payload.
+        let credit_output = TxOut {
+            value: amount_duffs,
+            script_pubkey: funding_address.script_pubkey(),
         };
 
-        let one_time_public_key = one_time_private_key.public_key(&secp);
-        let one_time_key_hash = one_time_public_key.pubkey_hash();
+        let funding = CreditOutputFunding {
+            output: credit_output,
+            funding_type,
+            identity_index,
+        };
 
-        // 2. Select spendable UTXOs.
-        let (selected_utxos, fee_result) = {
-            let info = self.wallet_info.read().await;
-            let spendable: Vec<Utxo> = info.get_spendable_utxos().into_iter().cloned().collect();
+        // 3. Delegate to the key-wallet builder (account 0 for UTXOs).
+        let result = wallet_info
+            .build_asset_lock(&wallet, 0, vec![funding], DEFAULT_FEE_PER_KB)
+            .map_err(|e| {
+                PlatformWalletError::AssetLockTransaction(format!(
+                    "Asset lock builder failed: {}",
+                    e
+                ))
+            })?;
 
-            if spendable.is_empty() {
-                return Err(PlatformWalletError::AssetLockTransaction(
-                    "No spendable UTXOs available".to_string(),
-                ));
+        // 4. Convert the raw key bytes to a PrivateKey.
+        let key_bytes = result.keys.into_iter().next().ok_or_else(|| {
+            PlatformWalletError::AssetLockTransaction(
+                "Builder returned no keys".to_string(),
+            )
+        })?;
+        let one_time_private_key =
+            PrivateKey::from_byte_array(&key_bytes, self.network).map_err(|e| {
+                PlatformWalletError::AssetLockTransaction(format!(
+                    "Invalid private key from builder: {}",
+                    e
+                ))
+            })?;
+
+        Ok((result.transaction, one_time_private_key))
+    }
+
+    /// Peek at the next unused address from a funding account without
+    /// consuming it (i.e. without marking it as used).
+    ///
+    /// The key-wallet builder's `next_private_key` will later find the same
+    /// address, derive the private key, and mark it as used.
+    fn peek_next_funding_address(
+        wallet_info: &mut ManagedWalletInfo,
+        wallet: &Wallet,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+    ) -> Result<DashAddress, PlatformWalletError> {
+        let (managed_account, account_xpub) = match funding_type {
+            AssetLockFundingType::IdentityRegistration => {
+                let xpub = wallet
+                    .accounts
+                    .identity_registration
+                    .as_ref()
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .identity_registration
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Identity registration account not found".to_string(),
+                        )
+                    })?;
+                (account, xpub)
             }
-
-            self.select_utxos_and_compute_fee(spendable, amount_duffs)?
+            AssetLockFundingType::IdentityTopUp => {
+                let xpub = wallet
+                    .accounts
+                    .identity_topup
+                    .get(&identity_index)
+                    .map(|a| a.account_xpub);
+                let account = wallet_info
+                    .accounts
+                    .identity_topup
+                    .get_mut(&identity_index)
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(format!(
+                            "Identity top-up account for index {} not found",
+                            identity_index
+                        ))
+                    })?;
+                (account, xpub)
+            }
+            other => {
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "Unsupported funding type for asset lock: {:?}",
+                    other
+                )));
+            }
         };
 
-        let actual_amount = fee_result.actual_amount;
-
-        // 3. Build the transaction.
-
-        // Credit output: P2PKH to the one-time key (this goes into the payload,
-        // not the transaction outputs).
-        let payload_output = TxOut {
-            value: actual_amount,
-            script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
-        };
-
-        // Burn output: OP_RETURN
-        let burn_output = TxOut {
-            value: actual_amount,
-            script_pubkey: ScriptBuf::new_op_return(&[]),
-        };
-
-        let payload = AssetLockPayload {
-            version: 1,
-            credit_outputs: vec![payload_output],
-        };
-
-        // Build outputs: burn first, then optional change.
-        let mut outputs = vec![burn_output];
-
-        let change_address = if let Some(change_value) = fee_result.change {
-            let addr = self.next_change_address().await?;
-            outputs.push(TxOut {
-                value: change_value,
-                script_pubkey: addr.script_pubkey(),
-            });
-            Some(addr)
-        } else {
-            None
-        };
-        let _ = change_address; // will be useful later for UTXO tracking
-
-        // Build inputs from the selected UTXOs.
-        let inputs: Vec<TxIn> = selected_utxos
-            .iter()
-            .map(|(outpoint, _, _)| TxIn {
-                previous_output: *outpoint,
-                ..Default::default()
+        // Get the next unused address from the pool.  We pass
+        // `add_to_state: true` so that a newly-generated address is stored
+        // in the pool and the builder's `next_private_key` can find it.
+        // The address is NOT marked as used yet — that happens inside the
+        // builder after a successful transaction build.
+        managed_account
+            .next_address(account_xpub.as_ref(), true)
+            .map_err(|e| {
+                PlatformWalletError::AssetLockTransaction(format!(
+                    "Failed to get next funding address: {}",
+                    e
+                ))
             })
-            .collect();
-
-        let mut tx = Transaction {
-            version: 3,
-            lock_time: 0,
-            input: inputs,
-            output: outputs,
-            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(payload)),
-        };
-
-        // 4. Sign each input.
-        self.sign_transaction_inputs(&secp, &mut tx, &selected_utxos)
-            .await?;
-
-        Ok((tx, one_time_private_key))
     }
 
     /// Build and broadcast an asset lock transaction for identity registration.
@@ -901,64 +859,6 @@ impl CoreWallet {
     }
 
     // -- Private helpers -----------------------------------------------------
-
-    /// Select UTXOs covering `amount + fee`, retrying once if the initial fee
-    /// estimate was too low.
-    ///
-    /// Returns a vec of `(OutPoint, TxOut, DashAddress)` for the selected UTXOs
-    /// and the fee calculation result.
-    fn select_utxos_and_compute_fee(
-        &self,
-        mut spendable: Vec<Utxo>,
-        amount: u64,
-    ) -> Result<(Vec<(OutPoint, TxOut, DashAddress)>, AssetLockFeeResult), PlatformWalletError>
-    {
-        // Sort by value descending so we greedily select fewest UTXOs.
-        spendable.sort_by(|a, b| b.value().cmp(&a.value()));
-
-        let mut fee_estimate = MIN_ASSET_LOCK_FEE;
-
-        for _ in 0..2 {
-            let target = amount.saturating_add(fee_estimate);
-
-            let mut selected = Vec::new();
-            let mut total_input = 0u64;
-
-            for utxo in &spendable {
-                if total_input >= target {
-                    break;
-                }
-                selected.push((utxo.outpoint, utxo.txout.clone(), utxo.address.clone()));
-                total_input += utxo.value();
-            }
-
-            if total_input < amount.saturating_add(MIN_ASSET_LOCK_FEE) {
-                return Err(PlatformWalletError::AssetLockTransaction(format!(
-                    "Insufficient funds: need {} + fee, have {}",
-                    amount, total_input
-                )));
-            }
-
-            match calculate_asset_lock_fee(total_input, amount, selected.len()) {
-                Ok(fee_result) => return Ok((selected, fee_result)),
-                Err(_) if fee_estimate == MIN_ASSET_LOCK_FEE => {
-                    // Real fee exceeds initial estimate. Recompute with a better
-                    // estimate and retry so we can pick up additional UTXOs.
-                    fee_estimate =
-                        std::cmp::max(MIN_ASSET_LOCK_FEE, estimate_tx_size(selected.len(), 2));
-                    continue;
-                }
-                Err(e) => {
-                    return Err(PlatformWalletError::AssetLockTransaction(e));
-                }
-            }
-        }
-
-        Err(PlatformWalletError::AssetLockTransaction(format!(
-            "Insufficient funds after retry: need {} + fee {}",
-            amount, fee_estimate
-        )))
-    }
 
     /// Select UTXOs covering `total_output + fee` for a standard payment.
     ///
