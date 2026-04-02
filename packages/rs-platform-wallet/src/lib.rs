@@ -9,6 +9,7 @@ pub mod wallet;
 pub use block_time::BlockTime;
 pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
+#[cfg(feature = "manager")]
 pub use manager::PlatformWalletManager;
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 pub use wallet::core::{

@@ -15,7 +15,6 @@ use crate::events::PlatformWalletEvent;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-#[cfg(feature = "manager")]
 use {
     crate::manager::spv_event_forwarder::SpvEventForwarder,
     crate::manager::spv_wallet_adapter::SpvWalletAdapter,
@@ -24,7 +23,32 @@ use {
     dash_spv::{ClientConfig, DashSpvClient},
 };
 
-/// Manages multiple platform wallets and coordinates SPV sync.
+/// Multi-wallet coordinator with SPV sync and event broadcasting.
+///
+/// Mirrors the role of `key-wallet-manager`'s `WalletManager` for the Core
+/// layer, but at the Platform level: manages multiple [`PlatformWallet`]
+/// instances, coordinates SPV block/filter sync via [`DashSpvClient`], and
+/// broadcasts unified [`PlatformWalletEvent`]s (sync progress, network
+/// changes, wallet updates, finality proofs) to subscribers.
+///
+/// Each managed [`PlatformWallet`] shares its underlying `Wallet` and
+/// `ManagedWalletInfo` with the SPV adapter through `Arc<RwLock<…>>`,
+/// so balance and UTXO updates from SPV are immediately visible to all
+/// wallet operations.
+///
+/// # SPV lifecycle (requires `manager` feature)
+///
+/// - [`start_spv`](Self::start_spv) — creates a `DashSpvClient` with
+///   `SpvWalletAdapter` (wallet interface) and `SpvEventForwarder` (event
+///   bridge), then begins header/filter sync.
+/// - [`stop_spv`](Self::stop_spv) — graceful shutdown.
+///
+/// # Finality tracking
+///
+/// - [`register_for_finality`](Self::register_for_finality) — register a
+///   txid *before* broadcasting to prevent proof-arrival races.
+/// - [`wait_for_finality`](Self::wait_for_finality) — async wait for an
+///   InstantLock or ChainLock event for the registered txid.
 pub struct PlatformWalletManager {
     sdk: dash_sdk::Sdk,
     network: Network,
@@ -34,7 +58,6 @@ pub struct PlatformWalletManager {
     /// Transactions waiting for finality proof (InstantLock or ChainLock).
     /// Registered BEFORE broadcast, updated when SPV event arrives.
     finality_waiters: Mutex<BTreeMap<Txid, Option<dpp::prelude::AssetLockProof>>>,
-    #[cfg(feature = "manager")]
     spv_client: RwLock<
         Option<
             DashSpvClient<
@@ -58,7 +81,6 @@ impl PlatformWalletManager {
             event_tx,
             synced_height: AtomicU32::new(0),
             finality_waiters: Mutex::new(BTreeMap::new()),
-            #[cfg(feature = "manager")]
             spv_client: RwLock::new(None),
         }
     }
@@ -148,7 +170,6 @@ impl PlatformWalletManager {
     /// Creates a `DashSpvClient` that connects to the Dash P2P network,
     /// syncs block headers and compact block filters, and processes
     /// matching blocks through the wallet adapter.
-    #[cfg(feature = "manager")]
     pub async fn start_spv(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         // Check if already running
         {
@@ -197,7 +218,6 @@ impl PlatformWalletManager {
     }
 
     /// Stop SPV sync.
-    #[cfg(feature = "manager")]
     pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
         let mut spv_client = self.spv_client.write().await;
         if let Some(client) = spv_client.take() {
@@ -206,20 +226,6 @@ impl PlatformWalletManager {
                 .await
                 .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
         }
-        Ok(())
-    }
-
-    /// Start SPV sync (stub — requires `manager` feature).
-    #[cfg(not(feature = "manager"))]
-    pub async fn start_spv(&self) -> Result<(), PlatformWalletError> {
-        Err(PlatformWalletError::SpvError(
-            "SPV requires the 'manager' feature".to_string(),
-        ))
-    }
-
-    /// Stop SPV sync (stub — requires `manager` feature).
-    #[cfg(not(feature = "manager"))]
-    pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
         Ok(())
     }
 
