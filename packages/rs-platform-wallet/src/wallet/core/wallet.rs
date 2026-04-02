@@ -541,58 +541,18 @@ fn estimate_standard_tx_size(num_inputs: usize, num_outputs: usize) -> usize {
 const DEFAULT_FEE_PER_KB: u64 = 1000;
 
 impl CoreWallet {
-    // -- Public API ----------------------------------------------------------
-
-    /// Build an asset lock transaction for identity registration.
-    ///
-    /// Uses the key-wallet `build_asset_lock` builder with
-    /// `AssetLockFundingType::IdentityRegistration`.  The one-time funding key
-    /// is derived from the identity-registration account's address pool.
-    ///
-    /// Returns the signed transaction and the one-time private key whose
-    /// corresponding public key is embedded in the asset lock payload.
-    pub async fn build_registration_asset_lock_transaction(
-        &self,
-        amount_duffs: u64,
-        _identity_index: u32,
-    ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
-        self.build_asset_lock_with_builder(amount_duffs, AssetLockFundingType::IdentityRegistration, 0)
-            .await
-    }
-
-    /// Build an asset lock transaction for identity top-up.
-    ///
-    /// Uses the key-wallet `build_asset_lock` builder with
-    /// `AssetLockFundingType::IdentityTopUp`.  The one-time funding key is
-    /// derived from the identity-topup account for the given `identity_index`.
-    ///
-    /// Returns the signed transaction and the one-time private key whose
-    /// corresponding public key is embedded in the asset lock payload.
-    pub async fn build_topup_asset_lock_transaction(
-        &self,
-        amount_duffs: u64,
-        identity_index: u32,
-        _topup_index: u32,
-    ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
-        self.build_asset_lock_with_builder(amount_duffs, AssetLockFundingType::IdentityTopUp, identity_index)
-            .await
-    }
-
     /// Build an asset lock transaction using the key-wallet builder.
     ///
-    /// This is the shared implementation for both registration and top-up.
     /// Delegates UTXO selection, fee calculation, change handling, and signing
     /// to `ManagedWalletInfo::build_asset_lock`.
     ///
-    /// # Steps
+    /// # Arguments
     ///
-    /// 1. Peek at the next unused address in the funding account's pool
-    ///    to construct the P2PKH credit output.
-    /// 2. Call `ManagedWalletInfo::build_asset_lock` which handles coin
-    ///    selection, fee estimation, transaction building, signing, and
-    ///    one-time key derivation.
-    /// 3. Convert the raw 32-byte key to a `PrivateKey`.
-    async fn build_asset_lock_with_builder(
+    /// * `amount_duffs` — Amount to lock in duffs.
+    /// * `funding_type` — Which account to derive the one-time key from
+    ///   (e.g., `IdentityRegistration`, `IdentityTopUp`).
+    /// * `identity_index` — Identity index (used by `IdentityTopUp`, ignored by others).
+    pub async fn build_asset_lock_transaction(
         &self,
         amount_duffs: u64,
         funding_type: AssetLockFundingType,
@@ -741,7 +701,7 @@ impl CoreWallet {
         identity_index: u32,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         let (tx, key) = self
-            .build_registration_asset_lock_transaction(amount_duffs, identity_index)
+            .build_asset_lock_transaction(amount_duffs, AssetLockFundingType::IdentityRegistration, identity_index)
             .await?;
 
         let proof = self
@@ -767,7 +727,7 @@ impl CoreWallet {
         topup_index: u32,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         let (tx, key) = self
-            .build_topup_asset_lock_transaction(amount_duffs, identity_index, topup_index)
+            .build_asset_lock_transaction(amount_duffs, AssetLockFundingType::IdentityTopUp, identity_index)
             .await?;
 
         let proof = self

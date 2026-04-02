@@ -10,6 +10,7 @@ pub use block_time::BlockTime;
 pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
 pub use manager::PlatformWalletManager;
+pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 pub use wallet::core::{
     AssetLockStatus, CoreAccountSummary, CoreAddressInfo, CoreWallet, TrackedAssetLock,
 };
