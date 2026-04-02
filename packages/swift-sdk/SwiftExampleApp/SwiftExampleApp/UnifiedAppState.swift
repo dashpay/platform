@@ -139,6 +139,9 @@ class UnifiedAppState: ObservableObject {
             platformState.updateSPVClientHandle(newSpvHandle)
         }
 
+        // Rebuild the Platform SDK with the new SPV handle
+        await platformState.switchNetwork(to: network)
+
         // Reinitialize shielded service for the new network
         initializeShieldedService()
 

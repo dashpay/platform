@@ -18,9 +18,9 @@ class AppState: ObservableObject {
     @Published var currentNetwork: AppNetwork {
         didSet {
             UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
-            Task {
-                await switchNetwork(to: currentNetwork)
-            }
+            // NOTE: SDK rebuild is handled by UnifiedAppState.handleNetworkSwitch(),
+            // which coordinates SPV client teardown and handle update before rebuilding.
+            // Do NOT call switchNetwork here to avoid racing with handleNetworkSwitch.
         }
     }
 
