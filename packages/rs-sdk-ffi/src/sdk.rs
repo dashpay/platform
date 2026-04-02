@@ -646,13 +646,37 @@ pub unsafe extern "C" fn dash_sdk_create_with_spv_context(
         ));
     }
 
-    info!("dash_sdk_create_with_spv_context: creating SDK with SPV quorum provider");
+    info!("dash_sdk_create_with_spv_context: creating SDK with pure-Rust SPV context provider");
 
-    let context_provider = crate::spv_context_provider::SpvContextProvider::new(spv_client);
+    let config_ref = &*config;
+
+    // Cast to the actual FFIDashSpvClient type and obtain the masternode list engine.
+    let ffi_client = &*(spv_client as *mut dash_spv_ffi::FFIDashSpvClient);
+    let engine = match ffi_client.masternode_list_engine() {
+        Some(engine) => engine,
+        None => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                "SPV client has no masternode list engine".to_string(),
+            ));
+        }
+    };
+
+    // Convert DashSDKNetwork → dashcore::Network
+    let network = match config_ref.network {
+        DashSDKNetwork::SDKMainnet => Network::Mainnet,
+        DashSDKNetwork::SDKTestnet => Network::Testnet,
+        DashSDKNetwork::SDKRegtest => Network::Regtest,
+        DashSDKNetwork::SDKDevnet => Network::Devnet,
+        DashSDKNetwork::SDKLocal => Network::Regtest,
+    };
+
+    // Create the pure-Rust SPV context provider (no FFI bridge needed).
+    let context_provider =
+        platform_wallet::spv_context_provider::SpvContextProvider::new(engine, network);
     let wrapper = Box::new(ContextProviderWrapper::new(context_provider));
     let context_provider_handle = Box::into_raw(wrapper) as *mut ContextProviderHandle;
 
-    let config_ref = &*config;
     let extended_config = DashSDKConfigExtended {
         base_config: DashSDKConfig {
             network: config_ref.network,
