@@ -6,8 +6,8 @@
 npm install @dashevo/evo-sdk
 ```
 
-The package is **ESM-only** (`"type": "module"`). In CommonJS projects use a
-dynamic `import()`:
+The package is **ESM-only** (`"type": "module"`) and written in TypeScript with
+full type definitions included. In CommonJS projects use a dynamic `import()`:
 
 ```js
 const { EvoSDK } = await import('@dashevo/evo-sdk');
@@ -20,32 +20,31 @@ Requirements: Node.js ≥ 18.18 or any modern browser with WebAssembly support.
 ```typescript
 import { EvoSDK } from '@dashevo/evo-sdk';
 
-// Create a trusted testnet instance and connect
+// Pick your network: testnetTrusted() for development, mainnetTrusted() for production
 const sdk = EvoSDK.testnetTrusted();
-await sdk.connect();
 
-// Query the current epoch
+// Query the current epoch (connect() is called automatically on first use)
 const epoch = await sdk.epoch.current();
 console.log('Current epoch:', epoch.index);
 
-// Fetch an identity by its base58 ID
+// Fetch an existing identity by its base58 ID
 const identity = await sdk.identities.fetch('4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF');
 console.log('Balance:', identity?.getBalance());
 ```
 
 ## Connecting
 
-The SDK must be connected before making any queries. Calling `connect()` is
-asynchronous because it initialises the WASM module and, in trusted mode,
-pre-fetches quorum public keys.
+Calling `connect()` explicitly is **optional**. The SDK connects automatically
+when you call any facade method for the first time. However, you can call
+`connect()` explicitly if you want to control when the WASM module is
+initialized and quorum keys are prefetched:
 
 ```typescript
-const sdk = new EvoSDK({ network: 'testnet', trusted: true });
-await sdk.connect();
+const sdk = EvoSDK.testnetTrusted();
+await sdk.connect(); // optional — triggers WASM init and quorum prefetch now
 ```
 
-After connecting, all facade properties (`sdk.identities`, `sdk.documents`,
-etc.) are ready to use. Calling `connect()` more than once is a no-op.
+Calling `connect()` more than once is a no-op.
 
 ### Factory helpers
 

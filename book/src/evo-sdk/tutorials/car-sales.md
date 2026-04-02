@@ -4,11 +4,17 @@ Build a decentralised car listing and sales application on Dash Platform. By
 the end you will have a data contract for vehicle listings, the ability to
 create/query/update listings, and a purchase flow using document transfers.
 
+> **How this works in practice:** Data contracts are deployed once using a
+> **Node.js script** with a developer identity. After deployment, your
+> **browser app** uses the published contract ID to create, query, and update
+> documents. Steps 1-2 below are run from Node.js; steps 3 onward can run
+> in either Node.js or the browser.
+
 ## What you will learn
 
 - Designing a data contract with multiple document types
-- Publishing a contract to testnet
-- Creating, querying, and updating documents
+- Publishing a contract to testnet from a Node.js deployment script
+- Creating, querying, and updating documents (Node.js or browser)
 - Using document pricing and purchase for a sales flow
 
 ## Prerequisites

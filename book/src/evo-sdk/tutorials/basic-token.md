@@ -1,5 +1,10 @@
 # Tutorial: Creating a Basic Token
 
+> **Environment:** This tutorial uses **Node.js** scripts to deploy a contract
+> and perform token operations. For browser-based applications, deploy the
+> contract from a Node.js script first, then use the contract ID in your
+> frontend code.
+
 Create a fungible token on Dash Platform with minting, transferring, and
 balance queries. This tutorial walks through the full lifecycle from contract
 deployment to token operations.

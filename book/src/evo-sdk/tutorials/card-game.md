@@ -5,6 +5,11 @@ can be traded, and an in-game currency token is used for purchases. This
 tutorial combines data contracts, documents, and tokens into a cohesive
 application.
 
+> **Environment:** Steps 1-2 (contract design and deployment) are run from a
+> **Node.js script** using a developer/operator identity. Steps 3 onward
+> (minting, trading, querying) can run in either Node.js or a **browser app**
+> using the published contract ID.
+
 ## What you will learn
 
 - Designing a contract with both document types and tokens
