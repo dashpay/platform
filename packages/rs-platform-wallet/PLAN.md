@@ -88,8 +88,9 @@ pub(crate) struct SpvEventForwarder {
 }
 
 impl EventHandler for SpvEventForwarder {
-    fn on_sync_event(&self, event: &SyncEvent)     { /* → PlatformWalletEvent::Spv(SpvEvent::SyncProgress) */ }
-    fn on_network_event(&self, event: &NetworkEvent) { /* → PlatformWalletEvent::Spv(PeerConnected/Disconnected) */ }
+    fn on_sync_event(&self, event: &SyncEvent)     { /* → PlatformWalletEvent::Spv(SpvEvent::Sync(event)) */ }
+    fn on_network_event(&self, event: &NetworkEvent) { /* → PlatformWalletEvent::Spv(SpvEvent::Network(event)) */ }
+    fn on_progress(&self, progress: &SyncProgress) { /* → PlatformWalletEvent::Spv(SpvEvent::Progress(progress)) */ }
     fn on_wallet_event(&self, event: &WalletEvent)  { /* → PlatformWalletEvent::Wallet(event) */ }
     fn on_error(&self, error: &str)                  { /* → tracing::error! */ }
 }
@@ -103,22 +104,21 @@ impl EventHandler for SpvEventForwarder {
 - `on_error(&self, error: &str)` — fatal errors
 - All have default no-op implementations
 
-**3. Wire `start_spv()` / `stop_spv()`**
+**3. Wire SPV lifecycle via `SpvRuntime`**
 
-Replace stubs in `PlatformWalletManager` with real `DashSpvClient` lifecycle:
+SPV lifecycle is managed by `SpvRuntime` (extracted from `PlatformWalletManager`).
+`PlatformWalletManager::spv().start(config)` / `spv().stop()` delegates to `SpvRuntime`:
 
 ```rust
-// DashSpvClient generic signature:
-// DashSpvClient<W: WalletInterface, N: NetworkManager, S: StorageManager, H: EventHandler>
-// Constructor: DashSpvClient::new(config, network, storage, Arc<RwLock<wallet>>, Arc::new(handler))
+// SpvRuntime creates the SpvWalletAdapter (multi-wallet) and SpvEventForwarder
+// DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>
 
-pub async fn start_spv(&mut self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-    let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(/* ... */)));
-    let handler = Arc::new(SpvEventForwarder::new(self.event_tx.clone()));
-    let client = DashSpvClient::new(config, network, storage, adapter, handler).await?;
-    client.start().await?;
-    self.spv_client = Some(client);
-    Ok(())
+impl SpvRuntime {
+    pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        let adapter = SpvWalletAdapter::new(self.wallets.clone(), self.event_tx.clone(), self.monitor_revision.clone());
+        let handler = Arc::new(SpvEventForwarder::new(self.event_tx.clone()));
+        // ...construct and start DashSpvClient
+    }
 }
 ```
 
@@ -129,16 +129,17 @@ Need to determine concrete types for `N: NetworkManager` and `S: StorageManager`
 Currently `CoreWallet` uses SDK's `wait_for_asset_lock_proof_for_transaction()` which polls DAPI.
 The SPV-based approach (listen for IS/CL events via finality channel) requires SPV to be running,
 which isn't guaranteed for standalone `PlatformWallet`. Will be implemented when evo-tool's
-`SpvManager` is migrated to `PlatformWalletManager.start_spv()` in PR-11.
+`SpvManager` is migrated to `SpvRuntime::start()` (via `PlatformWalletManager::spv()`) in PR-11.
 
 ### What was delivered (PR-6 + follow-up)
 
 | File | Changes |
 |------|---------|
-| `src/events.rs` | `TransactionStatus` enum, enriched `SpvEvent`/`FinalityEvent`, `TransactionStatusChanged` event |
-| `src/manager/spv_wallet_adapter.rs` | Full `WalletInterface` impl, `process_instant_send_lock()`, `monitor_revision()`, per-tx status tracking with event emission |
-| `src/manager/spv_event_forwarder.rs` | `EventHandler` impl forwarding SPV sync/network/wallet/finality events to `PlatformWalletEvent` |
-| `src/manager/platform_wallet_manager.rs` | `start_spv(config)`/`stop_spv()` with real `DashSpvClient` lifecycle |
+| `src/events.rs` | `TransactionStatus` enum, `SpvEvent` (Sync/Network/Progress), `PlatformWalletEvent` (Wallet/Spv) |
+| `src/spv/wallet_adapter.rs` | Full `WalletInterface` impl, multi-wallet block/mempool processing, per-tx status tracking |
+| `src/spv/event_forwarder.rs` | `EventHandler` impl forwarding SPV sync/network/wallet events to `PlatformWalletEvent` |
+| `src/spv/runtime.rs` | `SpvRuntime` — SPV lifecycle, finality waiters, `start(config)`/`stop()` |
+| `src/manager.rs` | `PlatformWalletManager` — CRUD + `spv()` accessor |
 | `src/wallet/core/wallet.rs` | `transaction_statuses` map, `transaction_status()`, `update_transaction_status()` (monotonic) |
 | `src/error.rs` | `SpvAlreadyRunning`, `NoWalletsConfigured`, `SpvError` variants |
 | `Cargo.toml` | `dash-spv` dependency under `manager` feature gate |
@@ -157,7 +158,7 @@ which isn't guaranteed for standalone `PlatformWallet`. Will be implemented when
 - `PlatformWalletManager` — multi-wallet coordinator with create/import/remove/list/get, event subscription
 - `SpvWalletAdapter` — implements `WalletInterface` for SPV integration
 - `IdentityManager` — refactored (no sdk field, added last_scanned_index)
-- Events: `PlatformWalletEvent`, `WalletEvent`, `SpvEvent`, `FinalityEvent`
+- Events: `PlatformWalletEvent` (Wallet/Spv), `WalletEvent`, `SpvEvent`, `TransactionStatus`
 - No `WalletHandle` — `PlatformWallet.clone()` is cheap (~35 atomic ops)
 - `Wallet` stored as `Arc<RwLock<Wallet>>` (mutable — accounts added during contact establishment/sync)
 - Clean `mod.rs` files (module defs + re-exports only)
@@ -191,7 +192,7 @@ which isn't guaranteed for standalone `PlatformWallet`. Will be implemented when
 **Platform-wallet library** (`rs-platform-wallet`):
 - `CoreAddressInfo`, `CoreAccountSummary` types (`wallet/core/types.rs`)
 - Per-address methods: `all_address_info()`, `address_info()`, `account_summaries()`, `utxos_by_address()`
-- `Signer<PlatformAddress>` on `PlatformAddressWallet` — `blocking_read()` bridge with sequential lock acquisition (no dual-lock window), cached `network` field
+- `Signer<PlatformAddress>` on `PlatformAddressWallet` — `blocking_read()` bridge with sequential lock acquisition (no dual-lock window)
 - Asset lock tx building: `build_registration_asset_lock_transaction()`, `build_topup_asset_lock_transaction()`, `build_asset_lock_transaction()` — DIP-9 key derivation, greedy UTXO selection, two-pass fee calc, `AssetLockPayload`, P2PKH signing
 - `broadcast_transaction()` via DAPI `BroadcastTransactionRequest`
 - `send_transaction()` — full payment flow (UTXO select with correct output count, overflow-safe amount sum, build, sign, broadcast)
@@ -263,48 +264,63 @@ key-wallet (rust-dashcore) — reused types
 
 rs-platform-wallet
 ├── PlatformWallet               ← cheaply cloneable (~35 atomic ops), all Arc fields
+│   ├── wallet_id: WalletId
 │   ├── sdk:      Sdk                              ← ref-counted
 │   ├── core:     CoreWallet                       ← balance, UTXOs, addresses, tx building, asset locks
 │   │   ├── wallet:      Arc<RwLock<Wallet>>
 │   │   ├── wallet_info: Arc<RwLock<ManagedWalletInfo>>
 │   │   ├── transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>
-│   │   ├── tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>  ← (PR-11) lifecycle tracking
-│   │   └── network:     Network (cached)
+│   │   └── tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>
 │   ├── identity: IdentityWallet                   ← register, discover, top-up, withdraw, transfer, update, DPNS
 │   │   ├── wallet, wallet_info, identity_manager: Arc<RwLock<...>>
-│   │   ├── network: Network (cached)
 │   │   ├── signer_for(identity_id) → ManagedIdentitySigner (key_storage + IdentitySigner fallback)
 │   │   ├── update_identity(add_keys, disable_keys) ← IdentityUpdateTransition
 │   │   ├── top_up_from_addresses() / transfer_credits_to_addresses()
 │   │   ├── register_name() / resolve_name() / search_names() ← DPNS
-│   │   ├── register_identity(IdentityFundingMethod) ← (PR-11) multi-mode funding
-│   │   └── top_up_identity(TopUpFundingMethod) ← (PR-11) multi-mode top-up
+│   │   ├── register_identity(IdentityFundingMethod) ← multi-mode funding
+│   │   └── top_up_identity(TopUpFundingMethod) ← multi-mode top-up
 │   ├── dashpay:  DashPayWallet                    ← send/accept contact requests, sync contacts
 │   │   ├── wallet, wallet_info, identity_manager: Arc<RwLock<...>>
-│   │   ├── network: Network (cached)
-│   │   ├── register_contact_payment_addresses() ← (PR-12) gap limit + SPV watch
-│   │   ├── match_payment_to_contact() ← (PR-12) incoming payment attribution
-│   │   └── DIP-14 256-bit derivation (ckd_priv_256/ckd_pub_256) ← (PR-12) moved to library
+│   │   ├── register_contact_payment_addresses() ← gap limit + SPV watch
+│   │   ├── match_payment_to_contact() ← incoming payment attribution
+│   │   └── DIP-14 256-bit derivation (ckd_priv_256/ckd_pub_256) ← moved to library
 │   ├── platform: PlatformAddressWallet            ← DIP-17 sync, transfer, withdraw, fund_from_asset_lock
 │   │   ├── wallet, wallet_info: Arc<RwLock<...>>
 │   │   ├── balances: Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>
-│   │   ├── network: Network (cached)
 │   │   └── implements Signer<PlatformAddress> (blocking_read bridge)
 │   ├── tokens:   TokenWallet                      ← per-identity registry, sync, transfer, mint, burn, etc.
+│   │   ├── wallet, identity_manager: Arc<RwLock<...>>
 │   │   ├── watched: Arc<RwLock<Map<IdentityId, Set<TokenId>>>>
-│   │   ├── balances: Arc<RwLock<Map<(IdentityId, TokenId), TokenAmount>>>
+│   │   ├── balances: Arc<RwLock<Map<IdentityTokenKey, TokenAmount>>>
 │   │   └── watch/unwatch/sync/transfer/mint/burn/freeze/purchase/claim/set_price
 │   └── [shielded: Option<ShieldedWallet>]         ← feature-gated, Orchard ZK pool (PR-15)
 │
-├── PlatformWalletManager        ← multi-wallet + SPV coordinator
-│   ├── sdk, network, wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>
-│   ├── SpvWalletAdapter         ← implements WalletInterface for SPV
-│   │   ├── process_block() / process_mempool_transaction()
-│   │   ├── watched_outpoints() (for bloom filter)
-│   │   ├── process_instant_send_lock()
-│   │   └── monitor_revision() (bloom filter staleness)
-│   ├── EventHandler impl        ← forwards SPV events to PlatformWalletEvent
-│   └── start_spv() / stop_spv() ← DashSpvClient<W, N, S, H> lifecycle
+├── PlatformWalletManager        ← multi-wallet + SPV coordinator (feature-gated: manager)
+│   ├── sdk: Sdk
+│   ├── wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>
+│   ├── event_tx: broadcast::Sender<PlatformWalletEvent>
+│   ├── spv: SpvRuntime                            ← extracted SPV lifecycle
+│   └── sdk() / spv() / add_wallet() / remove_wallet() / get_wallet() / wallet_ids()
+│
+├── SpvRuntime (src/spv/runtime.rs)  ← SPV lifecycle, extracted from manager
+│   ├── wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>
+│   ├── event_tx: broadcast::Sender<PlatformWalletEvent>
+│   ├── synced_height: AtomicU32
+│   ├── monitor_revision: Arc<AtomicU64>           ← shared with SpvWalletAdapter
+│   ├── finality_waiters: Mutex<BTreeMap<Txid, Option<AssetLockProof>>>
+│   ├── client: RwLock<Option<SpvClient>>
+│   └── start(config) / stop() / synced_height() / notify_wallets_changed()
+│
+├── SpvWalletAdapter (src/spv/wallet_adapter.rs)   ← multi-wallet WalletInterface
+│   ├── wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>  ← ALL wallets
+│   ├── process_block() iterates ALL wallets
+│   ├── process_mempool_transaction() iterates ALL wallets
+│   ├── watched_outpoints() unions ALL wallets (for bloom filter)
+│   ├── process_instant_send_lock() → per-wallet status tracking
+│   └── monitor_revision: Arc<AtomicU64> (shared with SpvRuntime)
+│
+├── SpvEventForwarder (src/spv/event_forwarder.rs) ← EventHandler impl
+│   └── forwards SPV sync/network/wallet events → PlatformWalletEvent
 │
 ├── Signing
 │   ├── IdentitySigner           ← Signer<IdentityPublicKey> (ECDSA/BLS/EdDSA, DIP-9 paths)
@@ -312,16 +328,17 @@ rs-platform-wallet
 │   └── PlatformAddressWallet    ← Signer<PlatformAddress> (ECDSA P2PKH, DIP-17 paths)
 │
 ├── Events
-│   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent) | Finality(FinalityEvent) | TransactionStatusChanged
+│   ├── PlatformWalletEvent      ← Wallet(WalletEvent) | Spv(SpvEvent)
+│   ├── SpvEvent                 ← Sync(SyncEvent) | Network(NetworkEvent) | Progress(SyncProgress)
 │   └── TransactionStatus        ← Unconfirmed | InstantSendLocked | Confirmed | ChainLocked (monotonic)
 │
-└── [ShieldedWallet]             ← PR-10: shield, unshield, transfer, withdraw (Orchard/Halo2)
-    ├── keys.rs                  ← SpendingKey → FullViewingKey → OrchardAddress
-    ├── note_store.rs            ← DecryptedNote persistence, SpendableNote selection
-    ├── nullifier_store.rs       ← NullifierProvider impl
-    ├── commitment_tree.rs       ← local Sinsemilla tree (SQLite-backed)
-    ├── prover.rs                ← OrchardProver with cached ProvingKey
-    └── sync.rs                  ← note sync + nullifier sync + tree updates
+└── [ShieldedWallet]             ← PR-15: shield, unshield, transfer, withdraw (Orchard/Halo2)
+    ├── keys.rs                  ← OrchardKeySet (SpendingKey → FullViewingKey → OrchardAddress)
+    ├── store.rs                 ← ShieldedStore trait, InMemoryShieldedStore
+    ├── prover.rs                ← CachedOrchardProver with cached ProvingKey
+    ├── sync.rs                  ← note sync + nullifier sync
+    ├── operations.rs            ← shield, unshield, transfer, withdraw, shield_from_asset_lock
+    └── note_selection.rs        ← select_spendable_notes
 
 rs-sdk (Dash Platform SDK) — operations used by platform-wallet
 ├── Identity: PutIdentity, TopUpIdentity, WithdrawFromIdentity, TransferToIdentity
@@ -345,16 +362,30 @@ rs-sdk (Dash Platform SDK) — operations used by platform-wallet
   for transaction checking, as it may update wallet state (gap limit maintenance).
 - **Sub-wallets share state via Arc**: All hold `Arc<RwLock<ManagedWalletInfo>>` and
   `Arc<RwLock<Wallet>>`. SPV writes through the Arc — visible to all clones immediately.
+- **Network from sdk.network**: Sub-wallets no longer store a `network` field — they use
+  `self.sdk.network` to get the network. Eliminates redundant cached state.
 - **Lock ordering**: Always acquire `wallet` before `wallet_info` to prevent deadlocks.
   Signers use sequential `blocking_read()` (drop first lock before acquiring second).
 - **key-wallet-manager stays as separate crate**: Imports use `key_wallet_manager::*`.
   The `WalletInterface` trait, `WalletEvent`, `BlockProcessingResult`, `MempoolTransactionResult`
   are in `key_wallet_manager`.
-- **Mempool support**: `SpvWalletAdapter` implements the full `WalletInterface` including
-  `process_mempool_transaction(tx, is_instant_send)`, `watched_outpoints()`, `monitor_revision()`.
-  `DashSpvClient` is parameterized with `EventHandler` for SPV event forwarding.
+- **SpvRuntime extracted from manager**: `SpvRuntime` is a standalone struct in `src/spv/runtime.rs`
+  that owns the `DashSpvClient`, tracks sync height, and manages finality waiters. Can be used
+  both with the multi-wallet manager and potentially standalone. Manager delegates via `spv()`.
+- **Multi-wallet SPV adapter**: `SpvWalletAdapter` wraps `Arc<RwLock<BTreeMap<WalletId,
+  PlatformWallet>>>` — processes blocks and mempool transactions against ALL managed wallets,
+  not a single wallet. `watched_outpoints()` unions outpoints from all wallets for bloom filters.
+- **Shared monitor_revision via Arc<AtomicU64>**: `SpvRuntime` and `SpvWalletAdapter` share a
+  `monitor_revision` counter. `notify_wallets_changed()` bumps it on wallet add/remove, triggering
+  bloom filter rebuild in SPV. No manual filter management needed.
+- **Manager simplified to CRUD + spv()**: `PlatformWalletManager` has `sdk()`, `spv()`,
+  `add_wallet()`, `remove_wallet()`, `get_wallet()`, `wallet_ids()`, `subscribe_events()`. No
+  create/import convenience methods — callers construct `PlatformWallet` directly, then `add_wallet()`.
 - **TransactionStatus lifecycle**: Unconfirmed → InstantSendLocked → Confirmed → ChainLocked.
   Tracked per transaction in CoreWallet. Events emitted on state changes.
+- **PlatformWalletEvent**: Two variants only — `Wallet(WalletEvent)` and `Spv(SpvEvent)`.
+  `SpvEvent` wraps `Sync(SyncEvent)`, `Network(NetworkEvent)`, `Progress(SyncProgress)` from
+  dash-spv. `Spv` variant is feature-gated behind `manager`.
 - **Feature-gated shielded**: Orchard/Halo2 deps are heavy (~30s ProvingKey). Behind `shielded`
   feature. ShieldedWallet is fundamentally different (client-side state, note trial decryption,
   commitment tree) so it's a separate sub-wallet, not an extension of PlatformAddressWallet.
@@ -396,6 +427,7 @@ atomic ops — all Arc fields). No separate `WalletHandle` — use `PlatformWall
 // Same type is wrapped in per-wallet RwLock when managed by PlatformWalletManager
 // NOTE: No `wallet` field on PlatformWallet — sub-wallets hold their own Arc refs
 pub struct PlatformWallet {
+    wallet_id: WalletId,
     sdk:      Sdk,          // cheaply cloneable (ref-counted)
     core:     CoreWallet,
     identity: IdentityWallet,
@@ -405,14 +437,13 @@ pub struct PlatformWallet {
 }
 
 // Sub-wallets — stored fields, share wallet_info via Arc<RwLock<ManagedWalletInfo>>
-// Each sub-wallet caches `network: Network` to avoid lock acquisition for network queries
+// Network is accessed via sdk.network (no cached network field)
 pub struct CoreWallet {
     sdk:         Sdk,
     wallet:      Arc<RwLock<Wallet>>,
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,  // finality tracking
-    tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,  // (PR-11) asset lock lifecycle
-    network:     Network,  // cached at construction
+    tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,  // asset lock lifecycle
 }
 
 pub struct IdentityWallet {
@@ -420,7 +451,6 @@ pub struct IdentityWallet {
     wallet:           Arc<RwLock<Wallet>>,
     wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
     identity_manager: Arc<RwLock<IdentityManager>>,
-    network:          Network,  // cached at construction
 }
 
 pub struct DashPayWallet {
@@ -428,7 +458,6 @@ pub struct DashPayWallet {
     wallet:           Arc<RwLock<Wallet>>,
     wallet_info:      Arc<RwLock<ManagedWalletInfo>>,
     identity_manager: Arc<RwLock<IdentityManager>>,  // same instance as IdentityWallet
-    network:          Network,  // cached at construction
 }
 
 pub struct PlatformAddressWallet {
@@ -436,27 +465,45 @@ pub struct PlatformAddressWallet {
     wallet:      Arc<RwLock<Wallet>>,
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     balances:    Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>,  // balance cache
-    network:     Network,  // cached at construction
 }
 
 pub struct TokenWallet {
     sdk:              Sdk,
     wallet:           Arc<RwLock<Wallet>>,
     identity_manager: Arc<RwLock<IdentityManager>>,
-    network:          Network,
     watched:          Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,  // identity → tokens
-    balances:         Arc<RwLock<BTreeMap<(Identifier, Identifier), TokenAmount>>>,  // cache
+    balances:         Arc<RwLock<BTreeMap<IdentityTokenKey, TokenAmount>>>,  // cache
 }
 
-// Multi-wallet + SPV coordinator — no WalletManager<T> dependency
-// Implements WalletInterface for SPV using key-wallet functions directly
+// Multi-wallet + SPV coordinator (feature-gated: manager)
+// Delegates SPV lifecycle to SpvRuntime; simplified CRUD API
 pub struct PlatformWalletManager {
-    sdk:        Sdk,
-    network:    Network,
-    wallets:    RwLock<BTreeMap<WalletId, PlatformWallet>>,  // lock only for add/remove
-    spv_client: Option<DashSpvClient<Self, N, S, H>>,  // None until start_spv(); H: EventHandler
-    event_tx:   broadcast::Sender<PlatformWalletEvent>,
-    synced_height: AtomicU32,
+    sdk:      Sdk,
+    wallets:  Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    event_tx: broadcast::Sender<PlatformWalletEvent>,
+    spv:      SpvRuntime,  // extracted SPV lifecycle
+}
+
+// SPV client runtime — owns the DashSpvClient, tracks sync height,
+// and manages asset-lock finality proof waiting.
+// Extracted from PlatformWalletManager so it can be used standalone.
+pub struct SpvRuntime {
+    wallets:           Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    event_tx:          broadcast::Sender<PlatformWalletEvent>,
+    synced_height:     AtomicU32,
+    monitor_revision:  Arc<AtomicU64>,  // shared with SpvWalletAdapter
+    finality_waiters:  Mutex<BTreeMap<Txid, Option<AssetLockProof>>>,
+    client:            RwLock<Option<SpvClient>>,
+}
+
+// Multi-wallet SPV adapter — processes blocks against ALL wallets
+pub(crate) struct SpvWalletAdapter {
+    wallets:                Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    event_tx:               broadcast::Sender<WalletEvent>,
+    platform_event_tx:      broadcast::Sender<PlatformWalletEvent>,
+    synced_height:          AtomicU32,
+    filter_committed_height: AtomicU32,
+    monitor_revision:       Arc<AtomicU64>,  // shared with SpvRuntime
 }
 
 // IdentityManager is shared between IdentityWallet and DashPayWallet.
@@ -599,71 +646,61 @@ impl PlatformAddressWallet {
         sdk: Sdk,
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-        network: Network,
     ) -> Self {
         Self {
-            sdk, wallet, wallet_info, network,
+            sdk, wallet, wallet_info,
             balances: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 }
 ```
 
-`PlatformWalletManager` API — mirrors dashcore wallet creation methods, uses `key-wallet` types directly:
+`PlatformWalletManager` API — simplified CRUD + SPV access. Callers construct `PlatformWallet`
+directly, then add it to the manager. No create/import convenience methods:
 
 ```rust
 impl PlatformWalletManager {
     // Construction
-    pub fn new(sdk: Sdk, spv_config: ClientConfig, network: Network) -> Self;
+    pub fn new(sdk: Sdk) -> Self;
 
-    // Wallet creation — uses key-wallet's Wallet + ManagedWalletInfo directly
-    // Returns PlatformWallet (cheaply cloneable — all Arc fields)
-    pub async fn create_wallet_from_mnemonic(
-        &self, mnemonic: &str, passphrase: &str,
-        birth_height: CoreBlockHeight,
-        account_options: WalletAccountCreationOptions,
-    ) -> Result<PlatformWallet>;
+    // Accessors
+    pub fn sdk(&self) -> &Sdk;
+    pub fn spv(&self) -> &SpvRuntime;
 
-    pub async fn create_wallet_with_random_mnemonic(
-        &self,
-        account_options: WalletAccountCreationOptions,
-    ) -> Result<(PlatformWallet, Mnemonic)>;
-
-    pub async fn import_wallet_from_xprv(
-        &self, xprv: &str,
-        account_options: WalletAccountCreationOptions,
-    ) -> Result<PlatformWallet>;
-
-    pub async fn import_wallet_from_xpub(
-        &self, xpub: &str, can_sign_externally: bool,
-    ) -> Result<PlatformWallet>;
-
-    // Wallet restoration
-    pub async fn import_wallet_from_bytes(
-        &self, wallet_bytes: &[u8],
-    ) -> Result<PlatformWallet>;
-
-    // Wallet lifecycle
+    // Wallet CRUD
+    pub async fn add_wallet(&self, wallet: PlatformWallet) -> Result<PlatformWallet>;
     pub async fn remove_wallet(&self, wallet_id: &WalletId) -> Result<PlatformWallet>;
-
-    // Wallet access
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<PlatformWallet>;
-    pub async fn list_wallets(&self) -> Vec<WalletId>;
+    pub async fn wallet_ids(&self) -> Vec<WalletId>;
 
-    // SPV lifecycle — DashSpvClient<W, N, S, H: EventHandler>
-    pub async fn start_spv(&mut self) -> Result<()>;
-    pub async fn stop_spv(&mut self) -> Result<()>;
-
-    // Events — unified stream, grouped by source channel
+    // Events — unified stream
     pub fn subscribe_events(&self) -> broadcast::Receiver<PlatformWalletEvent>;
 }
 
-// Unified event enum — variants per source channel
+impl SpvRuntime {
+    pub fn new(wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+               event_tx: broadcast::Sender<PlatformWalletEvent>) -> Self;
+    pub fn synced_height(&self) -> u32;
+    pub fn notify_wallets_changed(&self);    // bumps monitor_revision
+    pub async fn start(&self, config: ClientConfig) -> Result<()>;
+    pub async fn stop(&self) -> Result<()>;
+    pub async fn register_for_finality(&self, txid: Txid);
+    pub async fn wait_for_finality(&self, txid: Txid, timeout: Duration) -> Result<AssetLockProof>;
+}
+
+// Unified event enum — two variants only
 pub enum PlatformWalletEvent {
     Wallet(WalletEvent),            // from block processing (TransactionReceived, BalanceUpdated)
-    Spv(SpvEvent),                  // from DashSpvClient (SyncProgress, PeerConnected, PeerDisconnected)
-    Finality(FinalityEvent),        // InstantLock / ChainLock
-    MempoolTransaction,             // from mempool processing
+    #[cfg(feature = "manager")]
+    Spv(SpvEvent),                  // from DashSpvClient
+}
+
+// SPV event — groups sync, network, and progress events from dash-spv
+#[cfg(feature = "manager")]
+pub enum SpvEvent {
+    Sync(dash_spv::sync::SyncEvent),
+    Network(dash_spv::network::NetworkEvent),
+    Progress(dash_spv::sync::SyncProgress),
 }
 ```
 
@@ -676,10 +713,12 @@ wallet.dashpay().send_contact_request(&sender_id, &recipient_id).await?;
 wallet.core().balance();
 ```
 
-Call sites — managed via `PlatformWalletManager` (same API — PlatformWallet is cheaply cloneable):
+Call sites — managed via `PlatformWalletManager` (construct wallet, then add to manager):
 
 ```rust
-let wallet = mgr.create_wallet_from_mnemonic("...", "", height, options).await?;
+let wallet = PlatformWallet::from_mnemonic(sdk, "word1 ...", "", 1_500_000, options)?;
+let wallet = mgr.add_wallet(wallet).await?;  // returns clone
+mgr.spv().start(config).await?;              // SPV syncs all managed wallets
 wallet.identity().register_identity(amount, keys).await?;
 wallet.dashpay().sync().await?;
 wallet.core().balance();
@@ -703,9 +742,9 @@ pub async fn sync(&self) -> Result<SyncResult, PlatformWalletError> {
 > How a `PlatformWallet` is created from key material + Sdk.
 
 `PlatformWallet` is SPV-free. It needs only key material and an `Sdk`. No SPV config here — SPV
-lives in `PlatformWalletManager`. There is no `wallet` field on `PlatformWallet` itself — each
-sub-wallet holds its own `Arc<RwLock<Wallet>>` reference. Sub-wallets also cache `network: Network`
-at construction to avoid lock acquisition for network queries.
+lives in `PlatformWalletManager` (via `SpvRuntime`). There is no `wallet` field on `PlatformWallet`
+itself — each sub-wallet holds its own `Arc<RwLock<Wallet>>` reference. Sub-wallets use
+`sdk.network` for the network (no cached `network` field).
 
 Creation methods mirror `key-wallet`'s `Wallet` constructors, plus `sdk` parameter:
 
@@ -755,13 +794,14 @@ let mut wallet = PlatformWallet::from_mnemonic(
 )?;
 wallet.identity().register_identity(amount, keys).await?;
 
-// Multi-wallet with SPV — use PlatformWalletManager (same creation signatures)
-let mgr = PlatformWalletManager::new(sdk, spv_config, network);
-let wallet = mgr.create_wallet_from_mnemonic(
-    "word1 word2 ...", "", 1_500_000,
-    WalletAccountCreationOptions::Default,
-).await?;
-mgr.start_spv().await?;
+// Multi-wallet with SPV — construct wallet, add to manager
+let mgr = PlatformWalletManager::new(sdk.clone());
+let wallet = PlatformWallet::from_mnemonic(
+    sdk, "word1 word2 ...", "",
+    1_500_000, WalletAccountCreationOptions::Default,
+)?;
+let wallet = mgr.add_wallet(wallet).await?;
+mgr.spv().start(spv_config).await?;
 ```
 
 **Internally**: each creation method calls `key-wallet`'s `Wallet::from_mnemonic()` (etc.) to create the
@@ -781,8 +821,8 @@ gap-limit discovery. Used for DIP-9 key derivation paths. Operations that need t
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/platform_wallet.rs` (new — replaces `platform_wallet_info/mod.rs`)
-- `packages/rs-platform-wallet/src/platform_wallet_manager/mod.rs` (new)
+- `packages/rs-platform-wallet/src/wallet/platform_wallet.rs` (replaces `platform_wallet_info/mod.rs`)
+- `packages/rs-platform-wallet/src/manager.rs` (feature-gated `manager`)
 
 #### Migration
 
@@ -1009,14 +1049,16 @@ block filters** (not Bloom filters). It accepts `Arc<RwLock<W: WalletInterface>>
 
 Note: `check_core_transaction()` has gained an `update_balance: bool` parameter.
 
-SPV lives in `PlatformWalletManager`, not in `PlatformWallet`. `PlatformWallet` is SPV-free.
+SPV lives in `SpvRuntime` (accessed via `PlatformWalletManager::spv()`), not in `PlatformWallet`.
+`PlatformWallet` is SPV-free.
 
-**Wiring** (`PlatformWalletManager::start_spv()`):
+**Wiring** (`SpvRuntime::start(config)`):
 
 ```rust
-// DashSpvClient::new(config, network, storage, wallet, Arc::new(handler))
-let handler = Arc::new(SpvEventHandler::new(event_tx.clone()));
-let spv = DashSpvClient::new(spv_config, network, storage, self_arc, handler).await?;
+// SpvRuntime creates SpvWalletAdapter (multi-wallet) + SpvEventForwarder
+let adapter = SpvWalletAdapter::new(wallets.clone(), event_tx.clone(), monitor_revision.clone());
+let handler = Arc::new(SpvEventForwarder::new(event_tx.clone()));
+let client = DashSpvClient::new(config, network, storage, adapter, handler).await?;
 ```
 
 **Block processing call chain**:
@@ -1032,13 +1074,11 @@ DashSpvClient
     → PlatformWalletEvent::Wallet(...) emitted
 ```
 
-**`PlatformWalletEvent`** (unified enum):
-- `Wallet(WalletEvent)` — `TransactionReceived`, `BalanceUpdated`
-- `Spv(SpvEvent)` — sync progress, peer connections
-- `Finality(FinalityEvent)` — InstantLock, ChainLock
-- `MempoolTransaction` — from mempool processing
+**`PlatformWalletEvent`** (unified enum, two variants):
+- `Wallet(WalletEvent)` — `TransactionReceived`, `BalanceUpdated` (from block/mempool processing)
+- `Spv(SpvEvent)` — `Sync(SyncEvent)`, `Network(NetworkEvent)`, `Progress(SyncProgress)` (feature-gated: `manager`)
 
-**EventHandler** impl forwards SPV events to `PlatformWalletEvent`:
+**`SpvEventForwarder`** impl (`EventHandler` trait) forwards SPV events to `PlatformWalletEvent`:
 - `on_sync_event`, `on_network_event`, `on_progress`, `on_wallet_event`, `on_error`
 
 **Event subscription**:
@@ -1048,8 +1088,8 @@ let rx: broadcast::Receiver<PlatformWalletEvent> = mgr.subscribe_events();
 
 **Two event channels**: `WalletInterface::subscribe_events()` returns `WalletEvent` (for SPV).
 `PlatformWalletManager::subscribe_events()` (public API) returns `PlatformWalletEvent` which
-wraps `WalletEvent` + `SpvEvent` + `FinalityEvent` + `MempoolTransaction`. Internally, the
-manager forwards `WalletEvent`s into the `PlatformWalletEvent` channel.
+wraps `WalletEvent` + `SpvEvent`. Internally, the `SpvWalletAdapter` forwards `WalletEvent`s
+into the `PlatformWalletEvent` channel.
 
 **No reorg notification**: `WalletInterface` has no `process_reorg` method — reorgs are handled
 only at the `ChainTipManager` level in dash-spv; the wallet is never notified.
@@ -1529,11 +1569,18 @@ Combines `resolve_name()` + `Identity::fetch()` + adds to `watched` collection a
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/identity/wallet.rs` (new)
-- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs` — (PR-10) KeyStorage, IdentityStatus, DpnsNameInfo, wallet fields; (PR-14) WatchedIdentity
-- `packages/rs-platform-wallet/src/wallet/identity/funding.rs` — (PR-11) IdentityFundingMethod, TopUpFundingMethod enums
-- `packages/rs-platform-wallet/src/wallet/signer.rs` — (PR-10) support `AtWalletDerivationPath` resolution; (PR-14) ManagedIdentitySigner
-- Consolidates: `platform_wallet_info/identity_discovery.rs`, `platform_wallet_info/key_derivation.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/wallet.rs` — IdentityWallet
+- `packages/rs-platform-wallet/src/wallet/identity/manager.rs` — IdentityManager (managed + watched)
+- `packages/rs-platform-wallet/src/wallet/identity/funding.rs` — IdentityFundingMethod, TopUpFundingMethod
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/mod.rs` — ManagedIdentity
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/key_storage.rs` — PrivateKeyData, IdentityStatus, DpnsNameInfo, WatchedIdentity
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/block_time.rs` — BlockTime
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/identity_ops.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/contact_requests.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/contacts.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/label.rs`
+- `packages/rs-platform-wallet/src/wallet/identity/managed_identity/sync.rs`
+- `packages/rs-platform-wallet/src/wallet/signer.rs` — IdentitySigner + ManagedIdentitySigner
 
 ---
 
@@ -2016,13 +2063,13 @@ pub async fn sent_contact_requests(
 
 #### Files
 
-- `packages/rs-platform-wallet/src/platform_wallet/dashpay/dip14.rs` (new — DIP-14 CKDpriv256/CKDpub256, PR-12: moved from evo-tool)
-- `packages/rs-platform-wallet/src/platform_wallet/dashpay/mod.rs` (new — consolidates `platform_wallet_info/contact_requests.rs`)
-- `packages/rs-platform-wallet/src/wallet/dashpay/contacts.rs` (PR-12) — derive_contact_xpub, account_reference, payment addresses
-- `packages/rs-platform-wallet/src/wallet/dashpay/wallet.rs` (PR-12) — register_contact_payment_addresses(), match_payment_to_contact(); (PR-14) — reject, sent_requests, label encryption, _with_signer methods
-- `packages/rs-platform-wallet/src/wallet/dashpay/payments.rs` (PR-12) — contact payment tracking, gap limit management; (PR-14) — payment address registration + matching with typed return structs
-- `packages/rs-platform-wallet/src/wallet/dashpay/auto_accept.rs` (PR-14) — proof generation + verification
-- `packages/rs-platform-wallet/src/wallet/dashpay/validation.rs` (PR-14) — pre-send validation
+- `packages/rs-platform-wallet/src/wallet/dashpay/wallet.rs` — DashPayWallet struct + methods
+- `packages/rs-platform-wallet/src/wallet/dashpay/dip14.rs` — DIP-14/15 crypto, ContactXpubData
+- `packages/rs-platform-wallet/src/wallet/dashpay/auto_accept.rs` — QR auto-accept proof
+- `packages/rs-platform-wallet/src/wallet/dashpay/validation.rs` — ContactRequestValidation
+- `packages/rs-platform-wallet/src/wallet/dashpay/contact_request.rs` — contact request types
+- `packages/rs-platform-wallet/src/wallet/dashpay/established_contact.rs` — established contact types
+- `packages/rs-platform-wallet/src/wallet/dashpay/crypto.rs` — crypto helpers
 - Reuses: `packages/rs-platform-encryption/` (DIP-15 crypto — do NOT duplicate)
 
 ---
@@ -2167,7 +2214,7 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
 **Implementation notes**:
 - `Signer::sign()` is sync, wallet is behind `tokio::sync::RwLock`. Uses `blocking_read()` with
   sequential lock acquisition — drops `wallet` lock before acquiring any other lock (no deadlock window).
-- `network: Network` is cached on `PlatformAddressWallet` at construction.
+- Network is accessed via `sdk.network` (no cached field).
 - 4 evo-tool callsites migrated: `transfer_platform_credits`, `withdraw_from_platform_address`,
   `fund_platform_address_from_asset_lock`, `top_up_identity_from_platform_addresses`.
 
@@ -2186,7 +2233,8 @@ then uses `TopUpAddress` SDK trait to credit the platform address.
 
 #### Files
 
-- `packages/rs-platform-wallet/src/wallet/platform_address_wallet.rs` (extend)
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/wallet.rs` — PlatformAddressWallet
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/provider.rs` — PlatformPaymentAddressProvider
 
 ---
 
@@ -2206,7 +2254,7 @@ pub enum TransactionStatus {
 ```
 
 Lifecycle: `Unconfirmed → InstantSendLocked → Confirmed → ChainLocked`.
-Tracked per transaction in CoreWallet. `PlatformWalletEvent::MempoolTransaction` emitted on transitions.
+Tracked per transaction in CoreWallet. `PlatformWalletEvent::Wallet(WalletEvent)` emitted on transitions.
 
 **SpvWalletAdapter** implements the full `WalletInterface` (from `key_wallet_manager`):
 
@@ -2244,16 +2292,15 @@ pub struct DashSpvClient<W, N, S, H: EventHandler> { ... }
 `on_wallet_event`, `on_error`. The platform-wallet impl forwards these to
 `PlatformWalletEvent` variants.
 
-**PlatformWalletManager** SPV lifecycle:
+**SpvRuntime** SPV lifecycle (accessed via `PlatformWalletManager::spv()`):
 
 ```rust
-impl PlatformWalletManager {
-    pub async fn start_spv(&mut self) -> Result<()>;
-    // Creates DashSpvClient<SpvWalletAdapter, N, S, SpvEventHandler>
-    // Spawns background task with cancellation token
+impl SpvRuntime {
+    pub async fn start(&self, config: ClientConfig) -> Result<()>;
+    // Creates DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>
 
-    pub async fn stop_spv(&mut self) -> Result<()>;
-    // Cancels the background task, drops the client
+    pub async fn stop(&self) -> Result<()>;
+    // Stops the client
 }
 ```
 
@@ -2263,9 +2310,10 @@ watched outpoints change (new UTXOs received).
 
 #### Files
 
-- `packages/rs-platform-wallet/src/spv/adapter.rs`
-- `packages/rs-platform-wallet/src/spv/event_handler.rs`
-- `packages/rs-platform-wallet/src/events.rs`
+- `packages/rs-platform-wallet/src/spv/wallet_adapter.rs` — SpvWalletAdapter (multi-wallet WalletInterface)
+- `packages/rs-platform-wallet/src/spv/event_forwarder.rs` — SpvEventForwarder (EventHandler impl)
+- `packages/rs-platform-wallet/src/spv/runtime.rs` — SpvRuntime (SPV lifecycle + finality)
+- `packages/rs-platform-wallet/src/events.rs` — PlatformWalletEvent, SpvEvent, TransactionStatus
 
 ---
 
@@ -2286,9 +2334,8 @@ pub struct TokenWallet {
     sdk:              Sdk,
     wallet:           Arc<RwLock<Wallet>>,
     identity_manager: Arc<RwLock<IdentityManager>>,
-    network:          Network,
     watched:          Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,  // identity → tokens
-    balances:         Arc<RwLock<BTreeMap<(Identifier, Identifier), TokenAmount>>>,  // cache
+    balances:         Arc<RwLock<BTreeMap<IdentityTokenKey, TokenAmount>>>,  // cache
 }
 ```
 
@@ -2742,7 +2789,7 @@ Unconfirmed → InstantSendLocked → Confirmed { height } → ChainLocked { hei
 - `process_block` upgrades to `Confirmed` when the tx appears in a block
 - ChainLock events upgrade to `ChainLocked`
 
-`PlatformWalletEvent::MempoolTransaction` is emitted on each status transition.
+`PlatformWalletEvent::Wallet(WalletEvent)` is emitted on each status transition.
 
 **Bloom filter staleness**: `monitor_revision()` is incremented when addresses or watched outpoints
 change. SPV detects the change and reconstructs the bloom filter to include the new addresses.
@@ -2803,7 +2850,7 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 - `CoreWallet` with `Arc<RwLock<ManagedWalletInfo>>`, balance, UTXOs, address generation (§1.3)
 - `PlatformWalletManager`: multi-wallet coordinator, `RwLock<BTreeMap>` for wallet add/remove
 - `SpvWalletAdapter` implements `WalletInterface` using `key-wallet` types (`TransactionRouter`, `WalletTransactionChecker`) — no `WalletManager<T>` dependency (§1.3.5, §1.7)
-- `PlatformWalletEvent` unified enum: `Wallet(WalletEvent)`, `Spv(SpvEvent)`, `Finality(FinalityEvent)`, `MempoolTransaction`
+- `PlatformWalletEvent` unified enum: `Wallet(WalletEvent)`, `Spv(SpvEvent)` (two variants only)
 - `monitored_addresses()` returns ALL account types including `dashpay_receival_accounts`
 - `send_transaction`, `broadcast_transaction`, asset lock proof creation (§1.3.4–1.3.6)
 - Asset lock timeout/fallback: 60s InstantLock wait, then ChainLock polling
@@ -2816,7 +2863,7 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 - Add `platform-wallet = { path = "../../platform/packages/rs-platform-wallet" }` to `Cargo.toml`
 - Replace `AppContext.wallets` + `SpvManager` with `PlatformWalletManager`
 - `wallet_lifecycle.rs`: construct via `PlatformWallet::from_mnemonic()` / `from_xprv()`, wire `sdk` from `AppContext.sdk`
-- SPV: `PlatformWalletManager::start_spv()` replaces manual `SpvManager` setup
+- SPV: `SpvRuntime::start()` (via `PlatformWalletManager::spv()`) replaces manual `SpvManager` setup
 - `PlatformWallet.clone()` replaces `WalletSeedHash` as wallet accessor (no WalletHandle)
 - Delete `src/model/wallet/` (old custom wallet struct)
 
@@ -2842,7 +2889,7 @@ Old evo-tool code is deleted in the same PR that introduces the replacement.
 - Asset lock proof creation on CoreWallet (§1.3.6): `create_asset_lock_proof()`, `create_topup_asset_lock_proof()`
 - Asset lock recovery (§1.3.7): `recover_asset_locks()`
 - Transaction sending: `send_transaction()` on CoreWallet (§1.3.4)
-- Add `network: Network` to `PlatformAddressWallet`
+- `PlatformAddressWallet` uses `sdk.network` for network access
 
 **evo-tool integration**:
 
@@ -3575,26 +3622,25 @@ tracking to platform-wallet.
 **What to implement:**
 
 ```rust
-impl PlatformWalletManager {
+impl SpvRuntime {
     /// Register a transaction to wait for finality (InstantLock or ChainLock).
     /// Call BEFORE broadcasting the transaction.
-    pub fn register_for_finality(&self, txid: Txid);
+    pub async fn register_for_finality(&self, txid: Txid);
 
     /// Wait for a finality proof for a previously registered transaction.
-    /// Listens to PlatformWalletEvent::Finality events.
     /// Returns the proof once an InstantLock or ChainLock is received.
     /// Timeout: configurable (default 5 minutes).
     pub async fn wait_for_finality(
         &self,
-        txid: &Txid,
+        txid: Txid,
         timeout: Duration,
     ) -> Result<AssetLockProof, PlatformWalletError>;
 }
 ```
 
 Internal state:
-- `finality_waiters: Arc<RwLock<BTreeMap<Txid, Option<AssetLockProof>>>>` on PlatformWalletManager
-- `SpvEventForwarder` already forwards `InstantLockReceived` / `ChainLockReceived` as `FinalityEvent`
+- `finality_waiters: Mutex<BTreeMap<Txid, Option<AssetLockProof>>>` on SpvRuntime
+- `SpvEventForwarder` forwards `InstantLockReceived` / `ChainLockReceived` events
 - Add a listener that updates `finality_waiters` when matching events arrive
 - `wait_for_finality()` polls the map with sleep intervals (like evo-tool's pattern)
 
@@ -3602,8 +3648,8 @@ Critical invariant: call `register_for_finality()` BEFORE broadcasting to preven
 race where proof arrives before registration.
 
 **Files to modify:**
-- `src/manager/platform_wallet_manager.rs` — add finality_waiters field + methods
-- `src/manager/spv_event_forwarder.rs` — forward finality events to waiter map
+- `src/spv/runtime.rs` — finality_waiters field + register/wait methods
+- `src/spv/event_forwarder.rs` — forward finality events to waiter map
 - `src/error.rs` — add FinalityTimeout variant
 
 **Done when**: `wait_for_finality(txid)` returns an AssetLockProof when IS/CL event
@@ -3736,11 +3782,12 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 
 ## TODO
 
-- [ ] **`manager` feature should gate `PlatformWalletManager` entirely** — currently `PlatformWalletManager` exists without the `manager` feature (with stub `start_spv`/`stop_spv`). Without `manager`, there's no SPV, no `key-wallet-manager`, no `dash-spv` — so `PlatformWalletManager` shouldn't exist at all. The `manager` feature should control whether the manager module is compiled. Consumers without `manager` use `PlatformWallet` directly (standalone mode).
+- [x] **`manager` feature gates `PlatformWalletManager`** — DONE: manager module gated at lib.rs level.
+- [ ] **Revisit events** — Remove fallback `WalletEvent` enum (only exists for `not(manager)` — is there a real use case without manager?). Remove duplicate `TransactionStatusChanged` from `PlatformWalletEvent` (already in `WalletEvent`). Review whether `TransactionStatus` enum is still needed or should use `TransactionContext` from dashcore.
 - [ ] **Fix `rs-platform-wallet-ffi` broken type paths** — FFI crate references old module paths (`platform_wallet_info`, `identity_manager`, `managed_identity`) that were refactored. Update imports to match new module structure.
 - [ ] **Signer code duplication** — `IdentitySigner` and `ManagedIdentitySigner` have identical `sign()`/`sign_create_witness()`/`can_sign_with()` bodies. Extract shared `sign_with_key_bytes()` helper.
 - [ ] **ShieldedWallet spending ops** — `unshield()`, `transfer()`, `withdraw()` return runtime error. Need `MerklePath` witness resolution from `ShieldedStore`. Fix when integrating with evo-tool's SQLite `ClientPersistentCommitmentTree`.
-- [ ] **FinalityEvent should carry full proof data** — currently `wait_for_finality()` returns `AssetLockProof::default()`. `FinalityEvent::InstantLock` should carry the actual `InstantLock` bytes, `ChainLock` should carry height + outpoint.
+- [ ] **Finality proof data** — `wait_for_finality()` returns `AssetLockProof::default()`. SPV `SyncEvent::InstantLockReceived` carries the actual `InstantLock` — use it to build proper proof.
 - [ ] **Restore git rev dependency** — workspace Cargo.toml currently uses local path deps for dashcore. Restore `git = "..." rev = "..."` once cargo git cache issue is resolved.
 - [ ] **`blocking_read()` deadlock risk** — `Signer::sign()` uses `blocking_read()` on tokio `RwLock`. Document constraint or consider `std::sync::RwLock` for wallet.
 
