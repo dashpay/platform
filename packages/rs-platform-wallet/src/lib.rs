@@ -1,6 +1,5 @@
 //! Platform wallet with identity management
 
-pub mod block_time;
 pub mod error;
 pub mod events;
 #[cfg(feature = "manager")]
@@ -9,7 +8,7 @@ pub mod manager;
 pub(crate) mod spv;
 pub mod wallet;
 
-pub use block_time::BlockTime;
+pub use wallet::identity::managed_identity::BlockTime;
 pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
 #[cfg(feature = "manager")]
