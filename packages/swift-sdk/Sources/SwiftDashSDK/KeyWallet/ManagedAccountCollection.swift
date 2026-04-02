@@ -3,10 +3,10 @@ import DashSDKFFI
 
 /// Swift wrapper for a collection of managed accounts
 public class ManagedAccountCollection {
-    private let handle: UnsafeMutablePointer<FFIManagedCoreAccountCollection>
+    private let handle: OpaquePointer
     private let manager: WalletManager
 
-    internal init(handle: UnsafeMutablePointer<FFIManagedCoreAccountCollection>, manager: WalletManager) {
+    internal init(handle: OpaquePointer, manager: WalletManager) {
         self.handle = handle
         self.manager = manager
     }
@@ -211,8 +211,7 @@ public class ManagedAccountCollection {
         guard let rawPointer = managed_account_collection_get_provider_operator_keys(handle) else {
             return nil
         }
-        let accountHandle = rawPointer.assumingMemoryBound(to: FFIManagedCoreAccount.self)
-        return ManagedAccount(handle: accountHandle, manager: manager)
+        return ManagedAccount(handle: rawPointer, manager: manager)
     }
 
     /// Check if provider operator keys account exists
@@ -225,8 +224,7 @@ public class ManagedAccountCollection {
         guard let rawPointer = managed_account_collection_get_provider_platform_keys(handle) else {
             return nil
         }
-        let accountHandle = rawPointer.assumingMemoryBound(to: FFIManagedCoreAccount.self)
-        return ManagedAccount(handle: accountHandle, manager: manager)
+        return ManagedAccount(handle: rawPointer, manager: manager)
     }
 
     /// Check if provider platform keys account exists

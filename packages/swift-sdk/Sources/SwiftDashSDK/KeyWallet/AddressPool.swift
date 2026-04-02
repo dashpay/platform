@@ -3,9 +3,9 @@ import DashSDKFFI
 
 /// Swift wrapper for an address pool from a managed account
 public class AddressPool {
-    private let handle: UnsafeMutablePointer<FFIAddressPool>
+    private let handle: OpaquePointer
 
-    internal init(handle: UnsafeMutablePointer<FFIAddressPool>) {
+    internal init(handle: OpaquePointer) {
         self.handle = handle
     }
 

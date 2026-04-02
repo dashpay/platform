@@ -9,7 +9,7 @@ public class ManagedWallet {
     /// - Parameter wallet: The wallet to manage
     public init(wallet: Wallet) throws {
         var error = FFIError()
-        guard let managedPointer = wallet_create_managed_wallet(wallet.ffiHandle, &error) else {
+        guard let managedPointer = wallet_create_managed_wallet(wallet.handle, &error) else {
             defer {
                 if error.message != nil {
                     error_message_free(error.message)
@@ -40,7 +40,7 @@ public class ManagedWallet {
         }
 
         let addressPtr = managed_wallet_get_next_bip44_receive_address(
-            infoHandle, wallet.ffiHandle, accountIndex, &error)
+            infoHandle, wallet.handle, accountIndex, &error)
 
         defer {
             if error.message != nil {
@@ -71,7 +71,7 @@ public class ManagedWallet {
         }
 
         let addressPtr = managed_wallet_get_next_bip44_change_address(
-            infoHandle, wallet.ffiHandle, accountIndex, &error)
+            infoHandle, wallet.handle, accountIndex, &error)
 
         defer {
             if error.message != nil {
@@ -111,7 +111,7 @@ public class ManagedWallet {
         }
 
         let success = managed_wallet_get_bip_44_external_address_range(
-            infoHandle, wallet.ffiHandle, accountIndex,
+            infoHandle, wallet.handle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
 
         defer {
@@ -159,7 +159,7 @@ public class ManagedWallet {
         }
 
         let success = managed_wallet_get_bip_44_internal_address_range(
-            infoHandle, wallet.ffiHandle, accountIndex,
+            infoHandle, wallet.handle, accountIndex,
             startIndex, endIndex, &addressesPtr, &count, &error)
 
         defer {
@@ -254,7 +254,7 @@ public class ManagedWallet {
         var error = FFIError()
 
         let success = managed_wallet_generate_addresses_to_index(
-            handle, wallet.ffiHandle, accountType.ffiValue,
+            handle, wallet.handle, accountType.ffiValue,
             accountIndex, poolType.ffiValue, targetIndex, &error)
 
         defer {

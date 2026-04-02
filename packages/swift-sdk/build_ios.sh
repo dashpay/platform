@@ -27,7 +27,6 @@ PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profil
 BUILD_IOS=false
 BUILD_SIM=false
 BUILD_MAC=false
-BUILD_INTEL_MAC=false
 CLEAN=false
 
 log_info() { echo -e "${GREEN}$1${NC}"; }
@@ -37,14 +36,13 @@ log_error() { echo -e "${RED}$1${NC}"; }
 # Help
 # -------------------------------
 show_help() {
-  echo "Usage: $0 --target <ios|sim|mac|intel-mac> [--profile <dev|release>]"
+  echo "Usage: $0 --target <ios|sim|mac> [--profile <dev|release>]"
   echo ""
   echo "Targets:"
   echo "  ios         -> iPhone device"
   echo "  sim         -> auto-detected iOS simulator"
   echo "  mac         -> Apple Silicon Mac"
-  echo "  intel-mac   -> Intel Mac"
-  echo "  all         -> all targets except Intel Mac"
+  echo "  all         -> all targets"
   echo ""
   echo "Profile:"
   echo "  dev (default)"
@@ -53,18 +51,6 @@ show_help() {
   echo "Examples:"
   echo "  $0 --target sim --profile release"
   exit 1
-}
-
-# -------------------------------
-# Detect simulator target
-# -------------------------------
-detect_sim_target() {
-  ARCH=$(uname -m)
-  if [[ "$ARCH" == "arm64" ]]; then
-    echo "aarch64-apple-ios-sim"
-  else
-    echo "x86_64-apple-ios"
-  fi
 }
 
 # -------------------------------
@@ -81,7 +67,6 @@ while [[ $# -gt 0 ]]; do
         ios) BUILD_IOS=true ;;
         sim) BUILD_SIM=true ;;
         mac) BUILD_MAC=true ;;
-        intel-mac) BUILD_INTEL_MAC=true ;;
         all) BUILD_IOS=true; BUILD_SIM=true; BUILD_MAC=true ;;
         *) log_error "Unknown target $2"; show_help ;;
       esac
@@ -113,7 +98,7 @@ fi
 # -------------------------------
 # Validation
 # -------------------------------
-if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC && ! $BUILD_INTEL_MAC; then
+if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC; then
   log_error "You must specify at least one --target"
   show_help
 fi
@@ -165,20 +150,6 @@ EOF
     perl -i -0777 -pe 's{/\*\*?\s*\n\s*The type of funding account.*?\n\s*\*/\s*\ntypedef enum \{.*?\} FFIAssetLockFundingType;\n}{}s' "$h"
     sed -i '' 's/FFIAssetLockFundingType/uint32_t/g' "$h"
   done
-
-  # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
-  # Skip types that already have a full definition in another header to avoid redefinition.
-  local defined
-  defined=$(grep -oh 'typedef struct [A-Za-z_][A-Za-z_0-9]* {' "$HEADERS_DIR"/*/*.h 2>/dev/null \
-    | sed 's/typedef struct \([^ ]*\) {/\1/' | sort -u | paste -sd'|' - || true)
-  for h in "$HEADERS_DIR"/*/*.h; do
-    if [ -n "$defined" ]; then
-      perl -i -pe "s/^typedef struct (\w+) \1;\$/
-        my \$n=\$1; \$n=~m{^($defined)\$} ? \$_ : \"typedef struct \$n { uint8_t _opaque; } \$n;\n\"/e" "$h"
-    else
-      perl -i -pe 's/^typedef struct (\w+) \1;$/typedef struct $1 { uint8_t _opaque; } $1;/' "$h"
-    fi
-  done
 }
 
 # iOS device
@@ -193,7 +164,7 @@ fi
 
 # iOS simulator
 if $BUILD_SIM; then
-  SIM_TARGET=$(detect_sim_target)
+  SIM_TARGET=aarch64-apple-ios-sim
   log_info "Building iOS simulator ($SIM_TARGET)..."
   cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
@@ -211,16 +182,6 @@ if $BUILD_MAC; then
   inject_modulemap "$MAC_HEADERS"
 fi
 
-# Intel Mac
-if $BUILD_INTEL_MAC; then
-  INTEL_MAC_TARGET="x86_64-apple-darwin"
-  log_info "Building Intel macOS ($INTEL_MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$INTEL_MAC_TARGET"
-  INTEL_MAC_LIB="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
-  INTEL_MAC_HEADERS="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/include"
-  inject_modulemap "$INTEL_MAC_HEADERS"
-fi
-
 # -------------------------------
 # Create XCFramework
 # -------------------------------
@@ -230,7 +191,6 @@ rm -rf "$XCFRAMEWORK"
 xcodebuild -create-xcframework \
   ${IOS_LIB:+-library "$IOS_LIB" -headers "$IOS_HEADERS"} \
   ${MAC_LIB:+-library "$MAC_LIB" -headers "$MAC_HEADERS"} \
-  ${INTEL_MAC_LIB:+-library "$INTEL_MAC_LIB" -headers "$INTEL_MAC_HEADERS"} \
   ${SIM_LIB:+-library "$SIM_LIB" -headers "$SIM_HEADERS"} \
   -output "$XCFRAMEWORK"
 

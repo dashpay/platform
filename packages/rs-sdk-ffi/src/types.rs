@@ -3,6 +3,7 @@
 use std::os::raw::{c_char, c_void};
 
 /// Opaque handle to an SDK instance
+#[repr(C)]
 pub struct SDKHandle {
     _private: [u8; 0],
 }
@@ -23,6 +24,7 @@ pub struct DataContractHandle {
 }
 
 /// Opaque handle to a Signer
+#[repr(C)]
 pub struct SignerHandle {
     _private: [u8; 0],
 }

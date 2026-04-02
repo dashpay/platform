@@ -73,6 +73,7 @@ impl ShieldedPoolState {
 /// Holds derived Orchard keys and all mutable state behind a `Mutex`.
 /// This is `Sync` because all mutable access goes through the mutex,
 /// making concurrent FFI calls from different Swift dispatch queues safe.
+#[repr(C)]
 pub struct ShieldedPoolClient {
     pub(crate) keys: OrchardKeySet,
     pub(crate) state: Mutex<ShieldedPoolState>,
