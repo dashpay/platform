@@ -1,33 +1,26 @@
 //! Multi-wallet manager with SPV coordination.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::Txid;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::{Mnemonic, Network};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, RwLock};
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
+use crate::manager::spv_runtime::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-use {
-    crate::manager::spv_event_forwarder::SpvEventForwarder,
-    crate::manager::spv_wallet_adapter::SpvWalletAdapter,
-    dash_spv::network::PeerNetworkManager,
-    dash_spv::storage::DiskStorageManager,
-    dash_spv::{ClientConfig, DashSpvClient},
-};
+use dash_spv::ClientConfig;
 
 /// Multi-wallet coordinator with SPV sync and event broadcasting.
 ///
 /// Mirrors the role of `key-wallet-manager`'s `WalletManager` for the Core
 /// layer, but at the Platform level: manages multiple [`PlatformWallet`]
-/// instances, coordinates SPV block/filter sync via [`DashSpvClient`], and
+/// instances, coordinates SPV block/filter sync via [`SpvRuntime`], and
 /// broadcasts unified [`PlatformWalletEvent`]s (sync progress, network
 /// changes, wallet updates, finality proofs) to subscribers.
 ///
@@ -36,11 +29,9 @@ use {
 /// so balance and UTXO updates from SPV are immediately visible to all
 /// wallet operations.
 ///
-/// # SPV lifecycle (requires `manager` feature)
+/// # SPV lifecycle
 ///
-/// - [`start_spv`](Self::start_spv) — creates a `DashSpvClient` with
-///   `SpvWalletAdapter` (wallet interface) and `SpvEventForwarder` (event
-///   bridge), then begins header/filter sync.
+/// - [`start_spv`](Self::start_spv) — starts SPV sync via [`SpvRuntime`].
 /// - [`stop_spv`](Self::stop_spv) — graceful shutdown.
 ///
 /// # Finality tracking
@@ -54,20 +45,7 @@ pub struct PlatformWalletManager {
     network: Network,
     wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
-    synced_height: AtomicU32,
-    /// Transactions waiting for finality proof (InstantLock or ChainLock).
-    /// Registered BEFORE broadcast, updated when SPV event arrives.
-    finality_waiters: Mutex<BTreeMap<Txid, Option<dpp::prelude::AssetLockProof>>>,
-    spv_client: RwLock<
-        Option<
-            DashSpvClient<
-                SpvWalletAdapter,
-                PeerNetworkManager,
-                DiskStorageManager,
-                SpvEventForwarder,
-            >,
-        >,
-    >,
+    spv: SpvRuntime,
 }
 
 impl PlatformWalletManager {
@@ -79,9 +57,7 @@ impl PlatformWalletManager {
             network,
             wallets: RwLock::new(BTreeMap::new()),
             event_tx,
-            synced_height: AtomicU32::new(0),
-            finality_waiters: Mutex::new(BTreeMap::new()),
-            spv_client: RwLock::new(None),
+            spv: SpvRuntime::new(),
         }
     }
 
@@ -160,28 +136,13 @@ impl PlatformWalletManager {
         self.event_tx.subscribe()
     }
 
-    /// Get the current synced height across all wallets.
+    /// Get the current SPV synced height.
     pub fn synced_height(&self) -> u32 {
-        self.synced_height.load(Ordering::Relaxed)
+        self.spv.synced_height()
     }
 
     /// Start SPV sync with the given configuration.
-    ///
-    /// Creates a `DashSpvClient` that connects to the Dash P2P network,
-    /// syncs block headers and compact block filters, and processes
-    /// matching blocks through the wallet adapter.
     pub async fn start_spv(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        // Check if already running
-        {
-            let client = self.spv_client.read().await;
-            if client.is_some() {
-                return Err(PlatformWalletError::SpvAlreadyRunning);
-            }
-        }
-
-        // Build the wallet adapter from all managed wallets.
-        // For now we use the first wallet — multi-wallet SPV will be handled
-        // by WalletManager<ManagedWalletInfo> in a future PR.
         let wallet = {
             let wallets = self.wallets.read().await;
             wallets
@@ -190,122 +151,28 @@ impl PlatformWalletManager {
                 .cloned()
                 .ok_or(PlatformWalletError::NoWalletsConfigured)?
         };
-
-        let adapter = SpvWalletAdapter::new(wallet, self.event_tx.clone());
-        let forwarder = SpvEventForwarder::new(self.event_tx.clone());
-
-        let network_manager = PeerNetworkManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        let storage_manager = DiskStorageManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-
-        let client = DashSpvClient::new(
-            config,
-            network_manager,
-            storage_manager,
-            Arc::new(RwLock::new(adapter)),
-            Arc::new(forwarder),
-        )
-        .await
-        .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-
-        let mut spv_client = self.spv_client.write().await;
-        *spv_client = Some(client);
-
-        Ok(())
+        self.spv.start(config, wallet, self.event_tx.clone()).await
     }
 
     /// Stop SPV sync.
     pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
-        let mut spv_client = self.spv_client.write().await;
-        if let Some(client) = spv_client.take() {
-            client
-                .stop()
-                .await
-                .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        }
-        Ok(())
+        self.spv.stop().await
     }
-
-    // ── Finality tracking ──────────────────────────────────────────────
 
     /// Register a transaction to wait for finality proof.
     /// Call BEFORE broadcasting to prevent race where proof arrives first.
     pub async fn register_for_finality(&self, txid: Txid) {
-        let mut waiters = self.finality_waiters.lock().await;
-        waiters.insert(txid, None);
+        self.spv.register_for_finality(txid).await;
     }
 
-    /// Wait for a finality proof (InstantLock or ChainLock) for a registered transaction.
-    ///
-    /// Subscribes to `PlatformWalletEvent::Finality` events and polls the
-    /// finality_waiters map until a proof arrives or timeout expires.
+    /// Wait for a finality proof (InstantLock or ChainLock) for a registered
+    /// transaction.
     pub async fn wait_for_finality(
         &self,
         txid: &Txid,
         timeout: Duration,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        let mut rx = self.event_tx.subscribe();
-
-        loop {
-            // Check if proof already arrived
-            {
-                let waiters = self.finality_waiters.lock().await;
-                if let Some(Some(proof)) = waiters.get(txid) {
-                    let proof = proof.clone();
-                    drop(waiters);
-                    self.finality_waiters.lock().await.remove(txid);
-                    return Ok(proof);
-                }
-            }
-
-            // Wait for next event or timeout
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                self.finality_waiters.lock().await.remove(txid);
-                return Err(PlatformWalletError::FinalityTimeout(*txid));
-            }
-
-            tokio::select! {
-                event = rx.recv() => {
-                    match event {
-                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. })) => {
-                            if instant_lock.txid == *txid {
-                                // TODO: Build proper InstantAssetLockProof from instant_lock data
-                                let mut waiters = self.finality_waiters.lock().await;
-                                if let Some(entry) = waiters.get_mut(txid) {
-                                    *entry = Some(dpp::prelude::AssetLockProof::default());
-                                }
-                            }
-                        }
-                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::ChainLockReceived { .. })) => {
-                            // TODO: Build proper ChainAssetLockProof with height + outpoint
-                            let mut waiters = self.finality_waiters.lock().await;
-                            if let Some(entry) = waiters.get_mut(txid) {
-                                if entry.is_none() {
-                                    *entry = Some(dpp::prelude::AssetLockProof::default());
-                                }
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                        Err(broadcast::error::RecvError::Closed) => {
-                            self.finality_waiters.lock().await.remove(txid);
-                            return Err(PlatformWalletError::SpvError(
-                                "Event channel closed".to_string(),
-                            ));
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(remaining) => {
-                    self.finality_waiters.lock().await.remove(txid);
-                    return Err(PlatformWalletError::FinalityTimeout(*txid));
-                }
-            }
-        }
+        self.spv.wait_for_finality(txid, timeout, &self.event_tx).await
     }
 
     /// Insert a wallet into the manager and return a clone.
@@ -330,7 +197,7 @@ impl std::fmt::Debug for PlatformWalletManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformWalletManager")
             .field("network", &self.network)
-            .field("synced_height", &self.synced_height.load(Ordering::Relaxed))
+            .field("spv", &self.spv)
             .finish()
     }
 }
