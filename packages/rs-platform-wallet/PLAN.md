@@ -3690,6 +3690,20 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 - [DIP-0015: DashPay](https://github.com/dashpay/dips/blob/master/dip-0015.md) — contact request structure, ECDH, AES-CBC encryption, account reference, DashPay payment paths
 - [DIP-0017: Dash Platform P2PKH Addresses](https://github.com/dashpay/dips/blob/master/dip-0017.md) — platform payment addresses at `m/9'/coin'/17'/account'/key_class'/index`
 
+---
+
+## TODO
+
+- [ ] **`manager` feature should gate `PlatformWalletManager` entirely** — currently `PlatformWalletManager` exists without the `manager` feature (with stub `start_spv`/`stop_spv`). Without `manager`, there's no SPV, no `key-wallet-manager`, no `dash-spv` — so `PlatformWalletManager` shouldn't exist at all. The `manager` feature should control whether the manager module is compiled. Consumers without `manager` use `PlatformWallet` directly (standalone mode).
+- [ ] **Fix `rs-platform-wallet-ffi` broken type paths** — FFI crate references old module paths (`platform_wallet_info`, `identity_manager`, `managed_identity`) that were refactored. Update imports to match new module structure.
+- [ ] **Signer code duplication** — `IdentitySigner` and `ManagedIdentitySigner` have identical `sign()`/`sign_create_witness()`/`can_sign_with()` bodies. Extract shared `sign_with_key_bytes()` helper.
+- [ ] **ShieldedWallet spending ops** — `unshield()`, `transfer()`, `withdraw()` return runtime error. Need `MerklePath` witness resolution from `ShieldedStore`. Fix when integrating with evo-tool's SQLite `ClientPersistentCommitmentTree`.
+- [ ] **FinalityEvent should carry full proof data** — currently `wait_for_finality()` returns `AssetLockProof::default()`. `FinalityEvent::InstantLock` should carry the actual `InstantLock` bytes, `ChainLock` should carry height + outpoint.
+- [ ] **Restore git rev dependency** — workspace Cargo.toml currently uses local path deps for dashcore. Restore `git = "..." rev = "..."` once cargo git cache issue is resolved.
+- [ ] **`blocking_read()` deadlock risk** — `Signer::sign()` uses `blocking_read()` on tokio `RwLock`. Document constraint or consider `std::sync::RwLock` for wallet.
+
+---
+
 ### Key Repositories
 
 | Repo | Disk Path | Notes |

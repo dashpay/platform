@@ -11,7 +11,7 @@ use key_wallet::{Mnemonic, Network};
 use tokio::sync::{broadcast, Mutex, RwLock};
 
 use crate::error::PlatformWalletError;
-use crate::events::{FinalityEvent, PlatformWalletEvent};
+use crate::events::PlatformWalletEvent;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -266,21 +266,17 @@ impl PlatformWalletManager {
             tokio::select! {
                 event = rx.recv() => {
                     match event {
-                        Ok(PlatformWalletEvent::Finality(FinalityEvent::InstantLock { txid: lock_txid })) => {
-                            if lock_txid == *txid {
-                                // Mark as received with default proof.
-                                // TODO: Store actual InstantLock data from SPV event
-                                // when FinalityEvent carries the full proof.
+                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. })) => {
+                            if instant_lock.txid == *txid {
+                                // TODO: Build proper InstantAssetLockProof from instant_lock data
                                 let mut waiters = self.finality_waiters.lock().await;
                                 if let Some(entry) = waiters.get_mut(txid) {
                                     *entry = Some(dpp::prelude::AssetLockProof::default());
                                 }
                             }
                         }
-                        Ok(PlatformWalletEvent::Finality(FinalityEvent::ChainLock { .. })) => {
-                            // ChainLock: mark pending waiters as finalized.
+                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::ChainLockReceived { .. })) => {
                             // TODO: Build proper ChainAssetLockProof with height + outpoint
-                            // when FinalityEvent carries the full data.
                             let mut waiters = self.finality_waiters.lock().await;
                             if let Some(entry) = waiters.get_mut(txid) {
                                 if entry.is_none() {

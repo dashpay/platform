@@ -65,52 +65,25 @@ impl TransactionStatus {
 }
 
 /// Unified event enum for the platform wallet system.
+///
+/// Wraps events from dash-spv directly — no duplicate enums.
 #[derive(Debug, Clone)]
 pub enum PlatformWalletEvent {
     /// Wallet-level events (transaction received, balance updated).
     Wallet(WalletEvent),
-    /// SPV sync events (progress, peer changes).
-    Spv(SpvEvent),
-    /// Finality events (InstantSend locks, ChainLocks).
-    Finality(FinalityEvent),
+    /// SPV sync events (headers stored, sync complete, chain/instant locks, etc.).
+    #[cfg(feature = "manager")]
+    Sync(dash_spv::sync::SyncEvent),
+    /// SPV network events (peer connected/disconnected/updated).
+    #[cfg(feature = "manager")]
+    Network(dash_spv::network::NetworkEvent),
+    /// SPV sync progress update.
+    #[cfg(feature = "manager")]
+    Progress(dash_spv::sync::SyncProgress),
     /// Transaction status changed (finality lifecycle).
     TransactionStatusChanged {
         txid: Txid,
         old_status: TransactionStatus,
         new_status: TransactionStatus,
     },
-}
-
-/// SPV synchronization events.
-#[derive(Debug, Clone)]
-pub enum SpvEvent {
-    /// Sync progress update.
-    SyncProgress {
-        /// Current synced height.
-        height: u32,
-        /// Target chain tip height.
-        total: u32,
-        /// Completion percentage (0.0 to 1.0).
-        percentage: f64,
-    },
-    /// Sync completed (all managers idle).
-    SyncComplete {
-        /// Final header tip height.
-        tip_height: u32,
-    },
-    /// Peer connected.
-    PeerConnected { address: String },
-    /// Peer disconnected.
-    PeerDisconnected { address: String },
-    /// Peer count summary update.
-    PeersUpdated { connected_count: usize },
-}
-
-/// Finality events from the SPV layer.
-#[derive(Debug, Clone)]
-pub enum FinalityEvent {
-    /// InstantSend lock received for a transaction.
-    InstantLock { txid: Txid },
-    /// ChainLock received at a given height.
-    ChainLock { height: u32 },
 }
