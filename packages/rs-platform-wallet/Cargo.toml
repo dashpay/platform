@@ -22,7 +22,7 @@ dashcore = { workspace = true }
 # SPV context provider dependencies (optional)
 dash-spv = { workspace = true, optional = true }
 dash-context-provider = { path = "../rs-context-provider", optional = true }
-tokio = { version = "1.41", optional = true }
+tokio = { version = "1.41", features = ["sync"], optional = true }
 
 # Standard dependencies
 thiserror = "1.0"

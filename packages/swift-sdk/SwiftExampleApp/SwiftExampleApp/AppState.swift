@@ -45,6 +45,8 @@ class AppState: ObservableObject {
     @Published var useTrustedQuorumFallback: Bool {
         didSet {
             UserDefaults.standard.set(useTrustedQuorumFallback, forKey: "useTrustedQuorumFallback")
+            guard modelContext != nil else { return }
+            Task { await switchNetwork(to: currentNetwork) }
         }
     }
 

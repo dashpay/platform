@@ -123,10 +123,17 @@ class UnifiedAppState: ObservableObject {
 
     // Handle network switching - called when platformState.currentNetwork changes
     func handleNetworkSwitch(to network: AppNetwork) async {
-        // Switch wallet service to new network (which recreates the SPV client)
+        // Tear down the old SDK BEFORE destroying the SPV client to avoid
+        // use-after-free: the SDK's context provider holds a pointer to the
+        // SPV client, so the SDK must be released first.
+        await MainActor.run {
+            platformState.sdk = nil
+        }
+
+        // Now safe to destroy the old SPV client and create a new one
         await walletService.switchNetwork(to: network)
 
-        // Update the SPV client handle in platform state (the old handle is now invalid)
+        // Update the SPV client handle and rebuild the SDK
         let newSpvHandle = walletService.spvClientHandle
         await MainActor.run {
             platformState.updateSPVClientHandle(newSpvHandle)

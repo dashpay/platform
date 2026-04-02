@@ -73,9 +73,18 @@ impl ContextProvider for SpvContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        let llmq_type: LLMQType = (quorum_type as u8).into();
+        let quorum_type_u8 = u8::try_from(quorum_type).map_err(|_| {
+            ContextProviderError::InvalidQuorum(format!(
+                "Quorum type {} exceeds u8 range",
+                quorum_type
+            ))
+        })?;
+        let llmq_type: LLMQType = quorum_type_u8.into();
         let quorum_hash = QuorumHash::from_byte_array(quorum_hash);
 
+        // NOTE: blocking_read() is used because ContextProvider::get_quorum_public_key
+        // is a sync trait method. The SDK calls it from a blocking context (inside
+        // tokio::task::block_in_place or from a sync thread), so this is safe.
         let engine = self.masternode_engine.blocking_read();
         let (before, _after) = engine.masternode_lists_around_height(core_chain_locked_height);
 
@@ -112,13 +121,15 @@ impl ContextProvider for SpvContextProvider {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        let height = match self.network {
-            Network::Mainnet => 1_888_888,
-            Network::Testnet => 1_289_520,
-            Network::Devnet => 1,
-            _ => 0,
-        };
-        Ok(height)
+        match self.network {
+            Network::Mainnet => Ok(1_888_888),
+            Network::Testnet => Ok(1_289_520),
+            Network::Devnet => Ok(1),
+            _ => Err(ContextProviderError::Generic(format!(
+                "Platform activation height unknown for network {:?}",
+                self.network
+            ))),
+        }
     }
 
     fn get_data_contract(
