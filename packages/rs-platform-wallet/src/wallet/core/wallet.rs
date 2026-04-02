@@ -41,6 +41,24 @@ pub struct CoreWallet {
 }
 
 impl CoreWallet {
+    /// Read access to the underlying `ManagedWalletInfo`.
+    ///
+    /// Use this when you need multiple reads in a single lock acquisition
+    /// (balance + UTXOs + addresses, etc.) to avoid redundant locking.
+    pub async fn wallet_info(&self) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
+        self.wallet_info.read().await
+    }
+
+    /// Write access to the underlying `ManagedWalletInfo`.
+    pub async fn wallet_info_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, ManagedWalletInfo> {
+        self.wallet_info.write().await
+    }
+
+    /// Read access to the underlying `Wallet` (key material).
+    pub async fn wallet(&self) -> tokio::sync::RwLockReadGuard<'_, Wallet> {
+        self.wallet.read().await
+    }
+
     /// Get the wallet balance (spendable, unconfirmed, total).
     pub async fn balance(&self) -> WalletCoreBalance {
         let info = self.wallet_info.read().await;

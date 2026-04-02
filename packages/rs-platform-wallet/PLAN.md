@@ -3790,6 +3790,7 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 - [ ] **Finality proof data** — `wait_for_finality()` returns `AssetLockProof::default()`. SPV `SyncEvent::InstantLockReceived` carries the actual `InstantLock` — use it to build proper proof.
 - [ ] **Restore git rev dependency** — workspace Cargo.toml currently uses local path deps for dashcore. Restore `git = "..." rev = "..."` once cargo git cache issue is resolved.
 - [ ] **`blocking_read()` deadlock risk** — `Signer::sign()` uses `blocking_read()` on tokio `RwLock`. Document constraint or consider `std::sync::RwLock` for wallet.
+- [ ] **Expose wallet_info lock accessor** — CoreWallet getters each acquire the lock individually and clone data (e.g. `utxos()` clones entire BTreeSet). Add `pub async fn wallet_info() -> RwLockReadGuard<ManagedWalletInfo>` for callers who need multiple reads in one lock. Stop cloning in getters — return references via the guard. Not urgent: no current caller chains multiple getters.
 
 ---
 
