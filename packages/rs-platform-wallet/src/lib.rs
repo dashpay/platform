@@ -3,6 +3,7 @@
 pub mod block_time;
 pub mod error;
 pub mod events;
+#[cfg(feature = "manager")]
 pub mod manager;
 #[cfg(feature = "manager")]
 pub(crate) mod spv;
@@ -13,6 +14,8 @@ pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
 #[cfg(feature = "manager")]
 pub use manager::PlatformWalletManager;
+#[cfg(feature = "manager")]
+pub use spv::SpvRuntime;
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 pub use wallet::core::{
     AssetLockStatus, CoreAccountSummary, CoreAddressInfo, CoreWallet, TrackedAssetLock,
