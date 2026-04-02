@@ -10,7 +10,7 @@ Node.js (≥ 18.18) and modern browsers.
 
 ## How it works
 
-```
+```text
 ┌──────────────────┐
 │  Your TypeScript  │
 │   Application     │
