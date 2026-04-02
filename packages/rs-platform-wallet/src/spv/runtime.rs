@@ -4,7 +4,7 @@
 //! used both with a multi-wallet manager and with a standalone `PlatformWallet`.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,8 +17,9 @@ use dash_spv::{ClientConfig, DashSpvClient};
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
-use crate::manager::spv_event_forwarder::SpvEventForwarder;
-use crate::manager::spv_wallet_adapter::SpvWalletAdapter;
+use crate::spv::event_forwarder::SpvEventForwarder;
+use crate::spv::wallet_adapter::SpvWalletAdapter;
+use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
 type SpvClient = DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
@@ -26,23 +27,29 @@ type SpvClient = DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorage
 /// SPV client runtime — owns the `DashSpvClient`, tracks sync height, and
 /// manages asset-lock finality proof waiting.
 ///
-/// Can be used inside [`PlatformWalletManager`](super::PlatformWalletManager)
-/// or attached to a standalone [`PlatformWallet`].
+/// Holds references to the wallets collection and event channel at construction
+/// time, so callers just need `start(config)` / `stop()`.
 pub struct SpvRuntime {
-    /// Current synced block height.
+    wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
-    /// Transactions waiting for finality proof (InstantLock or ChainLock).
-    /// Registered BEFORE broadcast, updated when SPV event arrives.
+    /// Shared with `SpvWalletAdapter` — bump to signal bloom filter rebuild.
+    monitor_revision: Arc<AtomicU64>,
     finality_waiters: Mutex<BTreeMap<Txid, Option<dpp::prelude::AssetLockProof>>>,
-    /// The running SPV client, if started.
     client: RwLock<Option<SpvClient>>,
 }
 
 impl SpvRuntime {
-    /// Create a new SPV runtime (not yet started).
-    pub fn new() -> Self {
+    /// Create a new SPV runtime bound to a wallets collection and event channel.
+    pub fn new(
+        wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+        event_tx: broadcast::Sender<PlatformWalletEvent>,
+    ) -> Self {
         Self {
+            wallets,
+            event_tx,
             synced_height: AtomicU32::new(0),
+            monitor_revision: Arc::new(AtomicU64::new(0)),
             finality_waiters: Mutex::new(BTreeMap::new()),
             client: RwLock::new(None),
         }
@@ -53,17 +60,14 @@ impl SpvRuntime {
         self.synced_height.load(Ordering::Relaxed)
     }
 
-    /// Start SPV sync with the given configuration.
-    ///
-    /// Creates a `DashSpvClient` that connects to the Dash P2P network,
-    /// syncs block headers and compact block filters, and processes
-    /// matching blocks through the wallet adapter.
-    pub async fn start(
-        &self,
-        config: ClientConfig,
-        wallet: PlatformWallet,
-        event_tx: broadcast::Sender<PlatformWalletEvent>,
-    ) -> Result<(), PlatformWalletError> {
+    /// Signal that the wallet set changed (added/removed).
+    /// SPV will rebuild the bloom filter on the next tick.
+    pub fn notify_wallets_changed(&self) {
+        self.monitor_revision.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Start SPV sync.
+    pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         {
             let running = self.client.read().await;
             if running.is_some() {
@@ -71,8 +75,12 @@ impl SpvRuntime {
             }
         }
 
-        let adapter = SpvWalletAdapter::new(wallet, event_tx.clone());
-        let forwarder = SpvEventForwarder::new(event_tx);
+        let adapter = SpvWalletAdapter::new(
+            Arc::clone(&self.wallets),
+            self.event_tx.clone(),
+            Arc::clone(&self.monitor_revision),
+        );
+        let forwarder = SpvEventForwarder::new(self.event_tx.clone());
 
         let network_manager = PeerNetworkManager::new(&config)
             .await
@@ -119,20 +127,15 @@ impl SpvRuntime {
 
     /// Wait for a finality proof (InstantLock or ChainLock) for a registered
     /// transaction.
-    ///
-    /// Listens on the provided event receiver until the matching proof arrives
-    /// or the timeout expires.
     pub async fn wait_for_finality(
         &self,
         txid: &Txid,
         timeout: Duration,
-        event_tx: &broadcast::Sender<PlatformWalletEvent>,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
         let deadline = tokio::time::Instant::now() + timeout;
-        let mut rx = event_tx.subscribe();
+        let mut rx = self.event_tx.subscribe();
 
         loop {
-            // Check if proof already arrived
             {
                 let waiters = self.finality_waiters.lock().await;
                 if let Some(Some(proof)) = waiters.get(txid) {
@@ -186,12 +189,6 @@ impl SpvRuntime {
                 }
             }
         }
-    }
-}
-
-impl Default for SpvRuntime {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

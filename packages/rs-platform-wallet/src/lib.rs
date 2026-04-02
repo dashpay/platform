@@ -4,6 +4,8 @@ pub mod block_time;
 pub mod error;
 pub mod events;
 pub mod manager;
+#[cfg(feature = "manager")]
+pub(crate) mod spv;
 pub mod wallet;
 
 pub use block_time::BlockTime;
