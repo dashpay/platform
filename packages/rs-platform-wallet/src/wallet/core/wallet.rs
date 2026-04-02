@@ -16,7 +16,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{Network, Utxo, WalletCoreBalance};
+use key_wallet::{Utxo, WalletCoreBalance};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
@@ -34,7 +34,6 @@ pub struct CoreWallet {
     pub(crate) sdk: dash_sdk::Sdk,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    pub(crate) network: Network,
     /// Per-transaction finality status tracking.
     pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
     /// Tracked asset lock transactions and their lifecycle status.
@@ -136,9 +135,9 @@ impl CoreWallet {
         info.birth_height()
     }
 
-    /// Get the cached network (sync, no lock needed).
-    pub fn network(&self) -> Network {
-        self.network
+    /// Get the network from the SDK.
+    pub fn network(&self) -> key_wallet::Network {
+        self.sdk.network
     }
 
     /// Get the transaction history.
@@ -267,7 +266,7 @@ impl CoreWallet {
     ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError> {
         use key_wallet::bip32::{ChildNumber, DerivationPath};
 
-        let coin_type = if self.network == Network::Mainnet {
+        let coin_type = if self.sdk.network == key_wallet::Network::Mainnet {
             5u32 // DASH mainnet
         } else {
             1u32 // testnet/devnet/regtest all use coin_type 1
@@ -605,7 +604,7 @@ impl CoreWallet {
             )
         })?;
         let one_time_private_key =
-            PrivateKey::from_byte_array(&key_bytes, self.network).map_err(|e| {
+            PrivateKey::from_byte_array(&key_bytes, self.sdk.network).map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Invalid private key from builder: {}",
                     e
@@ -781,7 +780,7 @@ impl CoreWallet {
 
         // 2. Derive the one-time key's P2PKH address for the bloom filter.
         let one_time_public_key = one_time_private_key.public_key(&secp);
-        let asset_lock_address = DashAddress::p2pkh(&one_time_public_key, self.network);
+        let asset_lock_address = DashAddress::p2pkh(&one_time_public_key, self.sdk.network);
 
         // 3. Start the instant-send lock stream BEFORE broadcasting to avoid
         //    missing the proof.
@@ -988,7 +987,7 @@ impl CoreWallet {
 impl std::fmt::Debug for CoreWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CoreWallet")
-            .field("network", &self.network)
+            .field("network", &self.sdk.network)
             .finish()
     }
 }

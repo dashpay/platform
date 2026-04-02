@@ -36,7 +36,6 @@ pub struct DashPayWallet {
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
-    pub(crate) network: key_wallet::Network,
 }
 
 impl std::fmt::Debug for DashPayWallet {
@@ -209,7 +208,7 @@ impl DashPayWallet {
                 user_identity_id: sender_identity_id.to_buffer(),
                 friend_identity_id: recipient_identity_id.to_buffer(),
             };
-            let account_path = account_type.derivation_path(self.network).map_err(|err| {
+            let account_path = account_type.derivation_path(self.sdk.network).map_err(|err| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to derive DashPay receiving account path: {err}"
                 ))
@@ -225,7 +224,7 @@ impl DashPayWallet {
 
             let ecdh_key = Self::derive_encryption_private_key(
                 &wallet,
-                self.network,
+                self.sdk.network,
                 identity_index,
                 &sender_encryption_key,
             )?;
@@ -234,7 +233,7 @@ impl DashPayWallet {
         };
 
         // 5. Build the signing key and signer.
-        let signer = IdentitySigner::new(self.wallet.clone(), self.network, identity_index);
+        let signer = IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index);
         let identity_public_key = sender_identity
             .public_keys()
             .values()
@@ -566,7 +565,7 @@ impl DashPayWallet {
         let wallet = self.wallet.read().await;
         super::dip14::derive_contact_xpub(
             &wallet,
-            self.network,
+            self.sdk.network,
             account_index,
             sender_id,
             recipient_id,
@@ -596,12 +595,12 @@ impl DashPayWallet {
         let wallet = self.wallet.read().await;
         let data = super::dip14::derive_contact_xpub(
             &wallet,
-            self.network,
+            self.sdk.network,
             account_index,
             sender_id,
             recipient_id,
         )?;
-        super::dip14::derive_contact_payment_addresses(&data.xpub, start_index, count, self.network)
+        super::dip14::derive_contact_payment_addresses(&data.xpub, start_index, count, self.sdk.network)
     }
 }
 

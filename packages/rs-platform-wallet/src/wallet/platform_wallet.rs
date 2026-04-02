@@ -87,7 +87,6 @@ impl PlatformWallet {
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
     ) -> Self {
-        let network = wallet.network;
         let wallet_id = wallet_info.wallet_id;
         let wallet = Arc::new(RwLock::new(wallet));
         let wallet_info = Arc::new(RwLock::new(wallet_info));
@@ -97,7 +96,6 @@ impl PlatformWallet {
             sdk: sdk.clone(),
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
-            network,
             transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
             tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
         };
@@ -107,7 +105,6 @@ impl PlatformWallet {
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
-            network,
         };
 
         let dashpay = DashPayWallet {
@@ -115,17 +112,15 @@ impl PlatformWallet {
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
-            network,
         };
 
         let platform =
-            PlatformAddressWallet::new(sdk.clone(), wallet.clone(), wallet_info.clone(), network);
+            PlatformAddressWallet::new(sdk.clone(), wallet.clone(), wallet_info.clone());
 
         let tokens = TokenWallet::new(
             sdk.clone(),
             wallet.clone(),
             identity_manager.clone(),
-            network,
         );
 
         Self {

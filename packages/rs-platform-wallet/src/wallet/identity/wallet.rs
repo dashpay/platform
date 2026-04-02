@@ -106,7 +106,6 @@ pub struct IdentityWallet {
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
-    pub(crate) network: key_wallet::Network,
 }
 
 impl IdentityWallet {
@@ -116,7 +115,7 @@ impl IdentityWallet {
     /// private keys on-the-fly from the wallet using the DIP-9 identity
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
-        IdentitySigner::new(self.wallet.clone(), self.network, identity_index)
+        IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index)
     }
 
     /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
@@ -131,7 +130,7 @@ impl IdentityWallet {
         let managed = manager
             .managed_identity(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        Ok(managed.signer(self.wallet.clone(), self.network))
+        Ok(managed.signer(self.wallet.clone(), self.sdk.network))
     }
 
     /// Get a read-lock handle to the [`IdentityManager`].
@@ -280,7 +279,7 @@ impl IdentityWallet {
             };
 
             let wallet = self.wallet.read().await;
-            let base_path: DerivationPath = match self.network {
+            let base_path: DerivationPath = match self.sdk.network {
                 key_wallet::Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
                 _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
             }

@@ -12,7 +12,7 @@ use dpp::withdrawal::Pooling;
 use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{Network, PlatformP2PKHAddress};
+use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
 
@@ -33,7 +33,6 @@ pub struct PlatformAddressWallet {
     pub(crate) sdk: dash_sdk::Sdk,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    pub(crate) network: Network,
     /// Cached platform address balances from the last sync.
     balances: Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>,
 }
@@ -44,20 +43,18 @@ impl PlatformAddressWallet {
         sdk: dash_sdk::Sdk,
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-        network: Network,
     ) -> Self {
         Self {
             sdk,
             wallet,
             wallet_info,
-            network,
             balances: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
-    /// Get the cached network (sync, no lock needed).
-    pub fn network(&self) -> Network {
-        self.network
+    /// Get the network from the SDK.
+    pub fn network(&self) -> key_wallet::Network {
+        self.sdk.network
     }
 
     /// Sync platform address balances from Platform.
@@ -67,7 +64,7 @@ impl PlatformAddressWallet {
     pub async fn sync_balances(&self) -> Result<AddressSyncResult, PlatformWalletError> {
         // Build the address provider from the wallet.
         let mut provider =
-            PlatformPaymentAddressProvider::from_wallet(self.wallet.clone(), self.network)
+            PlatformPaymentAddressProvider::from_wallet(self.wallet.clone(), self.sdk.network)
                 .map_err(|e| {
                     PlatformWalletError::AddressSync(format!(
                         "Failed to create address provider: {}",
@@ -359,7 +356,7 @@ impl Signer<PlatformAddress> for PlatformAddressWallet {
 impl std::fmt::Debug for PlatformAddressWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformAddressWallet")
-            .field("network", &self.network)
+            .field("network", &self.sdk.network)
             .finish()
     }
 }

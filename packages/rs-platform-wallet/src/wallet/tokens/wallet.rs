@@ -13,7 +13,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 use key_wallet::wallet::Wallet;
-use key_wallet::Network;
 use tokio::sync::RwLock;
 
 use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
@@ -36,7 +35,6 @@ pub struct TokenWallet {
     pub(crate) sdk: dash_sdk::Sdk,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
-    pub(crate) network: Network,
     /// Per-identity set of watched token IDs.
     watched: Arc<RwLock<BTreeMap<Identifier, BTreeSet<Identifier>>>>,
     /// Cached balances keyed by (identity_id, token_id).
@@ -49,13 +47,11 @@ impl TokenWallet {
         sdk: dash_sdk::Sdk,
         wallet: Arc<RwLock<Wallet>>,
         identity_manager: Arc<RwLock<IdentityManager>>,
-        network: Network,
     ) -> Self {
         Self {
             sdk,
             wallet,
             identity_manager,
-            network,
             watched: Arc::new(RwLock::new(BTreeMap::new())),
             balances: Arc::new(RwLock::new(BTreeMap::new())),
         }
@@ -233,7 +229,7 @@ impl TokenWallet {
             .identity_index(identity_id)
             .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
 
-        let signer = IdentitySigner::new(self.wallet.clone(), self.network, identity_index);
+        let signer = IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index);
 
         let signing_key = identity
             .get_first_public_key_matching(
@@ -1084,7 +1080,7 @@ impl TokenWallet {
 impl std::fmt::Debug for TokenWallet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenWallet")
-            .field("network", &self.network)
+            .field("network", &self.sdk.network)
             .finish()
     }
 }
