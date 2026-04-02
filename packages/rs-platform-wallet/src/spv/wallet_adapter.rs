@@ -54,26 +54,17 @@ impl SpvWalletAdapter {
         }
     }
 
-    /// Update transaction status in a wallet's CoreWallet and emit event if changed.
+    /// Update transaction status in a wallet's CoreWallet.
     async fn track_status_for_wallet(
         &self,
         wallet: &PlatformWallet,
         txid: Txid,
         new_status: TransactionStatus,
     ) {
-        if let Some(old_status) = wallet
+        wallet
             .core
             .update_transaction_status(txid, new_status)
-            .await
-        {
-            let _ = self
-                .platform_event_tx
-                .send(PlatformWalletEvent::TransactionStatusChanged {
-                    txid,
-                    old_status,
-                    new_status,
-                });
-        }
+            .await;
     }
 }
 
@@ -252,19 +243,10 @@ impl WalletInterface for SpvWalletAdapter {
                     wi.mark_instant_send_utxos(&txid);
                 }
                 if let Ok(mut statuses) = wallet.core.transaction_statuses.try_write() {
-                    let old = statuses.get(&txid).copied();
                     let new_status = TransactionStatus::InstantSendLocked;
+                    let old = statuses.get(&txid).copied();
                     if old.map_or(true, |old| new_status > old) {
                         statuses.insert(txid, new_status);
-                        if let Some(old_status) = old {
-                            let _ = self.platform_event_tx.send(
-                                PlatformWalletEvent::TransactionStatusChanged {
-                                    txid,
-                                    old_status,
-                                    new_status,
-                                },
-                            );
-                        }
                     }
                 }
             }

@@ -1,7 +1,5 @@
 //! Unified event types for the platform wallet.
 
-use dashcore::Txid;
-
 #[cfg(feature = "manager")]
 pub use key_wallet_manager::WalletEvent;
 
@@ -78,18 +76,12 @@ pub enum SpvEvent {
 
 /// Unified event enum for the platform wallet system.
 ///
-/// Wraps events from dash-spv directly — no duplicate enums.
+/// Wraps events from dash-spv and key-wallet-manager directly.
 #[derive(Debug, Clone)]
 pub enum PlatformWalletEvent {
-    /// Wallet-level events (transaction received, balance updated).
+    /// Wallet-level events (transaction received, balance updated, status changed).
     Wallet(WalletEvent),
     /// SPV events (sync, network, progress).
     #[cfg(feature = "manager")]
     Spv(SpvEvent),
-    /// Transaction status changed (finality lifecycle).
-    TransactionStatusChanged {
-        txid: Txid,
-        old_status: TransactionStatus,
-        new_status: TransactionStatus,
-    },
 }
