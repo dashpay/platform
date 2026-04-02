@@ -66,7 +66,16 @@
 - [Strategy Tests](testing/strategy-tests.md)
 - [Test Configuration](testing/test-configuration.md)
 
-# SDK
+# Evo SDK (JavaScript/TypeScript)
+
+- [Overview](evo-sdk/overview.md)
+- [Getting Started](evo-sdk/getting-started.md)
+- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [State Transitions](evo-sdk/state-transitions.md)
+- [Wallet Utilities](evo-sdk/wallet-utilities.md)
+- [Networks and Environments](evo-sdk/networks-and-environments.md)
+
+# Rust SDK
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
