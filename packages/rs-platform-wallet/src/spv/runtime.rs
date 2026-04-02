@@ -16,7 +16,7 @@ use dash_spv::storage::DiskStorageManager;
 use dash_spv::{ClientConfig, DashSpvClient};
 
 use crate::error::PlatformWalletError;
-use crate::events::PlatformWalletEvent;
+use crate::events::{PlatformWalletEvent, SpvEvent};
 use crate::spv::event_forwarder::SpvEventForwarder;
 use crate::spv::wallet_adapter::SpvWalletAdapter;
 use crate::wallet::platform_wallet::WalletId;
@@ -155,7 +155,7 @@ impl SpvRuntime {
             tokio::select! {
                 event = rx.recv() => {
                     match event {
-                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. })) => {
+                        Ok(PlatformWalletEvent::Spv(SpvEvent::Sync(dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. }))) => {
                             if instant_lock.txid == *txid {
                                 // TODO: Build proper InstantAssetLockProof from instant_lock data
                                 let mut waiters = self.finality_waiters.lock().await;
@@ -164,7 +164,7 @@ impl SpvRuntime {
                                 }
                             }
                         }
-                        Ok(PlatformWalletEvent::Sync(dash_spv::sync::SyncEvent::ChainLockReceived { .. })) => {
+                        Ok(PlatformWalletEvent::Spv(SpvEvent::Sync(dash_spv::sync::SyncEvent::ChainLockReceived { .. }))) => {
                             // TODO: Build proper ChainAssetLockProof with height + outpoint
                             let mut waiters = self.finality_waiters.lock().await;
                             if let Some(entry) = waiters.get_mut(txid) {

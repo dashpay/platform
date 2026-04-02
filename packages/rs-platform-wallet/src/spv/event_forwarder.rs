@@ -4,7 +4,7 @@ use dash_spv::EventHandler;
 use key_wallet_manager::WalletEvent;
 use tokio::sync::broadcast;
 
-use crate::events::PlatformWalletEvent;
+use crate::events::{PlatformWalletEvent, SpvEvent};
 
 /// Implements `dash_spv::EventHandler` to forward SPV events into the
 /// platform wallet's unified `PlatformWalletEvent` broadcast channel.
@@ -24,15 +24,15 @@ impl SpvEventForwarder {
 
 impl EventHandler for SpvEventForwarder {
     fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
-        self.send(PlatformWalletEvent::Sync(event.clone()));
+        self.send(PlatformWalletEvent::Spv(SpvEvent::Sync(event.clone())));
     }
 
     fn on_network_event(&self, event: &dash_spv::network::NetworkEvent) {
-        self.send(PlatformWalletEvent::Network(event.clone()));
+        self.send(PlatformWalletEvent::Spv(SpvEvent::Network(event.clone())));
     }
 
     fn on_progress(&self, progress: &dash_spv::sync::SyncProgress) {
-        self.send(PlatformWalletEvent::Progress(progress.clone()));
+        self.send(PlatformWalletEvent::Spv(SpvEvent::Progress(progress.clone())));
     }
 
     fn on_wallet_event(&self, event: &WalletEvent) {

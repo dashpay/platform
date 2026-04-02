@@ -64,6 +64,18 @@ impl TransactionStatus {
     }
 }
 
+/// SPV event — groups sync, network, and progress events from dash-spv.
+#[cfg(feature = "manager")]
+#[derive(Debug, Clone)]
+pub enum SpvEvent {
+    /// Sync lifecycle events (headers stored, sync complete, chain/instant locks, etc.).
+    Sync(dash_spv::sync::SyncEvent),
+    /// Network events (peer connected/disconnected/updated).
+    Network(dash_spv::network::NetworkEvent),
+    /// Overall sync progress update.
+    Progress(dash_spv::sync::SyncProgress),
+}
+
 /// Unified event enum for the platform wallet system.
 ///
 /// Wraps events from dash-spv directly — no duplicate enums.
@@ -71,15 +83,9 @@ impl TransactionStatus {
 pub enum PlatformWalletEvent {
     /// Wallet-level events (transaction received, balance updated).
     Wallet(WalletEvent),
-    /// SPV sync events (headers stored, sync complete, chain/instant locks, etc.).
+    /// SPV events (sync, network, progress).
     #[cfg(feature = "manager")]
-    Sync(dash_spv::sync::SyncEvent),
-    /// SPV network events (peer connected/disconnected/updated).
-    #[cfg(feature = "manager")]
-    Network(dash_spv::network::NetworkEvent),
-    /// SPV sync progress update.
-    #[cfg(feature = "manager")]
-    Progress(dash_spv::sync::SyncProgress),
+    Spv(SpvEvent),
     /// Transaction status changed (finality lifecycle).
     TransactionStatusChanged {
         txid: Txid,
