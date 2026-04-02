@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    private let handle: UnsafeMutablePointer<FFIWalletManager>
+    internal let handle: UnsafeMutablePointer<FFIWalletManager>
     internal let network: KeyWalletNetwork
     private let ownsHandle: Bool
 

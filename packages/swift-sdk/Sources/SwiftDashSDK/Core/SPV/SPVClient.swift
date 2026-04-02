@@ -44,6 +44,9 @@ class SPVClient: @unchecked Sendable {
                 return dash_spv_ffi_config_mainnet()
             case 1:
                 return dash_spv_ffi_config_testnet()
+            case 2:
+                // Regtest (local Docker)
+                return dash_spv_ffi_config_new(FFINetwork(rawValue: 2))
             case 3:
                 // Map devnet to custom FFINetwork value 3
                 return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
@@ -58,6 +61,7 @@ class SPVClient: @unchecked Sendable {
 
         // If requested, prefer local core peers (defaults to 127.0.0.1 with network default port)
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+            || UserDefaults.standard.bool(forKey: "useDockerSetup")
         // Only restrict to configured peers when using local core, if not, allow DNS discovery
         let restrictToConfiguredPeers = useLocalCore
         if useLocalCore {
@@ -65,6 +69,8 @@ class SPVClient: @unchecked Sendable {
             if swiftLoggingEnabled {
                 print("[SPV][Config] Use Local Core enabled; peers=\(peers.joined(separator: ", "))")
             }
+            // Clear default peers before adding custom Docker peers
+            dash_spv_ffi_config_clear_peers(configPtr)
             // Add peers via FFI (supports "ip:port" or bare IP for network-default port)
             for addr in peers {
                 addr.withCString { cstr in
@@ -135,9 +141,9 @@ class SPVClient: @unchecked Sendable {
     }
 
     private static func readLocalCorePeers() -> [String] {
-        // If no override is set, default to 127.0.0.1 and let FFI pick port by network
+        // If no override is set, default to dashmate Docker Core P2P port
         let raw = UserDefaults.standard.string(forKey: "corePeerAddresses")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1")
+        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1:20001")
         return list
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -190,6 +196,25 @@ class SPVClient: @unchecked Sendable {
         config = nil
     }
 
+    // MARK: - Broadcast Transactions
+
+    func broadcastTransaction(_ transactionData: Data) throws {
+        try transactionData.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+            guard let txBytes = ptr.bindMemory(to: UInt8.self).baseAddress else {
+                throw SPVError.transactionBroadcastFailed("Invalid transaction data pointer")
+            }
+            let result = dash_spv_ffi_client_broadcast_transaction(
+                client,
+                txBytes,
+                UInt(transactionData.count)
+            )
+
+            if result != 0 {
+                throw SPVError.transactionBroadcastFailed(SPVClient.getLastDashFFIError())
+            }
+        }
+    }
+
     // MARK: - Synchronization
 
     func startSync() async throws {
@@ -235,6 +260,7 @@ public enum SPVError: LocalizedError {
     case alreadySyncing
     case syncFailed(String)
     case storageOperationFailed(String)
+    case transactionBroadcastFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -254,6 +280,8 @@ public enum SPVError: LocalizedError {
             return "Sync failed: \(reason)"
         case let .storageOperationFailed(reason):
             return reason
+        case let .transactionBroadcastFailed(reason):
+            return "Transaction broadcast failed: \(reason)"
         }
     }
 }

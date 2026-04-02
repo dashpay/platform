@@ -104,6 +104,9 @@ public class WalletService: ObservableObject {
     private var spvClient: SPVClient
     public private(set) var walletManager: CoreWalletManager
 
+    // InstantSend lock storage for asset lock flow
+    private let instantLockStore = InstantLockStore()
+
     public init(modelContainer: ModelContainer, network: AppNetwork) {
         self.modelContainer = modelContainer
         self.network = network
@@ -236,6 +239,19 @@ public class WalletService: ObservableObject {
       self.initializeNewSPVClient()
     }
 
+    // MARK: - Transaction Broadcasting
+
+    /// Broadcast a raw transaction on the Core P2P network.
+    public func broadcastTransaction(_ transactionData: Data) throws {
+        try spvClient.broadcastTransaction(transactionData)
+    }
+
+    /// Wait for an InstantSend lock for a specific transaction.
+    /// Returns the serialized IS lock bytes when received, or throws on timeout.
+    public func waitForInstantLock(txid: Data, timeout: TimeInterval = 30) async throws -> Data {
+        try await instantLockStore.waitForLock(txid: txid, timeout: timeout)
+    }
+
     public func clearSpvStorage() {
         if syncProgress.state.isRunning() {
             print("[SPV][Clear] Sync task is running, cannot clear storage")
@@ -314,7 +330,9 @@ public class WalletService: ObservableObject {
         func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {}
         func onMasternodeStateUpdated(_ height: UInt32) {}
         func onChainLockReceived(_ height: UInt32, _ hash:  Data, _ signature: Data, _ validated: Bool) {}
-        func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}
+        func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {
+            walletService.instantLockStore.store(txid: txid, lockData: instantLockData)
+        }
         func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {
             SDKLogger.error("Sync manager \(manager) error: \(errorMsg)")
 
@@ -391,5 +409,47 @@ public class WalletService: ObservableObject {
 extension Data {
     public var hexString: String {
         return map { String(format: "%02hhx", $0) }.joined()
+    }
+}
+
+// MARK: - InstantSend Lock Store
+
+/// Thread-safe store for InstantSend lock data, keyed by txid.
+/// Supports async waiting for a specific txid's IS lock to arrive.
+internal final class InstantLockStore: @unchecked Sendable {
+    private var locks: [Data: Data] = [:]
+    private var continuations: [Data: CheckedContinuation<Data, Error>] = [:]
+    private let queue = DispatchQueue(label: "com.dash.instantlock-store")
+
+    /// Store an IS lock. Resumes waiter if one exists for this txid.
+    func store(txid: Data, lockData: Data) {
+        var cont: CheckedContinuation<Data, Error>?
+        queue.sync {
+            locks[txid] = lockData
+            cont = continuations.removeValue(forKey: txid)
+        }
+        cont?.resume(returning: lockData)
+    }
+
+    /// Wait for an IS lock for a specific txid.
+    /// Returns immediately if already cached, otherwise polls until received or timeout.
+    func waitForLock(txid: Data, timeout: TimeInterval = 30) async throws -> Data {
+        // Check if already available
+        if let existing = queue.sync(execute: { locks[txid] }) {
+            return existing
+        }
+
+        // Poll-based approach — simpler and avoids continuation resume races
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try await Task.sleep(nanoseconds: 250_000_000) // 250ms
+            if let existing = queue.sync(execute: { locks[txid] }) {
+                return existing
+            }
+        }
+
+        throw SPVError.transactionBroadcastFailed(
+            "InstantSend lock timeout after \(Int(timeout))s for txid \(txid.hexString)"
+        )
     }
 }
