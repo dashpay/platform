@@ -82,10 +82,14 @@ impl ContextProvider for SpvContextProvider {
         let llmq_type: LLMQType = quorum_type_u8.into();
         let quorum_hash = QuorumHash::from_byte_array(quorum_hash);
 
-        // NOTE: blocking_read() is used because ContextProvider::get_quorum_public_key
-        // is a sync trait method. The SDK calls it from a blocking context (inside
-        // tokio::task::block_in_place or from a sync thread), so this is safe.
-        let engine = self.masternode_engine.blocking_read();
+        // Use try_read() instead of blocking_read() because this sync method
+        // may be called from within a Tokio async context (proof verification
+        // happens inside async tasks). blocking_read() would panic in that case.
+        let engine = self.masternode_engine.try_read().map_err(|_| {
+            ContextProviderError::Generic(
+                "Masternode engine lock is busy; retry quorum lookup".to_string(),
+            )
+        })?;
         let (before, _after) = engine.masternode_lists_around_height(core_chain_locked_height);
 
         let ml = before.ok_or_else(|| {
