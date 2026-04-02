@@ -221,7 +221,10 @@ export function useTokenBalance(identityId: string, tokenId: string) {
   return useDashQuery(
     async (sdk) => {
       const balances = await sdk.tokens.identityBalances(identityId, [tokenId]);
-      return balances.get(tokenId) ?? 0n;
+      for (const [id, balance] of balances) {
+        if (id.toString() === tokenId) return balance;
+      }
+      return 0n;
     },
     [identityId, tokenId],
   );
@@ -323,9 +326,9 @@ export function IdentityViewer() {
       {error && <p className="error">{error}</p>}
       {identity && (
         <div className="identity-card">
-          <p><strong>ID:</strong> {identity.getId().toString()}</p>
-          <p><strong>Balance:</strong> {identity.getBalance().toString()} credits</p>
-          <p><strong>Public keys:</strong> {identity.getPublicKeys().length}</p>
+          <p><strong>ID:</strong> {identity.id.toString()}</p>
+          <p><strong>Balance:</strong> {identity.balance.toString()} credits</p>
+          <p><strong>Public keys:</strong> {identity.publicKeys.length}</p>
         </div>
       )}
     </div>
@@ -344,8 +347,8 @@ const CONTRACT_ID = 'YOUR_CONTRACT_ID';
 
 export function ListingsList() {
   const { data: results, isLoading, error, refetch } = useDocuments({
-    contractId: CONTRACT_ID,
-    documentType: 'listing',
+    dataContractId: CONTRACT_ID,
+    documentTypeName: 'listing',
     where: [['status', '==', 'available']],
     orderBy: [['priceUsd', 'asc']],
     limit: 20,
@@ -362,7 +365,7 @@ export function ListingsList() {
       <ul>
         {[...results.entries()].map(([id, doc]) => {
           if (!doc) return null;
-          const d = doc.getData();
+          const d = doc.properties as Record<string, unknown>;
           return (
             <li key={id}>
               <strong>{d.year} {d.make} {d.model}</strong> — ${d.priceUsd}
@@ -381,11 +384,13 @@ export function ListingsList() {
 
 ```tsx
 import { useState, useCallback } from 'react';
+import { Document, Identifier, IdentitySigner } from '@dashevo/evo-sdk';
 import { useDashMutation } from '../hooks/useDashMutation';
 
 const CONTRACT_ID = 'YOUR_CONTRACT_ID';
 const IDENTITY_ID = 'YOUR_IDENTITY_ID';
 const PRIVATE_KEY = 'YOUR_PRIVATE_KEY_WIF';
+const SIGNING_KEY_INDEX = 0;
 
 export function CreateListing() {
   const [make, setMake] = useState('');
@@ -395,11 +400,17 @@ export function CreateListing() {
 
   const mutation = useDashMutation(
     useCallback(
-      (sdk) =>
-        sdk.documents.create({
-          contractId: CONTRACT_ID,
-          documentType: 'listing',
-          document: {
+      async (sdk) => {
+        const identity = await sdk.identities.fetch(IDENTITY_ID);
+        const identityKey = identity.publicKeys[SIGNING_KEY_INDEX];
+        const signer = new IdentitySigner();
+        signer.addKeyFromWif(PRIVATE_KEY);
+
+        const doc = new Document({
+          documentTypeName: 'listing',
+          dataContractId: new Identifier(CONTRACT_ID),
+          ownerId: new Identifier(IDENTITY_ID),
+          properties: {
             make,
             model,
             year,
@@ -407,11 +418,9 @@ export function CreateListing() {
             mileageKm: 0,
             status: 'available',
           },
-          identityId: IDENTITY_ID,
-          privateKeyWif: PRIVATE_KEY,
-          signingKeyIndex: 0,
-          nonce: sdk.identities.contractNonce(IDENTITY_ID, CONTRACT_ID),
-        }),
+        });
+        return sdk.documents.create({ document: doc, identityKey, signer });
+      },
       [make, model, year, price],
     ),
   );
