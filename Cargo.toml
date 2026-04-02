@@ -43,19 +43,19 @@ members = [
     "packages/rs-platform-wallet",
     "packages/rs-platform-wallet-ffi",
     "packages/rs-platform-encryption",
-    "packages/wasm-sdk", 
+    "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
     "packages/rs-scripts",
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "6638745c27119778d4c78959003955f00bad373c" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "dda1db7a7367bb7a6a48de7f4ed79da708266460" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

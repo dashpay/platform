@@ -471,9 +471,7 @@ protocol SPVWalletEventsHandler: AnyObject {
     func onTransactionReceived(
         _ walletId: String,
         _ accountIndex: UInt32,
-        _ txid: Data,
-        _ amount: Int64,
-        _ addresses: [String]
+        _ record: NotOwnedTransactionRecord
     )
 
     func onBalanceUpdated(
@@ -500,11 +498,8 @@ extension SPVWalletEventsHandler {
 
 private func onSpvTransactionReceivedCallbackC(
     walletIdPtr: UnsafePointer<CChar>?,
-    status: FFITransactionContext,
     accountIndex: UInt32,
-    txidPtr: UnsafePointer<Byte32>?,
-    amount: Int64,
-    addressesPtr: UnsafePointer<CChar>?,
+    recordPtr: UnsafePointer<FFITransactionRecord>?,
     userData: UnsafeMutableRawPointer?
 ) {
     let handler = rawPtrIntoSpvWalletEventsHandler(userData)
@@ -514,16 +509,18 @@ private func onSpvTransactionReceivedCallbackC(
         return
     }
 
+    guard let recordPtr else {
+        assertionFailure("TransactionReceived record pointer is nil")
+        return
+    }
+
     let walletId = String(cString: walletIdPtr)
-    let txid = bytePtrIntoData(txidPtr, 32)
-    let addresses = addressesPtrIntoString(addressesPtr)
+    let record = NotOwnedTransactionRecord(handle: recordPtr)
 
     handler.onTransactionReceived(
         walletId,
         accountIndex,
-        txid,
-        amount,
-        addresses
+        record
     )
 }
 
@@ -570,9 +567,7 @@ private final class DummySPVWalletEventsHandler: SPVWalletEventsHandler {
     func onTransactionReceived(
         _: String,
         _: UInt32,
-        _: Data,
-        _: Int64,
-        _: [String]
+        _: NotOwnedTransactionRecord,
     ) {}
 
     func onBalanceUpdated(

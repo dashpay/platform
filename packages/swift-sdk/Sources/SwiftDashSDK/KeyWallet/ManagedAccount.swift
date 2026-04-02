@@ -89,8 +89,8 @@ public class ManagedAccount {
 
             // Convert block hash if present
             let blockHashHex: String?
-            if ffiTx.height > 0 {
-                blockHashHex = withUnsafeBytes(of: ffiTx.block_hash) { buffer in
+            if ffiTx.context.block_info.height > 0 {
+                blockHashHex = withUnsafeBytes(of: ffiTx.context.block_info.block_hash) { buffer in
                     buffer.map { String(format: "%02x", $0) }.joined()
                 }
             } else {
@@ -100,11 +100,10 @@ public class ManagedAccount {
             let transaction = WalletTransaction(
                 txid: txidHex,
                 netAmount: ffiTx.net_amount,
-                height: ffiTx.height,
+                height: ffiTx.context.block_info.height,
                 blockHash: blockHashHex,
-                timestamp: ffiTx.timestamp,
+                timestamp: ffiTx.context.block_info.timestamp,
                 fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
-                isOurs: ffiTx.is_ours
             )
 
             transactions.append(transaction)
@@ -170,20 +169,17 @@ public struct WalletTransaction: Identifiable {
     /// Block hash if confirmed (hex string)
     public let blockHash: String?
     /// Unix timestamp
-    public let timestamp: UInt64
+    public let timestamp: UInt32
     /// Fee if known
     public let fee: UInt64?
-    /// Whether this is our transaction
-    public let isOurs: Bool
 
     public init(
         txid: String,
         netAmount: Int64,
         height: UInt32,
         blockHash: String?,
-        timestamp: UInt64,
+        timestamp: UInt32,
         fee: UInt64?,
-        isOurs: Bool
     ) {
         self.txid = txid
         self.netAmount = netAmount
@@ -191,7 +187,6 @@ public struct WalletTransaction: Identifiable {
         self.blockHash = blockHash
         self.timestamp = timestamp
         self.fee = fee
-        self.isOurs = isOurs
     }
 
     /// Transaction date

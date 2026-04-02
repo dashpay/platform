@@ -156,16 +156,6 @@ module DashSDKFFI {
 EOF
   log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
 
-  # TODO(build_ios): Quick fix — upstream headers from rust-dashcore emit FFIAssetLockFundingType
-  # with bare enumerator names (IDENTITY_REGISTRATION, IDENTITY_TOP_UP, etc.) that collide with
-  # FFIAccountType, which is invalid C (enum constants share the global namespace).
-  # The proper fix belongs in rust-dashcore's cbindgen config (prefix or namespace the variants).
-  # Until that fix lands, we strip the enum typedef and replace the type with uint32_t.
-  for h in "$HEADERS_DIR"/*/*.h; do
-    perl -i -0777 -pe 's{/\*\*?\s*\n\s*The type of funding account.*?\n\s*\*/\s*\ntypedef enum \{.*?\} FFIAssetLockFundingType;\n}{}s' "$h"
-    sed -i '' 's/FFIAssetLockFundingType/uint32_t/g' "$h"
-  done
-
   # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
   # Skip types that already have a full definition in another header to avoid redefinition.
   local defined
@@ -244,6 +234,10 @@ SWIFT_SCHEME="SwiftExampleApp"
 SWIFT_DESTINATION="generic/platform=iOS Simulator"
 EXCLUDED_ARCHS="x86_64"
 
+OTHER_SWIFT_FLAGS="-warnings-as-errors"
+SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+SWIFT_SUPPRESS_WARNINGS=NO
+
 if command -v xcodebuild >/dev/null 2>&1; then
     set +e
     xcodebuild -project "$SWIFT_PROJECT" \
@@ -251,6 +245,9 @@ if command -v xcodebuild >/dev/null 2>&1; then
                -sdk iphonesimulator \
                -destination "$SWIFT_DESTINATION" \
                EXCLUDED_ARCHS="$EXCLUDED_ARCHS" \
+               OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
+               SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
+               SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
                build
     XC_STATUS=$?
     set -e

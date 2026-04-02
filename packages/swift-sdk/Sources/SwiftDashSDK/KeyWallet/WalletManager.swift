@@ -351,42 +351,6 @@ public class WalletManager {
         return (confirmed: confirmed, unconfirmed: unconfirmed)
     }
 
-    // MARK: - Transaction Processing
-
-    /// Process a transaction through all wallets
-    /// - Parameters:
-    ///   - transactionData: The transaction bytes
-    ///   - contextDetails: Transaction context details
-    ///   - updateStateIfFound: Whether to update wallet state if transaction is relevant
-    /// - Returns: True if transaction was relevant to at least one wallet
-    @discardableResult
-    public func processTransaction(_ transactionData: Data,
-                                  contextDetails: TransactionContextDetails,
-                                  updateStateIfFound: Bool = true) throws -> Bool {
-        var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
-
-        let success = transactionData.withUnsafeBytes { txBytes in
-            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-            return wallet_manager_process_transaction(
-                handle, txPtr, transactionData.count,
-                &ffiContext,
-                updateStateIfFound, &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-        }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return success
-    }
-
     /// Build a signed transaction
     /// - Parameters:
     ///   - accIndex: The account index to use

@@ -23,62 +23,6 @@ public class Transaction {
         }
     }
 
-    /// Check if a transaction belongs to a wallet
-    /// - Parameters:
-    ///   - wallet: The wallet to check against
-    ///   - transactionData: The transaction bytes
-    ///   - context: The transaction context
-    ///   - blockHeight: The block height (0 for mempool)
-    ///   - blockHash: The block hash (nil for mempool)
-    ///   - timestamp: The timestamp
-    ///   - updateState: Whether to update wallet state if transaction is relevant
-    /// - Returns: Transaction check result
-    public static func check(wallet: Wallet,
-                            transactionData: Data,
-                            context: TransactionContext = .mempool,
-                            blockHeight: UInt32 = 0,
-                            blockHash: Data? = nil,
-                            timestamp: UInt64 = 0,
-                            updateState: Bool = true) throws -> TransactionCheckResult {
-        var error = FFIError()
-        var result = FFITransactionCheckResult()
-
-        let success = transactionData.withUnsafeBytes { txBytes in
-            let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
-
-            if let hash = blockHash {
-                return hash.withUnsafeBytes { hashBytes in
-                    let hashPtr = hashBytes.bindMemory(to: UInt8.self).baseAddress
-
-                    return wallet_check_transaction(
-                        wallet.ffiHandle,
-                        txPtr, transactionData.count,
-                        context.ffiValue, blockHeight, hashPtr,
-                        timestamp, updateState, &result, &error)
-                }
-            } else {
-                return wallet_check_transaction(
-                    wallet.ffiHandle,
-                    txPtr, transactionData.count,
-                    context.ffiValue, blockHeight, nil,
-                    timestamp, updateState, &result, &error)
-            }
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            transaction_check_result_free(&result)
-        }
-
-        guard success else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        return TransactionCheckResult(ffiResult: result)
-    }
-
     /// Classify a transaction for routing
     /// - Parameter transactionData: The transaction bytes
     /// - Returns: A string describing the transaction type
