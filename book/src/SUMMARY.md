@@ -78,6 +78,7 @@
   - [Car Sales Management](evo-sdk/tutorials/car-sales.md)
   - [Creating a Basic Token](evo-sdk/tutorials/basic-token.md)
   - [Card Game with Tokens](evo-sdk/tutorials/card-game.md)
+  - [React Integration](evo-sdk/tutorials/react-integration.md)
 
 # Rust SDK
 
