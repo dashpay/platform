@@ -1,20 +1,17 @@
 //! Multi-wallet manager with SPV coordination.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::sync::Arc;
 
-use dashcore::Txid;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use key_wallet::{Mnemonic, Network};
+use key_wallet::Mnemonic;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
-use crate::manager::spv_runtime::SpvRuntime;
+use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
-
-use dash_spv::ClientConfig;
 
 /// Multi-wallet coordinator with SPV sync and event broadcasting.
 ///
@@ -28,37 +25,30 @@ use dash_spv::ClientConfig;
 /// `ManagedWalletInfo` with the SPV adapter through `Arc<RwLock<…>>`,
 /// so balance and UTXO updates from SPV are immediately visible to all
 /// wallet operations.
-///
-/// # SPV lifecycle
-///
-/// - [`start_spv`](Self::start_spv) — starts SPV sync via [`SpvRuntime`].
-/// - [`stop_spv`](Self::stop_spv) — graceful shutdown.
-///
-/// # Finality tracking
-///
-/// - [`register_for_finality`](Self::register_for_finality) — register a
-///   txid *before* broadcasting to prevent proof-arrival races.
-/// - [`wait_for_finality`](Self::wait_for_finality) — async wait for an
-///   InstantLock or ChainLock event for the registered txid.
 pub struct PlatformWalletManager {
     sdk: dash_sdk::Sdk,
-    network: Network,
-    wallets: RwLock<BTreeMap<WalletId, PlatformWallet>>,
+    wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     spv: SpvRuntime,
 }
 
 impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
-    pub fn new(sdk: dash_sdk::Sdk, network: Network) -> Self {
+    pub fn new(sdk: dash_sdk::Sdk) -> Self {
         let (event_tx, _) = broadcast::channel(256);
+        let wallets = Arc::new(RwLock::new(BTreeMap::new()));
+        let spv = SpvRuntime::new(Arc::clone(&wallets), event_tx.clone());
         Self {
             sdk,
-            network,
-            wallets: RwLock::new(BTreeMap::new()),
+            wallets,
             event_tx,
-            spv: SpvRuntime::new(),
+            spv,
         }
+    }
+
+    /// The network this manager operates on.
+    pub fn network(&self) -> key_wallet::Network {
+        self.sdk.network
     }
 
     /// Create a wallet from a BIP-39 mnemonic and add it to the manager.
@@ -70,7 +60,7 @@ impl PlatformWalletManager {
     ) -> Result<PlatformWallet, PlatformWalletError> {
         let wallet = PlatformWallet::from_mnemonic(
             self.sdk.clone(),
-            self.network,
+            self.sdk.network,
             mnemonic,
             passphrase,
             options,
@@ -84,7 +74,8 @@ impl PlatformWalletManager {
         &self,
         options: WalletAccountCreationOptions,
     ) -> Result<(PlatformWallet, Mnemonic), PlatformWalletError> {
-        let (wallet, mnemonic) = PlatformWallet::random(self.sdk.clone(), self.network, options)?;
+        let (wallet, mnemonic) =
+            PlatformWallet::random(self.sdk.clone(), self.sdk.network, options)?;
         let wallet = self.insert_and_return(wallet).await?;
         Ok((wallet, mnemonic))
     }
@@ -104,7 +95,7 @@ impl PlatformWalletManager {
         &self,
         xpub: &str,
     ) -> Result<PlatformWallet, PlatformWalletError> {
-        let wallet = PlatformWallet::from_xpub(self.sdk.clone(), self.network, xpub)?;
+        let wallet = PlatformWallet::from_xpub(self.sdk.clone(), self.sdk.network, xpub)?;
         self.insert_and_return(wallet).await
     }
 
@@ -114,9 +105,11 @@ impl PlatformWalletManager {
         wallet_id: &WalletId,
     ) -> Result<PlatformWallet, PlatformWalletError> {
         let mut wallets = self.wallets.write().await;
-        wallets
+        let removed = wallets
             .remove(wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+        self.spv.notify_wallets_changed();
+        Ok(removed)
     }
 
     /// Get a clone of a wallet by its ID.
@@ -136,43 +129,9 @@ impl PlatformWalletManager {
         self.event_tx.subscribe()
     }
 
-    /// Get the current SPV synced height.
-    pub fn synced_height(&self) -> u32 {
-        self.spv.synced_height()
-    }
-
-    /// Start SPV sync with the given configuration.
-    pub async fn start_spv(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        let wallet = {
-            let wallets = self.wallets.read().await;
-            wallets
-                .values()
-                .next()
-                .cloned()
-                .ok_or(PlatformWalletError::NoWalletsConfigured)?
-        };
-        self.spv.start(config, wallet, self.event_tx.clone()).await
-    }
-
-    /// Stop SPV sync.
-    pub async fn stop_spv(&self) -> Result<(), PlatformWalletError> {
-        self.spv.stop().await
-    }
-
-    /// Register a transaction to wait for finality proof.
-    /// Call BEFORE broadcasting to prevent race where proof arrives first.
-    pub async fn register_for_finality(&self, txid: Txid) {
-        self.spv.register_for_finality(txid).await;
-    }
-
-    /// Wait for a finality proof (InstantLock or ChainLock) for a registered
-    /// transaction.
-    pub async fn wait_for_finality(
-        &self,
-        txid: &Txid,
-        timeout: Duration,
-    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
-        self.spv.wait_for_finality(txid, timeout, &self.event_tx).await
+    /// Access the SPV runtime for sync control and finality tracking.
+    pub fn spv(&self) -> &SpvRuntime {
+        &self.spv
     }
 
     /// Insert a wallet into the manager and return a clone.
@@ -189,15 +148,7 @@ impl PlatformWalletManager {
         }
         let cloned = wallet.clone();
         wallets.insert(wallet_id, wallet);
+        self.spv.notify_wallets_changed();
         Ok(cloned)
-    }
-}
-
-impl std::fmt::Debug for PlatformWalletManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PlatformWalletManager")
-            .field("network", &self.network)
-            .field("spv", &self.spv)
-            .finish()
     }
 }
