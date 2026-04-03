@@ -4,12 +4,12 @@ Utility scripts for debugging and inspecting Dash Platform data.
 
 ## decode-document
 
-Decodes a base64-encoded platform document into human-readable output. Uses the actual platform deserialization code, so it handles all document format versions correctly.
+Decodes a hex or base64-encoded platform document into human-readable output. Uses the actual platform deserialization code, so it handles all document format versions correctly.
 
 ### Usage
 
 ```bash
-cargo run -p rs-scripts --bin decode-document -- <BASE64_DOC> [OPTIONS]
+cargo run -p rs-scripts --bin decode-document -- <DOC_BYTES> [OPTIONS]
 ```
 
 ### Options
@@ -18,6 +18,7 @@ cargo run -p rs-scripts --bin decode-document -- <BASE64_DOC> [OPTIONS]
 |--------|----------|-------------|
 | `-c, --contract` | yes | System data contract name or ID (base58/base64/hex) |
 | `-d, --doc-type` | yes | Document type name within the contract |
+| `-f, --format` | no | Input encoding: `base64`, `hex`, or `auto` (default: `auto`) |
 
 ### Supported contracts
 

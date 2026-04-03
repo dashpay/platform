@@ -2,18 +2,22 @@ use base64::Engine;
 use clap::Parser;
 use data_contracts::SystemDataContract;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::DocumentV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use dpp::system_data_contracts::load_system_data_contract;
+use dpp::document::DocumentV0Getters;
 use dpp::platform_value::Identifier;
+use dpp::system_data_contracts::load_system_data_contract;
 use platform_version::version::PlatformVersion;
 
+// Keep in sync with SystemDataContract enum in packages/data-contracts/src/lib.rs
 const SYSTEM_CONTRACTS: &[(&str, SystemDataContract)] = &[
     ("withdrawals", SystemDataContract::Withdrawals),
     ("dpns", SystemDataContract::DPNS),
     ("dashpay", SystemDataContract::Dashpay),
-    ("masternode-reward-shares", SystemDataContract::MasternodeRewards),
+    (
+        "masternode-reward-shares",
+        SystemDataContract::MasternodeRewards,
+    ),
     ("feature-flags", SystemDataContract::FeatureFlags),
     ("wallet-utils", SystemDataContract::WalletUtils),
     ("token-history", SystemDataContract::TokenHistory),
@@ -21,7 +25,10 @@ const SYSTEM_CONTRACTS: &[(&str, SystemDataContract)] = &[
 ];
 
 #[derive(Parser)]
-#[command(name = "decode-document", about = "Decode a platform document from base64 bytes")]
+#[command(
+    name = "decode-document",
+    about = "Decode a platform document from hex or base64 bytes"
+)]
 struct Args {
     /// Document bytes (base64 or hex encoded)
     doc_bytes: String,
@@ -33,6 +40,10 @@ struct Args {
     /// Document type name within the contract (e.g. "withdrawal", "domain")
     #[arg(short, long)]
     doc_type: String,
+
+    /// Input encoding: "base64", "hex", or "auto" (default: auto, tries base64 then hex)
+    #[arg(short, long, default_value = "auto")]
+    format: String,
 }
 
 fn resolve_system_contract(input: &str) -> SystemDataContract {
@@ -44,13 +55,18 @@ fn resolve_system_contract(input: &str) -> SystemDataContract {
     }
 
     // Try parsing as an identifier (base58, base64, or hex)
-    let id = Identifier::from_string_unknown_encoding(input)
-        .unwrap_or_else(|_| {
-            eprintln!("Unknown contract: '{input}'");
-            eprintln!("Must be a name ({}) or an ID in base58/base64/hex",
-                SYSTEM_CONTRACTS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", "));
-            std::process::exit(1);
-        });
+    let id = Identifier::from_string_unknown_encoding(input).unwrap_or_else(|_| {
+        eprintln!("Unknown contract: '{input}'");
+        eprintln!(
+            "Must be a name ({}) or an ID in base58/base64/hex",
+            SYSTEM_CONTRACTS
+                .iter()
+                .map(|(n, _)| *n)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        std::process::exit(1);
+    });
 
     for (_, sc) in SYSTEM_CONTRACTS {
         if sc.id() == id {
@@ -69,24 +85,64 @@ fn main() {
 
     let system_contract = resolve_system_contract(&args.contract);
 
-    let data_contract = load_system_data_contract(system_contract, platform_version)
-        .expect("failed to load system data contract");
-
-    let document_type = data_contract
-        .document_type_for_name(&args.doc_type)
-        .expect("failed to get document type");
-
-    let bytes = if let Ok(b) = hex::decode(&args.doc_bytes) {
-        b
-    } else if let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&args.doc_bytes) {
-        b
-    } else {
-        eprintln!("Failed to decode document bytes as hex or base64");
-        std::process::exit(1);
+    let data_contract = match load_system_data_contract(system_contract, platform_version) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to load system data contract: {e}");
+            std::process::exit(1);
+        }
     };
 
-    let document = Document::from_bytes(&bytes, document_type, platform_version)
-        .expect("failed to deserialize document");
+    let document_type = match data_contract.document_type_for_name(&args.doc_type) {
+        Ok(dt) => dt,
+        Err(e) => {
+            eprintln!("Unknown document type '{}': {e}", args.doc_type);
+            eprintln!(
+                "Available types: {}",
+                data_contract
+                    .document_types()
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let bytes = match args.format.as_str() {
+        "base64" => base64::engine::general_purpose::STANDARD
+            .decode(&args.doc_bytes)
+            .unwrap_or_else(|e| {
+                eprintln!("Invalid base64: {e}");
+                std::process::exit(1);
+            }),
+        "hex" => hex::decode(&args.doc_bytes).unwrap_or_else(|e| {
+            eprintln!("Invalid hex: {e}");
+            std::process::exit(1);
+        }),
+        "auto" | _ => {
+            // Try base64 first (most common — gRPC responses are base64),
+            // then hex. This avoids misinterpreting hex-only base64 strings.
+            if let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&args.doc_bytes) {
+                b
+            } else if let Ok(b) = hex::decode(&args.doc_bytes) {
+                b
+            } else {
+                eprintln!("Failed to decode document bytes as base64 or hex");
+                eprintln!("Hint: use --format base64 or --format hex to force a specific encoding");
+                std::process::exit(1);
+            }
+        }
+    };
+
+    let document = match Document::from_bytes(&bytes, document_type, platform_version) {
+        Ok(doc) => doc,
+        Err(e) => {
+            eprintln!("Failed to deserialize document: {e}");
+            std::process::exit(1);
+        }
+    };
 
     println!("id:         {}", document.id());
     println!("owner_id:   {}", document.owner_id());
