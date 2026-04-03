@@ -3737,22 +3737,84 @@ Additional completed work (same PR):
 
 **Goal**: Remove `utxos`, `known_addresses`, `watched_addresses`, `transactions` from evo-tool's Wallet by migrating all remaining callers to PlatformWallet.
 
-**utxos removal** requires:
-- Migrate `_for_utxo` asset lock paths (QR-funded-UTXO) — add `build_asset_lock_from_utxo()` to CoreWallet
-- Remove SPV reconciliation write (`w.utxos = new_utxos`) — PlatformWallet already tracks via SPV adapter
-- Remove transaction_processing UTXO insertion — SPV adapter handles this
-- Remove `select_unspent_utxos_for` and `remove_selected_utxos` from utxos.rs
+**Completed:**
+- `register_contact_account()` on DashPayWallet — creates DashpayReceivingFunds managed accounts in ManagedWalletInfo when contacts are established
+- Called automatically from `send_contact_request()`
+- key-wallet already has: `ManagedAccountCollection::insert()` for DashpayReceivingFunds, `ManagedCoreAccount::from_account()` for creating managed wrappers with address pools
 
-**known_addresses/watched_addresses removal** requires:
-- Migrate `receive_address()` / `change_address()` to use CoreWallet's `next_receive_address()` / `next_change_address()`
-- Migrate `bootstrap_known_addresses()` to use ManagedWalletInfo's address pools
-- Migrate key lookup in `qualified_identity_public_key.rs` to use ManagedWalletInfo
-- Migrate `known_addresses.contains_key()` checks to ManagedWalletInfo address lookup
-- Migrate account_summary to use CoreAddressInfo
+#### How DashPay interacts with the core wallet (DIP-14/15)
 
-**transactions removal** requires:
-- Add transaction history to CoreWallet/ManagedWalletInfo (if not already tracked)
-- Migrate wallets_screen transaction table to read from PlatformWallet
+When a contact is established (mutual contact requests on Platform):
+
+1. **Send request** (`DashPayWallet::send_contact_request()`):
+   - Derives DashPay receiving-account xpub: `m/9'/coin'/15'/0'/(sender_id)/(recipient_id)` using DIP-14 256-bit derivation
+   - Encrypts xpub with ECDH (recipient's decryption key)
+   - Submits contactRequest document to Platform
+   - **Now also**: creates `DashpayReceivingFunds` account in `ManagedWalletInfo` so SPV monitors incoming payment addresses
+
+2. **Accept request** (`DashPayWallet::accept_contact_request()`):
+   - Sends reciprocal request (calls `send_contact_request()`)
+   - Auto-establish logic in ManagedIdentity detects both requests → creates `EstablishedContact`
+
+3. **Address monitoring** (now automatic via ManagedWalletInfo):
+   - `ManagedCoreAccount` for `DashpayReceivingFunds` has address pools with gap limit
+   - SPV adapter iterates all accounts via `monitored_addresses()` → includes contact addresses
+   - When incoming payment arrives, `check_core_transaction()` matches against address pools
+   - Gap limit automatically derives more addresses as used addresses are consumed
+
+4. **Previously (evo-tool manual flow, being removed)**:
+   - `register_dashpay_addresses_for_identity()` manually derived addresses from seed
+   - Inserted into `known_addresses` and `watched_addresses` BTreeMaps
+   - Maintained `dashpay_contact_address_indices` DB table for gap limit tracking
+   - Required explicit `RegisterDashPayAddresses` backend task trigger
+
+#### Address types and their account mapping
+
+| Address type | DIP | Derivation path | key-wallet account | Status |
+|---|---|---|---|---|
+| BIP44 receive/change | BIP44 | `m/44'/coin'/acct'/0or1/i` | `standard_bip44_accounts` | In ManagedWalletInfo ✓ |
+| Identity registration | DIP-9 | `m/9'/coin'/5'/1'/i` | `identity_registration` | In ManagedWalletInfo ✓ |
+| Identity top-up | DIP-9 | `m/9'/coin'/5'/2'/i` | `identity_topup` | In ManagedWalletInfo ✓ |
+| DashPay receive | DIP-15 | `m/9'/coin'/15'/0'/(self)/(friend)/i` | `dashpay_receival_accounts` | **Now registered** ✓ |
+| DashPay send (watch) | DIP-15 | contact xpub + index | `dashpay_external_accounts` | TODO |
+| Platform payment | DIP-17 | `m/9'/coin'/17'/acct'/class'/i` | `platform_payment_accounts` | In ManagedWalletInfo ✓ |
+| CoinJoin | - | `m/9'/coin'/cointype'/i` | `coinjoin_accounts` | In ManagedWalletInfo ✓ |
+| Provider keys | - | various | `provider_*_keys` | In ManagedWalletInfo ✓ |
+
+#### Remaining migration steps
+
+**Phase 1 — DashPay contact addresses (in progress):**
+- [x] Add `register_contact_account()` to DashPayWallet
+- [x] Call from `send_contact_request()`
+- [ ] Bootstrap existing contacts on wallet load — iterate `established_contacts` from IdentityManager, call `register_contact_account()` for each
+- [ ] Remove `register_dashpay_address()` manual insertion in `incoming_payments.rs`
+- [ ] Remove `RegisterDashPayAddresses` backend task (no longer needed)
+- [ ] Verify address derivation parity (ManagedWalletInfo pools vs evo-tool's manual derivation)
+
+**Phase 2 — Address derivation migration:**
+- [ ] Migrate `receive_address()` → `CoreWallet::next_receive_address()` (async, requires refactoring callers)
+- [ ] Migrate `change_address()` → `CoreWallet::next_change_address()`
+- [ ] Migrate `bootstrap_known_addresses()` → ManagedWalletInfo already populated at PlatformWallet creation
+- [ ] Migrate `private_key_for_address()` → derive from key-wallet's `Wallet` via derivation path lookup
+
+**Phase 3 — UTXO field removal:**
+- [ ] Remove SPV reconciliation write (`w.utxos = new_utxos`) — ManagedWalletInfo already tracks via SPV adapter
+- [ ] Remove `transaction_processing.rs` UTXO insertion — SPV adapter handles this
+- [ ] Add `build_asset_lock_from_utxo()` to CoreWallet for QR-funded-UTXO flow
+- [ ] Remove `select_unspent_utxos_for` and `remove_selected_utxos` from utxos.rs
+- [ ] Remove `utxos` field from Wallet
+
+**Phase 4 — known_addresses/watched_addresses removal:**
+- [ ] Remove `known_addresses` field (all reads migrated to `derivation_path_for_address()` / `has_address()` / `all_addresses_info()`)
+- [ ] Remove `watched_addresses` field (replaced by ManagedWalletInfo account pools)
+- [ ] Migrate `account_summary.rs` to read from CoreAddressInfo
+- [ ] Remove `AddressInfo` type from evo-tool model
+
+**Phase 5 — Transaction history:**
+- [ ] Add transaction list getter to `ManagedWalletInfo` (key-wallet change)
+- [ ] Migrate wallets_screen transaction table to read from PlatformWallet
+- [ ] Remove `transactions` field and `WalletTransaction` type
+- [ ] Remove `set_transactions()` method
 
 ---
 
