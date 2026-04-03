@@ -295,6 +295,8 @@ pub struct Index {
     pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
+    /// Enables countable operations on the index
+    pub countable: bool,
 }
 
 impl Index {
@@ -469,6 +471,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
+        let mut countable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -585,6 +588,13 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     }
                     contested_index = Some(contested_index_information);
                 }
+                "countable" => {
+                    countable = value_value
+                        .as_bool()
+                        .ok_or(DataContractError::ValueWrongType(
+                            "countable value must be a boolean".to_string(),
+                        ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -627,6 +637,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             unique,
             null_searchable,
             contested_index,
+            countable,
         })
     }
 }
@@ -680,6 +691,7 @@ mod tests {
             unique,
             null_searchable: true,
             contested_index: None,
+            countable: false,
         }
     }
 

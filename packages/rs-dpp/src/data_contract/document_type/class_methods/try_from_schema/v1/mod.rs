@@ -38,6 +38,8 @@ use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesE
 use crate::consensus::basic::token::InvalidTokenPositionError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::BasicError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::UnsupportedFeatureError;
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
@@ -319,6 +321,17 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
+                            // Countable indices are only supported starting from protocol version 12
+                            if index.countable && platform_version.protocol_version < 12 {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    UnsupportedFeatureError::new(
+                                        "count index".to_string(),
+                                        platform_version.protocol_version,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
                             validation_operations.extend(std::iter::once(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
