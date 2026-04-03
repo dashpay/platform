@@ -116,6 +116,22 @@ impl CoreWallet {
         }
     }
 
+    /// Blocking read access to the underlying `ManagedWalletInfo`.
+    ///
+    /// Blocks the current thread until the read lock is acquired.
+    /// Use from synchronous contexts (e.g. egui UI) where awaiting is
+    /// not possible. Equivalent to `std::sync::RwLock::read()`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called from an async context (use `wallet_info().await`
+    /// instead).
+    pub fn blocking_wallet_info(
+        &self,
+    ) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
+        self.wallet_info.blocking_read()
+    }
+
     /// Non-blocking read access to the underlying `ManagedWalletInfo`.
     ///
     /// Returns `None` if a writer currently holds the lock. Useful in
