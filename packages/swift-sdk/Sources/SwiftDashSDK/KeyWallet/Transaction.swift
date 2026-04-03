@@ -1,14 +1,6 @@
 import Foundation
 import DashSDKFFI
 
-/// Result of building and signing a transaction
-public struct BuildAndSignResult: Sendable {
-    /// The signed transaction bytes
-    public let transactionData: Data
-    /// The fee paid in duffs
-    public let fee: UInt64
-}
-
 /// Transaction utilities for wallet operations
 public class Transaction {
 
@@ -23,9 +15,11 @@ public class Transaction {
         }
 
         func toFFI() -> FFITxOutput {
-            return address.withCString { addressCStr in
-                FFITxOutput(address: addressCStr, amount: amount)
-            }
+            // TODO: This memory is not being freed, FFI must free FFITxOutput
+            // or expose a method to do it
+            let cString = strdup(address)
+
+            return FFITxOutput(address: cString, amount: amount)
         }
     }
 

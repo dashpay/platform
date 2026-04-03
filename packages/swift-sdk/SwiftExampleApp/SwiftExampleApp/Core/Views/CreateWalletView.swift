@@ -285,7 +285,7 @@ struct CreateWalletView: View {
         Task {
             do {
                 print("=== STARTING WALLET CREATION ===")
-                
+
                 let mnemonic = (showImportOption ? importMnemonic : mnemonic)
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
