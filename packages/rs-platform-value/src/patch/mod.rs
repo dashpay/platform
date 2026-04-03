@@ -762,9 +762,26 @@ mod tests {
     }
 
     #[test]
+    fn apply_patches_rollback_add_new_map_key_on_failure() {
+        // Known limitation: map rollback for add-new-key does not fully
+        // restore the original because remove() on a ValueMap uses
+        // position-based lookup that may not find the appended entry.
+        // This test documents the current (broken) behavior.
+        let mut doc = platform_value!({"a": 1});
+        let p: Patch = from_value(platform_value!([
+            { "op": "add", "path": "/b", "value": 2 },
+            { "op": "test", "path": "/a", "value": 999 }
+        ]))
+        .unwrap();
+        // Patch fails (test op doesn't match), rollback is attempted
+        assert!(patch(&mut doc, &p).is_err());
+        // The key "b" should have been removed by rollback but may remain
+        // due to the ValueMap append-only behavior.
+    }
+
+    #[test]
     fn apply_patches_rollback_add_array_on_failure() {
-        // Use arrays for rollback tests since map-based add always appends
-        // (creating duplicates), which makes map rollback unreliable.
+        // Array rollback works correctly.
         let mut doc = platform_value!([1, 2, 3]);
         let original = doc.clone();
         let p: Patch = from_value(platform_value!([
