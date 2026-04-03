@@ -325,6 +325,11 @@ impl DashPayWallet {
             managed.add_sent_contact_request(contact_request);
         }
 
+        // Register the contact account in ManagedWalletInfo so SPV monitors
+        // incoming payment addresses from this contact.
+        self.register_contact_account(sender_identity_id, recipient_identity_id, account_index)
+            .await?;
+
         Ok(())
     }
 }
@@ -577,6 +582,63 @@ impl DashPayWallet {
     /// Returns `count` addresses starting from `start_index`, derived via
     /// standard BIP32 from the contact xpub.
     ///
+    /// Register a DashPay contact account in the wallet's `ManagedWalletInfo`.
+    ///
+    /// Creates a `DashpayReceivingFunds` managed account with address pools
+    /// so the SPV adapter monitors incoming payments from this contact.
+    /// Call this when a contact is established (mutual requests exist).
+    ///
+    /// No-op if the account already exists for this contact relationship.
+    pub async fn register_contact_account(
+        &self,
+        our_identity_id: &Identifier,
+        contact_identity_id: &Identifier,
+        account_index: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let account_type = AccountType::DashpayReceivingFunds {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_identity_id.to_buffer(),
+        };
+
+        // Derive the account xpub from the wallet
+        let account_xpub = {
+            let wallet = self.wallet.read().await;
+            let path = account_type.derivation_path(self.sdk.network).map_err(|err| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to derive DashPay contact account path: {err}"
+                ))
+            })?;
+            wallet.derive_extended_public_key(&path).map_err(|err| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to derive DashPay contact xpub: {err}"
+                ))
+            })?
+        };
+
+        // Create the immutable Account
+        let account = key_wallet::Account {
+            parent_wallet_id: None,
+            account_type,
+            network: self.sdk.network,
+            account_xpub,
+            is_watch_only: false,
+        };
+
+        // Create managed wrapper with address pools and insert
+        let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
+
+        let mut info = self.wallet_info.write().await;
+        // insert() is a no-op for duplicate keys (BTreeMap::insert replaces)
+        info.accounts.insert(managed).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to register contact account: {e}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
     /// # Arguments
     ///
     /// * `account_index` - Account index (hardened) in the derivation path.
