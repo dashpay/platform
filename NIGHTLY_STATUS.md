@@ -37,11 +37,13 @@ These jobs only run on nightly if relevant files changed in the latest commit. T
 
 ### Test Suite: `bad-txns-inputs-missingorspent` (since ~Mar 16)
 
-Two withdrawal-related tests fail because Core rejects a transaction whose inputs are missing or already spent. The local network starts and processes blocks normally -- the failure is specific to the withdrawal test scenario.
+Seven tests fail because Core rejects faucet wallet funding transactions whose inputs are already in the mempool. The failures are in the Data Contract and Contacts test groups -- 1 `before all` hook failure cascades into 6 dependent Contacts tests.
 
-- **63 tests pass**, 2 fail
+- **65 tests pass**, 7 fail (1 Data Contract funding + 6 Contacts cascade)
 - Error: `InvalidRequestError: Transaction is rejected: bad-txns-inputs-missingorspent`
+- **Root cause:** The wallet-lib retry logic at `broadcastTransaction.js:181` checks for `'invalid transaction: bad-txns-inputs-missingorspent'` but DAPI returns `'Transaction is rejected: bad-txns-inputs-missingorspent'` -- the retry never matches, so UTXO conflicts are not retried.
 - **Not caused by** the `ssh2`/`nan` compilation warnings (those are non-fatal)
+- **Fix:** PR #3434 updates the check to use `.includes('bad-txns-inputs-missingorspent')`
 
 ### Functional tests: long-standing flakiness
 
