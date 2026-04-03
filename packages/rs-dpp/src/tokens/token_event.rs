@@ -554,6 +554,7 @@ mod tests {
     fn display_unfreeze_with_note() {
         let event = TokenEvent::Unfreeze(test_id(), Some("thawed".to_string()));
         let s = format!("{}", event);
+        assert!(s.contains("Unfreeze"), "should contain 'Unfreeze'");
         assert!(s.contains("(note: thawed)"));
     }
 

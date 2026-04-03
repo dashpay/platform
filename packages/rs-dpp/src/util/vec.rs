@@ -140,6 +140,14 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    #[should_panic]
+    fn test_decode_hex_odd_length_panics() {
+        // Known issue: odd-length hex strings panic instead of returning Err
+        // because s[i..i+2] goes out of bounds on the last byte.
+        let _ = decode_hex("abc");
+    }
+
     // -- round-trip encode/decode --
 
     #[test]
