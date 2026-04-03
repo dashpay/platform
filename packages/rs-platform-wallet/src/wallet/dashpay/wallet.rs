@@ -601,35 +601,37 @@ impl DashPayWallet {
             friend_identity_id: contact_identity_id.to_buffer(),
         };
 
-        // Derive the account xpub from the wallet
-        let account_xpub = {
-            let wallet = self.wallet.read().await;
+        // Derive the account xpub and add to both Wallet and ManagedWalletInfo
+        let account = {
+            let mut wallet = self.wallet.write().await;
             let path = account_type.derivation_path(self.sdk.network).map_err(|err| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to derive DashPay contact account path: {err}"
                 ))
             })?;
-            wallet.derive_extended_public_key(&path).map_err(|err| {
+            let account_xpub = wallet.derive_extended_public_key(&path).map_err(|err| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to derive DashPay contact xpub: {err}"
                 ))
-            })?
+            })?;
+
+            let account = key_wallet::Account {
+                parent_wallet_id: Some(wallet.wallet_id),
+                account_type,
+                network: self.sdk.network,
+                account_xpub,
+                is_watch_only: false,
+            };
+
+            // Add to Wallet's AccountCollection (key store)
+            let _ = wallet.accounts.insert(account.clone());
+
+            account
         };
 
-        // Create the immutable Account
-        let account = key_wallet::Account {
-            parent_wallet_id: None,
-            account_type,
-            network: self.sdk.network,
-            account_xpub,
-            is_watch_only: false,
-        };
-
-        // Create managed wrapper with address pools and insert
+        // Add managed wrapper to ManagedWalletInfo (address pools, state tracking)
         let managed = key_wallet::managed_account::ManagedCoreAccount::from_account(&account);
-
         let mut info = self.wallet_info.write().await;
-        // insert() is a no-op for duplicate keys (BTreeMap::insert replaces)
         info.accounts.insert(managed).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to register contact account: {e}"

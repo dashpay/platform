@@ -167,6 +167,14 @@ impl CoreWallet {
         self.wallet.blocking_read()
     }
 
+    /// Blocking write access to the underlying `Wallet` (key material).
+    ///
+    /// # Panics
+    /// Panics if called from an async context (use `wallet().write().await` instead).
+    pub fn blocking_wallet_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, Wallet> {
+        self.wallet.blocking_write()
+    }
+
     /// Get the next unused receive address for the default account.
     pub async fn next_receive_address(
         &self,
