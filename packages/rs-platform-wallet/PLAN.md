@@ -3783,38 +3783,45 @@ When a contact is established (mutual contact requests on Platform):
 
 #### Remaining migration steps
 
-**Phase 1 — DashPay contact addresses (in progress):**
+**Phase 1 — DashPay contact addresses (DONE):**
 - [x] Add `register_contact_account()` to DashPayWallet
-- [x] Call from `send_contact_request()`
-- [ ] Bootstrap existing contacts on wallet load — iterate `established_contacts` from IdentityManager, call `register_contact_account()` for each
-- [ ] Remove `register_dashpay_address()` manual insertion in `incoming_payments.rs`
-- [ ] Remove `RegisterDashPayAddresses` backend task (no longer needed)
+- [x] Call from `send_contact_request()` — adds to both Wallet and ManagedWalletInfo
+- [x] Bootstrap existing contacts on wallet load
+- [x] Remove `known_addresses`/`watched_addresses` writes from `register_dashpay_address()`
+- [ ] Remove `RegisterDashPayAddresses` backend task (still populates DB mappings)
 - [ ] Verify address derivation parity (ManagedWalletInfo pools vs evo-tool's manual derivation)
 
-**Phase 2 — Address derivation migration:**
-- [ ] Migrate `receive_address()` → `CoreWallet::next_receive_address()` (async, requires refactoring callers)
-- [ ] Migrate `change_address()` → `CoreWallet::next_change_address()`
+**Phase 2 — Address derivation migration (DONE):**
+- [x] Migrate `receive_address()` → `CoreWallet::blocking_next_receive_address()`
+- [x] Migrate `change_address()` → `CoreWallet::blocking_next_change_address()`
 - [ ] Migrate `bootstrap_known_addresses()` → ManagedWalletInfo already populated at PlatformWallet creation
 - [ ] Migrate `private_key_for_address()` → derive from key-wallet's `Wallet` via derivation path lookup
 
-**Phase 3 — UTXO field removal:**
-- [ ] Remove SPV reconciliation write (`w.utxos = new_utxos`) — ManagedWalletInfo already tracks via SPV adapter
-- [ ] Remove `transaction_processing.rs` UTXO insertion — SPV adapter handles this
+**Phase 3 — UTXO field removal (DONE):**
+- [x] Remove SPV reconciliation write (`w.utxos = new_utxos`)
+- [x] Remove `transaction_processing.rs` UTXO insertion
+- [x] Remove `select_unspent_utxos_for` (dead code)
+- [x] Remove `utxos` field from Wallet
 - [ ] Add `build_asset_lock_from_utxo()` to CoreWallet for QR-funded-UTXO flow
-- [ ] Remove `select_unspent_utxos_for` and `remove_selected_utxos` from utxos.rs
-- [ ] Remove `utxos` field from Wallet
 
-**Phase 4 — known_addresses/watched_addresses removal:**
-- [ ] Remove `known_addresses` field (all reads migrated to `derivation_path_for_address()` / `has_address()` / `all_addresses_info()`)
-- [ ] Remove `watched_addresses` field (replaced by ManagedWalletInfo account pools)
-- [ ] Migrate `account_summary.rs` to read from CoreAddressInfo
+**Phase 4 — known_addresses/watched_addresses read migration (DONE):**
+- [x] Migrate all `known_addresses.contains_key()` → `has_address()`
+- [x] Migrate all `known_addresses.get()` → `derivation_path_for_address()`
+- [x] Migrate `address_input.rs` core address iteration → `CoreAddressInfo`
+- [x] Migrate `account_summary.rs` → `CoreAddressInfo`
+- [x] Migrate `wallets_screen` sync status → `CoreAddressInfo`
+- [x] Migrate `dialogs.rs` BIP44 address list → `CoreAddressInfo`
+- [x] Migrate `recover_asset_locks.rs`, `refresh_wallet_info.rs`, `core/mod.rs` → `all_addresses_info()`
+- [ ] Remove `known_addresses` field (18 write callsites remain in bootstrap/derivation)
+- [ ] Remove `watched_addresses` field (14 write callsites remain in bootstrap/derivation)
 - [ ] Remove `AddressInfo` type from evo-tool model
 
-**Phase 5 — Transaction history:**
+**Phase 5 — Remaining cleanup (deferred to future PR):**
+- [ ] Migrate `bootstrap_known_addresses()` to use ManagedWalletInfo account pools
+- [ ] Remove `known_addresses` and `watched_addresses` fields entirely
 - [ ] Add transaction list getter to `ManagedWalletInfo` (key-wallet change)
 - [ ] Migrate wallets_screen transaction table to read from PlatformWallet
 - [ ] Remove `transactions` field and `WalletTransaction` type
-- [ ] Remove `set_transactions()` method
 
 ---
 
