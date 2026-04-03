@@ -37,7 +37,7 @@ date: 2026-03-13
 15. **PR-15** ✅: Shielded pool (feature-gated `shielded`) — ShieldedWallet<S: ShieldedStore> with ZIP-32 keys, note/nullifier sync, 5 transitions, CachedOrchardProver, InMemoryShieldedStore. TODO: MerklePath witness for spending ops.
 16. **PR-16** ✅: AssetLockFinalityEvent — register_for_finality + wait_for_finality on PlatformWalletManager. Evo-tool keeps SpvManager. TODO: FinalityEvent should carry full proof data.
 17. **PR-17** ✅: Use dashcore asset lock builder — replaced ~190 lines of manual UTXO selection/fee/signing with `key-wallet::asset_lock_builder`. Updated dashcore to latest v0.42-dev (3f650020).
-18. **PR-18**: Replace evo-tool Wallet model with CoreWallet — migrate 51+ callsites across 38 files to use platform_wallet.core().wallet_info(). Remove CoreWallet convenience wrappers. Delete evo-tool's duplicate balance/UTXO/address code.
+18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet — embedded PlatformWallet in Wallet struct, migrated all UI reads to lock-free WalletBalance + blocking_wallet_info(), removed platform_wallets bridge map, removed 6 duplicate fields (confirmed_balance, unconfirmed_balance, total_balance, spv_balance_known, address_balances, address_total_received). Remaining fields (utxos, known_addresses, watched_addresses, transactions) require migrating evo-tool's transaction building and address derivation — deferred to PR-19+.
 19. **PR-19**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
 20. **PR-20**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 21. **PR-21**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
@@ -3693,50 +3693,32 @@ of DAPI polling.
 
 ---
 
-### PR-18: Replace evo-tool Wallet model with CoreWallet
+### PR-18: Replace evo-tool Wallet model with CoreWallet (COMPLETED)
 
-**Goal**: Evo-tool stops using its own `Wallet` struct for balance/UTXO/address reads
-and uses `platform_wallet.core().wallet_info()` instead. This completes the migration
-from duplicate wallet code to the canonical platform-wallet library.
+**Completed work:**
 
-**Platform-wallet changes:**
-- Remove CoreWallet convenience wrappers (`balance()`, `utxos()`, `spendable_utxos()`,
-  `monitored_addresses()`, `synced_height()`, `birth_height()`, `transaction_history()`,
-  `immature_transactions()`, `all_address_info()`, `address_info()`, `account_summaries()`,
-  `utxos_by_address()`) — callers use `wallet_info()` lock guard directly
-- Keep only: `wallet_info()`, `wallet_info_mut()`, `wallet()`, `network()`, and
-  transaction/asset-lock methods that do actual work
+Platform-wallet:
+- `Arc<WalletBalance>` — cloned PlatformWallet handles share balance atomics
+- `blocking_wallet_info()` — sync read access for egui UI code
+- CoreWallet convenience wrappers removed (done in earlier PRs)
 
-**Evo-tool migration (51+ callsites across 38 files):**
+Evo-tool:
+- Embedded `Option<PlatformWallet>` inside evo-tool `Wallet` struct — set on unlock, cleared on lock
+- All UI balance reads migrated to lock-free `WalletBalance` via `wallet.platform_wallet`
+- All UI UTXO/address reads migrated to `blocking_wallet_info()` + `CoreAddressInfo`
+- Removed `platform_wallets` bridge map from AppContext — all lookups go through `wallet.platform_wallet`
+- Removed 6 duplicate fields from Wallet: `confirmed_balance`, `unconfirmed_balance`, `total_balance`, `spv_balance_known`, `address_balances`, `address_total_received`
+- Balance methods (`confirmed_balance_duffs()`, `total_balance_duffs()`, etc.) delegate to PlatformWallet
+- New `address_balance()` method reads per-address balance from CoreAddressInfo
+- `funding_common` reads UTXOs from PlatformWallet's `get_spendable_utxos()`
 
-Phase 1 — Balance reads (22 callsites, trivial):
-- `confirmed_balance_duffs()`, `unconfirmed_balance_duffs()`, `total_balance_duffs()`
-- Replace with `platform_wallet.core().wallet_info().await.balance()`
-- Files: wallets_screen, send_screen, identity screens, wallet_lifecycle, MCP tools
+**Remaining fields NOT removed (require deeper refactoring):**
+- `utxos` — actively mutated by transaction building, SPV reconciliation, RPC refresh, shielded bundle
+- `known_addresses` — 35 callsites across 17 files, used for address derivation/lookup
+- `watched_addresses` — 10 callsites, used for address metadata
+- `transactions` — 9 callsites, used for transaction history display
 
-Phase 2 — Address reads (24 callsites, trivial):
-- `receive_address()`, `known_addresses`, `watched_addresses`
-- Replace with `platform_wallet.core().wallet_info().await.monitored_addresses()` etc.
-- Files: address_table, address_input, send_screen, incoming_payments
-
-Phase 3 — UTXO reads (8+ callsites, moderate):
-- `utxos_by_address()` for coin selection in send_screen
-- Replace with `platform_wallet.core().wallet_info().await.get_spendable_utxos()`
-- May need adapter for evo-tool's `Vec<(Address, u64)>` format
-
-Phase 4 — SPV reconciliation:
-- `wallet_lifecycle.rs` reconcile_spv_wallets reads SPV balance into evo-tool Wallet
-- Replace: read directly from `wallet_info()` — SPV already writes to it via shared Arc
-
-**What stays in evo-tool Wallet (not migratable):**
-- `seed_hash`, `encrypted_seed`, `salt`, `nonce` — wallet identity/encryption
-- `identities` — evo-tool's QualifiedIdentity associations
-- `unused_asset_locks` — evo-tool's asset lock tracking
-- `core_wallet_name` — RPC wallet name
-- `alias`, `uses_password`, `password_hint` — UI metadata
-
-**Done when**: Evo-tool reads all balance/UTXO/address data from `CoreWallet.wallet_info()`
-instead of its own `Wallet` struct. CoreWallet has no convenience wrappers — just lock accessors.
+These require migrating evo-tool's own transaction building (`select_unspent_utxos_for`, `build_send_transaction`, asset lock building) and address derivation to use PlatformWallet exclusively. That's the scope of PR-19+.
 
 ---
 
