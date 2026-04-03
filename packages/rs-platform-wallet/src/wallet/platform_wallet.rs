@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
 
-use super::core::CoreWallet;
+use super::core::{CoreWallet, WalletBalance};
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
 use super::platform_addresses::PlatformAddressWallet;
@@ -98,6 +98,7 @@ impl PlatformWallet {
             wallet_info: wallet_info.clone(),
             transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
             tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
+            balance: WalletBalance::new(),
         };
 
         let identity = IdentityWallet {

@@ -113,12 +113,13 @@ impl WalletInterface for SpvWalletAdapter {
             self.monitor_revision.fetch_add(1, Ordering::Relaxed);
         }
 
-        // Track all relevant transactions as Confirmed across all wallets.
+        // Track all relevant transactions as Confirmed and refresh cached balance.
         for wallet in wallets.values() {
             for txid in new_txids.iter().chain(existing_txids.iter()) {
                 self.track_status_for_wallet(wallet, *txid, TransactionStatus::Confirmed)
                     .await;
             }
+            wallet.core.refresh_balance();
         }
 
         BlockProcessingResult {
@@ -165,6 +166,10 @@ impl WalletInterface for SpvWalletAdapter {
                 };
                 self.track_status_for_wallet(wallet, tx.txid(), status)
                     .await;
+            }
+
+            if result.is_relevant {
+                wallet.core.refresh_balance();
             }
 
             if !result.new_addresses.is_empty() {

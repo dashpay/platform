@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::balance::WalletBalance;
+
 use dashcore::consensus;
 use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sighash::SighashCache;
@@ -34,9 +36,26 @@ pub struct CoreWallet {
     pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
     /// Tracked asset lock transactions and their lifecycle status.
     pub(crate) tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,
+    /// Lock-free balance — updated from `ManagedWalletInfo` on every
+    /// SPV block/mempool processing and RPC refresh. Read without any lock.
+    pub(crate) balance: WalletBalance,
 }
 
 impl CoreWallet {
+    /// Lock-free balance — read from any context without locking.
+    /// Updated automatically after SPV/RPC balance changes.
+    pub fn balance(&self) -> &WalletBalance {
+        &self.balance
+    }
+
+    /// Update the balance from `ManagedWalletInfo`.
+    /// Called after SPV block processing, mempool updates, and RPC refresh.
+    pub fn refresh_balance(&self) {
+        if let Some(info) = self.try_wallet_info() {
+            self.balance.update(&info.balance());
+        }
+    }
+
     /// Read access to the underlying `ManagedWalletInfo`.
     ///
     /// Use this when you need multiple reads in a single lock acquisition

@@ -16,6 +16,7 @@ pub use manager::PlatformWalletManager;
 #[cfg(feature = "manager")]
 pub use spv::SpvRuntime;
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+pub use wallet::core::WalletBalance;
 pub use wallet::core::{
     AssetLockStatus, CoreAddressInfo, CoreWallet, TrackedAssetLock,
 };
