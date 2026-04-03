@@ -88,6 +88,10 @@ ignore:
   # Value Display and string encoding — trivial formatting, not logic
   - "packages/rs-platform-value/src/display.rs"
   - "packages/rs-platform-value/src/string_encoding.rs"
+  # Accessor-only files — pure getters/setters with no logic
+  - "packages/rs-dpp/src/data_contract/associated_token/token_configuration/v0/accessors.rs"
+  - "packages/rs-dpp/src/document/v0/accessors.rs"
+  - "packages/rs-drive-abci/src/platform_types/platform_state/accessors.rs"
   # Core chain type wrappers — masternode entry structs, deserialization
   # boilerplate, thin type aliases
   - "packages/rs-dpp/src/core_types/**"
