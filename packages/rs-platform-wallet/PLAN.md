@@ -37,9 +37,11 @@ date: 2026-03-13
 15. **PR-15** ✅: Shielded pool (feature-gated `shielded`) — ShieldedWallet<S: ShieldedStore> with ZIP-32 keys, note/nullifier sync, 5 transitions, CachedOrchardProver, InMemoryShieldedStore. TODO: MerklePath witness for spending ops.
 16. **PR-16** ✅: AssetLockFinalityEvent — register_for_finality + wait_for_finality on PlatformWalletManager. Evo-tool keeps SpvManager. TODO: FinalityEvent should carry full proof data.
 17. **PR-17** ✅: Use dashcore asset lock builder — replaced ~190 lines of manual UTXO selection/fee/signing with `key-wallet::asset_lock_builder`. Updated dashcore to latest v0.42-dev (3f650020).
-18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet — embedded PlatformWallet in Wallet struct, migrated all UI reads to lock-free WalletBalance + blocking_wallet_info(), removed platform_wallets bridge map, removed 6 duplicate fields (confirmed_balance, unconfirmed_balance, total_balance, spv_balance_known, address_balances, address_total_received). Remaining fields (utxos, known_addresses, watched_addresses, transactions) require migrating evo-tool's transaction building and address derivation — deferred to PR-19+.
-19. **PR-19**: Comprehensive test suite — port 72+ evo-tool tests, mock SDK integration tests, E2E framework
-20. **PR-20**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+18. **PR-18** ✅: Replace evo-tool Wallet model with CoreWallet — embedded PlatformWallet in Wallet struct, migrated all UI reads to lock-free WalletBalance + blocking_wallet_info(), removed platform_wallets bridge map, removed 6 duplicate fields. Migrated RPC send payment + all asset lock building to PlatformWallet. Removed ~1,600 lines of duplicate wallet code (transaction building, UTXO selection, balance caching, fallback paths). Remaining: utxos/known_addresses/watched_addresses/transactions fields for address derivation and QR-funded-UTXO flow.
+19. **PR-19**: Migrate remaining Wallet fields — address derivation to PlatformWallet, QR-funded-UTXO flow, transaction history from ManagedWalletInfo
+20. **PR-20**: Comprehensive test suite — port evo-tool tests to platform-wallet, mock SDK integration tests, E2E framework
+21. **PR-21**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
+22. **PR-22**: FFI update + serialization / persistence — fix broken type paths, update exports, final cleanup
 21. **PR-21**: FFI update + serialization / persistence — fix `rs-platform-wallet-ffi` broken type paths from refactoring, update exports, remove old `wallets` map, delete `src/model/wallet/` + final cleanup
 
 ---
@@ -3712,19 +3714,49 @@ Evo-tool:
 - New `address_balance()` method reads per-address balance from CoreAddressInfo
 - `funding_common` reads UTXOs from PlatformWallet's `get_spendable_utxos()`
 
-**Remaining fields NOT removed (require deeper refactoring):**
-- `utxos` — actively mutated by transaction building, SPV reconciliation, RPC refresh, shielded bundle
-- `known_addresses` — 35 callsites across 17 files, used for address derivation/lookup
-- `watched_addresses` — 10 callsites, used for address metadata
-- `transactions` — 9 callsites, used for transaction history display
+Additional completed work (same PR):
+- Migrated RPC send payment to `platform_wallet.core().send_transaction()`
+- Migrated all asset lock building (create_asset_lock, register_identity, top_up_identity, fund_platform_address, shielded bundle) to `platform_wallet.core().build_asset_lock_transaction()`
+- Removed all fallback paths (try PlatformWallet → fall back to old Wallet)
+- Removed ~600 lines of dead asset lock building code from asset_lock_transaction.rs
+- Removed build_standard_payment_transaction, build_multi_recipient_payment_transaction (~270 lines)
+- Removed reload_utxos (~120 lines), utxos_by_address, max_balance
+- Made broadcast_and_commit_asset_lock take Option<used_utxos> (None for PlatformWallet paths)
+- Removed 22 obsolete tests (UTXO selection, balance fallbacks, utxos_by_address)
+- Total: ~1,625 lines removed
 
-These require migrating evo-tool's own transaction building (`select_unspent_utxos_for`, `build_send_transaction`, asset lock building) and address derivation to use PlatformWallet exclusively. That's the scope of PR-19+.
+**Remaining Wallet fields (PR-19 scope):**
+- `utxos` — SPV reconciliation writes, _for_utxo asset lock paths, transaction_processing
+- `known_addresses` — address derivation (receive_address, change_address), key lookup, bootstrap
+- `watched_addresses` — address metadata, account summaries, UI display
+- `transactions` — transaction history display
 
 ---
 
-### PR-20: Merge Wallet + ManagedWalletInfo (dashcore)
+### PR-19: Migrate remaining Wallet fields
 
-(Renumbered from PR-19.)
+**Goal**: Remove `utxos`, `known_addresses`, `watched_addresses`, `transactions` from evo-tool's Wallet by migrating all remaining callers to PlatformWallet.
+
+**utxos removal** requires:
+- Migrate `_for_utxo` asset lock paths (QR-funded-UTXO) — add `build_asset_lock_from_utxo()` to CoreWallet
+- Remove SPV reconciliation write (`w.utxos = new_utxos`) — PlatformWallet already tracks via SPV adapter
+- Remove transaction_processing UTXO insertion — SPV adapter handles this
+- Remove `select_unspent_utxos_for` and `remove_selected_utxos` from utxos.rs
+
+**known_addresses/watched_addresses removal** requires:
+- Migrate `receive_address()` / `change_address()` to use CoreWallet's `next_receive_address()` / `next_change_address()`
+- Migrate `bootstrap_known_addresses()` to use ManagedWalletInfo's address pools
+- Migrate key lookup in `qualified_identity_public_key.rs` to use ManagedWalletInfo
+- Migrate `known_addresses.contains_key()` checks to ManagedWalletInfo address lookup
+- Migrate account_summary to use CoreAddressInfo
+
+**transactions removal** requires:
+- Add transaction history to CoreWallet/ManagedWalletInfo (if not already tracked)
+- Migrate wallets_screen transaction table to read from PlatformWallet
+
+---
+
+### PR-21: Merge Wallet + ManagedWalletInfo (dashcore)
 
 Merge `Wallet` and `ManagedWalletInfo` in `key-wallet` — both are mutable and always used
 together. Single `Arc<RwLock<Wallet>>` containing all state.
@@ -3741,9 +3773,7 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 
 ---
 
-### PR-21: Serialization + Final Cleanup
-
-(Renumbered from PR-20.)
+### PR-22: Serialization + Final Cleanup
 
 **Library** (`rs-platform-wallet`):
 
