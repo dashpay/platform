@@ -423,8 +423,12 @@ impl From<&BTreeMap<String, JsonValue>> for Value {
 
 #[cfg(test)]
 mod tests {
-    use crate::Value;
-    use serde_json::json;
+    use crate::converter::serde_json::BTreeValueJsonConverter;
+    use crate::{Error, Value};
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
+    use serde_json::{json, Value as JsonValue};
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_json_array() {
@@ -461,5 +465,659 @@ mod tests {
             .expect("expected to get array slice")
             .unwrap();
         assert_eq!(array.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // try_into_validating_json — all Value variants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validating_json_null() {
+        let result = Value::Null.try_into_validating_json().unwrap();
+        assert_eq!(result, JsonValue::Null);
+    }
+
+    #[test]
+    fn validating_json_bool() {
+        assert_eq!(
+            Value::Bool(true).try_into_validating_json().unwrap(),
+            JsonValue::Bool(true)
+        );
+        assert_eq!(
+            Value::Bool(false).try_into_validating_json().unwrap(),
+            JsonValue::Bool(false)
+        );
+    }
+
+    #[test]
+    fn validating_json_u8() {
+        let result = Value::U8(42).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(42));
+    }
+
+    #[test]
+    fn validating_json_i8() {
+        let result = Value::I8(-5).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(-5));
+    }
+
+    #[test]
+    fn validating_json_u16() {
+        let result = Value::U16(1000).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(1000));
+    }
+
+    #[test]
+    fn validating_json_i16() {
+        let result = Value::I16(-1000).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(-1000));
+    }
+
+    #[test]
+    fn validating_json_u32() {
+        let result = Value::U32(100_000).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(100_000));
+    }
+
+    #[test]
+    fn validating_json_i32() {
+        let result = Value::I32(-100_000).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(-100_000));
+    }
+
+    #[test]
+    fn validating_json_u64() {
+        let result = Value::U64(u64::MAX).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(u64::MAX));
+    }
+
+    #[test]
+    fn validating_json_i64() {
+        let result = Value::I64(i64::MIN).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(i64::MIN));
+    }
+
+    #[test]
+    fn validating_json_float() {
+        let result = Value::Float(3.14).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(3.14));
+    }
+
+    #[test]
+    fn validating_json_text() {
+        let result = Value::Text("hello".into())
+            .try_into_validating_json()
+            .unwrap();
+        assert_eq!(result, json!("hello"));
+    }
+
+    #[test]
+    fn validating_json_u128_fits_u64() {
+        let val = u64::MAX as u128;
+        let result = Value::U128(val).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(u64::MAX));
+    }
+
+    #[test]
+    fn validating_json_u128_too_large() {
+        let val = u64::MAX as u128 + 1;
+        let err = Value::U128(val).try_into_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn validating_json_i128_fits_i64_positive() {
+        let val = i64::MAX as i128;
+        let result = Value::I128(val).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(i64::MAX));
+    }
+
+    #[test]
+    fn validating_json_i128_fits_i64_negative() {
+        let val = i64::MIN as i128;
+        let result = Value::I128(val).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(i64::MIN));
+    }
+
+    #[test]
+    fn validating_json_i128_too_large_positive() {
+        let val = i64::MAX as i128 + 1;
+        let err = Value::I128(val).try_into_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn validating_json_i128_too_small_negative() {
+        let val = i64::MIN as i128 - 1;
+        let err = Value::I128(val).try_into_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn validating_json_bytes() {
+        let result = Value::Bytes(vec![1, 2, 3])
+            .try_into_validating_json()
+            .unwrap();
+        assert_eq!(result, json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn validating_json_bytes20() {
+        let bytes = [7u8; 20];
+        let result = Value::Bytes20(bytes).try_into_validating_json().unwrap();
+        let arr: Vec<JsonValue> = bytes.iter().map(|b| json!(*b)).collect();
+        assert_eq!(result, JsonValue::Array(arr));
+    }
+
+    #[test]
+    fn validating_json_bytes32() {
+        let bytes = [9u8; 32];
+        let result = Value::Bytes32(bytes).try_into_validating_json().unwrap();
+        let arr: Vec<JsonValue> = bytes.iter().map(|b| json!(*b)).collect();
+        assert_eq!(result, JsonValue::Array(arr));
+    }
+
+    #[test]
+    fn validating_json_bytes36() {
+        let bytes = [11u8; 36];
+        let result = Value::Bytes36(bytes).try_into_validating_json().unwrap();
+        let arr: Vec<JsonValue> = bytes.iter().map(|b| json!(*b)).collect();
+        assert_eq!(result, JsonValue::Array(arr));
+    }
+
+    #[test]
+    fn validating_json_identifier() {
+        let bytes = [0xABu8; 32];
+        let result = Value::Identifier(bytes).try_into_validating_json().unwrap();
+        let arr: Vec<JsonValue> = bytes.iter().map(|b| json!(*b)).collect();
+        assert_eq!(result, JsonValue::Array(arr));
+    }
+
+    #[test]
+    fn validating_json_array_nested() {
+        let val = Value::Array(vec![Value::U64(1), Value::Text("two".into())]);
+        let result = val.try_into_validating_json().unwrap();
+        assert_eq!(result, json!([1, "two"]));
+    }
+
+    #[test]
+    fn validating_json_map() {
+        let map = vec![
+            (Value::Text("a".into()), Value::U64(1)),
+            (Value::Text("b".into()), Value::Bool(true)),
+        ];
+        let val = Value::Map(map);
+        let result = val.try_into_validating_json().unwrap();
+        assert_eq!(result, json!({"a": 1, "b": true}));
+    }
+
+    #[test]
+    fn validating_json_enum_u8_unsupported() {
+        let err = Value::EnumU8(vec![1, 2])
+            .try_into_validating_json()
+            .unwrap_err();
+        assert!(matches!(err, Error::Unsupported(_)));
+    }
+
+    #[test]
+    fn validating_json_enum_string_unsupported() {
+        let err = Value::EnumString(vec!["a".into()])
+            .try_into_validating_json()
+            .unwrap_err();
+        assert!(matches!(err, Error::Unsupported(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // From<JsonValue> for Value — all JSON variants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn from_json_null() {
+        let val: Value = JsonValue::Null.into();
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn from_json_bool_true() {
+        let val: Value = json!(true).into();
+        assert_eq!(val, Value::Bool(true));
+    }
+
+    #[test]
+    fn from_json_bool_false() {
+        let val: Value = json!(false).into();
+        assert_eq!(val, Value::Bool(false));
+    }
+
+    #[test]
+    fn from_json_positive_integer() {
+        let val: Value = json!(42).into();
+        assert_eq!(val, Value::U64(42));
+    }
+
+    #[test]
+    fn from_json_negative_integer() {
+        let val: Value = json!(-7).into();
+        assert_eq!(val, Value::I64(-7));
+    }
+
+    #[test]
+    fn from_json_float() {
+        let val: Value = json!(2.5).into();
+        assert_eq!(val, Value::Float(2.5));
+    }
+
+    #[test]
+    fn from_json_string() {
+        let val: Value = json!("hello").into();
+        assert_eq!(val, Value::Text("hello".into()));
+    }
+
+    #[test]
+    fn from_json_object() {
+        let val: Value = json!({"key": "value"}).into();
+        assert!(val.is_map());
+    }
+
+    // --- byte-array heuristic tests ---
+
+    #[test]
+    fn from_json_array_10_u8_range_becomes_bytes() {
+        // Exactly 10 elements, all in u8 range -> Bytes
+        let arr: Vec<JsonValue> = (0u64..10).map(|i| json!(i)).collect();
+        let val: Value = JsonValue::Array(arr).into();
+        assert_eq!(val, Value::Bytes(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]));
+    }
+
+    #[test]
+    fn from_json_array_9_u8_range_stays_array() {
+        // Only 9 elements -> stays as Array even though all are u8-range
+        let arr: Vec<JsonValue> = (0u64..9).map(|i| json!(i)).collect();
+        let val: Value = JsonValue::Array(arr).into();
+        assert!(matches!(val, Value::Array(_)));
+    }
+
+    #[test]
+    fn from_json_array_mixed_types_stays_array() {
+        // 10+ elements but mixed types -> stays as Array
+        let mut arr: Vec<JsonValue> = (0u64..10).map(|i| json!(i)).collect();
+        arr.push(json!("not_a_number"));
+        let val: Value = JsonValue::Array(arr).into();
+        assert!(matches!(val, Value::Array(_)));
+    }
+
+    #[test]
+    fn from_json_array_large_values_stays_array() {
+        // 10+ elements but values exceed u8 range -> stays as Array
+        let arr: Vec<JsonValue> = (0u64..12).map(|i| json!(i * 100)).collect();
+        let val: Value = JsonValue::Array(arr).into();
+        // Some values like 1100 exceed u8::MAX (255), so not all u8-range
+        assert!(matches!(val, Value::Array(_)));
+    }
+
+    #[test]
+    fn from_json_array_all_255_becomes_bytes() {
+        // 10 elements all at u8::MAX
+        let arr: Vec<JsonValue> = vec![json!(255); 10];
+        let val: Value = JsonValue::Array(arr).into();
+        assert_eq!(val, Value::Bytes(vec![255; 10]));
+    }
+
+    #[test]
+    fn from_json_array_with_negative_stays_array() {
+        // Negative numbers are not in u8 range
+        let mut arr: Vec<JsonValue> = (0u64..9).map(|i| json!(i)).collect();
+        arr.push(json!(-1));
+        let val: Value = JsonValue::Array(arr).into();
+        assert!(matches!(val, Value::Array(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // From<&JsonValue> for Value — reference variant
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn from_json_ref_null() {
+        let jv = JsonValue::Null;
+        let val: Value = (&jv).into();
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn from_json_ref_array_becomes_bytes() {
+        let arr: Vec<JsonValue> = (0u64..15).map(|i| json!(i)).collect();
+        let jv = JsonValue::Array(arr);
+        let val: Value = (&jv).into();
+        assert!(matches!(val, Value::Bytes(_)));
+    }
+
+    #[test]
+    fn from_json_ref_array_short_stays_array() {
+        let arr: Vec<JsonValue> = (0u64..5).map(|i| json!(i)).collect();
+        let jv = JsonValue::Array(arr);
+        let val: Value = (&jv).into();
+        assert!(matches!(val, Value::Array(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // TryInto<JsonValue> for Value — bytes become base64, identifiers become bs58
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_into_json_bytes_become_base64() {
+        let bytes = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let expected = BASE64_STANDARD.encode(&bytes);
+        let result: JsonValue = Value::Bytes(bytes).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(expected));
+    }
+
+    #[test]
+    fn try_into_json_bytes20_become_base64() {
+        let bytes = [0xAAu8; 20];
+        let expected = BASE64_STANDARD.encode(bytes);
+        let result: JsonValue = Value::Bytes20(bytes).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(expected));
+    }
+
+    #[test]
+    fn try_into_json_bytes32_become_base64() {
+        let bytes = [0xBBu8; 32];
+        let expected = BASE64_STANDARD.encode(bytes);
+        let result: JsonValue = Value::Bytes32(bytes).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(expected));
+    }
+
+    #[test]
+    fn try_into_json_bytes36_become_base64() {
+        let bytes = [0xCCu8; 36];
+        let expected = BASE64_STANDARD.encode(bytes);
+        let result: JsonValue = Value::Bytes36(bytes).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(expected));
+    }
+
+    #[test]
+    fn try_into_json_identifier_becomes_bs58() {
+        let bytes = [0x01u8; 32];
+        let expected = bs58::encode(&bytes).into_string();
+        let result: JsonValue = Value::Identifier(bytes).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(expected));
+    }
+
+    #[test]
+    fn try_into_json_u128_becomes_string() {
+        let result: JsonValue = Value::U128(u128::MAX).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(u128::MAX.to_string()));
+    }
+
+    #[test]
+    fn try_into_json_i128_becomes_string() {
+        let result: JsonValue = Value::I128(i128::MIN).try_into().unwrap();
+        assert_eq!(result, JsonValue::String(i128::MIN.to_string()));
+    }
+
+    #[test]
+    fn try_into_json_null() {
+        let result: JsonValue = Value::Null.try_into().unwrap();
+        assert_eq!(result, JsonValue::Null);
+    }
+
+    #[test]
+    fn try_into_json_bool() {
+        let result: JsonValue = Value::Bool(true).try_into().unwrap();
+        assert_eq!(result, JsonValue::Bool(true));
+    }
+
+    #[test]
+    fn try_into_json_text() {
+        let result: JsonValue = Value::Text("abc".into()).try_into().unwrap();
+        assert_eq!(result, json!("abc"));
+    }
+
+    #[test]
+    fn try_into_json_integer_types() {
+        let r: JsonValue = Value::U8(1).try_into().unwrap();
+        assert_eq!(r, json!(1));
+        let r: JsonValue = Value::I8(-1).try_into().unwrap();
+        assert_eq!(r, json!(-1));
+        let r: JsonValue = Value::U16(500).try_into().unwrap();
+        assert_eq!(r, json!(500));
+        let r: JsonValue = Value::I16(-500).try_into().unwrap();
+        assert_eq!(r, json!(-500));
+        let r: JsonValue = Value::U32(70000).try_into().unwrap();
+        assert_eq!(r, json!(70000));
+        let r: JsonValue = Value::I32(-70000).try_into().unwrap();
+        assert_eq!(r, json!(-70000));
+        let r: JsonValue = Value::U64(123456789).try_into().unwrap();
+        assert_eq!(r, json!(123456789));
+        let r: JsonValue = Value::I64(-123456789).try_into().unwrap();
+        assert_eq!(r, json!(-123456789));
+    }
+
+    #[test]
+    fn try_into_json_array() {
+        let val = Value::Array(vec![Value::U64(1), Value::Bool(false)]);
+        let result: JsonValue = val.try_into().unwrap();
+        assert_eq!(result, json!([1, false]));
+    }
+
+    #[test]
+    fn try_into_json_map() {
+        let map = vec![(Value::Text("x".into()), Value::U64(99))];
+        let val = Value::Map(map);
+        let result: JsonValue = val.try_into().unwrap();
+        assert_eq!(result, json!({"x": 99}));
+    }
+
+    #[test]
+    fn try_into_json_enum_u8_error() {
+        let result: Result<JsonValue, Error> = Value::EnumU8(vec![1]).try_into();
+        assert!(matches!(result, Err(Error::Unsupported(_))));
+    }
+
+    #[test]
+    fn try_into_json_enum_string_error() {
+        let result: Result<JsonValue, Error> = Value::EnumString(vec!["a".into()]).try_into();
+        assert!(matches!(result, Err(Error::Unsupported(_))));
+    }
+
+    // -----------------------------------------------------------------------
+    // Round-trip: Value -> JsonValue -> Value for basic types
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn round_trip_null() {
+        let original = Value::Null;
+        let json: JsonValue = original.clone().try_into_validating_json().unwrap();
+        let back: Value = json.into();
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn round_trip_bool() {
+        let original = Value::Bool(true);
+        let json: JsonValue = original.clone().try_into_validating_json().unwrap();
+        let back: Value = json.into();
+        assert_eq!(back, Value::Bool(true));
+    }
+
+    #[test]
+    fn round_trip_u64() {
+        let original = Value::U64(42);
+        let json: JsonValue = original.clone().try_into_validating_json().unwrap();
+        let back: Value = json.into();
+        // JSON numbers parse back as U64
+        assert_eq!(back, Value::U64(42));
+    }
+
+    #[test]
+    fn round_trip_i64() {
+        let original = Value::I64(-42);
+        let json: JsonValue = original.clone().try_into_validating_json().unwrap();
+        let back: Value = json.into();
+        assert_eq!(back, Value::I64(-42));
+    }
+
+    #[test]
+    fn round_trip_text() {
+        let original = Value::Text("hello world".into());
+        let json: JsonValue = original.clone().try_into_validating_json().unwrap();
+        let back: Value = json.into();
+        assert_eq!(back, original);
+    }
+
+    // -----------------------------------------------------------------------
+    // BTreeValueJsonConverter methods
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn btree_into_json_value() {
+        let mut map = BTreeMap::new();
+        map.insert("x".to_string(), Value::U64(10));
+        map.insert("y".to_string(), Value::Text("test".into()));
+        let json = map.into_json_value().unwrap();
+        assert!(json.is_object());
+        assert_eq!(json["x"], json!(10));
+        assert_eq!(json["y"], json!("test"));
+    }
+
+    #[test]
+    fn btree_into_validating_json_value() {
+        let mut map = BTreeMap::new();
+        map.insert("n".to_string(), Value::U64(5));
+        let json = map.into_validating_json_value().unwrap();
+        assert_eq!(json["n"], json!(5));
+    }
+
+    #[test]
+    fn btree_to_json_value() {
+        let mut map = BTreeMap::new();
+        map.insert("k".to_string(), Value::Bool(true));
+        let json = map.to_json_value().unwrap();
+        assert_eq!(json["k"], json!(true));
+        // Original map is still available (borrow, not move)
+        assert!(map.contains_key("k"));
+    }
+
+    #[test]
+    fn btree_to_validating_json_value() {
+        let mut map = BTreeMap::new();
+        map.insert("v".to_string(), Value::I64(-1));
+        let json = map.to_validating_json_value().unwrap();
+        assert_eq!(json["v"], json!(-1));
+    }
+
+    #[test]
+    fn btree_from_json_value() {
+        let json = json!({"a": 1, "b": "two"});
+        let map = BTreeMap::<String, Value>::from_json_value(json).unwrap();
+        assert_eq!(map.get("a"), Some(&Value::U64(1)));
+        assert_eq!(map.get("b"), Some(&Value::Text("two".into())));
+    }
+
+    #[test]
+    fn btree_from_json_value_non_object_error() {
+        let json = json!([1, 2, 3]);
+        let result = BTreeMap::<String, Value>::from_json_value(json);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // From<BTreeMap<String, JsonValue>> for Value
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn from_btree_json_map() {
+        let mut btree = BTreeMap::new();
+        btree.insert("key".to_string(), json!(42));
+        let val: Value = btree.into();
+        assert!(val.is_map());
+    }
+
+    #[test]
+    fn from_btree_json_map_ref() {
+        let mut btree = BTreeMap::new();
+        btree.insert("key".to_string(), json!(42));
+        let val: Value = (&btree).into();
+        assert!(val.is_map());
+    }
+
+    // -----------------------------------------------------------------------
+    // try_to_validating_json (borrow variant) mirrors try_into_validating_json
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_to_validating_json_basic() {
+        let val = Value::U64(99);
+        let json = val.try_to_validating_json().unwrap();
+        assert_eq!(json, json!(99));
+    }
+
+    #[test]
+    fn try_to_validating_json_u128_too_large() {
+        let val = Value::U128(u128::MAX);
+        let err = val.try_to_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn try_to_validating_json_i128_too_large() {
+        let val = Value::I128(i128::MAX);
+        let err = val.try_to_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn try_to_validating_json_i128_too_small() {
+        let val = Value::I128(i128::MIN);
+        let err = val.try_to_validating_json().unwrap_err();
+        assert_eq!(err, Error::IntegerSizeError);
+    }
+
+    #[test]
+    fn try_to_validating_json_enum_u8_error() {
+        let val = Value::EnumU8(vec![1]);
+        let err = val.try_to_validating_json().unwrap_err();
+        assert!(matches!(err, Error::Unsupported(_)));
+    }
+
+    #[test]
+    fn try_to_validating_json_enum_string_error() {
+        let val = Value::EnumString(vec!["a".into()]);
+        let err = val.try_to_validating_json().unwrap_err();
+        assert!(matches!(err, Error::Unsupported(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // try_into_validating_btree_map_json
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_into_validating_btree_map_json_success() {
+        let map = vec![(Value::Text("k".into()), Value::U64(7))];
+        let val = Value::Map(map);
+        let result = val.try_into_validating_btree_map_json().unwrap();
+        assert_eq!(result.get("k"), Some(&json!(7)));
+    }
+
+    // -----------------------------------------------------------------------
+    // convert_from_serde_json_map
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn convert_from_serde_json_map_basic() {
+        let pairs = vec![
+            ("a".to_string(), json!(1)),
+            ("b".to_string(), json!("hello")),
+        ];
+        let result: BTreeMap<String, Value> = Value::convert_from_serde_json_map(pairs);
+        assert_eq!(result.get("a"), Some(&Value::U64(1)));
+        assert_eq!(result.get("b"), Some(&Value::Text("hello".into())));
+    }
+
+    #[test]
+    fn validating_json_float_nan_becomes_zero() {
+        // NaN cannot be represented in JSON Number, falls back to 0
+        let result = Value::Float(f64::NAN).try_into_validating_json().unwrap();
+        assert_eq!(result, json!(0));
     }
 }
