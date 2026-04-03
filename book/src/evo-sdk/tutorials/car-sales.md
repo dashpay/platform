@@ -36,14 +36,14 @@ const carSalesSchema = {
   listing: {
     type: 'object',
     properties: {
-      make:        { type: 'string', maxLength: 64 },
-      model:       { type: 'string', maxLength: 64 },
-      year:        { type: 'integer', minimum: 1900, maximum: 2100 },
-      mileageKm:   { type: 'integer', minimum: 0 },
-      priceUsd:    { type: 'integer', minimum: 0 },
-      description: { type: 'string', maxLength: 1024 },
-      imageUrl:    { type: 'string', maxLength: 512, format: 'uri' },
-      status:      { type: 'string', enum: ['available', 'pending', 'sold'] },
+      make:        { type: 'string', maxLength: 63, position: 0 },
+      model:       { type: 'string', maxLength: 63, position: 1 },
+      year:        { type: 'integer', minimum: 1900, maximum: 2100, position: 2 },
+      mileageKm:   { type: 'integer', minimum: 0, position: 3 },
+      priceUsd:    { type: 'integer', minimum: 0, position: 4 },
+      description: { type: 'string', maxLength: 1024, position: 5 },
+      imageUrl:    { type: 'string', maxLength: 512, format: 'uri', position: 6 },
+      status:      { type: 'string', enum: ['available', 'pending', 'sold'], position: 7 },
     },
     required: ['make', 'model', 'year', 'priceUsd', 'status'],
     additionalProperties: false,
@@ -51,10 +51,10 @@ const carSalesSchema = {
   review: {
     type: 'object',
     properties: {
-      sellerId:  { type: 'string', maxLength: 44 },
-      listingId: { type: 'string', maxLength: 44 },
-      rating:    { type: 'integer', minimum: 1, maximum: 5 },
-      comment:   { type: 'string', maxLength: 512 },
+      sellerId:  { type: 'string', maxLength: 44, position: 0 },
+      listingId: { type: 'string', maxLength: 44, position: 1 },
+      rating:    { type: 'integer', minimum: 1, maximum: 5, position: 2 },
+      comment:   { type: 'string', maxLength: 512, position: 3 },
     },
     required: ['sellerId', 'rating'],
     additionalProperties: false,
@@ -65,7 +65,7 @@ const carSalesSchema = {
 ## Step 2: Connect and publish the contract
 
 ```typescript
-import { EvoSDK, wallet } from '@dashevo/evo-sdk';
+import { EvoSDK, DataContract, Document, Identifier, IdentitySigner } from '@dashevo/evo-sdk';
 
 const sdk = EvoSDK.testnetTrusted();
 await sdk.connect();
@@ -75,16 +75,22 @@ const identityId = 'YOUR_IDENTITY_ID';
 const privateKeyWif = 'YOUR_PRIVATE_KEY_WIF';
 const signingKeyIndex = 0;
 
-// Publish the data contract
-const contract = await sdk.contracts.publish({
-  identityId,
-  documentSchemas: carSalesSchema,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
-});
+// Set up signing
+const identity = await sdk.identities.fetch(identityId);
+const identityKey = identity.publicKeys[signingKeyIndex];
+const signer = new IdentitySigner();
+signer.addKeyFromWif(privateKeyWif);
 
-const contractId = contract.getId().toString();
+// Publish the data contract
+const nonce = await sdk.identities.nonce(identityId);
+const dataContract = new DataContract({
+  ownerId: new Identifier(identityId),
+  identityNonce: nonce + 1n,
+  schemas: carSalesSchema,
+});
+const contract = await sdk.contracts.publish({ dataContract, identityKey, signer });
+
+const contractId = contract.id.toString();
 console.log('Contract published:', contractId);
 ```
 
@@ -93,12 +99,11 @@ Save the `contractId` — you will need it for all subsequent operations.
 ## Step 3: Create a listing
 
 ```typescript
-const nonce = await sdk.identities.contractNonce(identityId, contractId);
-
-await sdk.documents.create({
-  contractId,
-  documentType: 'listing',
-  document: {
+const doc = new Document({
+  documentTypeName: 'listing',
+  dataContractId: new Identifier(contractId),
+  ownerId: new Identifier(identityId),
+  properties: {
     make: 'Toyota',
     model: 'Camry',
     year: 2021,
@@ -107,11 +112,8 @@ await sdk.documents.create({
     description: 'Well-maintained, single owner, full service history.',
     status: 'available',
   },
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce,
 });
+await sdk.documents.create({ document: doc, identityKey, signer });
 
 console.log('Listing created!');
 ```
@@ -121,8 +123,8 @@ console.log('Listing created!');
 ```typescript
 // Fetch all available listings
 const results = await sdk.documents.query({
-  contractId,
-  documentType: 'listing',
+  dataContractId: contractId,
+  documentTypeName: 'listing',
   where: [['status', '==', 'available']],
   orderBy: [['priceUsd', 'asc']],
   limit: 20,
@@ -130,7 +132,7 @@ const results = await sdk.documents.query({
 
 for (const [id, doc] of results) {
   if (!doc) continue;
-  const data = doc.getData();
+  const data = doc.properties as Record<string, unknown>;
   console.log(`${data.year} ${data.make} ${data.model} — $${data.priceUsd}`);
   console.log(`  ID: ${id}`);
 }
@@ -140,8 +142,8 @@ for (const [id, doc] of results) {
 
 ```typescript
 const toyotas = await sdk.documents.query({
-  contractId,
-  documentType: 'listing',
+  dataContractId: contractId,
+  documentTypeName: 'listing',
   where: [
     ['make', '==', 'Toyota'],
     ['status', '==', 'available'],
@@ -157,24 +159,11 @@ Mark a listing as sold:
 ```typescript
 const listingId = 'THE_LISTING_DOCUMENT_ID';
 
-await sdk.documents.replace({
-  contractId,
-  documentType: 'listing',
-  documentId: listingId,
-  document: {
-    make: 'Toyota',
-    model: 'Camry',
-    year: 2021,
-    mileageKm: 45000,
-    priceUsd: 22500,
-    description: 'Well-maintained, single owner, full service history.',
-    status: 'sold',
-  },
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.contractNonce(identityId, contractId),
-});
+// Fetch the existing document, modify it, and bump the revision
+const existing = await sdk.documents.get(contractId, 'listing', listingId);
+existing.properties = { ...existing.properties, status: 'sold' };
+existing.revision = (existing.revision ?? 0n) + 1n;
+await sdk.documents.replace({ document: existing, identityKey, signer });
 
 console.log('Listing marked as sold');
 ```
@@ -182,28 +171,32 @@ console.log('Listing marked as sold');
 ## Step 6: Leave a review
 
 ```typescript
-await sdk.documents.create({
-  contractId,
-  documentType: 'review',
-  document: {
+// Set up buyer signing
+const buyerIdentity = await sdk.identities.fetch(buyerIdentityId);
+const buyerKey = buyerIdentity.publicKeys[0];
+const buyerSigner = new IdentitySigner();
+buyerSigner.addKeyFromWif(buyerKeyWif);
+
+const reviewDoc = new Document({
+  documentTypeName: 'review',
+  dataContractId: new Identifier(contractId),
+  ownerId: new Identifier(buyerIdentityId),
+  properties: {
     sellerId: 'SELLER_IDENTITY_ID',
     listingId: 'THE_LISTING_DOCUMENT_ID',
     rating: 5,
     comment: 'Great seller, car was exactly as described!',
   },
-  identityId: buyerIdentityId,
-  privateKeyWif: buyerKeyWif,
-  signingKeyIndex: 0,
-  nonce: await sdk.identities.contractNonce(buyerIdentityId, contractId),
 });
+await sdk.documents.create({ document: reviewDoc, identityKey: buyerKey, signer: buyerSigner });
 ```
 
 ### Query reviews for a seller
 
 ```typescript
 const reviews = await sdk.documents.query({
-  contractId,
-  documentType: 'review',
+  dataContractId: contractId,
+  documentTypeName: 'review',
   where: [['sellerId', '==', 'SELLER_IDENTITY_ID']],
   orderBy: [['rating', 'desc']],
   limit: 50,
@@ -213,7 +206,8 @@ let totalRating = 0;
 let count = 0;
 for (const [, doc] of reviews) {
   if (!doc) continue;
-  totalRating += doc.getData().rating;
+  const props = doc.properties as Record<string, unknown>;
+  totalRating += props.rating as number;
   count++;
 }
 console.log(`Average rating: ${(totalRating / count).toFixed(1)} (${count} reviews)`);

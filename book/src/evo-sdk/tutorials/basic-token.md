@@ -31,7 +31,12 @@ A token is defined as part of a data contract. The contract schema includes a
 `tokens` section alongside the usual document schemas.
 
 ```typescript
-import { EvoSDK, wallet } from '@dashevo/evo-sdk';
+import {
+  EvoSDK, DataContract, Identifier, IdentitySigner,
+  TokenConfigurationConvention, TokenConfigurationLocalization, TokenConfiguration,
+  ChangeControlRules, AuthorizedActionTakers, TokenDistributionRules,
+  TokenKeepsHistoryRules, TokenMarketplaceRules, TokenTradeMode,
+} from '@dashevo/evo-sdk';
 
 const sdk = EvoSDK.testnetTrusted();
 await sdk.connect();
@@ -46,62 +51,75 @@ const contractSchema = {
   tokenMetadata: {
     type: 'object',
     properties: {
-      tokenName: { type: 'string', maxLength: 64 },
-      description: { type: 'string', maxLength: 256 },
+      tokenName: { type: 'string', maxLength: 63, position: 0 },
+      description: { type: 'string', maxLength: 256, position: 1 },
     },
     additionalProperties: false,
   },
 };
 
-// Token configuration is passed separately when publishing
-const tokenConfig = {
-  // Position 0 = first token in this contract
-  conventions: {
-    localizations: {
-      en: {
-        shouldCapitalize: true,
-        singularForm: 'CoffeeCoin',
-        pluralForm: 'CoffeeCoins',
-      },
-    },
-    decimals: 2,
-  },
-  // The contract owner can mint manually
-  manualMinting: {
-    rules: {
-      // Allow the contract owner to mint
-      type: 'ownerOnly',
-    },
-  },
-  // The contract owner can burn their own tokens
-  manualBurning: {
-    rules: {
-      type: 'ownerOnly',
-    },
-  },
-  // Maximum supply (optional)
-  maxSupply: 1_000_000_00, // 1,000,000.00 with 2 decimals
-};
+// Build the token configuration using SDK classes
+const localization = new TokenConfigurationLocalization(true, 'CoffeeCoin', 'CoffeeCoins');
+const conventions = new TokenConfigurationConvention({ en: localization }, 2);
+
+const ownerOnly = new ChangeControlRules({
+  authorizedToMakeChange: AuthorizedActionTakers.ContractOwner(),
+  adminActionTakers: AuthorizedActionTakers.ContractOwner(),
+});
+const noOne = new ChangeControlRules({
+  authorizedToMakeChange: AuthorizedActionTakers.NoOne(),
+  adminActionTakers: AuthorizedActionTakers.NoOne(),
+});
+
+const tokenConfig = new TokenConfiguration({
+  conventions,
+  conventionsChangeRules: noOne,
+  baseSupply: 0n,
+  maxSupply: 1_000_000_00n,  // 1,000,000.00 with 2 decimals
+  maxSupplyChangeRules: noOne,
+  keepsHistory: new TokenKeepsHistoryRules({
+    isKeepingMintingHistory: true,
+    isKeepingBurningHistory: true,
+    isKeepingTransferHistory: true,
+  }),
+  distributionRules: new TokenDistributionRules({
+    perpetualDistributionRules: noOne,
+    newTokensDestinationIdentityRules: noOne,
+    mintingAllowChoosingDestination: true,
+    mintingAllowChoosingDestinationRules: noOne,
+    changeDirectPurchasePricingRules: noOne,
+  }),
+  marketplaceRules: new TokenMarketplaceRules(TokenTradeMode.NotTradeable(), noOne),
+  manualMintingRules: ownerOnly,
+  manualBurningRules: ownerOnly,
+  freezeRules: noOne,
+  unfreezeRules: noOne,
+  destroyFrozenFundsRules: noOne,
+  emergencyActionRules: noOne,
+  mainControlGroupCanBeModified: AuthorizedActionTakers.NoOne(),
+});
 ```
 
 ## Step 2: Publish the contract
 
 ```typescript
-const contract = await sdk.contracts.publish({
-  identityId,
-  documentSchemas: contractSchema,
-  tokens: [tokenConfig],
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
+// Set up signing
+const identity = await sdk.identities.fetch(identityId);
+const identityKey = identity.publicKeys[signingKeyIndex];
+const signer = new IdentitySigner();
+signer.addKeyFromWif(privateKeyWif);
+
+const nonce = await sdk.identities.nonce(identityId);
+const dataContract = new DataContract({
+  ownerId: new Identifier(identityId),
+  identityNonce: nonce + 1n,
+  schemas: contractSchema,
+  tokens: { 0: tokenConfig },
 });
+const contract = await sdk.contracts.publish({ dataContract, identityKey, signer });
 
-const contractId = contract.getId().toString();
+const contractId = contract.id.toString();
 console.log('Contract published:', contractId);
-
-// Calculate the token ID (derived from contract ID + position)
-const tokenId = await sdk.tokens.calculateId(contractId, 0);
-console.log('Token ID:', tokenId);
 ```
 
 ## Step 3: Mint tokens
@@ -109,15 +127,21 @@ console.log('Token ID:', tokenId);
 The contract owner can mint tokens to any identity:
 
 ```typescript
+// Token operations require a CRITICAL security level key.
+// Fetch a key with the appropriate security level from the identity.
+const criticalKey = identity.publicKeys[signingKeyIndex];
+const criticalSigner = new IdentitySigner();
+criticalSigner.addKeyFromWif(privateKeyWif);
+
 // Mint 10,000.00 CoffeeCoins to yourself
 await sdk.tokens.mint({
-  tokenId,
-  amount: 10_000_00,          // 10,000.00 (2 decimal places)
-  recipientId: identityId,    // mint to yourself
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
+  dataContractId: new Identifier(contractId),
+  tokenPosition: 0,
+  amount: 10_000_00n,          // 10,000.00 (2 decimal places) — must be bigint
+  recipientId: new Identifier(identityId),
+  identityId: new Identifier(identityId),
+  identityKey: criticalKey,
+  signer: criticalSigner,
 });
 
 console.log('Minted 10,000 CoffeeCoins');
@@ -127,13 +151,13 @@ console.log('Minted 10,000 CoffeeCoins');
 
 ```typescript
 await sdk.tokens.mint({
-  tokenId,
-  amount: 500_00,             // 500.00 CoffeeCoins
-  recipientId: 'RECIPIENT_IDENTITY_ID',
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
+  dataContractId: new Identifier(contractId),
+  tokenPosition: 0,
+  amount: 500_00n,             // 500.00 CoffeeCoins
+  recipientId: new Identifier('RECIPIENT_IDENTITY_ID'),
+  identityId: new Identifier(identityId),
+  identityKey: criticalKey,
+  signer: criticalSigner,
 });
 ```
 
@@ -141,14 +165,17 @@ await sdk.tokens.mint({
 
 ```typescript
 // Check your own balance
-const myBalances = await sdk.tokens.identityBalances(identityId, [tokenId]);
-const myBalance = myBalances.get(tokenId) ?? 0n;
+const myBalances = await sdk.tokens.identityBalances(identityId, [contractId]);
+let myBalance = 0n;
+for (const [id, balance] of myBalances) {
+  if (id.toString() === contractId) myBalance = balance;
+}
 console.log('My balance:', Number(myBalance) / 100, 'CoffeeCoins');
 
 // Check multiple identities at once
 const balances = await sdk.tokens.balances(
   [identityId, 'OTHER_IDENTITY_ID'],
-  tokenId,
+  contractId,
 );
 
 for (const [id, balance] of balances) {
@@ -159,6 +186,7 @@ for (const [id, balance] of balances) {
 ### Check total supply
 
 ```typescript
+const tokenId = await sdk.tokens.calculateId(contractId, 0);
 const supply = await sdk.tokens.totalSupply(tokenId);
 if (supply) {
   console.log('Total supply:', Number(supply.totalSupply) / 100, 'CoffeeCoins');
@@ -169,13 +197,13 @@ if (supply) {
 
 ```typescript
 await sdk.tokens.transfer({
-  tokenId,
-  amount: 25_00,              // 25.00 CoffeeCoins
-  recipientId: 'RECIPIENT_IDENTITY_ID',
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
+  dataContractId: new Identifier(contractId),
+  tokenPosition: 0,
+  amount: 25_00n,              // 25.00 CoffeeCoins
+  recipientId: new Identifier('RECIPIENT_IDENTITY_ID'),
+  senderId: new Identifier(identityId),
+  identityKey: criticalKey,
+  signer: criticalSigner,
 });
 
 console.log('Transferred 25 CoffeeCoins');
@@ -187,12 +215,12 @@ Reduce the supply by burning tokens you own:
 
 ```typescript
 await sdk.tokens.burn({
-  tokenId,
-  amount: 100_00,             // 100.00 CoffeeCoins
-  identityId,
-  privateKeyWif,
-  signingKeyIndex,
-  nonce: await sdk.identities.nonce(identityId),
+  dataContractId: new Identifier(contractId),
+  tokenPosition: 0,
+  amount: 100_00n,             // 100.00 CoffeeCoins
+  identityId: new Identifier(identityId),
+  identityKey: criticalKey,
+  signer: criticalSigner,
 });
 
 console.log('Burned 100 CoffeeCoins');
@@ -203,7 +231,7 @@ console.log('Burned 100 CoffeeCoins');
 Putting it all together as a complete script:
 
 ```typescript
-import { EvoSDK } from '@dashevo/evo-sdk';
+import { EvoSDK, Identifier, IdentitySigner } from '@dashevo/evo-sdk';
 
 async function main() {
   const sdk = EvoSDK.testnetTrusted();
@@ -211,21 +239,29 @@ async function main() {
 
   const identityId = 'YOUR_IDENTITY_ID';
   const privateKeyWif = 'YOUR_PRIVATE_KEY_WIF';
-  const tokenId = 'YOUR_TOKEN_ID';  // from step 2
+  const contractId = 'YOUR_CONTRACT_ID';  // from step 2
+
+  // Set up signing (token ops require a CRITICAL security level key)
+  const identity = await sdk.identities.fetch(identityId);
+  const identityKey = identity.publicKeys[0];
+  const signer = new IdentitySigner();
+  signer.addKeyFromWif(privateKeyWif);
 
   // Check balance
-  const balances = await sdk.tokens.identityBalances(identityId, [tokenId]);
-  console.log('Balance:', balances.get(tokenId) ?? 0n);
+  const balances = await sdk.tokens.identityBalances(identityId, [contractId]);
+  for (const [id, balance] of balances) {
+    if (id.toString() === contractId) console.log('Balance:', balance);
+  }
 
   // Transfer
   await sdk.tokens.transfer({
-    tokenId,
-    amount: 10_00,
-    recipientId: 'FRIEND_IDENTITY_ID',
-    identityId,
-    privateKeyWif,
-    signingKeyIndex: 0,
-    nonce: await sdk.identities.nonce(identityId),
+    dataContractId: new Identifier(contractId),
+    tokenPosition: 0,
+    amount: 10_00n,
+    recipientId: new Identifier('FRIEND_IDENTITY_ID'),
+    senderId: new Identifier(identityId),
+    identityKey,
+    signer,
   });
 
   console.log('Transfer complete!');
