@@ -121,7 +121,7 @@ fn main() {
             eprintln!("Invalid hex: {e}");
             std::process::exit(1);
         }),
-        "auto" | _ => {
+        _ => {
             // Try base64 first (most common — gRPC responses are base64),
             // then hex. This avoids misinterpreting hex-only base64 strings.
             if let Ok(b) = base64::engine::general_purpose::STANDARD.decode(&args.doc_bytes) {
