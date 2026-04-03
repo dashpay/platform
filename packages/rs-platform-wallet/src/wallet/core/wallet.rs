@@ -204,11 +204,99 @@ impl CoreWallet {
             .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
+    /// Blocking version of `next_receive_address` for sync contexts.
+    pub fn blocking_next_receive_address(
+        &self,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        self.blocking_next_receive_address_for_account(0)
+    }
+
+    /// Blocking version of `next_receive_address_for_account`.
+    pub fn blocking_next_receive_address_for_account(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let xpub = {
+            let wallet = self.wallet.blocking_read();
+            let path = key_wallet::account::AccountType::Standard {
+                index: account_index,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            }
+            .derivation_path(wallet.network)
+            .map_err(|e| {
+                crate::error::PlatformWalletError::WalletCreation(e.to_string())
+            })?;
+            wallet
+                .derive_extended_public_key(&path)
+                .map_err(|e| {
+                    crate::error::PlatformWalletError::WalletCreation(e.to_string())
+                })?
+        };
+        let mut info = self.wallet_info.blocking_write();
+        let account = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletCreation(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+        account
+            .next_receive_address(Some(&xpub), true)
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
+    }
+
     /// Get the next unused change address for the default account.
     pub async fn next_change_address(
         &self,
     ) -> Result<DashAddress, crate::error::PlatformWalletError> {
         self.next_change_address_for_account(0).await
+    }
+
+    /// Blocking version of `next_change_address` for sync contexts.
+    pub fn blocking_next_change_address(
+        &self,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        self.blocking_next_change_address_for_account(0)
+    }
+
+    /// Blocking version of `next_change_address_for_account`.
+    pub fn blocking_next_change_address_for_account(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, crate::error::PlatformWalletError> {
+        let xpub = {
+            let wallet = self.wallet.blocking_read();
+            let path = key_wallet::account::AccountType::Standard {
+                index: account_index,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            }
+            .derivation_path(wallet.network)
+            .map_err(|e| {
+                crate::error::PlatformWalletError::WalletCreation(e.to_string())
+            })?;
+            wallet
+                .derive_extended_public_key(&path)
+                .map_err(|e| {
+                    crate::error::PlatformWalletError::WalletCreation(e.to_string())
+                })?
+        };
+        let mut info = self.wallet_info.blocking_write();
+        let account = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&account_index)
+            .ok_or_else(|| {
+                crate::error::PlatformWalletError::WalletCreation(format!(
+                    "BIP-44 account {} not found",
+                    account_index
+                ))
+            })?;
+        account
+            .next_change_address(Some(&xpub), true)
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))
     }
 
     /// Get the next unused BIP-44 internal (change) address for a specific account.
