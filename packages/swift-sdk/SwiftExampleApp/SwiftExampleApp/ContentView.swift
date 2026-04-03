@@ -2,15 +2,21 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-enum RootTab: Hashable {
-    case wallets, identities, friends, platform, settings
+enum RootTab: String, Hashable {
+    case sync, wallets, friends, platform, settings
 }
 
 struct ContentView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
 
-    @State private var selectedTab: RootTab = .wallets
+    @State private var selectedTab: RootTab = {
+        if let saved = UserDefaults.standard.string(forKey: "selectedTab"),
+           let tab = RootTab(rawValue: saved) {
+            return tab
+        }
+        return .sync
+    }()
 
     var body: some View {
         if !unifiedState.isInitialized {
@@ -47,19 +53,19 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             TabView(selection: $selectedTab) {
-                // Tab 1: Wallets
-                CoreWalletView()
+                // Tab 1: Sync Status
+                SyncStatusView()
+                    .tabItem {
+                        Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .tag(RootTab.sync)
+
+                // Tab 2: Wallets (includes identities)
+                WalletsTabView()
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
                     .tag(RootTab.wallets)
-
-                // Tab 2: Identities
-                IdentitiesView()
-                    .tabItem {
-                        Label("Identities", systemImage: "person.circle")
-                    }
-                    .tag(RootTab.identities)
 
                 // Tab 3: Friends
                 FriendsView()
@@ -82,9 +88,12 @@ struct ContentView: View {
                     }
                     .tag(RootTab.settings)
             }
+            .onChange(of: selectedTab) { _, newTab in
+                UserDefaults.standard.set(newTab.rawValue, forKey: "selectedTab")
+            }
             .overlay(alignment: .top) {
                 if walletService.syncProgress.state.isSyncing() {
-                    GlobalSyncIndicator(showDetails: selectedTab == .wallets && unifiedState.showWalletsSyncDetails)
+                    GlobalSyncIndicator(showDetails: selectedTab == .sync && unifiedState.showWalletsSyncDetails)
                         .environmentObject(walletService)
                 }
             }
@@ -151,7 +160,7 @@ struct GlobalSyncIndicator: View {
 }
 
 // Wrapper views
-struct CoreWalletView: View {
+struct SyncStatusView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
 
     var body: some View {
@@ -159,6 +168,22 @@ struct CoreWalletView: View {
             CoreContentView()
                 .environmentObject(unifiedState.walletService)
                 .environmentObject(unifiedState)
+                .environmentObject(unifiedState.platformBalanceSyncService)
+                .environment(\.modelContext, unifiedState.modelContainer.mainContext)
+        }
+    }
+}
+
+struct WalletsTabView: View {
+    @EnvironmentObject var unifiedState: UnifiedAppState
+
+    var body: some View {
+        NavigationStack {
+            WalletsContentView()
+                .environmentObject(unifiedState.walletService)
+                .environmentObject(unifiedState)
+                .environmentObject(unifiedState.platformBalanceSyncService)
+                .environmentObject(unifiedState.shieldedService)
                 .environment(\.modelContext, unifiedState.modelContainer.mainContext)
         }
     }

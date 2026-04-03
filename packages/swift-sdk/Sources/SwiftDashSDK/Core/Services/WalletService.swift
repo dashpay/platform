@@ -84,9 +84,9 @@ func print(_ items: Any..., separator: String = " ", terminator: String = "\n") 
     Swift.print(output, terminator: terminator)
 }
 
-// DESIGN NOTE: This class feels like something that should be in the example app, 
+// DESIGN NOTE: This class feels like something that should be in the example app,
 // we, as sdk developers, provide the tools and ffi wrappers, but how to
-// use them depends on the sdk user, for example, by implementing the SPV event 
+// use them depends on the sdk user, for example, by implementing the SPV event
 // handlers, the user can decide what to do with the events, but if we implement them in the sdk
 // we are taking that decision for them, and maybe not all users want the same thing
 @MainActor
@@ -96,82 +96,114 @@ public class WalletService: ObservableObject {
     @Published public var masternodesEnabled = true
     @Published public var lastSyncError: Error?
     @Published var network: AppNetwork
-    
+
     // Internal properties
     private var modelContainer: ModelContainer
-    
+
     // SPV Client and Wallet wrappers
     private var spvClient: SPVClient
     public private(set) var walletManager: CoreWalletManager
 
+    // InstantSend lock storage for asset lock flow
+    private let instantLockStore = InstantLockStore()
+
     public init(modelContainer: ModelContainer, network: AppNetwork) {
         self.modelContainer = modelContainer
         self.network = network
-        
+
         LoggingPreferences.configure()
-        
+
         let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(network.rawValue).path
-        
-        // For simplicity, lets unwrap the error. This can only fail due to
-        // IO errors when working with the internal storage system, I don't 
-        // see how we can recover from that right now easily
-        let spvClient = try! SPVClient(
+
+        // Ensure the data directory exists before initializing the SPV client
+        if let dataDir = dataDir {
+            try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+        }
+
+        // Create SPV client first with dummy handlers to obtain the wallet manager,
+        // then destroy and recreate with real handlers that reference self.
+        let dummyClient = try! SPVClient(
             network: network.sdkNetwork,
             dataDir: dataDir,
             startHeight: 0,
         )
-        
-        self.spvClient = spvClient
-        
+
+        self.spvClient = dummyClient
+
         // Create the SDK wallet manager by reusing the SPV client's shared manager
         // TODO: Investigate this error
-        self.walletManager = try! CoreWalletManager(spvClient: spvClient, modelContainer: modelContainer)
-        
-        spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-        spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-        spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-        spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
+        self.walletManager = try! CoreWalletManager(spvClient: dummyClient, modelContainer: modelContainer)
+
+        // Destroy the dummy client and recreate with real event handlers
+        dummyClient.destroy()
+
+        let handlers = SPVEventHandlers(
+            progress: SPVProgressUpdateEventHandlerImpl(walletService: self),
+            sync: SPVSyncEventsHandlerImpl(walletService: self),
+            network: SPVNetworkEventsHandlerImpl(walletService: self),
+            wallet: SPVWalletEventsHandlerImpl(walletService: self),
+            error: SPVClientErrorEventsHandlerImpl(walletService: self)
+        )
+
+        self.spvClient = try! SPVClient(
+            network: network.sdkNetwork,
+            dataDir: dataDir,
+            startHeight: 0,
+            eventHandlers: handlers,
+        )
+
+        // Recreate the wallet manager with the new client
+        self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: modelContainer)
     }
-    
+
     deinit {
         spvClient.stopSync()
         spvClient.destroy()
     }
-    
+
     private func initializeNewSPVClient() {
       SDKLogger.log("Initializing SPV Client for \(self.self.network.rawValue)...", minimumLevel: .medium)
-      
+
       let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").appendingPathComponent(self.network.rawValue).path
-      
+
+      // Ensure the data directory exists before initializing the SPV client
+      if let dataDir = dataDir {
+          try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
+      }
+
       // This ensures no memory leaks when creating a new client
       // and unlocks the storage in case we are about to use the same (we probably are)
       self.spvClient.destroy()
-      
+
+      let handlers = SPVEventHandlers(
+          progress: SPVProgressUpdateEventHandlerImpl(walletService: self),
+          sync: SPVSyncEventsHandlerImpl(walletService: self),
+          network: SPVNetworkEventsHandlerImpl(walletService: self),
+          wallet: SPVWalletEventsHandlerImpl(walletService: self),
+          error: SPVClientErrorEventsHandlerImpl(walletService: self)
+      )
+
       // For simplicity, lets unwrap the error. This can only fail due to
-      // IO errors when working with the internal storage system, I don't 
+      // IO errors when working with the internal storage system, I don't
       // see how we can recover from that right now easily
       self.spvClient = try! SPVClient(
           network: self.self.network.sdkNetwork,
           dataDir: dataDir,
           startHeight: 0,
+          eventHandlers: handlers,
       )
-      
-      self.spvClient.setProgressUpdateEventHandler(SPVProgressUpdateEventHandlerImpl(walletService: self))
-      self.spvClient.setSyncEventsHandler(SPVSyncEventsHandlerImpl(walletService: self))
-      self.spvClient.setNetworkEventsHandler(SPVNetworkEventsHandlerImpl(walletService: self))
-      self.spvClient.setWalletEventsHandler(SPVWalletEventsHandlerImpl(walletService: self))
-      
+
       try! self.spvClient.setMasternodeSyncEnabled(self.masternodesEnabled)
-      
-      SDKLogger.log("✅ SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
-      
+
+      SDKLogger.log("SPV Client initialized successfully for \(self.network.rawValue) (deferred start)", minimumLevel: .medium)
+
       // Create the SDK wallet manager by reusing the SPV client's shared manager
       // TODO: Investigate this error
       self.walletManager = try! CoreWalletManager(spvClient: self.spvClient, modelContainer: self.modelContainer)
-      
-      SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
+
+      SDKLogger.log("WalletManager wrapper initialized successfully", minimumLevel: .medium)
     }
-    
+
     // MARK: - Trusted Mode / Masternode Sync
     public func setMasternodesEnabled(_ enabled: Bool) {
         masternodesEnabled = enabled
@@ -203,8 +235,21 @@ public class WalletService: ObservableObject {
       // pausing and resuming is not supported so, the trick is the following,
       // stop the old client and create a new one in its initial state xd
       spvClient.stopSync()
-      
+
       self.initializeNewSPVClient()
+    }
+
+    // MARK: - Transaction Broadcasting
+
+    /// Broadcast a raw transaction on the Core P2P network.
+    public func broadcastTransaction(_ transactionData: Data) throws {
+        try spvClient.broadcastTransaction(transactionData)
+    }
+
+    /// Wait for an InstantSend lock for a specific transaction.
+    /// Returns the serialized IS lock bytes when received, or throws on timeout.
+    public func waitForInstantLock(txid: Data, timeout: TimeInterval = 30) async throws -> Data {
+        try await instantLockStore.waitForLock(txid: txid, timeout: timeout)
     }
 
     public func clearSpvStorage() {
@@ -236,17 +281,17 @@ public class WalletService: ObservableObject {
 
     public func switchNetwork(to network: AppNetwork) async {
         guard network != self.network else { return }
-        
+
         print("=== WalletService.switchNetwork START ===")
         print("Switching from \(self.network.rawValue) to \(network.rawValue)")
-        
+
         self.network = network
 
         self.stopSync()
-        
+
         print("=== WalletService.switchNetwork END ===")
     }
-    
+
     // MARK: - SPV Event Handlers implementations
 
     internal final class SPVProgressUpdateEventHandlerImpl: SPVProgressUpdateEventHandler, Sendable {
@@ -285,7 +330,9 @@ public class WalletService: ObservableObject {
         func onBlocksProcessed(_ height: UInt32, _ hash: Data, _ newAddressCount: UInt32) {}
         func onMasternodeStateUpdated(_ height: UInt32) {}
         func onChainLockReceived(_ height: UInt32, _ hash:  Data, _ signature: Data, _ validated: Bool) {}
-        func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {}
+        func onInstantLockReceived(_ txid: Data, _ instantLockData: Data, _ validated: Bool) {
+            walletService.instantLockStore.store(txid: txid, lockData: instantLockData)
+        }
         func onSyncManagerError(_ manager: SPVSyncManager, _ errorMsg: String) {
             SDKLogger.error("Sync manager \(manager) error: \(errorMsg)")
 
@@ -329,7 +376,7 @@ public class WalletService: ObservableObject {
             _ amount: Int64,
             _ addresses: [String]
         ) {}
-    
+
         func onBalanceUpdated(
             _ walletId: String,
             _ spendable: UInt64,
@@ -337,6 +384,22 @@ public class WalletService: ObservableObject {
             _ immature: UInt64,
             _ locked: UInt64
         ) {}
+    }
+
+    internal final class SPVClientErrorEventsHandlerImpl: SPVClientErrorEventsHandler, Sendable {
+        private let walletService: WalletService
+
+        init(walletService: WalletService) {
+            self.walletService = walletService
+        }
+
+        func onError(_ errorMsg: String) {
+            SDKLogger.error("SPV client error: \(errorMsg)")
+
+            Task { @MainActor in
+                walletService.lastSyncError = SPVError.syncFailed(errorMsg)
+            }
+        }
     }
 }
 
@@ -346,5 +409,47 @@ public class WalletService: ObservableObject {
 extension Data {
     public var hexString: String {
         return map { String(format: "%02hhx", $0) }.joined()
+    }
+}
+
+// MARK: - InstantSend Lock Store
+
+/// Thread-safe store for InstantSend lock data, keyed by txid.
+/// Supports async waiting for a specific txid's IS lock to arrive.
+internal final class InstantLockStore: @unchecked Sendable {
+    private var locks: [Data: Data] = [:]
+    private var continuations: [Data: CheckedContinuation<Data, Error>] = [:]
+    private let queue = DispatchQueue(label: "com.dash.instantlock-store")
+
+    /// Store an IS lock. Resumes waiter if one exists for this txid.
+    func store(txid: Data, lockData: Data) {
+        var cont: CheckedContinuation<Data, Error>?
+        queue.sync {
+            locks[txid] = lockData
+            cont = continuations.removeValue(forKey: txid)
+        }
+        cont?.resume(returning: lockData)
+    }
+
+    /// Wait for an IS lock for a specific txid.
+    /// Returns immediately if already cached, otherwise polls until received or timeout.
+    func waitForLock(txid: Data, timeout: TimeInterval = 30) async throws -> Data {
+        // Check if already available
+        if let existing = queue.sync(execute: { locks[txid] }) {
+            return existing
+        }
+
+        // Poll-based approach — simpler and avoids continuation resume races
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try await Task.sleep(nanoseconds: 250_000_000) // 250ms
+            if let existing = queue.sync(execute: { locks[txid] }) {
+                return existing
+            }
+        }
+
+        throw SPVError.transactionBroadcastFailed(
+            "InstantSend lock timeout after \(Int(timeout))s for txid \(txid.hexString)"
+        )
     }
 }

@@ -26,21 +26,20 @@ class AppState: ObservableObject {
 
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
 
-    @Published var useLocalPlatform: Bool {
+    @Published var useDockerSetup: Bool {
         didSet {
-            UserDefaults.standard.set(useLocalPlatform, forKey: "useLocalhostPlatform")
-            // Maintain backward-compat key for older SDK builds
-            UserDefaults.standard.set(useLocalPlatform, forKey: "useLocalhost")
+            UserDefaults.standard.set(useDockerSetup, forKey: "useDockerSetup")
+            // Write to legacy keys so SDK.swift and SPVClient.swift pick them up
+            UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
+            UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
+            UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
             Task { await switchNetwork(to: currentNetwork) }
         }
     }
 
-    @Published var useLocalCore: Bool {
-        didSet {
-            UserDefaults.standard.set(useLocalCore, forKey: "useLocalhostCore")
-            // TODO: Reconfigure SPV client peers when supported
-        }
-    }
+    /// Backward-compat computed properties (read-only)
+    var useLocalPlatform: Bool { useDockerSetup }
+    var useLocalCore: Bool { useDockerSetup }
 
     private let testSigner = TestSigner()
     private var dataManager: DataManager?
@@ -54,12 +53,17 @@ class AppState: ObservableObject {
         } else {
             self.currentNetwork = .testnet
         }
-        // Migration: if legacy key set and new keys absent, propagate
-        let legacyLocal = UserDefaults.standard.bool(forKey: "useLocalhost")
-        let hasPlatformKey = UserDefaults.standard.object(forKey: "useLocalhostPlatform") != nil
-        let hasCoreKey = UserDefaults.standard.object(forKey: "useLocalhostCore") != nil
-        self.useLocalPlatform = hasPlatformKey ? UserDefaults.standard.bool(forKey: "useLocalhostPlatform") : legacyLocal
-        self.useLocalCore = hasCoreKey ? UserDefaults.standard.bool(forKey: "useLocalhostCore") : legacyLocal
+        // Migration: if legacy keys set, propagate to new unified key
+        if let _ = UserDefaults.standard.object(forKey: "useDockerSetup") {
+            self.useDockerSetup = UserDefaults.standard.bool(forKey: "useDockerSetup")
+        } else {
+            // Fall back to legacy keys
+            let legacyLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
+                || UserDefaults.standard.bool(forKey: "useLocalhost")
+            self.useDockerSetup = legacyLocal
+            // Persist so SDK.swift can read it (didSet doesn't fire in init)
+            UserDefaults.standard.set(legacyLocal, forKey: "useDockerSetup")
+        }
     }
 
     func initializeSDK(modelContext: ModelContext) {
@@ -74,21 +78,14 @@ class AppState: ObservableObject {
                 isLoading = true
 
                 NSLog("🔵 AppState: Initializing SDK library...")
-                // Initialize the SDK library
                 SDK.initialize()
-
-                // Enable debug logging to see gRPC endpoints
                 SDK.enableLogging(level: .debug)
-                NSLog("🔵 AppState: Enabled debug logging for gRPC requests")
 
-                NSLog("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
-                // Create SDK instance for current network
                 let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
-                NSLog("🔵 AppState: SDK network value: \(sdkNetwork)")
-
+                NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
                 let newSDK = try SDK(network: sdkNetwork)
                 sdk = newSDK
-                NSLog("✅ AppState: SDK created successfully with handle: \(newSDK.handle != nil ? "exists" : "nil")")
+                NSLog("✅ AppState: SDK created successfully")
 
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
@@ -98,7 +95,9 @@ class AppState: ObservableObject {
 
                 isLoading = false
             } catch {
+                sdk = nil
                 showError(message: "Failed to initialize SDK: \(error.localizedDescription)")
+                NSLog("❌ AppState.initializeSDK: \(error)")
                 isLoading = false
             }
         }
@@ -200,7 +199,9 @@ class AppState: ObservableObject {
 
             isLoading = false
         } catch {
+            sdk = nil
             showError(message: "Failed to switch network: \(error.localizedDescription)")
+            NSLog("❌ AppState.switchNetwork: \(error)")
             isLoading = false
         }
     }

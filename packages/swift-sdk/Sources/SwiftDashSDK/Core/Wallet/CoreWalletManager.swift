@@ -72,6 +72,15 @@ public class CoreWalletManager: ObservableObject {
             serializedBytes = result.serializedWallet
 
             print("Wallet added with ID: \(walletId.hexString)")
+
+            // Ensure a DIP-17 Platform Payment account is created for BLAST sync
+            do {
+                try sdkWalletManager.ensurePlatformPaymentAccount(walletId: walletId)
+                print("Platform payment account ensured for wallet \(walletId.hexString)")
+            } catch {
+                print("Warning: Failed to create platform payment account: \(error)")
+                // Non-fatal — wallet still works without platform addresses
+            }
         } catch {
             print("Failed to add wallet: \(error)")
             throw WalletError.walletError("Failed to add wallet: \(error.localizedDescription)")
@@ -94,6 +103,159 @@ public class CoreWalletManager: ObservableObject {
         try modelContainer.mainContext.save()
 
         return wallet
+    }
+
+    /// Add a new account to a wallet.
+    public func addAccount(to wallet: HDWallet, type: AccountType, index: UInt32, keyClass: UInt32 = 0) throws {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: wallet.walletId) else {
+            throw WalletError.walletError("Wallet not found")
+        }
+        if type == .platformPayment {
+            try sdkWallet.addPlatformPaymentAccount(accountIndex: index, keyClass: keyClass)
+        } else {
+            _ = try sdkWallet.addAccount(type: type, index: index)
+        }
+    }
+
+    // MARK: - Asset Lock Transaction
+
+    /// Result of building an asset lock transaction.
+    public struct AssetLockTransactionResult {
+        /// Serialized transaction bytes.
+        public let transactionBytes: Data
+        /// Index of the asset lock output in the transaction.
+        public let outputIndex: UInt32
+        /// One-time private key for the asset lock proof (32 bytes).
+        public let privateKey: Data
+        /// Actual fee paid in duffs.
+        public let fee: UInt64
+    }
+
+    /// Asset lock funding type.
+    public enum AssetLockFundingType: UInt32 {
+        case identityRegistration = 0
+        case identityTopUp = 1
+        case identityTopUpNotBound = 2
+        case identityInvitation = 3
+        case assetLockAddressTopUp = 4
+        case assetLockShieldedAddressTopUp = 5
+    }
+
+    /// Build and sign an asset lock transaction for Core → Platform transfers.
+    ///
+    /// Creates a Core special transaction (type 8) with AssetLockPayload that locks
+    /// Dash for Platform credits.
+    ///
+    /// - Parameters:
+    ///   - wallet: The wallet to fund from.
+    ///   - accountIndex: BIP44 account index (typically 0).
+    ///   - fundingType: The type of asset lock funding account for key derivation.
+    ///   - identityIndex: Identity index for key derivation (0 for new).
+    ///   - creditOutputs: Array of (scriptPubKey, amount) pairs for platform credit outputs.
+    ///   - feePerKb: Fee rate in duffs per kilobyte (0 for default).
+    /// - Returns: `AssetLockTransactionResult` with tx bytes, output index, private key, and fee.
+    public func buildAssetLockTransaction(
+        for wallet: HDWallet,
+        accountIndex: UInt32 = 0,
+        fundingType: AssetLockFundingType = .assetLockAddressTopUp,
+        identityIndex: UInt32 = 0,
+        creditOutputs: [(scriptPubKey: Data, amount: UInt64)],
+        feePerKb: UInt64 = 1000
+    ) throws -> AssetLockTransactionResult {
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: wallet.walletId) else {
+            throw WalletError.walletError("Wallet not found")
+        }
+
+        let count = creditOutputs.count
+        guard count > 0 else {
+            throw WalletError.walletError("At least one credit output required")
+        }
+
+        // Concatenate all scripts into a single contiguous buffer
+        // and build an array of pointers into it
+        var scriptLens: [Int] = creditOutputs.map { $0.scriptPubKey.count }
+        var amounts: [UInt64] = creditOutputs.map { $0.amount }
+        var concatenatedScripts = Data()
+        for output in creditOutputs {
+            concatenatedScripts.append(output.scriptPubKey)
+        }
+
+        var feeOut: UInt64 = 0
+        var txBytesOut: UnsafeMutablePointer<UInt8>? = nil
+        var txLenOut: Int = 0
+        var outputIndexOut: UInt32 = 0
+        var privateKeyOut: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                            UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var ffiError = FFIError()
+
+        // Build pointers inside withUnsafeBytes so they remain valid
+        let success = concatenatedScripts.withUnsafeBytes { allScriptsBuffer -> Bool in
+            guard let allScriptsBase = allScriptsBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return false
+            }
+            // Build array of pointers into the concatenated buffer
+            var scriptPtrs: [UnsafePointer<UInt8>?] = []
+            var offset = 0
+            for len in scriptLens {
+                scriptPtrs.append(allScriptsBase.advanced(by: offset))
+                offset += len
+            }
+
+            return scriptPtrs.withUnsafeMutableBufferPointer { scriptPtrsBuffer in
+                scriptLens.withUnsafeMutableBufferPointer { scriptLensBuffer in
+                    amounts.withUnsafeMutableBufferPointer { amountsBuffer in
+                        wallet_build_and_sign_asset_lock_transaction(
+                            sdkWalletManager.handle,
+                            sdkWallet.handle,
+                            accountIndex,
+                            fundingType.rawValue,
+                            identityIndex,
+                            scriptPtrsBuffer.baseAddress,
+                            scriptLensBuffer.baseAddress,
+                            amountsBuffer.baseAddress,
+                            count,
+                            feePerKb,
+                            &feeOut,
+                            &txBytesOut,
+                            &txLenOut,
+                        &outputIndexOut,
+                        &privateKeyOut,
+                        &ffiError
+                    )
+                }
+            }
+        }
+        }
+
+        guard success else {
+            let msg = ffiError.message != nil ? String(cString: ffiError.message!) : "Unknown error"
+            if ffiError.message != nil {
+                error_message_free(ffiError.message)
+            }
+            throw WalletError.walletError("Asset lock transaction failed: \(msg)")
+        }
+
+        // Copy transaction bytes
+        let txData: Data
+        if let ptr = txBytesOut, txLenOut > 0 {
+            txData = Data(bytes: ptr, count: txLenOut)
+            transaction_bytes_free(ptr)
+        } else {
+            throw WalletError.walletError("No transaction bytes returned")
+        }
+
+        // Copy private key from tuple to Data
+        let privateKeyData = withUnsafeBytes(of: privateKeyOut) { Data($0) }
+
+        return AssetLockTransactionResult(
+            transactionBytes: txData,
+            outputIndex: outputIndexOut,
+            privateKey: privateKeyData,
+            fee: feeOut
+        )
     }
 
     public func deleteWallet(_ wallet: HDWallet) async throws {
@@ -185,6 +347,21 @@ public class CoreWalletManager: ObservableObject {
         return try! sdkWalletManager.getReceiveAddress(walletId: wallet.walletId, accountIndex: accountIndex)
     }
 
+    /// Ensure a DIP-17 Platform Payment account exists for the given wallet.
+    public func ensurePlatformPaymentAccount(for wallet: HDWallet) throws {
+        try sdkWalletManager.ensurePlatformPaymentAccount(walletId: wallet.walletId)
+    }
+
+    /// Get platform payment addresses for BLAST sync.
+    /// Returns (derivation index, address key) tuples from the DIP-17 address pool.
+    public func getPlatformAddresses(for wallet: HDWallet) throws -> [(index: UInt32, key: Data)] {
+        return try sdkWalletManager.getPlatformAddresses(walletId: wallet.walletId)
+    }
+
+    /// Get the managed account collection for a wallet.
+    public func getManagedAccountCollection(for wallet: HDWallet) -> ManagedAccountCollection? {
+        return sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId)
+    }
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
@@ -220,6 +397,11 @@ public class CoreWalletManager: ObservableObject {
             managed = collection.getProviderOperatorKeysAccount()
         case .providerPlatformKeys:
             managed = collection.getProviderPlatformKeysAccount()
+        case .dashPayReceivingFunds, .dashPayExternalAccount:
+            managed = nil
+        case .platformPayment:
+            // Platform Payment uses ManagedPlatformAccount, handled separately below
+            managed = nil
         }
 
         let appNetwork = AppNetwork(network: sdkWalletManager.network)
@@ -228,7 +410,27 @@ public class CoreWalletManager: ObservableObject {
         var externalDetails: [AddressDetail] = []
         var internalDetails: [AddressDetail] = []
         var ffiType = FFIAccountType(rawValue: 0)
-        if let m = managed {
+
+        // Special handling for Platform Payment accounts — encode as bech32m
+        if accountInfo.category == .platformPayment {
+            ffiType = FFIAccountType(rawValue: AccountType.platformPayment.rawValue)
+            let networkValue: UInt32 = {
+                switch appNetwork {
+                case .mainnet: return 0
+                case .testnet: return 1
+                case .regtest: return 2
+                case .devnet: return 3
+                }
+            }()
+            if let platformAccount = collection.getPlatformPaymentAccount(accountIndex: accountInfo.index ?? 0, keyClass: 0),
+               let pool = platformAccount.getAddressPool(),
+               let infos = try? pool.getAddresses(from: 0, to: 0) {
+                externalDetails = infos.compactMap { info in
+                    let bech32Address = Self.encodePlatformAddress(scriptPubKey: info.scriptPubKey, networkValue: networkValue) ?? info.address
+                    return AddressDetail(address: bech32Address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
+                }
+            }
+        } else if let m = managed {
             ffiType = FFIAccountType(rawValue: m.accountType?.rawValue ?? 0)
             // Query all generated addresses (0 to 0 means "all addresses" in FFI)
             if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
@@ -292,7 +494,8 @@ public class CoreWalletManager: ObservableObject {
             case .coinjoin:
                 let idx = (accountInfo.index ?? 1000) - 1000
                 return (.coinJoin, UInt32(idx), "m/9'/\(coinType)/4'/\(idx)'")
-            case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup:
+            case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup,
+                 .dashPayReceivingFunds, .dashPayExternalAccount, .platformPayment:
                 return nil
             }
         }()
@@ -336,9 +539,32 @@ public class CoreWalletManager: ObservableObject {
             return "m/9'/\(coinType)/3'/3'/x"
         case .providerPlatformKeys:
             return "m/9'/\(coinType)/3'/4'/x"
+        case .dashPayReceivingFunds:
+            return "m/9'/\(coinType)/5'/0'/x"
+        case .dashPayExternalAccount:
+            return "m/9'/\(coinType)/5'/0'/x"
+        case .platformPayment:
+            return "m/9'/\(coinType)/15'/\(index ?? 0)'/x"
         }
     }
 
+
+    /// Encode a P2PKH scriptPubKey as a bech32m platform address (DIP-17/18).
+    private static func encodePlatformAddress(scriptPubKey: Data, networkValue: UInt32) -> String? {
+        let result = scriptPubKey.withUnsafeBytes { buffer -> DashSDKResult in
+            guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                return DashSDKResult()
+            }
+            return dash_sdk_encode_platform_address(base, UInt32(scriptPubKey.count), networkValue)
+        }
+        guard result.error == nil, let dataPtr = result.data else {
+            if let error = result.error { dash_sdk_error_free(error) }
+            return nil
+        }
+        let str = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+        return str
+    }
 
     // Removed old FFI-based helper; using SwiftDashSDK wrappers instead
 
@@ -420,6 +646,19 @@ public class CoreWalletManager: ObservableObject {
         if let m = collection.getProviderPlatformKeysAccount() {
             let b = m.getBalance()
             list.append(AccountInfo(category: .providerPlatformKeys, label: "Provider Platform Keys (EdDSA)", balance: b, addressCount: (0, 0)))
+        }
+
+        // Platform Payment (DIP-17)
+        if collection.hasPlatformPaymentAccounts {
+            for accountIdx in 0..<collection.platformPaymentCount {
+                if let m = collection.getPlatformPaymentAccount(accountIndex: accountIdx, keyClass: 0) {
+                    var addrCount = 0
+                    if let pool = m.getAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 1000) {
+                        addrCount = infos.count
+                    }
+                    list.append(AccountInfo(category: .platformPayment, index: accountIdx, label: "Platform Payment \(accountIdx)", balance: Balance(confirmed: 0, unconfirmed: 0), addressCount: (addrCount, 0)))
+                }
+            }
         }
 
         // Sort BIP44 by index first, then other types below

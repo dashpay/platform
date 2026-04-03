@@ -946,6 +946,7 @@ impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanc
                     proto::get_recent_address_balance_changes_request::GetRecentAddressBalanceChangesRequestV0 {
                         start_height: self.start_height,
                         prove,
+                        start_height_exclusive: false,
                     },
                 ),
             ),
