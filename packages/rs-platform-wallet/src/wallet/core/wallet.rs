@@ -22,6 +22,33 @@ use tokio::sync::RwLock;
 use crate::error::PlatformWalletError;
 
 use crate::events::TransactionStatus;
+
+/// Write guard for `ManagedWalletInfo` that automatically refreshes
+/// `WalletBalance` when dropped. Ensures the lock-free balance is always
+/// consistent with the wallet info after any mutation.
+pub struct WalletInfoWriteGuard<'a> {
+    guard: tokio::sync::RwLockWriteGuard<'a, ManagedWalletInfo>,
+    balance: &'a WalletBalance,
+}
+
+impl<'a> std::ops::Deref for WalletInfoWriteGuard<'a> {
+    type Target = ManagedWalletInfo;
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl std::ops::DerefMut for WalletInfoWriteGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+impl Drop for WalletInfoWriteGuard<'_> {
+    fn drop(&mut self) {
+        self.balance.update(&self.guard.balance());
+    }
+}
 use dashcore::Txid;
 
 use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
@@ -31,7 +58,10 @@ use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
 pub struct CoreWallet {
     pub(crate) sdk: dash_sdk::Sdk,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
-    pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+    /// Private — always access through `wallet_info()`, `wallet_info_mut()`,
+    /// `try_wallet_info()`, or `try_wallet_info_mut()`. Write access returns
+    /// `WalletInfoWriteGuard` which auto-refreshes `WalletBalance` on drop.
+    wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     /// Per-transaction finality status tracking.
     pub(crate) transaction_statuses: Arc<RwLock<BTreeMap<Txid, TransactionStatus>>>,
     /// Tracked asset lock transactions and their lifecycle status.
@@ -42,18 +72,26 @@ pub struct CoreWallet {
 }
 
 impl CoreWallet {
+    /// Create a new CoreWallet.
+    pub(crate) fn new(
+        sdk: dash_sdk::Sdk,
+        wallet: Arc<RwLock<Wallet>>,
+        wallet_info: Arc<RwLock<ManagedWalletInfo>>,
+    ) -> Self {
+        Self {
+            sdk,
+            wallet,
+            wallet_info,
+            transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
+            tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
+            balance: WalletBalance::new(),
+        }
+    }
+
     /// Lock-free balance — read from any context without locking.
     /// Updated automatically after SPV/RPC balance changes.
     pub fn balance(&self) -> &WalletBalance {
         &self.balance
-    }
-
-    /// Update the balance from `ManagedWalletInfo`.
-    /// Called after SPV block processing, mempool updates, and RPC refresh.
-    pub fn refresh_balance(&self) {
-        if let Some(info) = self.try_wallet_info() {
-            self.balance.update(&info.balance());
-        }
     }
 
     /// Read access to the underlying `ManagedWalletInfo`.
@@ -65,8 +103,15 @@ impl CoreWallet {
     }
 
     /// Write access to the underlying `ManagedWalletInfo`.
-    pub async fn wallet_info_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, ManagedWalletInfo> {
-        self.wallet_info.write().await
+    ///
+    /// Returns a guard that automatically refreshes `WalletBalance` when dropped,
+    /// so the lock-free balance is always consistent with `ManagedWalletInfo`.
+    pub async fn wallet_info_mut(&self) -> WalletInfoWriteGuard<'_> {
+        let guard = self.wallet_info.write().await;
+        WalletInfoWriteGuard {
+            guard,
+            balance: &self.balance,
+        }
     }
 
     /// Non-blocking read access to the underlying `ManagedWalletInfo`.
@@ -84,10 +129,11 @@ impl CoreWallet {
     ///
     /// Returns `None` if the lock is currently held. Useful in synchronous
     /// contexts (e.g. `spawn_blocking`) where awaiting is not possible.
-    pub fn try_wallet_info_mut(
-        &self,
-    ) -> Option<tokio::sync::RwLockWriteGuard<'_, ManagedWalletInfo>> {
-        self.wallet_info.try_write().ok()
+    pub fn try_wallet_info_mut(&self) -> Option<WalletInfoWriteGuard<'_>> {
+        self.wallet_info.try_write().ok().map(|guard| WalletInfoWriteGuard {
+            guard,
+            balance: &self.balance,
+        })
     }
 
     /// Read access to the underlying `Wallet` (key material).

@@ -85,7 +85,7 @@ impl WalletInterface for SpvWalletAdapter {
 
         for wallet in wallets.values() {
             let mut w = wallet.core.wallet.write().await;
-            let mut wi = wallet.core.wallet_info.write().await;
+            let mut wi = wallet.core.wallet_info_mut().await;
 
             for tx in &block.txdata {
                 let result = wi
@@ -119,7 +119,6 @@ impl WalletInterface for SpvWalletAdapter {
                 self.track_status_for_wallet(wallet, *txid, TransactionStatus::Confirmed)
                     .await;
             }
-            wallet.core.refresh_balance();
         }
 
         BlockProcessingResult {
@@ -146,7 +145,7 @@ impl WalletInterface for SpvWalletAdapter {
 
         for wallet in wallets.values() {
             let mut w = wallet.core.wallet.write().await;
-            let mut wi = wallet.core.wallet_info.write().await;
+            let mut wi = wallet.core.wallet_info_mut().await;
 
             let result = wi
                 .check_core_transaction(tx, context, &mut w, true, false)
@@ -169,7 +168,6 @@ impl WalletInterface for SpvWalletAdapter {
             }
 
             if result.is_relevant {
-                wallet.core.refresh_balance();
             }
 
             if !result.new_addresses.is_empty() {
@@ -187,8 +185,7 @@ impl WalletInterface for SpvWalletAdapter {
                 .values()
                 .flat_map(|w| {
                     w.core
-                        .wallet_info
-                        .try_read()
+                        .try_wallet_info()
                         .map(|wi| wi.monitored_addresses())
                         .unwrap_or_default()
                 })
@@ -204,8 +201,7 @@ impl WalletInterface for SpvWalletAdapter {
                 .values()
                 .flat_map(|w| {
                     w.core
-                        .wallet_info
-                        .try_read()
+                        .try_wallet_info()
                         .map(|wi| {
                             wi.get_spendable_utxos()
                                 .iter()
@@ -244,7 +240,7 @@ impl WalletInterface for SpvWalletAdapter {
     fn process_instant_send_lock(&mut self, txid: Txid) {
         if let Ok(wallets) = self.wallets.try_read() {
             for wallet in wallets.values() {
-                if let Ok(mut wi) = wallet.core.wallet_info.try_write() {
+                if let Some(mut wi) = wallet.core.try_wallet_info_mut() {
                     wi.mark_instant_send_utxos(&txid);
                 }
                 if let Ok(mut statuses) = wallet.core.transaction_statuses.try_write() {
@@ -266,7 +262,7 @@ impl WalletInterface for SpvWalletAdapter {
         if let Ok(wallets) = self.wallets.try_read() {
             wallets
                 .values()
-                .filter_map(|w| w.core.wallet_info.try_read().ok().map(|wi| wi.birth_height()))
+                .filter_map(|w| w.core.try_wallet_info().map(|wi| wi.birth_height()))
                 .min()
                 .unwrap_or(0)
         } else {
