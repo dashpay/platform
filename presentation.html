@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dash Platform Deep Dive</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --dash-blue: #008de4;
+    --dash-dark: #0b1426;
+    --dash-darker: #060d1a;
+    --text: #e4e8f1;
+    --text-dim: #8892a4;
+    --accent: #00c3ff;
+    --green: #2ecc71;
+    --orange: #f39c12;
+    --code-bg: #111d2e;
+    --card-bg: #0f1b2d;
+    --border: #1a2940;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--dash-darker);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  .slide {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    padding: 60px 80px;
+    position: relative;
+  }
+
+  .slide.active { display: flex; }
+
+  /* Title slide */
+  .slide.title-slide {
+    background: linear-gradient(135deg, var(--dash-dark) 0%, #0a1628 50%, #0d1f3c 100%);
+  }
+
+  .slide.title-slide::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(circle at 30% 40%, rgba(0,141,228,0.08) 0%, transparent 60%),
+                radial-gradient(circle at 70% 60%, rgba(0,195,255,0.05) 0%, transparent 50%);
+  }
+
+  .dash-logo { font-size: 48px; font-weight: 700; color: var(--dash-blue); margin-bottom: 8px; position: relative; }
+  .dash-logo span { color: var(--accent); }
+
+  h1 { font-size: 52px; font-weight: 700; line-height: 1.15; margin-bottom: 16px; position: relative; text-align: center; }
+  h2 { font-size: 36px; font-weight: 600; margin-bottom: 32px; color: var(--dash-blue); position: relative; }
+  h3 { font-size: 24px; font-weight: 600; margin-bottom: 16px; color: var(--accent); }
+
+  .subtitle { font-size: 22px; color: var(--text-dim); margin-bottom: 40px; position: relative; text-align: center; }
+  .author { font-size: 18px; color: var(--text-dim); position: relative; }
+
+  /* Content slides */
+  .slide.content {
+    background: var(--dash-dark);
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding-top: 80px;
+  }
+
+  .content-body {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* Lists */
+  ul, ol { padding-left: 28px; margin-bottom: 20px; }
+  li { font-size: 22px; line-height: 1.7; color: var(--text); margin-bottom: 8px; }
+  li strong { color: var(--accent); }
+  li code { background: var(--code-bg); padding: 2px 8px; border-radius: 4px; font-size: 18px; color: var(--green); }
+
+  /* Code blocks */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0 24px;
+    overflow-x: auto;
+    width: 100%;
+  }
+  pre code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  .cmd { color: var(--green); }
+  .comment { color: var(--text-dim); }
+  .url { color: var(--accent); }
+  .flag { color: var(--orange); }
+
+  /* Cards grid */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .card h3 { margin-bottom: 12px; font-size: 20px; }
+  .card p { font-size: 17px; color: var(--text-dim); line-height: 1.5; }
+  .card code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 15px; color: var(--green); }
+  .card ul { padding-left: 20px; margin-top: 8px; }
+  .card li { font-size: 17px; margin-bottom: 4px; }
+
+  /* Link boxes */
+  .link-box {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--dash-blue);
+    border-radius: 8px;
+    padding: 16px 24px;
+    margin: 8px 0;
+    width: 100%;
+  }
+  .link-box .label { font-size: 14px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .link-box .url-text { font-size: 19px; color: var(--accent); font-family: monospace; }
+  .link-box .desc { font-size: 16px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Step indicators */
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    width: 100%;
+  }
+  .step-num {
+    min-width: 36px; height: 36px;
+    background: var(--dash-blue);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .step-content { flex: 1; }
+  .step-content p { font-size: 20px; line-height: 1.5; }
+  .step-content code { background: var(--code-bg); padding: 2px 8px; border-radius: 4px; font-size: 17px; color: var(--green); }
+
+  /* Two columns */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    width: 100%;
+  }
+
+  /* Progress bar */
+  .progress {
+    position: fixed;
+    bottom: 0; left: 0;
+    height: 3px;
+    background: var(--dash-blue);
+    transition: width 0.3s ease;
+    z-index: 100;
+  }
+
+  /* Slide counter */
+  .slide-counter {
+    position: fixed;
+    bottom: 16px; right: 24px;
+    font-size: 14px;
+    color: var(--text-dim);
+    z-index: 100;
+  }
+
+  /* Navigation hints */
+  .nav-hint {
+    position: fixed;
+    bottom: 16px; left: 24px;
+    font-size: 13px;
+    color: var(--text-dim);
+    opacity: 0.5;
+    z-index: 100;
+  }
+
+  /* Section divider */
+  .slide.section-divider {
+    background: linear-gradient(135deg, var(--dash-dark) 0%, #0d1f3c 100%);
+  }
+  .section-number { font-size: 100px; font-weight: 800; color: var(--dash-blue); opacity: 0.15; position: absolute; top: 60px; left: 80px; }
+
+  /* Highlight box */
+  .highlight {
+    background: rgba(0,141,228,0.08);
+    border: 1px solid rgba(0,141,228,0.2);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    width: 100%;
+  }
+  .highlight p { font-size: 19px; line-height: 1.6; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th { text-align: left; padding: 12px 16px; background: var(--card-bg); border-bottom: 2px solid var(--dash-blue); font-size: 16px; color: var(--accent); }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 17px; }
+  td code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-size: 15px; color: var(--green); }
+
+  /* Emoji/icon sizing */
+  .icon { font-size: 28px; margin-right: 8px; }
+
+  /* Fragment animation */
+  .fragment { opacity: 0; transform: translateY(10px); transition: all 0.3s ease; }
+  .fragment.visible { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 1024px) {
+    .slide { padding: 40px; }
+    h1 { font-size: 36px; }
+    h2 { font-size: 28px; }
+    .two-col { grid-template-columns: 1fr; }
+    li { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: Title ==================== -->
+<div class="slide title-slide active" id="slide-1">
+  <div class="dash-logo">DASH <span>PLATFORM</span></div>
+  <h1>Developer Deep Dive</h1>
+  <p class="subtitle">Finding docs, navigating code, asking questions, and building your first app</p>
+  <p class="author">Quantum Explorer</p>
+</div>
+
+<!-- ==================== SLIDE 2: Agenda ==================== -->
+<div class="slide content" id="slide-2">
+  <div class="content-body">
+    <h2>What we'll cover</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>1. Documentation</h3>
+        <p>Where to find it, how to navigate it, where to start reading</p>
+      </div>
+      <div class="card">
+        <h3>2. GitHub</h3>
+        <p>Where the code lives, how to explore the monorepo</p>
+      </div>
+      <div class="card">
+        <h3>3. How it works</h3>
+        <p>GroveDB, Tenderdash, and why every query is provable</p>
+      </div>
+      <div class="card">
+        <h3>4. Developer Flow</h3>
+        <p>From zero to running a local network</p>
+      </div>
+      <div class="card">
+        <h3>5. Example: Yappr</h3>
+        <p>What you can build today on Dash Platform</p>
+      </div>
+      <div class="card">
+        <h3>6. Discord &amp; Help</h3>
+        <p>Where to ask questions, which channels are active</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE: The Problem ==================== -->
+<div class="slide content" id="slide-problem">
+  <div class="content-body">
+    <h2>The problem we're solving</h2>
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 20px;">
+      Decentralized apps need to <strong>store and query data</strong>. Today's blockchains make this surprisingly hard.
+    </p>
+
+    <div class="cards">
+      <div class="card" style="border-left: 3px solid #627eea;">
+        <h3 style="color: #627eea;">Ethereum</h3>
+        <ul>
+          <li>Data lives inside smart contracts &mdash; <strong>no structured queries</strong></li>
+          <li>Want to list "all posts by user X"? You need an <strong>off-chain indexer</strong> (The Graph, Alchemy)</li>
+          <li>Merkle proofs exist but only for <strong>single key lookups</strong>, not ranges or filters</li>
+          <li>Light clients <strong>can't verify</strong> query results &mdash; they trust the indexer</li>
+        </ul>
+      </div>
+      <div class="card" style="border-left: 3px solid #14f195;">
+        <h3 style="color: #14f195;">Solana</h3>
+        <ul>
+          <li>Fast writes, but <strong>no state proofs at all</strong></li>
+          <li>Querying account data? You call an RPC node and <strong>trust the response</strong></li>
+          <li>No way for a light client to <strong>verify</strong> what a node returns</li>
+          <li>Data schemas are ad-hoc &mdash; each program defines its own serialization</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="highlight" style="margin-top: 16px;">
+      <p><strong>The gap:</strong> Every major blockchain forces apps to choose between decentralization and usability. You either trust a centralized indexer for queries, or you run a full node. There's no middle ground &mdash; until now.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE: Dash Platform's Answer ==================== -->
+<div class="slide content" id="slide-answer">
+  <div class="content-body">
+    <h2>Dash Platform's answer</h2>
+
+    <div class="two-col">
+      <div>
+        <h3>What if the chain itself was a database?</h3>
+        <ul>
+          <li>Define your data schema as a <strong>data contract</strong> (JSON Schema)</li>
+          <li>The network <strong>stores, indexes, and validates</strong> your data natively</li>
+          <li>Query with <strong>filters, ranges, sorting, pagination</strong> &mdash; directly from masternodes</li>
+          <li>Every response comes with a <strong>cryptographic proof</strong></li>
+          <li>A phone can verify responses with <strong>full-node security</strong></li>
+        </ul>
+      </div>
+      <div>
+        <h3>The key insight</h3>
+        <div class="highlight">
+          <p>By storing data in a <strong>Merkle tree</strong> (GroveDB) and having consensus <strong>sign the root hash</strong> (Tenderdash), we can prove any query result &mdash; not just "does this key exist" but "give me all documents where status = active, sorted by date, page 2 of 5."</p>
+        </div>
+
+        <h3 style="margin-top: 20px;">No indexer needed</h3>
+        <p style="font-size: 18px; color: var(--text-dim); line-height: 1.6;">
+          No The Graph. No Alchemy. No centralized API sitting between your app and the chain. Just a light client, a masternode, and a proof.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 3: Section - Documentation ==================== -->
+<div class="slide section-divider" id="slide-3">
+  <div class="section-number">01</div>
+  <h2>Documentation</h2>
+  <p class="subtitle">Where to find it, how to navigate it</p>
+</div>
+
+<!-- ==================== SLIDE 4: Doc Sources ==================== -->
+<div class="slide content" id="slide-4">
+  <div class="content-body">
+    <h2>Three documentation sources</h2>
+
+    <div class="link-box">
+      <div class="label">Official Docs (ReadMe)</div>
+      <div class="url-text">dashplatform.readme.io</div>
+      <div class="desc">Tutorials, guides, API reference &mdash; start here if you're new</div>
+    </div>
+
+    <div class="link-box">
+      <div class="label">The Platform Book (mdBook)</div>
+      <div class="url-text">dashpay.github.io/platform</div>
+      <div class="desc">Deep architecture docs: versioning, serialization, state transitions, Drive internals</div>
+    </div>
+
+    <div class="link-box">
+      <div class="label">Evo SDK Docs</div>
+      <div class="url-text">dashpay.github.io/evo-sdk-website/docs.html</div>
+      <div class="desc">Interactive API reference for the JavaScript/TypeScript SDK</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 5: Where to start reading ==================== -->
+<div class="slide content" id="slide-5">
+  <div class="content-body">
+    <h2>Where to start reading</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p><strong>New to Dash Platform?</strong><br>
+        Start with <code>dashplatform.readme.io</code> &rarr; "Introduction" &rarr; "What is Dash Platform"</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p><strong>Want to understand the architecture?</strong><br>
+        The Platform Book &rarr; "Architecture" &rarr; "Component Pipeline"</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p><strong>Ready to write code?</strong><br>
+        The Platform Book &rarr; "Getting Started" (prereqs, setup, first test)</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <p><strong>Building a web/JS app?</strong><br>
+        Platform Book &rarr; "Evo SDK" section (6 chapters + tutorials, <a href="https://github.com/dashpay/platform/pull/3422" style="color:var(--accent)">just added</a>)</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 6: Book chapters ==================== -->
+<div class="slide content" id="slide-6">
+  <div class="content-body">
+    <h2>Platform Book &mdash; key chapters</h2>
+    <div class="link-box" style="margin-bottom: 16px;">
+      <div class="url-text">dashpay.github.io/platform</div>
+    </div>
+    <div class="two-col">
+      <div>
+        <h3>Architecture &amp; Internals</h3>
+        <table>
+          <tr><th>Chapter</th><th>Covers</th></tr>
+          <tr><td>Data Contracts</td><td>Schemas for your app's data</td></tr>
+          <tr><td>Documents</td><td>User data storage &amp; querying</td></tr>
+          <tr><td>State Transitions</td><td>Client &rarr; chain write path</td></tr>
+          <tr><td>Drive / Grove Ops</td><td>GroveDB Merkle tree storage</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3>Evo SDK (JS/TS)</h3>
+        <table>
+          <tr><th>Chapter</th><th>Covers</th></tr>
+          <tr><td>Getting Started</td><td>Install, connect, first query</td></tr>
+          <tr><td>State Transitions</td><td>Write identities, docs, tokens</td></tr>
+          <tr><td>Trusted Mode</td><td>Proofs vs. trusted queries</td></tr>
+          <tr><td>Wallet Utilities</td><td>Keys, mnemonics, signing</td></tr>
+        </table>
+        <p style="font-size:15px;color:var(--text-dim);margin-top:8px;">+ Tutorials: Token, Car Sales, Card Game</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 7: Section - GitHub ==================== -->
+<div class="slide section-divider" id="slide-7">
+  <div class="section-number">02</div>
+  <h2>GitHub</h2>
+  <p class="subtitle">Where the code lives, how to explore it</p>
+</div>
+
+<!-- ==================== SLIDE 8: Repo overview ==================== -->
+<div class="slide content" id="slide-8">
+  <div class="content-body">
+    <h2>One monorepo, everything inside</h2>
+
+    <div class="link-box">
+      <div class="url-text">github.com/dashpay/platform</div>
+      <div class="desc">~50 packages &bull; Rust + JS/TS + Swift + WASM &bull; Yarn workspaces + Cargo workspace</div>
+    </div>
+
+    <div class="two-col" style="margin-top: 24px;">
+      <div>
+        <h3>Core (Rust)</h3>
+        <ul>
+          <li><code>rs-dpp</code> &mdash; Protocol rules &amp; validation</li>
+          <li><code>rs-drive</code> &mdash; Storage engine (GroveDB)</li>
+          <li><code>rs-drive-abci</code> &mdash; Consensus (Tenderdash)</li>
+          <li><code>rs-sdk</code> &mdash; Rust client SDK</li>
+          <li><code>rs-dapi</code> &mdash; API server</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Client SDKs</h3>
+        <ul>
+          <li><code>wasm-sdk</code> &mdash; JS/TS (browser + Node)</li>
+          <li><code>js-dash-sdk</code> &mdash; Legacy JS SDK</li>
+          <li><code>swift-sdk</code> &mdash; iOS (new in v3.1)</li>
+          <li><code>dashmate</code> &mdash; Node management CLI</li>
+          <li><code>platform-test-suite</code> &mdash; E2E tests</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 9: Key files ==================== -->
+<div class="slide content" id="slide-9">
+  <div class="content-body">
+    <h2>Files to know about</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p><code>README.md</code> &mdash; Architecture overview, comparison table, SDK support matrix</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p><code>Cargo.toml</code> &mdash; Workspace root. Shows all Rust crates and shared dependencies</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p><code>packages/*/Cargo.toml</code> or <code>package.json</code> &mdash; Each package's deps and features</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <p><code>NIGHTLY_STATUS.md</code> &mdash; What's passing/failing in CI right now</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <p>Data contracts: <code>packages/*-contract/</code> &mdash; DPNS, DashPay, Withdrawals, etc.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== SLIDE: How GroveDB Works ==================== -->
+<div class="slide content" id="slide-grovedb">
+  <div class="content-body">
+    <h2>How GroveDB works</h2>
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 24px;">
+      GroveDB is a <strong>hierarchical authenticated data structure</strong> &mdash; a tree of Merkle trees.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <h3>Structure</h3>
+        <ul>
+          <li>Top level: a <strong>tree of subtrees</strong> organized by path</li>
+          <li>Each subtree is a <strong>Merk tree</strong> (Merkle AVL tree)</li>
+          <li>Every node stores its hash and its children's hashes</li>
+          <li>The <strong>root hash</strong> commits to the entire state</li>
+        </ul>
+
+        <h3 style="margin-top: 20px;">Why it matters</h3>
+        <ul>
+          <li>Any key-value lookup produces a <strong>Merkle proof</strong></li>
+          <li>Proofs are <strong>compact</strong> (log N hashes)</li>
+          <li>Supports <strong>range queries</strong> with proofs (not just key lookups)</li>
+        </ul>
+      </div>
+      <div>
+<pre><code><span class="comment">        Root Hash
+       /         \</span>
+<span class="comment">    [contracts]   [identities]</span>
+<span class="comment">     /     \          |</span>
+<span class="comment"> [dpns] [dashpay]  [id:abc...]</span>
+<span class="comment">   |                  |</span>
+<span class="comment"> [domains]         [keys]</span>
+<span class="comment">  /    \</span>
+<span class="comment">alice  bob</span>
+
+<span class="url">Each level is a Merk tree</span>
+<span class="url">Root hash = hash of everything</span></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE: How Tenderdash Works ==================== -->
+<div class="slide content" id="slide-tenderdash">
+  <div class="content-body">
+    <h2>How Tenderdash signs the root</h2>
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 24px;">
+      Tenderdash is Dash's BFT consensus engine. It produces blocks and <strong>signs the GroveDB root hash</strong>.
+    </p>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p><strong>Propose</strong> &mdash; A masternode proposes a block containing state transitions</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p><strong>Execute</strong> &mdash; Drive applies the transitions to GroveDB, producing a new <strong>root hash</strong></p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p><strong>Vote</strong> &mdash; Masternodes verify they get the <strong>same root hash</strong>, then sign with <strong>BLS threshold signatures</strong></p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <p><strong>Commit</strong> &mdash; Block is finalized <strong>instantly</strong> (no confirmations needed). The signed root hash is the chain's commitment to the entire platform state.</p>
+      </div>
+    </div>
+
+    <div class="highlight" style="margin-top: 12px;">
+      <p>Result: every block has a <strong>quorum-signed root hash</strong> that commits to every document, identity, and contract in the system.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE: Provable Queries ==================== -->
+<div class="slide content" id="slide-proofs">
+  <div class="content-body">
+    <h2>Why every query is provable</h2>
+
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 24px;">
+      GroveDB's Merkle structure + Tenderdash's signed root = cryptographic proofs for any query.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <h3>How a proof works</h3>
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content"><p>Client sends a query (e.g. "get alice's profile")</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content"><p>Masternode returns the data <strong>+ a Merkle proof path</strong></p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content"><p>Client hashes up the proof path to reconstruct the <strong>root hash</strong></p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-content"><p>Client checks: does my root hash match the <strong>quorum-signed</strong> root?</p></div>
+        </div>
+      </div>
+      <div>
+        <h3>What this means</h3>
+        <ul>
+          <li>A <strong>single masternode</strong> can serve your query</li>
+          <li>You don't need to trust it &mdash; <strong>the proof is the trust</strong></li>
+          <li>Light clients get <strong>full-node-level security</strong></li>
+          <li>Works for <strong>key lookups, ranges, filters, ordering</strong></li>
+          <li>No other L1 blockchain does this for structured data queries</li>
+        </ul>
+
+        <div class="highlight" style="margin-top: 16px;">
+          <p><strong>Ethereum:</strong> Merkle proofs for key-value only<br>
+          <strong>Solana:</strong> No proofs at all<br>
+          <strong>Dash Platform:</strong> Proofs for any query, including ranges and sorts</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 13: Section - Developer Flow ==================== -->
+<div class="slide section-divider" id="slide-13">
+  <div class="section-number">04</div>
+  <h2>Developer Flow</h2>
+  <p class="subtitle">From zero to building</p>
+</div>
+
+<!-- ==================== SLIDE 14: Prerequisites ==================== -->
+<div class="slide content" id="slide-14">
+  <div class="content-body">
+    <h2>Prerequisites</h2>
+
+    <div class="two-col">
+      <div>
+        <h3>Required</h3>
+        <ul>
+          <li><strong>Node.js</strong> v20+ (v24 recommended)</li>
+          <li><strong>Docker</strong> Desktop</li>
+          <li><strong>Rust</strong> (latest stable)</li>
+          <li><strong>Yarn</strong> v4 (via corepack)</li>
+        </ul>
+      </div>
+      <div>
+        <h3>For full builds</h3>
+        <ul>
+          <li><code>protoc</code> (Protocol Buffers compiler)</li>
+          <li><code>wasm-pack</code></li>
+          <li><code>wasm-bindgen-cli</code> (match lockfile version)</li>
+          <li><code>wasm32-unknown-unknown</code> target</li>
+        </ul>
+      </div>
+    </div>
+
+    <pre><code><span class="comment"># Install Rust targets and tools</span>
+<span class="cmd">rustup target add</span> wasm32-unknown-unknown
+<span class="cmd">cargo install</span> wasm-pack
+<span class="cmd">cargo install</span> wasm-bindgen-cli@0.2.108  <span class="comment"># match Cargo.lock version</span></code></pre>
+
+    <div class="highlight">
+      <p><strong>macOS note:</strong> You need LLVM installed via Homebrew (<code>brew install llvm</code>) and configured in your PATH. The Xcode-bundled clang lacks some flags required by RocksDB and other native dependencies. Set <code>LLVM_CONFIG_PATH</code> and update <code>PATH</code> / <code>CC</code> / <code>AR</code> to point to the Homebrew LLVM.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 15: Setup commands ==================== -->
+<div class="slide content" id="slide-15">
+  <div class="content-body">
+    <h2>Getting started &mdash; 3 commands</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p><strong>Clone and setup</strong></p>
+        <pre><code><span class="cmd">git clone</span> https://github.com/dashpay/platform
+<span class="cmd">cd</span> platform
+<span class="cmd">yarn setup</span>   <span class="comment"># installs deps, builds JS + WASM packages</span></code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p><strong>Start local network</strong></p>
+        <pre><code><span class="cmd">yarn start</span>   <span class="comment"># launches dashmate local network (3 masternodes + seed)</span></code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p><strong>Run tests</strong></p>
+        <pre><code><span class="cmd">yarn test</span>    <span class="comment"># runs the platform test suite against your local network</span></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 16: Dashmate ==================== -->
+<div class="slide content" id="slide-16">
+  <div class="content-body">
+    <h2>Dashmate &mdash; your local network tool</h2>
+
+    <pre><code><span class="cmd">yarn dashmate setup local</span> <span class="flag">-c 3</span>    <span class="comment"># create 3-node local network</span>
+<span class="cmd">yarn dashmate start</span>                  <span class="comment"># start all nodes</span>
+<span class="cmd">yarn dashmate group status</span>           <span class="comment"># see what's running</span>
+<span class="cmd">yarn dashmate stop</span>                   <span class="comment"># stop everything</span>
+<span class="cmd">yarn dashmate reset</span> <span class="flag">--hard</span>           <span class="comment"># wipe and start fresh</span></code></pre>
+
+    <div class="highlight">
+      <p>Dashmate manages Docker containers for Core nodes, Tenderdash, Drive, and DAPI. You get a full Platform network locally in minutes.</p>
+    </div>
+
+    <div class="cards" style="margin-top: 16px;">
+      <div class="card">
+        <h3>What it runs</h3>
+        <ul>
+          <li>3 Dash Core masternodes</li>
+          <li>1 seed/miner node</li>
+          <li>Tenderdash consensus</li>
+          <li>Drive (GroveDB storage)</li>
+          <li>DAPI (gRPC API server)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Useful commands</h3>
+        <ul>
+          <li><code>dashmate config get ...</code> &mdash; inspect config</li>
+          <li><code>dashmate group status</code> &mdash; node status</li>
+          <li><code>dashmate status</code> &mdash; single node</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 17: SDK options ==================== -->
+<div class="slide content" id="slide-17">
+  <div class="content-body">
+    <h2>Choose your SDK</h2>
+
+    <table>
+      <tr><th>SDK</th><th>Language</th><th>Use case</th><th>Status</th></tr>
+      <tr>
+        <td><strong>JS Evo SDK</strong></td>
+        <td>JS/TS</td>
+        <td>Web apps, Node.js backends</td>
+        <td style="color: var(--green);">Stable</td>
+      </tr>
+      <tr>
+        <td><strong>Rust SDK</strong></td>
+        <td>Rust</td>
+        <td>Backend services, tools, CLI</td>
+        <td style="color: var(--green);">Stable</td>
+      </tr>
+      <tr>
+        <td><strong>Swift SDK</strong></td>
+        <td>Swift</td>
+        <td>iOS/macOS apps</td>
+        <td style="color: var(--orange);">New (v3.1)</td>
+      </tr>
+    </table>
+
+    <div class="highlight" style="margin-top: 20px;">
+      <p><strong>Recommendation:</strong> Use the <strong>JS Evo SDK</strong> for new JS/TS projects. It's built from Rust via WebAssembly and gives you the same verification guarantees as the Rust SDK.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 18: WASM SDK quick start ==================== -->
+<div class="slide content" id="slide-18">
+  <div class="content-body">
+    <h2>WASM SDK &mdash; quick example</h2>
+
+    <pre><code><span class="cmd">npm install</span> @dashevo/wasm-sdk</code></pre>
+
+    <pre><code><span class="comment">// Connect to testnet and query an identity</span>
+<span class="cmd">import</span> { WasmSdkBuilder } from <span class="url">'@dashevo/wasm-sdk'</span>;
+
+<span class="cmd">const</span> sdk = <span class="cmd">await new</span> WasmSdkBuilder()
+  .withNetworkTestnet()
+  .build();
+
+<span class="comment">// Fetch an identity by name (DPNS)</span>
+<span class="cmd">const</span> identity = <span class="cmd">await</span> sdk.getIdentityByName(<span class="url">'alice'</span>);
+console.log(identity.getId());
+
+<span class="comment">// Query documents from a data contract</span>
+<span class="cmd">const</span> docs = <span class="cmd">await</span> sdk.getDocuments(
+  contractId,
+  <span class="url">'profile'</span>,
+  { where: [['$ownerId', '==', identityId]], limit: 10 }
+);
+</code></pre>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 19: Data Contracts ==================== -->
+<div class="slide content" id="slide-19">
+  <div class="content-body">
+    <h2>Data contracts &mdash; the core concept</h2>
+
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 24px;">
+      A data contract is a JSON Schema that defines your app's data structure. The network stores, indexes, and enforces it.
+    </p>
+
+    <div class="two-col">
+      <div>
+        <pre><code><span class="comment">// Define your contract</span>
+{
+  <span class="url">"note"</span>: {
+    <span class="url">"type"</span>: "object",
+    <span class="url">"properties"</span>: {
+      <span class="url">"message"</span>: {
+        "type": "string",
+        "maxLength": 500
+      }
+    },
+    <span class="url">"indices"</span>: [{
+      "name": "byOwner",
+      "properties": [
+        {"$ownerId": "asc"}
+      ]
+    }]
+  }
+}</code></pre>
+      </div>
+      <div>
+        <h3>What you get</h3>
+        <ul>
+          <li>Schema validation on every write</li>
+          <li>Indexed queries with <strong>cryptographic proofs</strong></li>
+          <li>Versioned updates (no data loss)</li>
+          <li>Per-document ownership and access control</li>
+        </ul>
+
+        <h3 style="margin-top: 24px;">System contracts</h3>
+        <ul>
+          <li><strong>DPNS</strong> &mdash; username registration</li>
+          <li><strong>DashPay</strong> &mdash; social payments / profiles</li>
+          <li><strong>Withdrawals</strong> &mdash; credit &rarr; Dash</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 20: Section - Yappr ==================== -->
+<div class="slide section-divider" id="slide-20">
+  <div class="section-number">05</div>
+  <h2>Example: Yappr</h2>
+  <p class="subtitle">What you can build today</p>
+</div>
+
+<!-- ==================== SLIDE 21: Yappr ==================== -->
+<div class="slide content" id="slide-21">
+  <div class="content-body">
+    <h2>Yappr &mdash; decentralized social posting</h2>
+
+    <div class="link-box" style="margin-bottom: 20px;">
+      <div class="url-text">yap.pr</div>
+      <div class="desc">Live on Testnet &mdash; try it now</div>
+    </div>
+
+    <p style="font-size: 20px; color: var(--text-dim); margin-bottom: 24px;">
+      A Twitter/X-like app built entirely on Dash Platform. No backend servers, no databases &mdash; just a data contract and a frontend.
+    </p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>How it works</h3>
+        <ul>
+          <li>Register an <strong>identity</strong> on Platform</li>
+          <li>Get a <strong>username</strong> via DPNS</li>
+          <li>Deploy a <strong>data contract</strong> with "post" and "like" document types</li>
+          <li>Create <strong>documents</strong> (posts) that anyone can query</li>
+          <li>All data is <strong>provably authentic</strong> via Merkle proofs</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>What makes it special</h3>
+        <ul>
+          <li><strong>No server</strong> &mdash; queries go directly to masternodes</li>
+          <li><strong>Censorship resistant</strong> &mdash; data is on-chain</li>
+          <li><strong>Cryptographic proofs</strong> &mdash; every response is verified</li>
+          <li><strong>Instant finality</strong> &mdash; posts appear in one block</li>
+          <li><strong>Rich queries</strong> &mdash; sort, filter, paginate natively</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 22: What you can build ==================== -->
+<div class="slide content" id="slide-22">
+  <div class="content-body">
+    <h2>What can you build today?</h2>
+
+    <div class="cards">
+      <div class="card">
+        <h3>Social apps</h3>
+        <p>Profiles, posts, messaging &mdash; all with identity-based ownership</p>
+      </div>
+      <div class="card">
+        <h3>Naming systems</h3>
+        <p>Human-readable names for wallets, apps, services (DPNS already exists)</p>
+      </div>
+      <div class="card">
+        <h3>Marketplaces</h3>
+        <p>Listings, offers, reviews &mdash; with cryptographic proof of authenticity</p>
+      </div>
+      <div class="card">
+        <h3>Credential systems</h3>
+        <p>Verifiable claims, attestations, membership proofs</p>
+      </div>
+      <div class="card">
+        <h3>Token platforms</h3>
+        <p>Custom tokens with configurable minting, burning, freezing rules</p>
+      </div>
+      <div class="card">
+        <h3>Governance tools</h3>
+        <p>Voting, proposals, group-controlled actions with on-chain rules</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 23: Step by step ==================== -->
+<div class="slide content" id="slide-23">
+  <div class="content-body">
+    <h2>Your path from here</h2>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <p><strong>Read the intro</strong> at <code>dashplatform.readme.io</code></p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <p><strong>Install prerequisites</strong> (Node.js, Docker, Rust)</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <p><strong>Clone the repo</strong> and run <code>yarn setup && yarn start</code></p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <p><strong>Try the WASM SDK</strong> &mdash; connect to testnet, fetch an identity</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <p><strong>Design a data contract</strong> for your app idea</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-content">
+        <p><strong>Ask questions</strong> on <code>chat.dashdevs.org</code></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE: Discord ==================== -->
+<div class="slide content" id="slide-discord">
+  <div class="content-body">
+    <h2>Discord &amp; getting help</h2>
+
+    <div class="link-box">
+      <div class="label">Dash Developer Discord</div>
+      <div class="url-text">chat.dashdevs.org</div>
+      <div class="desc">The primary place for developer questions and discussion</div>
+    </div>
+
+    <div class="link-box" style="margin-top: 12px;">
+      <div class="label">General Dash Discord</div>
+      <div class="url-text">discord.gg/PXbUxJB</div>
+      <div class="desc">Broader community &mdash; not dev-focused but active</div>
+    </div>
+
+    <div style="margin-top: 32px;">
+      <h3>Tips for getting help</h3>
+      <ul>
+        <li>Include your <strong>SDK version</strong> and <strong>network</strong> (testnet/mainnet)</li>
+        <li>Share <strong>error messages</strong> and <strong>code snippets</strong></li>
+        <li>Check if there's a <strong>GitHub issue</strong> first</li>
+        <li>Platform team is most active during <strong>US/EU business hours</strong></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 24: Resources ==================== -->
+<div class="slide content" id="slide-24">
+  <div class="content-body">
+    <h2>Resources &amp; links</h2>
+
+    <div class="two-col">
+      <div>
+        <div class="link-box">
+          <div class="label">Documentation</div>
+          <div class="url-text">dashplatform.readme.io</div>
+        </div>
+        <div class="link-box">
+          <div class="label">Platform Book</div>
+          <div class="url-text">dashpay.github.io/platform</div>
+        </div>
+        <div class="link-box">
+          <div class="label">GitHub</div>
+          <div class="url-text">github.com/dashpay/platform</div>
+        </div>
+      </div>
+      <div>
+        <div class="link-box">
+          <div class="label">Dev Discord</div>
+          <div class="url-text">chat.dashdevs.org</div>
+        </div>
+        <div class="link-box">
+          <div class="label">Evo SDK Docs</div>
+          <div class="url-text">dashpay.github.io/evo-sdk-website/docs.html</div>
+        </div>
+        <div class="link-box">
+          <div class="label">CI Status</div>
+          <div class="url-text">NIGHTLY_STATUS.md</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 25: End ==================== -->
+<div class="slide title-slide" id="slide-25">
+  <div class="dash-logo">DASH <span>PLATFORM</span></div>
+  <h1>Questions?</h1>
+  <p class="subtitle">Let's remove friction and build together</p>
+  <p class="author" style="margin-top: 40px;">chat.dashdevs.org &bull; github.com/dashpay/platform</p>
+</div>
+
+<!-- Progress bar -->
+<div class="progress" id="progress"></div>
+<div class="slide-counter" id="counter"></div>
+<div class="nav-hint">Arrow keys or click to navigate</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let current = 0;
+
+  function showSlide(n) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(n, slides.length - 1));
+    slides[current].classList.add('active');
+
+    // Update progress
+    const pct = ((current) / (slides.length - 1)) * 100;
+    document.getElementById('progress').style.width = pct + '%';
+    document.getElementById('counter').textContent = (current + 1) + ' / ' + slides.length;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault();
+      showSlide(current + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      showSlide(current - 1);
+    } else if (e.key === 'Home') {
+      showSlide(0);
+    } else if (e.key === 'End') {
+      showSlide(slides.length - 1);
+    }
+  });
+
+  // Click to advance
+  document.addEventListener('click', (e) => {
+    if (e.clientX > window.innerWidth / 2) {
+      showSlide(current + 1);
+    } else {
+      showSlide(current - 1);
+    }
+  });
+
+  // Touch support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  document.addEventListener('touchend', (e) => {
+    const diff = touchStartX - e.changedTouches[0].clientX;
+    if (Math.abs(diff) > 50) {
+      showSlide(current + (diff > 0 ? 1 : -1));
+    }
+  });
+
+  // Initialize
+  showSlide(0);
+</script>
+</body>
+</html>

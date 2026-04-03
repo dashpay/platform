@@ -289,3 +289,423 @@ impl<TData: Clone, E: Debug, F: Into<E>> From<Result<TData, F>> for ValidationRe
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- new() --
+
+    #[test]
+    fn test_new_has_no_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_new_has_no_data() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.data.is_none());
+    }
+
+    // -- new_with_data() --
+
+    #[test]
+    fn test_new_with_data_stores_data() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(42);
+        assert_eq!(result.data, Some(42));
+        assert!(result.errors.is_empty());
+    }
+
+    // -- new_with_error() --
+
+    #[test]
+    fn test_new_with_error_stores_single_error() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("bad".to_string());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0], "bad");
+        assert!(result.data.is_none());
+    }
+
+    // -- new_with_errors() --
+
+    #[test]
+    fn test_new_with_errors_stores_multiple_errors() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_errors(vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(result.errors.len(), 2);
+        assert_eq!(result.errors[0], "a");
+        assert_eq!(result.errors[1], "b");
+        assert!(result.data.is_none());
+    }
+
+    #[test]
+    fn test_new_with_errors_empty_vec() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_errors(vec![]);
+        assert!(result.errors.is_empty());
+        assert!(result.data.is_none());
+    }
+
+    // -- map() --
+
+    #[test]
+    fn test_map_transforms_data() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(10);
+        let mapped = result.map(|x| x * 2);
+        assert_eq!(mapped.data, Some(20));
+        assert!(mapped.errors.is_empty());
+    }
+
+    #[test]
+    fn test_map_preserves_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data_and_errors(
+            5,
+            vec!["err".to_string()],
+        );
+        let mapped = result.map(|x| x + 1);
+        assert_eq!(mapped.data, Some(6));
+        assert_eq!(mapped.errors, vec!["err".to_string()]);
+    }
+
+    #[test]
+    fn test_map_with_no_data() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("err".to_string());
+        let mapped = result.map(|x| x + 1);
+        assert!(mapped.data.is_none());
+        assert_eq!(mapped.errors.len(), 1);
+    }
+
+    // -- map_result() --
+
+    #[test]
+    fn test_map_result_with_ok_closure() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(10);
+        let mapped: Result<ValidationResult<String, String>, String> =
+            result.map_result(|x| Ok(format!("val={}", x)));
+        let mapped = mapped.unwrap();
+        assert_eq!(mapped.data, Some("val=10".to_string()));
+    }
+
+    #[test]
+    fn test_map_result_with_err_closure() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(10);
+        let mapped: Result<ValidationResult<i32, String>, String> =
+            result.map_result(|_| Err("fail".to_string()));
+        assert!(mapped.is_err());
+        assert_eq!(mapped.unwrap_err(), "fail");
+    }
+
+    #[test]
+    fn test_map_result_with_no_data() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("err".to_string());
+        let mapped: Result<ValidationResult<i32, String>, String> =
+            result.map_result(|x| Ok(x + 1));
+        let mapped = mapped.unwrap();
+        assert!(mapped.data.is_none());
+        assert_eq!(mapped.errors, vec!["err".to_string()]);
+    }
+
+    // -- is_valid() / is_err() --
+
+    #[test]
+    fn test_is_valid_true_when_no_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.is_valid());
+        assert!(!result.is_err());
+    }
+
+    #[test]
+    fn test_is_valid_false_when_errors_present() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("e".to_string());
+        assert!(!result.is_valid());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_valid_with_data_and_no_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_is_err_with_data_and_errors() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_data_and_errors(1, vec!["e".to_string()]);
+        assert!(result.is_err());
+    }
+
+    // -- first_error() --
+
+    #[test]
+    fn test_first_error_returns_first() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_errors(vec!["first".to_string(), "second".to_string()]);
+        assert_eq!(result.first_error(), Some(&"first".to_string()));
+    }
+
+    #[test]
+    fn test_first_error_returns_none_when_no_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert_eq!(result.first_error(), None);
+    }
+
+    // -- into_data() --
+
+    #[test]
+    fn test_into_data_returns_data_when_present() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(42);
+        assert_eq!(result.into_data().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_into_data_returns_error_when_no_data() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.into_data().is_err());
+    }
+
+    // -- into_data_with_error() --
+
+    #[test]
+    fn test_into_data_with_error_returns_data_when_valid() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(42);
+        let inner = result.into_data_with_error().unwrap();
+        assert_eq!(inner.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_into_data_with_error_returns_last_error_when_errors_present() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_errors(vec![
+            "first".to_string(),
+            "last".to_string(),
+        ]);
+        let inner = result.into_data_with_error().unwrap();
+        assert_eq!(inner.unwrap_err(), "last");
+    }
+
+    #[test]
+    fn test_into_data_with_error_returns_protocol_error_when_no_data_and_no_errors() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.into_data_with_error().is_err());
+    }
+
+    // -- into_data_and_errors() --
+
+    #[test]
+    fn test_into_data_and_errors_returns_both() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_data_and_errors(10, vec!["e".to_string()]);
+        let (data, errors) = result.into_data_and_errors().unwrap();
+        assert_eq!(data, 10);
+        assert_eq!(errors, vec!["e".to_string()]);
+    }
+
+    #[test]
+    fn test_into_data_and_errors_returns_empty_errors_when_valid() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(10);
+        let (data, errors) = result.into_data_and_errors().unwrap();
+        assert_eq!(data, 10);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_into_data_and_errors_fails_without_data() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("e".to_string());
+        assert!(result.into_data_and_errors().is_err());
+    }
+
+    // -- From impls --
+
+    #[test]
+    fn test_from_data_creates_valid_result() {
+        let result: ValidationResult<i32, String> = 42.into();
+        assert_eq!(result.data, Some(42));
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_from_ok_result_creates_valid_result() {
+        let ok_result: Result<i32, String> = Ok(42);
+        let result: ValidationResult<i32, String> = ok_result.into();
+        assert_eq!(result.data, Some(42));
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_from_err_result_creates_error_result() {
+        let err_result: Result<i32, String> = Err("bad".to_string());
+        let result: ValidationResult<i32, String> = err_result.into();
+        assert!(result.data.is_none());
+        assert_eq!(result.errors, vec!["bad".to_string()]);
+    }
+
+    // -- flatten() --
+
+    #[test]
+    fn test_flatten_merges_data_and_errors() {
+        let r1: ValidationResult<Vec<i32>, String> =
+            ValidationResult::new_with_data(vec![1, 2]);
+        let r2: ValidationResult<Vec<i32>, String> =
+            ValidationResult::new_with_data_and_errors(vec![3], vec!["e".to_string()]);
+        let r3: ValidationResult<Vec<i32>, String> =
+            ValidationResult::new_with_error("e2".to_string());
+
+        let flat = ValidationResult::flatten(vec![r1, r2, r3]);
+        assert_eq!(flat.data, Some(vec![1, 2, 3]));
+        assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
+    }
+
+    #[test]
+    fn test_flatten_empty_input() {
+        let flat: ValidationResult<Vec<i32>, String> =
+            ValidationResult::flatten(std::iter::empty());
+        assert_eq!(flat.data, Some(vec![]));
+        assert!(flat.errors.is_empty());
+    }
+
+    // -- merge_many() --
+
+    #[test]
+    fn test_merge_many_collects_data_into_vec() {
+        let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
+        let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
+        let r3: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("e".to_string());
+
+        let merged = ValidationResult::merge_many(vec![r1, r2, r3]);
+        assert_eq!(merged.data, Some(vec![1, 2]));
+        assert_eq!(merged.errors, vec!["e".to_string()]);
+    }
+
+    #[test]
+    fn test_merge_many_empty_input() {
+        let merged: ValidationResult<Vec<i32>, String> =
+            ValidationResult::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
+        assert_eq!(merged.data, Some(vec![]));
+        assert!(merged.errors.is_empty());
+    }
+
+    // -- merge_many_errors() --
+
+    #[test]
+    fn test_merge_many_errors_collects_all_errors() {
+        let r1: SimpleValidationResult<String> =
+            SimpleValidationResult::new_with_errors(vec!["a".to_string()]);
+        let r2: SimpleValidationResult<String> =
+            SimpleValidationResult::new_with_errors(vec!["b".to_string(), "c".to_string()]);
+        let r3: SimpleValidationResult<String> = SimpleValidationResult::new();
+
+        let merged = SimpleValidationResult::merge_many_errors(vec![r1, r2, r3]);
+        assert_eq!(
+            merged.errors,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_merge_many_errors_empty_input() {
+        let merged: SimpleValidationResult<String> =
+            SimpleValidationResult::merge_many_errors(std::iter::empty());
+        assert!(merged.errors.is_empty());
+    }
+
+    // -- Default --
+
+    #[test]
+    fn test_default_is_empty() {
+        let result: ValidationResult<i32, String> = ValidationResult::default();
+        assert!(result.errors.is_empty());
+        assert!(result.data.is_none());
+    }
+
+    // -- add_error / add_errors / merge --
+
+    #[test]
+    fn test_add_error() {
+        let mut result: ValidationResult<i32, String> = ValidationResult::new();
+        result.add_error("e1".to_string());
+        result.add_error("e2".to_string());
+        assert_eq!(result.errors, vec!["e1".to_string(), "e2".to_string()]);
+    }
+
+    #[test]
+    fn test_add_errors() {
+        let mut result: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("e1".to_string());
+        result.add_errors(vec!["e2".to_string(), "e3".to_string()]);
+        assert_eq!(result.errors.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_appends_errors_from_other() {
+        let mut r1: ValidationResult<i32, String> =
+            ValidationResult::new_with_error("a".to_string());
+        let r2: ValidationResult<String, String> =
+            ValidationResult::new_with_error("b".to_string());
+        r1.merge(r2);
+        assert_eq!(r1.errors, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    // -- get_error / has_data / is_valid_with_data / set_data --
+
+    #[test]
+    fn test_get_error() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_errors(vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(result.get_error(0), Some(&"a".to_string()));
+        assert_eq!(result.get_error(1), Some(&"b".to_string()));
+        assert_eq!(result.get_error(2), None);
+    }
+
+    #[test]
+    fn test_has_data() {
+        let with: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
+        let without: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(with.has_data());
+        assert!(!without.has_data());
+    }
+
+    #[test]
+    fn test_is_valid_with_data() {
+        let valid_with_data: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
+        let valid_no_data: ValidationResult<i32, String> = ValidationResult::new();
+        let invalid_with_data: ValidationResult<i32, String> =
+            ValidationResult::new_with_data_and_errors(1, vec!["e".to_string()]);
+        assert!(valid_with_data.is_valid_with_data());
+        assert!(!valid_no_data.is_valid_with_data());
+        assert!(!invalid_with_data.is_valid_with_data());
+    }
+
+    #[test]
+    fn test_set_data() {
+        let mut result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.data.is_none());
+        result.set_data(99);
+        assert_eq!(result.data, Some(99));
+    }
+
+    #[test]
+    fn test_into_result_without_data() {
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_data_and_errors(42, vec!["e".to_string()]);
+        let without_data = result.into_result_without_data();
+        assert!(without_data.data.is_none());
+        assert_eq!(without_data.errors, vec!["e".to_string()]);
+    }
+
+    #[test]
+    fn test_data_as_borrowed() {
+        let result: ValidationResult<i32, String> = ValidationResult::new_with_data(42);
+        assert_eq!(result.data_as_borrowed().unwrap(), &42);
+    }
+
+    #[test]
+    fn test_data_as_borrowed_no_data() {
+        let result: ValidationResult<i32, String> = ValidationResult::new();
+        assert!(result.data_as_borrowed().is_err());
+    }
+}

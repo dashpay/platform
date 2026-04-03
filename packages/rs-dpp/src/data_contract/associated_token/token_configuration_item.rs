@@ -291,3 +291,278 @@ impl fmt::Display for TokenConfigurationChangeItem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// Helper: build one instance of every variant using default inner values.
+    fn all_variants() -> Vec<TokenConfigurationChangeItem> {
+        let aat = AuthorizedActionTakers::NoOne;
+        vec![
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            TokenConfigurationChangeItem::Conventions(
+                TokenConfigurationConvention::V0(
+                    crate::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0::default(),
+                ),
+            ),
+            TokenConfigurationChangeItem::ConventionsControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::ConventionsAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MaxSupply(None),
+            TokenConfigurationChangeItem::MaxSupplyControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MaxSupplyAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::PerpetualDistribution(None),
+            TokenConfigurationChangeItem::PerpetualDistributionControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(None),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(false),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ManualMinting(aat.clone()),
+            TokenConfigurationChangeItem::ManualMintingAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::ManualBurning(aat.clone()),
+            TokenConfigurationChangeItem::ManualBurningAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::Freeze(aat.clone()),
+            TokenConfigurationChangeItem::FreezeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::Unfreeze(aat.clone()),
+            TokenConfigurationChangeItem::UnfreezeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::DestroyFrozenFunds(aat.clone()),
+            TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::EmergencyAction(aat.clone()),
+            TokenConfigurationChangeItem::EmergencyActionAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::default()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(aat.clone()),
+            TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(aat.clone()),
+            TokenConfigurationChangeItem::MainControlGroup(None),
+        ]
+    }
+
+    // ---- u8_item_index returns unique values 0..=31 ----
+
+    #[test]
+    fn u8_item_index_values_are_unique() {
+        let variants = all_variants();
+        let indices: Vec<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        let unique: BTreeSet<u8> = indices.iter().cloned().collect();
+        assert_eq!(
+            indices.len(),
+            unique.len(),
+            "Duplicate u8_item_index values found: {:?}",
+            indices
+        );
+    }
+
+    #[test]
+    fn u8_item_index_covers_0_through_31() {
+        let variants = all_variants();
+        let indices: BTreeSet<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
+        for i in 0u8..=31 {
+            assert!(
+                indices.contains(&i),
+                "Missing u8_item_index value: {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn u8_item_index_all_within_range() {
+        let variants = all_variants();
+        for v in &variants {
+            let idx = v.u8_item_index();
+            assert!(idx <= 31, "Index {} exceeds expected max of 31", idx);
+        }
+    }
+
+    #[test]
+    fn u8_item_index_specific_known_values() {
+        assert_eq!(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange.u8_item_index(),
+            0
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MaxSupply(Some(100)).u8_item_index(),
+            4
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne)
+                .u8_item_index(),
+            16
+        );
+        assert_eq!(
+            TokenConfigurationChangeItem::MainControlGroup(Some(5)).u8_item_index(),
+            31
+        );
+    }
+
+    #[test]
+    fn u8_item_index_variant_count() {
+        // We expect exactly 32 variants (indices 0..=31)
+        let variants = all_variants();
+        assert_eq!(variants.len(), 32);
+    }
+
+    // ---- Display tests for representative variants ----
+
+    #[test]
+    fn display_no_change() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::TokenConfigurationNoChange
+        );
+        assert_eq!(s, "No Change in Token Configuration");
+    }
+
+    #[test]
+    fn display_max_supply_some() {
+        let s = format!("{}", TokenConfigurationChangeItem::MaxSupply(Some(1000)));
+        assert_eq!(s, "Max Supply: 1000");
+    }
+
+    #[test]
+    fn display_max_supply_none() {
+        let s = format!("{}", TokenConfigurationChangeItem::MaxSupply(None));
+        assert_eq!(s, "Max Supply: No Limit");
+    }
+
+    #[test]
+    fn display_minting_allow_choosing_destination_true() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(true)
+        );
+        assert_eq!(s, "Minting Allow Choosing Destination: true");
+    }
+
+    #[test]
+    fn display_minting_allow_choosing_destination_false() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MintingAllowChoosingDestination(false)
+        );
+        assert_eq!(s, "Minting Allow Choosing Destination: false");
+    }
+
+    #[test]
+    fn display_freeze() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::Freeze(AuthorizedActionTakers::ContractOwner)
+        );
+        assert_eq!(s, "Freeze: ContractOwner");
+    }
+
+    #[test]
+    fn display_manual_minting() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::ManualMinting(AuthorizedActionTakers::NoOne)
+        );
+        assert_eq!(s, "Manual Minting: NoOne");
+    }
+
+    #[test]
+    fn display_manual_burning() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::ManualBurning(AuthorizedActionTakers::ContractOwner)
+        );
+        assert_eq!(s, "Manual Burning: ContractOwner");
+    }
+
+    #[test]
+    fn display_emergency_action() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::EmergencyAction(AuthorizedActionTakers::NoOne)
+        );
+        assert_eq!(s, "Emergency Action: NoOne");
+    }
+
+    #[test]
+    fn display_main_control_group_some() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MainControlGroup(Some(42))
+        );
+        assert_eq!(s, "Main Control Group: 42");
+    }
+
+    #[test]
+    fn display_main_control_group_none() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MainControlGroup(None)
+        );
+        assert_eq!(s, "Main Control Group: None");
+    }
+
+    #[test]
+    fn display_perpetual_distribution_none() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::PerpetualDistribution(None)
+        );
+        assert_eq!(s, "Perpetual Distribution: None");
+    }
+
+    #[test]
+    fn display_new_tokens_destination_identity_none() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(None)
+        );
+        assert_eq!(s, "New Tokens Destination Identity: None");
+    }
+
+    #[test]
+    fn display_new_tokens_destination_identity_some() {
+        let id = Identifier::from([3u8; 32]);
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(id))
+        );
+        assert!(s.starts_with("New Tokens Destination Identity: "));
+        assert!(!s.contains("None"));
+    }
+
+    #[test]
+    fn display_unfreeze() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::Unfreeze(AuthorizedActionTakers::NoOne)
+        );
+        assert_eq!(s, "Unfreeze: NoOne");
+    }
+
+    #[test]
+    fn display_destroy_frozen_funds() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::DestroyFrozenFunds(AuthorizedActionTakers::ContractOwner)
+        );
+        assert_eq!(s, "Destroy Frozen Funds: ContractOwner");
+    }
+
+    #[test]
+    fn display_marketplace_trade_mode() {
+        let s = format!(
+            "{}",
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::NotTradeable)
+        );
+        assert_eq!(s, "Marketplace Trade Mode: NotTradeable");
+    }
+
+    // ---- display all variants don't panic ----
+
+    #[test]
+    fn display_all_variants_no_panic() {
+        for v in all_variants() {
+            let s = format!("{}", v);
+            assert!(!s.is_empty());
+        }
+    }
+}

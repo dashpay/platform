@@ -479,3 +479,460 @@ impl TokenEvent {
         Ok(document)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_id() -> Identifier {
+        Identifier::from([1u8; 32])
+    }
+
+    fn test_id_2() -> Identifier {
+        Identifier::from([2u8; 32])
+    }
+
+    // ---- Display tests ----
+
+    #[test]
+    fn display_mint_without_note() {
+        let event = TokenEvent::Mint(1000, test_id(), None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Mint 1000 to "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_mint_with_note() {
+        let event = TokenEvent::Mint(500, test_id(), Some("test note".to_string()));
+        let s = format!("{}", event);
+        assert!(s.starts_with("Mint 500 to "));
+        assert!(s.contains("(note: test note)"));
+    }
+
+    #[test]
+    fn display_burn_without_note() {
+        let event = TokenEvent::Burn(200, test_id(), None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Burn 200 from "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_burn_with_note() {
+        let event = TokenEvent::Burn(200, test_id(), Some("burn note".to_string()));
+        let s = format!("{}", event);
+        assert!(s.contains("Burn 200 from "));
+        assert!(s.contains("(note: burn note)"));
+    }
+
+    #[test]
+    fn display_freeze_without_note() {
+        let event = TokenEvent::Freeze(test_id(), None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Freeze "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_freeze_with_note() {
+        let event = TokenEvent::Freeze(test_id(), Some("frozen".to_string()));
+        let s = format!("{}", event);
+        assert!(s.starts_with("Freeze "));
+        assert!(s.contains("(note: frozen)"));
+    }
+
+    #[test]
+    fn display_unfreeze_without_note() {
+        let event = TokenEvent::Unfreeze(test_id(), None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Unfreeze "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_unfreeze_with_note() {
+        let event = TokenEvent::Unfreeze(test_id(), Some("thawed".to_string()));
+        let s = format!("{}", event);
+        assert!(s.contains("(note: thawed)"));
+    }
+
+    #[test]
+    fn display_destroy_frozen_funds_without_note() {
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 999, None);
+        let s = format!("{}", event);
+        assert!(s.contains("Destroy 999 frozen from "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_destroy_frozen_funds_with_note() {
+        let event =
+            TokenEvent::DestroyFrozenFunds(test_id(), 999, Some("destroyed".to_string()));
+        let s = format!("{}", event);
+        assert!(s.contains("Destroy 999 frozen from "));
+        assert!(s.contains("(note: destroyed)"));
+    }
+
+    #[test]
+    fn display_transfer_without_note() {
+        let event = TokenEvent::Transfer(test_id(), None, None, None, 100);
+        let s = format!("{}", event);
+        assert!(s.contains("Transfer 100 to "));
+        assert!(!s.contains("(note:"));
+    }
+
+    #[test]
+    fn display_transfer_with_note() {
+        let event = TokenEvent::Transfer(
+            test_id(),
+            Some("payment".to_string()),
+            None,
+            None,
+            100,
+        );
+        let s = format!("{}", event);
+        assert!(s.contains("Transfer 100 to "));
+        assert!(s.contains("(note: payment)"));
+    }
+
+    #[test]
+    fn display_claim() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 50, None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Claim 50 by "));
+    }
+
+    #[test]
+    fn display_emergency_action() {
+        let event = TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Emergency action "));
+    }
+
+    #[test]
+    fn display_emergency_action_with_note() {
+        let event = TokenEvent::EmergencyAction(
+            TokenEmergencyAction::Resume,
+            Some("resuming".to_string()),
+        );
+        let s = format!("{}", event);
+        assert!(s.contains("Emergency action "));
+        assert!(s.contains("(note: resuming)"));
+    }
+
+    #[test]
+    fn display_config_update() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            None,
+        );
+        let s = format!("{}", event);
+        assert!(s.starts_with("Configuration update "));
+    }
+
+    #[test]
+    fn display_change_price_with_schedule() {
+        let schedule = TokenPricingSchedule::SinglePrice(1000);
+        let event = TokenEvent::ChangePriceForDirectPurchase(Some(schedule), None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Change price schedule to "));
+    }
+
+    #[test]
+    fn display_change_price_disable() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, None);
+        let s = format!("{}", event);
+        assert!(s.starts_with("Disable direct purchase"));
+    }
+
+    #[test]
+    fn display_change_price_disable_with_note() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(
+            None,
+            Some("no more sales".to_string()),
+        );
+        let s = format!("{}", event);
+        assert_eq!(s, "Disable direct purchase (note: no more sales)");
+    }
+
+    #[test]
+    fn display_direct_purchase() {
+        let event = TokenEvent::DirectPurchase(50, 5000);
+        let s = format!("{}", event);
+        assert_eq!(s, "Direct purchase of 50 for 5000 credits");
+    }
+
+    // ---- associated_document_type_name tests ----
+
+    #[test]
+    fn associated_name_mint() {
+        let event = TokenEvent::Mint(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "mint");
+    }
+
+    #[test]
+    fn associated_name_burn() {
+        let event = TokenEvent::Burn(0, test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "burn");
+    }
+
+    #[test]
+    fn associated_name_freeze() {
+        let event = TokenEvent::Freeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "freeze");
+    }
+
+    #[test]
+    fn associated_name_unfreeze() {
+        let event = TokenEvent::Unfreeze(test_id(), None);
+        assert_eq!(event.associated_document_type_name(), "unfreeze");
+    }
+
+    #[test]
+    fn associated_name_destroy_frozen_funds() {
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 0, None);
+        assert_eq!(event.associated_document_type_name(), "destroyFrozenFunds");
+    }
+
+    #[test]
+    fn associated_name_transfer() {
+        let event = TokenEvent::Transfer(test_id(), None, None, None, 0);
+        assert_eq!(event.associated_document_type_name(), "transfer");
+    }
+
+    #[test]
+    fn associated_name_claim() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 0, None);
+        assert_eq!(event.associated_document_type_name(), "claim");
+    }
+
+    #[test]
+    fn associated_name_emergency_action() {
+        let event = TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None);
+        assert_eq!(event.associated_document_type_name(), "emergencyAction");
+    }
+
+    #[test]
+    fn associated_name_config_update() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            None,
+        );
+        assert_eq!(event.associated_document_type_name(), "configUpdate");
+    }
+
+    #[test]
+    fn associated_name_direct_purchase() {
+        let event = TokenEvent::DirectPurchase(0, 0);
+        assert_eq!(event.associated_document_type_name(), "directPurchase");
+    }
+
+    #[test]
+    fn associated_name_change_price() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, None);
+        assert_eq!(event.associated_document_type_name(), "directPricing");
+    }
+
+    // ---- public_note tests ----
+
+    #[test]
+    fn public_note_mint_some() {
+        let event = TokenEvent::Mint(100, test_id(), Some("note".to_string()));
+        assert_eq!(event.public_note(), Some("note"));
+    }
+
+    #[test]
+    fn public_note_mint_none() {
+        let event = TokenEvent::Mint(100, test_id(), None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_burn_some() {
+        let event = TokenEvent::Burn(100, test_id(), Some("burn note".to_string()));
+        assert_eq!(event.public_note(), Some("burn note"));
+    }
+
+    #[test]
+    fn public_note_burn_none() {
+        let event = TokenEvent::Burn(100, test_id(), None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_freeze_some() {
+        let event = TokenEvent::Freeze(test_id(), Some("freeze note".to_string()));
+        assert_eq!(event.public_note(), Some("freeze note"));
+    }
+
+    #[test]
+    fn public_note_freeze_none() {
+        let event = TokenEvent::Freeze(test_id(), None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_unfreeze_some() {
+        let event = TokenEvent::Unfreeze(test_id(), Some("uf note".to_string()));
+        assert_eq!(event.public_note(), Some("uf note"));
+    }
+
+    #[test]
+    fn public_note_unfreeze_none() {
+        let event = TokenEvent::Unfreeze(test_id(), None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_destroy_frozen_some() {
+        let event =
+            TokenEvent::DestroyFrozenFunds(test_id(), 10, Some("destroy note".to_string()));
+        assert_eq!(event.public_note(), Some("destroy note"));
+    }
+
+    #[test]
+    fn public_note_destroy_frozen_none() {
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 10, None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_transfer_some() {
+        let event = TokenEvent::Transfer(
+            test_id(),
+            Some("tx note".to_string()),
+            None,
+            None,
+            100,
+        );
+        assert_eq!(event.public_note(), Some("tx note"));
+    }
+
+    #[test]
+    fn public_note_transfer_none() {
+        let event = TokenEvent::Transfer(test_id(), None, None, None, 100);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_claim_some() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 10, Some("claim note".to_string()));
+        assert_eq!(event.public_note(), Some("claim note"));
+    }
+
+    #[test]
+    fn public_note_claim_none() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let event = TokenEvent::Claim(recipient, 10, None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_emergency_action_some() {
+        let event = TokenEvent::EmergencyAction(
+            TokenEmergencyAction::Pause,
+            Some("emergency".to_string()),
+        );
+        assert_eq!(event.public_note(), Some("emergency"));
+    }
+
+    #[test]
+    fn public_note_emergency_action_none() {
+        let event = TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_config_update_some() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            Some("config note".to_string()),
+        );
+        assert_eq!(event.public_note(), Some("config note"));
+    }
+
+    #[test]
+    fn public_note_config_update_none() {
+        let event = TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            None,
+        );
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_change_price_some() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(
+            None,
+            Some("price note".to_string()),
+        );
+        assert_eq!(event.public_note(), Some("price note"));
+    }
+
+    #[test]
+    fn public_note_change_price_none() {
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, None);
+        assert_eq!(event.public_note(), None);
+    }
+
+    #[test]
+    fn public_note_direct_purchase_returns_none() {
+        // DirectPurchase has no note field at all
+        let event = TokenEvent::DirectPurchase(100, 500);
+        assert_eq!(event.public_note(), None);
+    }
+
+    // ---- all associated_document_type_name values are distinct ----
+
+    #[test]
+    fn all_document_type_names_are_unique() {
+        let recipient = TokenDistributionTypeWithResolvedRecipient::PreProgrammed(test_id());
+        let events: Vec<TokenEvent> = vec![
+            TokenEvent::Mint(0, test_id(), None),
+            TokenEvent::Burn(0, test_id(), None),
+            TokenEvent::Freeze(test_id(), None),
+            TokenEvent::Unfreeze(test_id(), None),
+            TokenEvent::DestroyFrozenFunds(test_id(), 0, None),
+            TokenEvent::Transfer(test_id(), None, None, None, 0),
+            TokenEvent::Claim(recipient, 0, None),
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None),
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
+                None,
+            ),
+            TokenEvent::DirectPurchase(0, 0),
+            TokenEvent::ChangePriceForDirectPurchase(None, None),
+        ];
+        let names: Vec<&str> = events
+            .iter()
+            .map(|e| e.associated_document_type_name())
+            .collect();
+        let mut unique = names.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(
+            names.len(),
+            unique.len(),
+            "Duplicate document type names found"
+        );
+    }
+
+    // ---- format_note helper ----
+
+    #[test]
+    fn format_note_none_returns_empty() {
+        assert_eq!(format_note(&None), "");
+    }
+
+    #[test]
+    fn format_note_some_returns_formatted() {
+        assert_eq!(
+            format_note(&Some("hello".to_string())),
+            " (note: hello)"
+        );
+    }
+}
