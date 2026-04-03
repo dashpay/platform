@@ -80,6 +80,14 @@ ignore:
   # Document-type property accessors — pure getter/setter trait implementations,
   # same category as the state-transition accessors excluded above
   - "packages/rs-dpp/src/data_contract/document_type/accessors/**"
+  # Enum type definitions — TryFrom/Display/conversion boilerplate
+  - "packages/rs-dpp/src/identity/identity_public_key/security_level.rs"
+  - "packages/rs-dpp/src/identity/identity_public_key/purpose.rs"
+  - "packages/rs-dpp/src/identity/identity_public_key/key_type.rs"
+  - "packages/rs-dpp/src/tokens/gas_fees_paid_by.rs"
+  # Value Display and string encoding — trivial formatting, not logic
+  - "packages/rs-platform-value/src/display.rs"
+  - "packages/rs-platform-value/src/string_encoding.rs"
   # Core chain type wrappers — masternode entry structs, deserialization
   # boilerplate, thin type aliases
   - "packages/rs-dpp/src/core_types/**"
