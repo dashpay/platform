@@ -50,6 +50,27 @@ impl CoreWallet {
         self.wallet_info.write().await
     }
 
+    /// Non-blocking read access to the underlying `ManagedWalletInfo`.
+    ///
+    /// Returns `None` if a writer currently holds the lock. Useful in
+    /// synchronous contexts (e.g. `spawn_blocking`) where awaiting is not
+    /// possible.
+    pub fn try_wallet_info(
+        &self,
+    ) -> Option<tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo>> {
+        self.wallet_info.try_read().ok()
+    }
+
+    /// Non-blocking write access to the underlying `ManagedWalletInfo`.
+    ///
+    /// Returns `None` if the lock is currently held. Useful in synchronous
+    /// contexts (e.g. `spawn_blocking`) where awaiting is not possible.
+    pub fn try_wallet_info_mut(
+        &self,
+    ) -> Option<tokio::sync::RwLockWriteGuard<'_, ManagedWalletInfo>> {
+        self.wallet_info.try_write().ok()
+    }
+
     /// Read access to the underlying `Wallet` (key material).
     pub async fn wallet(&self) -> tokio::sync::RwLockReadGuard<'_, Wallet> {
         self.wallet.read().await
