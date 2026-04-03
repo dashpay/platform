@@ -473,10 +473,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_ecdsa_secp256k1() {
-        assert_eq!(
-            KeyType::try_from(0u8).unwrap(),
-            KeyType::ECDSA_SECP256K1
-        );
+        assert_eq!(KeyType::try_from(0u8).unwrap(), KeyType::ECDSA_SECP256K1);
     }
 
     #[test]
@@ -491,10 +488,7 @@ mod tests {
 
     #[test]
     fn test_try_from_u8_bip13_script_hash() {
-        assert_eq!(
-            KeyType::try_from(3u8).unwrap(),
-            KeyType::BIP13_SCRIPT_HASH
-        );
+        assert_eq!(KeyType::try_from(3u8).unwrap(), KeyType::BIP13_SCRIPT_HASH);
     }
 
     #[test]
@@ -521,10 +515,7 @@ mod tests {
 
     #[test]
     fn test_display_ecdsa_secp256k1() {
-        assert_eq!(
-            format!("{}", KeyType::ECDSA_SECP256K1),
-            "ECDSA_SECP256K1"
-        );
+        assert_eq!(format!("{}", KeyType::ECDSA_SECP256K1), "ECDSA_SECP256K1");
     }
 
     #[test]

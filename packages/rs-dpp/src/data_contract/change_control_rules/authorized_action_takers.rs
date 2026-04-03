@@ -213,10 +213,7 @@ mod tests {
         Identifier::from([byte; 32])
     }
 
-    fn make_group(
-        members: Vec<(Identifier, u32)>,
-        required_power: u32,
-    ) -> Group {
+    fn make_group(members: Vec<(Identifier, u32)>, required_power: u32) -> Group {
         Group::V0(GroupV0 {
             members: members.into_iter().collect(),
             required_power,

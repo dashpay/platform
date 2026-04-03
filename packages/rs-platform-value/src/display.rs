@@ -213,10 +213,7 @@ mod tests {
     #[test]
     fn display_text_short() {
         let text = "hello";
-        assert_eq!(
-            format!("{}", Value::Text(text.to_string())),
-            "string hello"
-        );
+        assert_eq!(format!("{}", Value::Text(text.to_string())), "string hello");
     }
 
     #[test]
@@ -360,10 +357,7 @@ mod tests {
 
     #[test]
     fn non_qualified_i64() {
-        assert_eq!(
-            Value::I64(-42).non_qualified_string_representation(),
-            "-42"
-        );
+        assert_eq!(Value::I64(-42).non_qualified_string_representation(), "-42");
     }
 
     #[test]
@@ -425,18 +419,12 @@ mod tests {
 
     #[test]
     fn non_qualified_i128() {
-        assert_eq!(
-            Value::I128(-1).non_qualified_string_representation(),
-            "-1"
-        );
+        assert_eq!(Value::I128(-1).non_qualified_string_representation(), "-1");
     }
 
     #[test]
     fn non_qualified_u32() {
-        assert_eq!(
-            Value::U32(100).non_qualified_string_representation(),
-            "100"
-        );
+        assert_eq!(Value::U32(100).non_qualified_string_representation(), "100");
     }
 
     #[test]
@@ -449,10 +437,7 @@ mod tests {
 
     #[test]
     fn non_qualified_u16() {
-        assert_eq!(
-            Value::U16(500).non_qualified_string_representation(),
-            "500"
-        );
+        assert_eq!(Value::U16(500).non_qualified_string_representation(), "500");
     }
 
     #[test]

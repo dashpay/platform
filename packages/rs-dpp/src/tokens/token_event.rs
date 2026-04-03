@@ -567,8 +567,7 @@ mod tests {
 
     #[test]
     fn display_destroy_frozen_funds_with_note() {
-        let event =
-            TokenEvent::DestroyFrozenFunds(test_id(), 999, Some("destroyed".to_string()));
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 999, Some("destroyed".to_string()));
         let s = format!("{}", event);
         assert!(s.contains("Destroy 999 frozen from "));
         assert!(s.contains("(note: destroyed)"));
@@ -584,13 +583,7 @@ mod tests {
 
     #[test]
     fn display_transfer_with_note() {
-        let event = TokenEvent::Transfer(
-            test_id(),
-            Some("payment".to_string()),
-            None,
-            None,
-            100,
-        );
+        let event = TokenEvent::Transfer(test_id(), Some("payment".to_string()), None, None, 100);
         let s = format!("{}", event);
         assert!(s.contains("Transfer 100 to "));
         assert!(s.contains("(note: payment)"));
@@ -613,10 +606,8 @@ mod tests {
 
     #[test]
     fn display_emergency_action_with_note() {
-        let event = TokenEvent::EmergencyAction(
-            TokenEmergencyAction::Resume,
-            Some("resuming".to_string()),
-        );
+        let event =
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Resume, Some("resuming".to_string()));
         let s = format!("{}", event);
         assert!(s.contains("Emergency action "));
         assert!(s.contains("(note: resuming)"));
@@ -649,10 +640,8 @@ mod tests {
 
     #[test]
     fn display_change_price_disable_with_note() {
-        let event = TokenEvent::ChangePriceForDirectPurchase(
-            None,
-            Some("no more sales".to_string()),
-        );
+        let event =
+            TokenEvent::ChangePriceForDirectPurchase(None, Some("no more sales".to_string()));
         let s = format!("{}", event);
         assert_eq!(s, "Disable direct purchase (note: no more sales)");
     }
@@ -788,8 +777,7 @@ mod tests {
 
     #[test]
     fn public_note_destroy_frozen_some() {
-        let event =
-            TokenEvent::DestroyFrozenFunds(test_id(), 10, Some("destroy note".to_string()));
+        let event = TokenEvent::DestroyFrozenFunds(test_id(), 10, Some("destroy note".to_string()));
         assert_eq!(event.public_note(), Some("destroy note"));
     }
 
@@ -801,13 +789,7 @@ mod tests {
 
     #[test]
     fn public_note_transfer_some() {
-        let event = TokenEvent::Transfer(
-            test_id(),
-            Some("tx note".to_string()),
-            None,
-            None,
-            100,
-        );
+        let event = TokenEvent::Transfer(test_id(), Some("tx note".to_string()), None, None, 100);
         assert_eq!(event.public_note(), Some("tx note"));
     }
 
@@ -833,10 +815,8 @@ mod tests {
 
     #[test]
     fn public_note_emergency_action_some() {
-        let event = TokenEvent::EmergencyAction(
-            TokenEmergencyAction::Pause,
-            Some("emergency".to_string()),
-        );
+        let event =
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, Some("emergency".to_string()));
         assert_eq!(event.public_note(), Some("emergency"));
     }
 
@@ -866,10 +846,7 @@ mod tests {
 
     #[test]
     fn public_note_change_price_some() {
-        let event = TokenEvent::ChangePriceForDirectPurchase(
-            None,
-            Some("price note".to_string()),
-        );
+        let event = TokenEvent::ChangePriceForDirectPurchase(None, Some("price note".to_string()));
         assert_eq!(event.public_note(), Some("price note"));
     }
 
@@ -930,9 +907,6 @@ mod tests {
 
     #[test]
     fn format_note_some_returns_formatted() {
-        assert_eq!(
-            format_note(&Some("hello".to_string())),
-            " (note: hello)"
-        );
+        assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
     }
 }

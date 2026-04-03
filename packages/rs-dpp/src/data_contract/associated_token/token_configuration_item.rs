@@ -360,11 +360,7 @@ mod tests {
         let variants = all_variants();
         let indices: BTreeSet<u8> = variants.iter().map(|v| v.u8_item_index()).collect();
         for i in 0u8..=31 {
-            assert!(
-                indices.contains(&i),
-                "Missing u8_item_index value: {}",
-                i
-            );
+            assert!(indices.contains(&i), "Missing u8_item_index value: {}", i);
         }
     }
 
@@ -493,10 +489,7 @@ mod tests {
 
     #[test]
     fn display_main_control_group_none() {
-        let s = format!(
-            "{}",
-            TokenConfigurationChangeItem::MainControlGroup(None)
-        );
+        let s = format!("{}", TokenConfigurationChangeItem::MainControlGroup(None));
         assert_eq!(s, "Main Control Group: None");
     }
 

@@ -267,7 +267,14 @@ mod tests {
         let range = Purpose::full_range();
         assert_eq!(
             range,
-            [AUTHENTICATION, ENCRYPTION, DECRYPTION, TRANSFER, VOTING, OWNER]
+            [
+                AUTHENTICATION,
+                ENCRYPTION,
+                DECRYPTION,
+                TRANSFER,
+                VOTING,
+                OWNER
+            ]
         );
     }
 

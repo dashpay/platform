@@ -223,11 +223,7 @@ mod tests {
         for encoding in &ALL_ENCODINGS {
             let encoded = encode(data, *encoding);
             let decoded = decode(&encoded, *encoding).unwrap();
-            assert_eq!(
-                decoded, data,
-                "Round-trip failed for encoding {}",
-                encoding
-            );
+            assert_eq!(decoded, data, "Round-trip failed for encoding {}", encoding);
         }
     }
 }

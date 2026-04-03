@@ -359,10 +359,8 @@ mod tests {
 
     #[test]
     fn test_map_preserves_errors() {
-        let result: ValidationResult<i32, String> = ValidationResult::new_with_data_and_errors(
-            5,
-            vec!["err".to_string()],
-        );
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_data_and_errors(5, vec!["err".to_string()]);
         let mapped = result.map(|x| x + 1);
         assert_eq!(mapped.data, Some(6));
         assert_eq!(mapped.errors, vec!["err".to_string()]);
@@ -478,10 +476,8 @@ mod tests {
 
     #[test]
     fn test_into_data_with_error_returns_last_error_when_errors_present() {
-        let result: ValidationResult<i32, String> = ValidationResult::new_with_errors(vec![
-            "first".to_string(),
-            "last".to_string(),
-        ]);
+        let result: ValidationResult<i32, String> =
+            ValidationResult::new_with_errors(vec!["first".to_string(), "last".to_string()]);
         let inner = result.into_data_with_error().unwrap();
         assert_eq!(inner.unwrap_err(), "last");
     }
@@ -547,8 +543,7 @@ mod tests {
 
     #[test]
     fn test_flatten_merges_data_and_errors() {
-        let r1: ValidationResult<Vec<i32>, String> =
-            ValidationResult::new_with_data(vec![1, 2]);
+        let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![1, 2]);
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_data_and_errors(vec![3], vec!["e".to_string()]);
         let r3: ValidationResult<Vec<i32>, String> =
@@ -573,8 +568,7 @@ mod tests {
     fn test_merge_many_collects_data_into_vec() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
-        let r3: ValidationResult<i32, String> =
-            ValidationResult::new_with_error("e".to_string());
+        let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
 
         let merged = ValidationResult::merge_many(vec![r1, r2, r3]);
         assert_eq!(merged.data, Some(vec![1, 2]));
