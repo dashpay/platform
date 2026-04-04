@@ -426,6 +426,10 @@
               "resolution"
             ],
             "additionalProperties": false
+          },
+          "countable": {
+            "type": "boolean",
+            "description": "Enables countable operations on the index. Adds extra costs for documents storage"
           }
         },
         "required": [
