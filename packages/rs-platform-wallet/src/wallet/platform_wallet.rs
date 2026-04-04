@@ -1,6 +1,7 @@
 //! The main PlatformWallet struct combining core, identity, dashpay, and platform sub-wallets.
 
 use std::sync::Arc;
+use std::sync::RwLock as StdRwLock;
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -9,6 +10,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
+use crate::persistence::{Merge, WalletChangeSet, WalletPersistence};
 
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
@@ -29,7 +31,6 @@ pub type WalletId = [u8; 32];
 /// `PlatformWallet` is cheaply cloneable (~35 atomic ops). A clone is a **shared
 /// handle** to the same mutable state — not an independent copy. All clones see
 /// the same UTXOs, balances, and identities through shared `Arc<RwLock<...>>` fields.
-#[derive(Clone)]
 pub struct PlatformWallet {
     wallet_id: WalletId,
     pub(crate) sdk: Arc<dash_sdk::Sdk>,
@@ -38,6 +39,8 @@ pub struct PlatformWallet {
     pub(crate) dashpay: DashPayWallet,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
+    /// Accumulated changesets not yet persisted.
+    stage: StdRwLock<WalletChangeSet>,
 }
 
 impl PlatformWallet {
@@ -125,6 +128,7 @@ impl PlatformWallet {
             dashpay,
             platform,
             tokens,
+            stage: StdRwLock::new(WalletChangeSet::default()),
         }
     }
 
@@ -274,6 +278,58 @@ impl PlatformWallet {
             Self::from_wallet_and_info(sdk, wallet, wallet_info),
             mnemonic,
         ))
+    }
+}
+
+impl PlatformWallet {
+    /// Stage a changeset for later persistence.
+    /// Merges into any previously staged changes.
+    pub fn stage_changeset(&self, changeset: WalletChangeSet) {
+        if let Ok(mut stage) = self.stage.write() {
+            stage.merge(changeset);
+        }
+    }
+
+    /// Take all staged changes, leaving the stage empty.
+    /// Returns `None` if no changes are staged.
+    pub fn take_staged(&self) -> Option<WalletChangeSet> {
+        if let Ok(mut stage) = self.stage.write() {
+            stage.take()
+        } else {
+            None
+        }
+    }
+
+    /// Persist all staged changes atomically, then clear the stage.
+    pub fn persist<P: WalletPersistence>(&self, persister: &mut P) -> Result<(), P::Error> {
+        if let Some(changeset) = self.take_staged() {
+            persister.persist(&changeset)?;
+        }
+        Ok(())
+    }
+
+    /// Build an initial changeset representing the full current state.
+    /// Used by persistence backends to bootstrap from scratch.
+    pub fn initial_changeset(&self) -> WalletChangeSet {
+        // For now return default — will be populated when we implement
+        // state extraction from ManagedWalletInfo
+        WalletChangeSet::default()
+    }
+}
+
+impl Clone for PlatformWallet {
+    fn clone(&self) -> Self {
+        Self {
+            wallet_id: self.wallet_id,
+            sdk: self.sdk.clone(),
+            core: self.core.clone(),
+            identity: self.identity.clone(),
+            dashpay: self.dashpay.clone(),
+            platform: self.platform.clone(),
+            tokens: self.tokens.clone(),
+            // Cloned instances get a fresh empty stage.
+            stage: StdRwLock::new(WalletChangeSet::default()),
+        }
     }
 }
 
