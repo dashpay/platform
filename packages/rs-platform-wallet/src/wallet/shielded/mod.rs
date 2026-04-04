@@ -50,7 +50,7 @@ use crate::error::PlatformWalletError;
 #[allow(dead_code)]
 pub struct ShieldedWallet<S: ShieldedStore> {
     /// Dash Platform SDK handle for network operations.
-    sdk: dash_sdk::Sdk,
+    sdk: Arc<dash_sdk::Sdk>,
     /// ZIP-32 derived Orchard keys.
     keys: OrchardKeySet,
     /// Pluggable storage backend behind a shared async lock.
@@ -61,7 +61,7 @@ pub struct ShieldedWallet<S: ShieldedStore> {
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
     /// Create a shielded wallet from pre-derived keys and a store.
-    pub fn new(sdk: dash_sdk::Sdk, keys: OrchardKeySet, store: S, network: Network) -> Self {
+    pub fn new(sdk: Arc<dash_sdk::Sdk>, keys: OrchardKeySet, store: S, network: Network) -> Self {
         Self {
             sdk,
             keys,
@@ -79,7 +79,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     ///
     /// Returns an error if key derivation fails (invalid seed or account index).
     pub fn from_seed(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         seed: &[u8],
         network: Network,
         account: u32,

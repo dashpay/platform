@@ -32,7 +32,7 @@ type IdentityTokenKey = (Identifier, Identifier);
 /// token IDs each identity cares about.
 #[derive(Clone)]
 pub struct TokenWallet {
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
     /// Per-identity set of watched token IDs.
@@ -44,7 +44,7 @@ pub struct TokenWallet {
 impl TokenWallet {
     /// Create a new TokenWallet.
     pub(crate) fn new(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         wallet: Arc<RwLock<Wallet>>,
         identity_manager: Arc<RwLock<IdentityManager>>,
     ) -> Self {

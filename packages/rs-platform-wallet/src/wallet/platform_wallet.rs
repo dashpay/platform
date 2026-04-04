@@ -32,7 +32,7 @@ pub type WalletId = [u8; 32];
 #[derive(Clone)]
 pub struct PlatformWallet {
     wallet_id: WalletId,
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) core: CoreWallet,
     pub(crate) identity: IdentityWallet,
     pub(crate) dashpay: DashPayWallet,
@@ -83,7 +83,7 @@ impl PlatformWallet {
 
     /// Construct a PlatformWallet from an existing key-wallet Wallet and ManagedWalletInfo.
     pub fn from_wallet_and_info(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
     ) -> Self {
@@ -92,27 +92,27 @@ impl PlatformWallet {
         let wallet_info = Arc::new(RwLock::new(wallet_info));
         let identity_manager = Arc::new(RwLock::new(IdentityManager::new()));
 
-        let core = CoreWallet::new(sdk.clone(), wallet.clone(), wallet_info.clone());
+        let core = CoreWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
         let identity = IdentityWallet {
-            sdk: sdk.clone(),
+            sdk: Arc::clone(&sdk),
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
         };
 
         let dashpay = DashPayWallet {
-            sdk: sdk.clone(),
+            sdk: Arc::clone(&sdk),
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
         };
 
         let platform =
-            PlatformAddressWallet::new(sdk.clone(), wallet.clone(), wallet_info.clone());
+            PlatformAddressWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
         let tokens = TokenWallet::new(
-            sdk.clone(),
+            Arc::clone(&sdk),
             wallet.clone(),
             identity_manager.clone(),
         );
@@ -130,7 +130,7 @@ impl PlatformWallet {
 
     /// Create a PlatformWallet from a BIP-39 mnemonic.
     pub fn from_mnemonic(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         mnemonic: &str,
         passphrase: &str,
@@ -165,7 +165,7 @@ impl PlatformWallet {
     ///
     /// The network is derived from the extended key itself (xprv encodes the network).
     pub fn from_extended_key(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         xprv: &str,
         options: WalletAccountCreationOptions,
     ) -> Result<Self, PlatformWalletError> {
@@ -191,7 +191,7 @@ impl PlatformWallet {
 
     /// Create a watch-only PlatformWallet from an extended public key string.
     pub fn from_xpub(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         xpub: &str,
     ) -> Result<Self, PlatformWalletError> {
@@ -217,7 +217,7 @@ impl PlatformWallet {
 
     /// Create a PlatformWallet from a BIP-39 Seed.
     pub fn from_seed(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         seed: Seed,
         options: WalletAccountCreationOptions,
@@ -232,7 +232,7 @@ impl PlatformWallet {
 
     /// Create a PlatformWallet from raw seed bytes (64 bytes).
     pub fn from_seed_bytes(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         seed_bytes: [u8; 64],
         options: WalletAccountCreationOptions,
@@ -250,7 +250,7 @@ impl PlatformWallet {
 
     /// Create a PlatformWallet with a random mnemonic. Returns the wallet and the mnemonic.
     pub fn random(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         network: Network,
         options: WalletAccountCreationOptions,
     ) -> Result<(Self, Mnemonic), PlatformWalletError> {

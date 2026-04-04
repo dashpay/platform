@@ -24,15 +24,15 @@ use crate::wallet::PlatformWallet;
 /// so balance and UTXO updates from SPV are immediately visible to all
 /// wallet operations.
 pub struct PlatformWalletManager {
-    sdk: dash_sdk::Sdk,
-    wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    sdk: Arc<dash_sdk::Sdk>,
+    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     spv: SpvRuntime,
 }
 
 impl PlatformWalletManager {
     /// Create a new PlatformWalletManager.
-    pub fn new(sdk: dash_sdk::Sdk) -> Self {
+    pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let wallets = Arc::new(RwLock::new(BTreeMap::new()));
         let spv = SpvRuntime::new(Arc::clone(&wallets), event_tx.clone());
@@ -63,7 +63,8 @@ impl PlatformWalletManager {
     pub async fn add_wallet(
         &self,
         wallet: PlatformWallet,
-    ) -> Result<PlatformWallet, PlatformWalletError> {
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        let wallet = Arc::new(wallet);
         let wallet_id = wallet.wallet_id();
         let mut wallets = self.wallets.write().await;
         if wallets.contains_key(&wallet_id) {
@@ -81,7 +82,7 @@ impl PlatformWalletManager {
     pub async fn remove_wallet(
         &self,
         wallet_id: &WalletId,
-    ) -> Result<PlatformWallet, PlatformWalletError> {
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let mut wallets = self.wallets.write().await;
         let removed = wallets
             .remove(wallet_id)
@@ -91,7 +92,7 @@ impl PlatformWalletManager {
     }
 
     /// Get a clone of a wallet by its ID.
-    pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<PlatformWallet> {
+    pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
         let wallets = self.wallets.read().await;
         wallets.get(wallet_id).cloned()
     }

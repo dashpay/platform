@@ -30,7 +30,7 @@ type SpvClient = DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorage
 /// Holds references to the wallets collection and event channel at construction
 /// time, so callers just need `start(config)` / `stop()`.
 pub struct SpvRuntime {
-    wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
     /// Shared with `SpvWalletAdapter` — bump to signal bloom filter rebuild.
@@ -42,7 +42,7 @@ pub struct SpvRuntime {
 impl SpvRuntime {
     /// Create a new SPV runtime bound to a wallets collection and event channel.
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
     ) -> Self {
         Self {

@@ -28,7 +28,7 @@ use crate::wallet::PlatformWallet;
 /// `ManagedWalletInfo`. This ensures all wallets see incoming transactions
 /// regardless of which wallet was added first.
 pub(crate) struct SpvWalletAdapter {
-    wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<WalletEvent>,
     platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
     synced_height: AtomicU32,
@@ -39,7 +39,7 @@ pub(crate) struct SpvWalletAdapter {
 
 impl SpvWalletAdapter {
     pub(crate) fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, PlatformWallet>>>,
+        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         platform_event_tx: broadcast::Sender<PlatformWalletEvent>,
         monitor_revision: Arc<AtomicU64>,
     ) -> Self {

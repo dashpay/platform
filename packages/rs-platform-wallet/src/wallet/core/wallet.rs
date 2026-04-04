@@ -56,7 +56,7 @@ use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
 pub struct CoreWallet {
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     /// Private — always access through `wallet_info()`, `wallet_info_mut()`,
     /// `try_wallet_info()`, or `try_wallet_info_mut()`. Write access returns
@@ -68,15 +68,13 @@ pub struct CoreWallet {
     pub(crate) tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
-    /// Wrapped in `Arc` so that cloned `PlatformWallet` handles share the
-    /// same balance atomics and see updates immediately.
-    pub(crate) balance: Arc<WalletBalance>,
+    pub(crate) balance: WalletBalance,
 }
 
 impl CoreWallet {
     /// Create a new CoreWallet.
     pub(crate) fn new(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     ) -> Self {
@@ -86,7 +84,7 @@ impl CoreWallet {
             wallet_info,
             transaction_statuses: Arc::new(RwLock::new(std::collections::BTreeMap::new())),
             tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
-            balance: Arc::new(WalletBalance::new()),
+            balance: WalletBalance::new(),
         }
     }
 
@@ -112,7 +110,7 @@ impl CoreWallet {
         let guard = self.wallet_info.write().await;
         WalletInfoWriteGuard {
             guard,
-            balance: &*self.balance,
+            balance: &self.balance,
         }
     }
 
@@ -150,7 +148,7 @@ impl CoreWallet {
     pub fn try_wallet_info_mut(&self) -> Option<WalletInfoWriteGuard<'_>> {
         self.wallet_info.try_write().ok().map(|guard| WalletInfoWriteGuard {
             guard,
-            balance: &*self.balance,
+            balance: &self.balance,
         })
     }
 

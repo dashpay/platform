@@ -30,7 +30,7 @@ use super::provider::PlatformPaymentAddressProvider;
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     /// Cached platform address balances from the last sync.
@@ -40,7 +40,7 @@ pub struct PlatformAddressWallet {
 impl PlatformAddressWallet {
     /// Create a new PlatformAddressWallet.
     pub(crate) fn new(
-        sdk: dash_sdk::Sdk,
+        sdk: Arc<dash_sdk::Sdk>,
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     ) -> Self {

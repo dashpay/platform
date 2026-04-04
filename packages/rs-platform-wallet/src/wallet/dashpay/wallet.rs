@@ -32,7 +32,7 @@ use crate::wallet::signer::IdentitySigner;
 /// Shares the same `identity_manager` Arc as `IdentityWallet`.
 #[derive(Clone)]
 pub struct DashPayWallet {
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,

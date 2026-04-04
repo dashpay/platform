@@ -102,7 +102,7 @@ fn derive_identity_auth_key_hash(
 /// Identity wallet providing identity management functionality.
 #[derive(Clone)]
 pub struct IdentityWallet {
-    pub(crate) sdk: dash_sdk::Sdk,
+    pub(crate) sdk: Arc<dash_sdk::Sdk>,
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
