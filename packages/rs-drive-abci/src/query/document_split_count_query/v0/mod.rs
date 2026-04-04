@@ -98,7 +98,7 @@ impl<C> Platform<C> {
                 }))
         };
 
-        let drive_query =
+        let mut drive_query =
             check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
                 where_clause,
                 None,
@@ -110,6 +110,11 @@ impl<C> Platform<C> {
                 document_type,
                 &self.config.drive,
             ));
+
+        // Remove the limit so we count ALL matching documents, not just up to the
+        // default query limit. A split count query needs to return complete counts
+        // across all values of the split property.
+        drive_query.limit = None;
 
         let response = if prove {
             let proof =
@@ -193,5 +198,222 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::{setup_platform, store_data_contract, store_document};
+    use dpp::dashcore::Network;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::tests::json_document::json_document_to_contract_with_ids;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    #[test]
+    fn test_documents_split_count_no_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        let data_contract_id = data_contract.id();
+        let document_type_name = "person";
+        let document_type = data_contract
+            .document_type_for_name(document_type_name)
+            .expect("expected document type");
+
+        let mut std_rng = StdRng::seed_from_u64(600);
+        for _ in 0..5 {
+            let random_document = document_type
+                .random_document_with_rng(&mut std_rng, platform_version)
+                .expect("expected to get random document");
+            store_document(
+                &platform,
+                &data_contract,
+                document_type,
+                &random_document,
+                platform_version,
+            );
+        }
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract_id.to_vec(),
+            document_type: document_type_name.to_string(),
+            r#where: vec![],
+            split_count_by_index_property: "firstName".to_string(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        match result.data {
+            Some(GetDocumentsSplitCountResponseV0 {
+                result:
+                    Some(get_documents_split_count_response_v0::Result::SplitCounts(split_counts)),
+                metadata: Some(_),
+            }) => {
+                // The total count across all splits should equal 5
+                let total: u64 = split_counts.entries.iter().map(|e| e.count).sum();
+                assert_eq!(total, 5, "expected total split count of 5 documents");
+                // Each entry should have a non-empty key (firstName is required)
+                for entry in &split_counts.entries {
+                    assert!(!entry.key.is_empty(), "expected non-empty split key");
+                    assert!(entry.count > 0, "expected positive count per split");
+                }
+            }
+            other => panic!("expected split counts result, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_documents_split_count_with_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        let data_contract_id = data_contract.id();
+        let document_type_name = "person";
+        let document_type = data_contract
+            .document_type_for_name(document_type_name)
+            .expect("expected document type");
+
+        let mut std_rng = StdRng::seed_from_u64(600);
+        for _ in 0..3 {
+            let random_document = document_type
+                .random_document_with_rng(&mut std_rng, platform_version)
+                .expect("expected to get random document");
+            store_document(
+                &platform,
+                &data_contract,
+                document_type,
+                &random_document,
+                platform_version,
+            );
+        }
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract_id.to_vec(),
+            document_type: document_type_name.to_string(),
+            r#where: vec![],
+            split_count_by_index_property: "firstName".to_string(),
+            prove: true,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        assert!(matches!(
+            result.data,
+            Some(GetDocumentsSplitCountResponseV0 {
+                result: Some(get_documents_split_count_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_documents_split_count_empty_split_property() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        let data_contract_id = data_contract.id();
+        let document_type_name = "person";
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract_id.to_vec(),
+            document_type: document_type_name.to_string(),
+            r#where: vec![],
+            split_count_by_index_property: "".to_string(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg == "split_count_by_index_property must not be empty"
+        ));
+    }
+
+    #[test]
+    fn test_documents_split_count_nonexistent_property() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        let data_contract_id = data_contract.id();
+        let document_type_name = "person";
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract_id.to_vec(),
+            document_type: document_type_name.to_string(),
+            r#where: vec![],
+            split_count_by_index_property: "nonExistentProp".to_string(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("property nonExistentProp not found")
+        ));
     }
 }
