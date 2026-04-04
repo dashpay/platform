@@ -4094,6 +4094,212 @@ Calling `persist()` after every block or every user action keeps the gap small.
 (single lock). Storage persist is atomic (single DB transaction). Recovery works
 correctly after crash at any point.
 
+#### Implementation Plan
+
+**Step 1 — Core types (platform-wallet crate):**
+
+Create `src/persistence/` module with:
+
+```
+src/persistence/
+├── mod.rs              // pub mod + re-exports
+├── changeset.rs        // WalletChangeSet + sub-changesets
+├── merge.rs            // Merge trait + impls
+└── traits.rs           // WalletPersistence trait
+```
+
+Sub-changeset types (start minimal, expand):
+
+```rust
+// changeset.rs
+
+/// Chain sync state delta.
+pub struct ChainChangeSet {
+    /// New block headers (height → hash). None value = block removed (reorg).
+    pub blocks: BTreeMap<u32, Option<BlockHash>>,
+}
+
+/// Account changes delta.
+pub struct AccountChangeSet {
+    /// New accounts added (keyed by account type discriminant).
+    pub new_accounts: Vec<NewAccountEntry>,
+    /// Address pool expansion (account key → new highest revealed index).
+    pub last_revealed: BTreeMap<AccountKey, u32>,
+}
+
+/// UTXO changes delta.
+pub struct UtxoChangeSet {
+    /// UTXOs added (from incoming transactions).
+    pub added: BTreeMap<OutPoint, UtxoEntry>,
+    /// UTXOs spent (consumed by outgoing transactions).
+    pub spent: BTreeSet<OutPoint>,
+}
+
+/// Transaction changes delta.
+pub struct TransactionChangeSet {
+    /// New or updated transactions.
+    pub transactions: BTreeMap<Txid, TransactionEntry>,
+    /// Status updates (e.g., unconfirmed → IS-locked → chainlocked).
+    pub status_updates: BTreeMap<Txid, TransactionStatus>,
+}
+
+/// Identity changes delta.
+pub struct IdentityChangeSet {
+    /// New or updated identities.
+    pub identities: BTreeMap<Identifier, IdentityEntry>,
+    /// Key additions/updates per identity.
+    pub key_updates: BTreeMap<Identifier, Vec<KeyUpdate>>,
+    /// DPNS name registrations.
+    pub dpns_names: BTreeMap<Identifier, Vec<DpnsNameEntry>>,
+}
+
+/// DashPay contact changes delta.
+pub struct ContactChangeSet {
+    /// Contact requests sent.
+    pub requests_sent: Vec<ContactRequestEntry>,
+    /// Contact requests received.
+    pub requests_received: Vec<ContactRequestEntry>,
+    /// Contacts established (mutual requests detected).
+    pub contacts_established: Vec<EstablishedContactEntry>,
+}
+
+/// Platform address changes delta (DIP-17).
+pub struct PlatformAddressChangeSet {
+    /// Balance/nonce updates from Platform proofs.
+    pub updates: BTreeMap<PlatformAddress, PlatformAddressState>,
+}
+
+/// Asset lock lifecycle changes.
+pub struct AssetLockChangeSet {
+    /// New asset locks created.
+    pub created: Vec<AssetLockEntry>,
+    /// Status updates (broadcast → IS-locked → chainlocked → used).
+    pub status_updates: BTreeMap<Txid, AssetLockStatus>,
+}
+```
+
+Each sub-changeset implements `Merge` + `Default` + `serde::Serialize/Deserialize`.
+The `WalletChangeSet` composes them all as `Option<SubChangeSet>`.
+
+**Step 2 — Apply to in-memory state (platform-wallet crate):**
+
+Add `apply()` method to PlatformWallet (or to each sub-wallet):
+
+```rust
+impl PlatformWallet {
+    /// Apply a changeset to in-memory state.
+    /// Acquires write locks on affected sub-stores in fixed order.
+    pub fn apply(&self, changeset: &WalletChangeSet) {
+        // Order: wallet → wallet_info → identity_manager
+        // (prevents deadlock by consistent lock ordering)
+        if changeset.needs_wallet_write() {
+            let mut wallet = self.core().blocking_wallet_mut();
+            changeset.apply_to_wallet(&mut wallet);
+        }
+        if changeset.needs_wallet_info_write() {
+            if let Some(mut info) = self.core().try_wallet_info_mut() {
+                changeset.apply_to_wallet_info(&mut info);
+            }
+        }
+        if changeset.needs_identity_write() {
+            // apply identity/contact changes
+        }
+    }
+}
+```
+
+**Step 3 — Stage field + persist API (platform-wallet crate):**
+
+```rust
+impl PlatformWallet {
+    /// Accumulate a changeset for later persistence.
+    pub fn stage(&self, changeset: WalletChangeSet) {
+        self.staged.write().merge(changeset);
+    }
+
+    /// Persist all staged changes atomically, then clear the stage.
+    pub fn persist<P: WalletPersistence>(&self, persister: &mut P) -> Result<(), P::Error> {
+        if let Some(changeset) = self.staged.write().take() {
+            persister.persist(&changeset)?;
+        }
+        Ok(())
+    }
+
+    /// Apply a changeset to in-memory state AND stage it for persistence.
+    pub fn apply_and_stage(&self, changeset: WalletChangeSet) {
+        self.apply(&changeset);
+        self.stage(changeset);
+    }
+}
+```
+
+**Step 4 — Modify SPV adapter to produce changesets (platform-wallet crate):**
+
+The SPV wallet adapter's `process_block()` currently mutates `ManagedWalletInfo`
+directly via `wallet_info_mut()`. Change it to:
+1. Compute the changeset (what transactions match, what UTXOs changed)
+2. Return the changeset
+3. Caller calls `apply_and_stage()`
+
+This is the biggest refactor — the SPV adapter needs to compute changes
+without holding write locks during the computation phase.
+
+**Step 5 — SQLite persister (evo-tool crate):**
+
+Implement `WalletPersistence` for evo-tool's `Database`:
+
+```rust
+impl WalletPersistence for SqlitePersister {
+    fn initialize(&mut self) -> Result<WalletChangeSet, Error> {
+        // Load all stored state from DB tables
+        // Return as one aggregated WalletChangeSet
+    }
+
+    fn persist(&mut self, changeset: &WalletChangeSet) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;
+        // INSERT/UPDATE for each sub-changeset
+        tx.commit()?;
+        Ok(())
+    }
+}
+```
+
+Reuses existing DB tables where possible. New tables for identity/contact state.
+
+**Step 6 — Wire into evo-tool:**
+
+Replace current persistence points:
+- SPV reconciliation: `apply_and_stage()` + `persist()` after each block
+- RPC refresh: `apply_and_stage()` + `persist()` after refresh
+- User actions (send, register identity): `apply_and_stage()` + `persist()`
+- On startup: `initialize()` → `apply()` to rebuild in-memory state
+
+**Step 7 — Remove old persistence code:**
+
+- Remove `set_transactions()`, `update_address_balance()`, etc.
+- Remove direct DB writes scattered across backend tasks
+- Remove `reconcile_spv_wallets()` (replaced by SPV changeset flow)
+
+#### File Structure
+
+```
+packages/rs-platform-wallet/src/
+├── persistence/
+│   ├── mod.rs
+│   ├── changeset.rs        // WalletChangeSet + all sub-changesets
+│   ├── merge.rs            // Merge trait definition + impls
+│   ├── traits.rs           // WalletPersistence + AsyncWalletPersistence
+│   ├── apply.rs            // apply() implementations
+│   └── initial.rs          // initial_changeset() — full state as delta
+└── ...
+
+dash-evo-tool/src/
+├── persistence/
+│   ├── mod.rs
+│   └── sqlite.rs           // SqlitePersister implementing WalletPersistence
+└── ...
+```
+
 ---
 
 ## Address Type Coverage Summary
