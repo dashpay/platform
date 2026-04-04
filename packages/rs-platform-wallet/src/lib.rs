@@ -4,6 +4,7 @@ pub mod error;
 pub mod events;
 #[cfg(feature = "manager")]
 pub mod manager;
+pub mod persistence;
 #[cfg(feature = "manager")]
 pub(crate) mod spv;
 pub mod wallet;
