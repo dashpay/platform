@@ -1,3 +1,5 @@
+pub mod document_count;
+pub mod document_split_count;
 pub mod groups;
 pub mod identity_token_balance;
 pub mod token_contract_info;
