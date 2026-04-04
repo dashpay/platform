@@ -11,15 +11,19 @@ use dapi_grpc::platform::v0::get_documents_split_count_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::DocumentV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::Index;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::RootTree;
 use drive::error::query::QuerySyntaxError;
-use drive::query::DriveDocumentQuery;
-use drive::util::grove_operations::GroveDBToUse;
+use drive::grovedb::query_result_type::QueryResultType;
+use drive::grovedb::{PathQuery, Query, SizedQuery};
+use drive::grovedb_path::SubtreePath;
+use drive::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
 use std::collections::BTreeMap;
 
 impl<C> Platform<C> {
@@ -98,25 +102,52 @@ impl<C> Platform<C> {
                 }))
         };
 
-        let mut drive_query =
-            check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
-                where_clause,
-                None,
-                Some(self.config.drive.default_query_limit),
-                None,
-                true,
-                None,
-                contract_ref,
-                document_type,
-                &self.config.drive,
-            ));
-
-        // Remove the limit so we count ALL matching documents, not just up to the
-        // default query limit. A split count query needs to return complete counts
-        // across all values of the split property.
-        drive_query.limit = None;
+        // Parse where clauses
+        let all_where_clauses: Vec<WhereClause> =
+            check_validation_result_with_data!(match &where_clause {
+                Value::Null => Ok(vec![]),
+                Value::Array(clauses) => clauses
+                    .iter()
+                    .map(|wc| {
+                        if let Value::Array(components) = wc {
+                            WhereClause::from_components(components).map_err(|e| match e {
+                                drive::error::Error::Query(qe) => QueryError::Query(qe),
+                                other => QueryError::InvalidArgument(format!(
+                                    "error parsing where clauses: {}",
+                                    other
+                                )),
+                            })
+                        } else {
+                            Err(QueryError::Query(
+                                QuerySyntaxError::InvalidFormatWhereClause(
+                                    "where clause must be an array",
+                                ),
+                            ))
+                        }
+                    })
+                    .collect::<Result<Vec<WhereClause>, QueryError>>(),
+                _ => Err(QueryError::Query(
+                    QuerySyntaxError::InvalidFormatWhereClause("where clause must be an array"),
+                )),
+            });
 
         let response = if prove {
+            // For prove path, use the standard DriveDocumentQuery approach.
+            let mut drive_query =
+                check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
+                    where_clause,
+                    None,
+                    Some(self.config.drive.default_query_limit),
+                    None,
+                    true,
+                    None,
+                    contract_ref,
+                    document_type,
+                    &self.config.drive,
+                ));
+
+            drive_query.limit = None;
+
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
                     Ok(result) => result.0,
@@ -136,58 +167,36 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            let results = match drive_query.execute_raw_results_no_proof(
-                &self.drive,
-                None,
-                None,
-                platform_version,
-            ) {
-                Ok(result) => result.0,
-                Err(drive::error::Error::Query(query_error)) => {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        query_error,
-                    )));
-                }
-                Err(e) => return Err(e.into()),
+            // For no-prove path, use CountTree-based approach.
+            //
+            // Find a countable index where:
+            // 1. The split property is the NEXT property after those covered by where clauses
+            // 2. All where clause properties form a prefix of the index properties
+            let countable_index = Self::find_countable_index_for_split(
+                document_type.indexes(),
+                &all_where_clauses,
+                &split_count_by_index_property,
+            );
+
+            let entries = if let Some(index) = countable_index {
+                self.split_count_from_count_tree(
+                    contract_id.to_buffer(),
+                    document_type_name.as_str(),
+                    document_type,
+                    index,
+                    &all_where_clauses,
+                    &split_count_by_index_property,
+                    platform_version,
+                )?
+            } else {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "split count query requires a countable index where the split property \
+                         follows the where clause properties in the index"
+                            .to_string(),
+                    ),
+                ));
             };
-
-            // Deserialize documents and split count by the specified property
-            let mut counts_by_key: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-
-            for raw_document in &results {
-                let document =
-                    check_validation_result_with_data!(dpp::document::Document::from_bytes(
-                        raw_document.as_slice(),
-                        document_type,
-                        platform_version,
-                    )
-                    .map_err(|e| QueryError::InvalidArgument(format!(
-                        "failed to deserialize document: {}",
-                        e
-                    ))));
-
-                let key = if let Some(value) =
-                    document.properties().get(&split_count_by_index_property)
-                {
-                    // Serialize the property value to CBOR bytes for the key
-                    value.to_cbor_buffer().unwrap_or_default()
-                } else {
-                    // Null / missing key
-                    Vec::new()
-                };
-
-                *counts_by_key.entry(key).or_insert(0) += 1;
-            }
-
-            let entries = counts_by_key
-                .into_iter()
-                .map(
-                    |(key, count)| get_documents_split_count_response_v0::SplitCountEntry {
-                        key,
-                        count,
-                    },
-                )
-                .collect();
 
             GetDocumentsSplitCountResponseV0 {
                 result: Some(get_documents_split_count_response_v0::Result::SplitCounts(
@@ -198,6 +207,253 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+
+    /// Finds a countable index where:
+    /// - The equality where clause fields form a prefix of the index properties
+    /// - The split_property is the next property after the covered prefix
+    /// - The index has countable=true
+    fn find_countable_index_for_split<'a>(
+        indexes: &'a BTreeMap<String, Index>,
+        where_clauses: &[WhereClause],
+        split_property: &str,
+    ) -> Option<&'a Index> {
+        let equality_fields: std::collections::BTreeSet<&str> = where_clauses
+            .iter()
+            .filter(|wc| wc.operator == WhereOperator::Equal)
+            .map(|wc| wc.field.as_str())
+            .collect();
+
+        for index in indexes.values() {
+            if !index.countable {
+                continue;
+            }
+
+            // Check that where clause equality fields form a prefix
+            let mut prefix_len = 0;
+            for prop in &index.properties {
+                if equality_fields.contains(prop.name.as_str()) {
+                    prefix_len += 1;
+                } else {
+                    break;
+                }
+            }
+
+            if prefix_len < equality_fields.len() {
+                continue;
+            }
+
+            // The split property must be the next property after the prefix
+            if let Some(next_prop) = index.properties.get(prefix_len) {
+                if next_prop.name == split_property {
+                    return Some(index);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Counts documents split by a property value using CountTree elements.
+    ///
+    /// Navigates the index tree to the split property level using the where
+    /// clause values, then iterates over all values of the split property
+    /// and reads the CountTree count for each.
+    #[allow(clippy::too_many_arguments)]
+    fn split_count_from_count_tree(
+        &self,
+        contract_id: [u8; 32],
+        document_type_name: &str,
+        document_type: dpp::data_contract::document_type::DocumentTypeRef,
+        index: &Index,
+        where_clauses: &[WhereClause],
+        split_property: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<get_documents_split_count_response_v0::SplitCountEntry>, Error> {
+        let drive_version = &platform_version.drive;
+
+        // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
+        let mut path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            contract_id.to_vec(),
+            vec![1u8],
+            document_type_name.as_bytes().to_vec(),
+        ];
+
+        // Walk the index properties up to (but not including) the split property,
+        // pushing property keys and serialized values from the where clauses.
+        for prop in &index.properties {
+            if prop.name == split_property {
+                break;
+            }
+
+            let matching_clause = where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
+
+            if let Some(clause) = matching_clause {
+                path.push(prop.name.as_bytes().to_vec());
+                let serialized_value = document_type.serialize_value_for_key(
+                    prop.name.as_str(),
+                    &clause.value,
+                    platform_version,
+                )?;
+                path.push(serialized_value);
+            } else {
+                break;
+            }
+        }
+
+        // Now push the split property key name
+        path.push(split_property.as_bytes().to_vec());
+
+        // Query all value subtrees at the split property level
+        let mut query = Query::new();
+        query.insert_all();
+
+        let path_query = PathQuery::new(path.clone(), SizedQuery::new(query, None, None));
+
+        let mut drive_operations = vec![];
+        let result = self.drive.grove_get_raw_path_query(
+            &path_query,
+            None,
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut drive_operations,
+            drive_version,
+        );
+
+        let (elements, _) = match result {
+            Ok(result) => result,
+            Err(drive::error::Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    drive::grovedb::Error::PathNotFound(_)
+                        | drive::grovedb::Error::PathParentLayerNotFound(_)
+                        | drive::grovedb::Error::PathKeyNotFound(_)
+                ) =>
+            {
+                // Path doesn't exist -- no documents have been inserted yet
+                return Ok(vec![]);
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let key_elements = elements.to_key_elements();
+
+        if key_elements.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Determine how many remaining index properties follow the split property
+        let split_prop_idx = index
+            .properties
+            .iter()
+            .position(|p| p.name == split_property)
+            .unwrap_or(0);
+        let remaining_properties = &index.properties[split_prop_idx + 1..];
+
+        let mut entries = Vec::new();
+
+        for (key, _element) in key_elements {
+            // Build path for this specific value: [..., split_property, <value>]
+            let mut value_path = path.clone();
+            value_path.push(key.clone());
+
+            // Get the count by recursively descending through remaining properties
+            let count = if remaining_properties.is_empty() {
+                // Terminal level: fetch CountTree directly at key [0]
+                let mut ops = vec![];
+                let path_refs: Vec<&[u8]> = value_path.iter().map(|p| p.as_slice()).collect();
+                let element = self.drive.grove_get_raw_optional(
+                    SubtreePath::from(path_refs.as_slice()),
+                    &[0],
+                    DirectQueryType::StatefulDirectQuery,
+                    None,
+                    &mut ops,
+                    drive_version,
+                )?;
+                element.map_or(0, |e| e.count_value_or_default())
+            } else {
+                // Need to iterate remaining levels
+                self.count_split_recursive(value_path, remaining_properties, drive_version)?
+            };
+
+            if count > 0 {
+                entries.push(get_documents_split_count_response_v0::SplitCountEntry { key, count });
+            }
+        }
+
+        Ok(entries)
+    }
+
+    /// Recursively descends through remaining index property levels after the
+    /// split property, iterating over all values and summing CountTree counts.
+    fn count_split_recursive(
+        &self,
+        current_path: Vec<Vec<u8>>,
+        remaining_properties: &[dpp::data_contract::document_type::IndexProperty],
+        drive_version: &dpp::version::drive_versions::DriveVersion,
+    ) -> Result<u64, Error> {
+        if remaining_properties.is_empty() {
+            let mut drive_operations = vec![];
+            let path_refs: Vec<&[u8]> = current_path.iter().map(|p| p.as_slice()).collect();
+            let element = self.drive.grove_get_raw_optional(
+                SubtreePath::from(path_refs.as_slice()),
+                &[0],
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut drive_operations,
+                drive_version,
+            )?;
+            return Ok(element.map_or(0, |e| e.count_value_or_default()));
+        }
+
+        let prop = &remaining_properties[0];
+        let rest = &remaining_properties[1..];
+
+        let mut property_path = current_path;
+        property_path.push(prop.name.as_bytes().to_vec());
+
+        let mut query = Query::new();
+        query.insert_all();
+
+        let path_query = PathQuery::new(property_path.clone(), SizedQuery::new(query, None, None));
+
+        let mut drive_operations = vec![];
+        let result = self.drive.grove_get_raw_path_query(
+            &path_query,
+            None,
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut drive_operations,
+            drive_version,
+        );
+
+        let (elements, _) = match result {
+            Ok(result) => result,
+            Err(drive::error::Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    drive::grovedb::Error::PathNotFound(_)
+                        | drive::grovedb::Error::PathParentLayerNotFound(_)
+                        | drive::grovedb::Error::PathKeyNotFound(_)
+                ) =>
+            {
+                return Ok(0);
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let key_elements = elements.to_key_elements();
+        let mut total_count: u64 = 0;
+
+        for (key, _element) in key_elements {
+            let mut value_path = property_path.clone();
+            value_path.push(key);
+            let sub_count = self.count_split_recursive(value_path, rest, drive_version)?;
+            total_count = total_count.saturating_add(sub_count);
+        }
+
+        Ok(total_count)
     }
 }
 
