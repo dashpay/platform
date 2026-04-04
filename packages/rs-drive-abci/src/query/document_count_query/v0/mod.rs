@@ -11,19 +11,13 @@ use dapi_grpc::platform::v0::get_documents_count_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::Index;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::RootTree;
 use drive::error::query::QuerySyntaxError;
-use drive::grovedb::query_result_type::QueryResultType;
-use drive::grovedb::{PathQuery, Query, SizedQuery};
-use drive::grovedb_path::SubtreePath;
-use drive::query::{DriveDocumentQuery, WhereClause, WhereOperator};
-use drive::util::grove_operations::{DirectQueryType, GroveDBToUse};
+use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause};
+use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
     pub(super) fn query_documents_count_v0(
@@ -145,25 +139,27 @@ impl<C> Platform<C> {
             }
         } else {
             // For no-prove path, use CountTree-based O(1) counting when possible.
-            //
             // Find a countable index that matches the where clause properties.
-            // The index must have countable=true, and any where clause properties
-            // must match prefix properties of the index with equality operators.
-            let countable_index = Self::find_countable_index_for_where_clauses(
+            let countable_index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 document_type.indexes(),
                 &all_where_clauses,
             );
 
             let count = if let Some(index) = countable_index {
-                // Build the path to the CountTree(s) and fetch count(s).
-                self.count_from_count_tree(
-                    contract_id.to_buffer(),
-                    document_type_name.as_str(),
+                let count_query = DriveDocumentCountQuery {
                     document_type,
+                    contract_id: contract_id.to_buffer(),
+                    document_type_name: document_type_name.clone(),
                     index,
-                    &all_where_clauses,
-                    platform_version,
-                )?
+                    where_clauses: all_where_clauses,
+                    split_by_property: None,
+                };
+
+                let results = count_query.execute_no_proof(&self.drive, None, platform_version)?;
+
+                // For a total count query, execute_no_proof returns a single entry
+                // with an empty key and the total count.
+                results.first().map_or(0, |entry| entry.count)
             } else {
                 // No countable index found. Return an error telling the caller
                 // that count queries require a countable index.
@@ -183,236 +179,6 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
-    }
-
-    /// Finds a countable index whose properties form a prefix that matches the
-    /// equality where clauses. For a count query:
-    /// - All where clause fields must appear as a prefix of the index properties
-    /// - The index must have countable=true
-    /// - Among matching indexes, we prefer the one with the most properties
-    ///   matched by where clauses (most specific)
-    fn find_countable_index_for_where_clauses<'a>(
-        indexes: &'a std::collections::BTreeMap<String, Index>,
-        where_clauses: &[WhereClause],
-    ) -> Option<&'a Index> {
-        let equality_fields: std::collections::BTreeSet<&str> = where_clauses
-            .iter()
-            .filter(|wc| wc.operator == WhereOperator::Equal)
-            .map(|wc| wc.field.as_str())
-            .collect();
-
-        let mut best_match: Option<(&Index, usize)> = None;
-
-        for index in indexes.values() {
-            if !index.countable {
-                continue;
-            }
-
-            // Check that where clause equality fields form a prefix of the index properties.
-            // For example, if index has properties [A, B, C]:
-            // - WHERE A = x -> matches prefix of length 1
-            // - WHERE A = x AND B = y -> matches prefix of length 2
-            // - WHERE B = y -> does NOT match (A is not covered)
-            // - No where clause -> matches prefix of length 0 (count all)
-            let mut prefix_len = 0;
-            for prop in &index.properties {
-                if equality_fields.contains(prop.name.as_str()) {
-                    prefix_len += 1;
-                } else {
-                    break;
-                }
-            }
-
-            // All equality where clause fields must be consumed as a prefix
-            if prefix_len < equality_fields.len() {
-                continue;
-            }
-
-            // Prefer the index with the longest matching prefix (most specific)
-            match &best_match {
-                None => best_match = Some((index, prefix_len)),
-                Some((_, best_len)) if prefix_len > *best_len => {
-                    best_match = Some((index, prefix_len));
-                }
-                _ => {}
-            }
-        }
-
-        best_match.map(|(index, _)| index)
-    }
-
-    /// Counts documents using the CountTree elements in the index path.
-    ///
-    /// When all index properties are covered by equality where clauses, this is
-    /// O(1) -- a single GroveDB fetch of the CountTree element.
-    ///
-    /// When some properties are not covered (e.g., no where clause), this
-    /// iterates over distinct values at the unspecified levels and sums
-    /// their CountTree counts. Still much cheaper than fetching all documents.
-    fn count_from_count_tree(
-        &self,
-        contract_id: [u8; 32],
-        document_type_name: &str,
-        document_type: dpp::data_contract::document_type::DocumentTypeRef,
-        index: &Index,
-        where_clauses: &[WhereClause],
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
-        let drive_version = &platform_version.drive;
-
-        // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
-        let mut path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            contract_id.to_vec(),
-            vec![1u8],
-            document_type_name.as_bytes().to_vec(),
-        ];
-
-        // Walk the index properties, pushing property keys and values for
-        // each equality where clause.
-        let mut covered_count = 0;
-        for prop in &index.properties {
-            let matching_clause = where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
-
-            if let Some(clause) = matching_clause {
-                // Push the index property key
-                path.push(prop.name.as_bytes().to_vec());
-                // Serialize and push the property value
-                let serialized_value = document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?;
-                path.push(serialized_value);
-                covered_count += 1;
-            } else {
-                // This property and all subsequent ones are not covered by where clauses
-                break;
-            }
-        }
-
-        if covered_count == index.properties.len() {
-            // All index properties are covered -- O(1) fetch of the single CountTree.
-            // The CountTree element is at key [0] under the fully specified path.
-            let mut drive_operations = vec![];
-            let path_refs: Vec<&[u8]> = path.iter().map(|p| p.as_slice()).collect();
-            let element = self.drive.grove_get_raw_optional(
-                SubtreePath::from(path_refs.as_slice()),
-                &[0],
-                DirectQueryType::StatefulDirectQuery,
-                None,
-                &mut drive_operations,
-                drive_version,
-            )?;
-
-            Ok(element.map_or(0, |e| e.count_value_or_default()))
-        } else {
-            // Not all properties covered. We need to iterate over the values at the
-            // next unspecified property level.
-            //
-            // The path is currently at the level of the last covered property value.
-            // We need to descend into the next property key level and query all value
-            // subtrees, fetching their CountTree at key [0].
-            //
-            // For a single-property index with no where clause, the path is just
-            // [2, contract_id, 1, doc_type_name] and we need to iterate all values
-            // under the first property key.
-            //
-            // For a multi-property index with partial coverage, we iterate the
-            // remaining levels.
-
-            let remaining_properties = &index.properties[covered_count..];
-
-            self.count_from_count_tree_recursive(path, remaining_properties, drive_version)
-        }
-    }
-
-    /// Recursively descends through remaining index property levels,
-    /// iterating over all values at each level, and sums the CountTree
-    /// counts at the terminal level.
-    fn count_from_count_tree_recursive(
-        &self,
-        current_path: Vec<Vec<u8>>,
-        remaining_properties: &[dpp::data_contract::document_type::IndexProperty],
-        drive_version: &dpp::version::drive_versions::DriveVersion,
-    ) -> Result<u64, Error> {
-        if remaining_properties.is_empty() {
-            // We've navigated through all index properties.
-            // The CountTree element is at key [0] under the current path.
-            let mut drive_operations = vec![];
-            let path_refs: Vec<&[u8]> = current_path.iter().map(|p| p.as_slice()).collect();
-            let element = self.drive.grove_get_raw_optional(
-                SubtreePath::from(path_refs.as_slice()),
-                &[0],
-                DirectQueryType::StatefulDirectQuery,
-                None,
-                &mut drive_operations,
-                drive_version,
-            )?;
-
-            return Ok(element.map_or(0, |e| e.count_value_or_default()));
-        }
-
-        let prop = &remaining_properties[0];
-        let rest = &remaining_properties[1..];
-
-        // Push the index property key to descend into that level
-        let mut property_path = current_path.clone();
-        property_path.push(prop.name.as_bytes().to_vec());
-
-        // Query all children (value subtrees) at this property level
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(property_path.clone(), SizedQuery::new(query, None, None));
-
-        let mut drive_operations = vec![];
-        let result = self.drive.grove_get_raw_path_query(
-            &path_query,
-            None,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut drive_operations,
-            drive_version,
-        );
-
-        let (elements, _) = match result {
-            Ok(result) => result,
-            Err(drive::error::Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    drive::grovedb::Error::PathNotFound(_)
-                        | drive::grovedb::Error::PathParentLayerNotFound(_)
-                        | drive::grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
-                // Path doesn't exist -- no documents have been inserted yet
-                return Ok(0);
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        let key_elements = elements.to_key_elements();
-
-        if key_elements.is_empty() {
-            return Ok(0);
-        }
-
-        let mut total_count: u64 = 0;
-
-        for (key, _element) in key_elements {
-            // Build the path for this value: [..., prop_name, <value>]
-            let mut value_path = property_path.clone();
-            value_path.push(key);
-
-            // Recurse into the remaining property levels
-            let sub_count =
-                self.count_from_count_tree_recursive(value_path, rest, drive_version)?;
-            total_count = total_count.saturating_add(sub_count);
-        }
-
-        Ok(total_count)
     }
 }
 
