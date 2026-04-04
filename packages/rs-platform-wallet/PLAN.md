@@ -3835,21 +3835,264 @@ accept latency), atomic multi-struct update strategy (merge vs journaling vs eve
 
 ---
 
-### PR-22: Serialization + Final Cleanup
+### PR-22: ChangeSet-based Persistence (inspired by BDK)
 
-**Library** (`rs-platform-wallet`):
+**Goal**: Atomic state updates + persistence via a ChangeSet pattern. Every wallet
+mutation produces a delta (ChangeSet) that is applied to in-memory state and
+persisted atomically. No full-state snapshots — only deltas.
 
-- `PlatformWallet::backup()` / `restore()` — full bincode blob excluding `Sdk` (§1.11)
-- Any remaining missing `Encode`/`Decode` impls
-- Ensure `rs-platform-wallet-ffi` re-exports any new functions (FFI layer exists at `packages/rs-platform-wallet-ffi/`)
+#### Design Overview
 
-**evo-tool integration**:
+```
+Operation → ChangeSet (computed without side effects)
+    → apply() to in-memory state (single write lock, all or nothing)
+    → persist() to storage (single DB transaction, all or nothing)
+```
 
-- Replace SQLite wallet blob serialization with `PlatformWallet::backup()`/`restore()`
-- Wire `PlatformWallet::from_bytes(sdk, blob)` on wallet load
-- Remove any remaining evo-tool wallet shim code
+**Key insight**: The ChangeSet IS the atomic unit. It bundles all related changes
+across multiple sub-stores (transactions + UTXOs + balances + identities) into
+one object. Both in-memory apply and storage persist are atomic operations on
+this single object.
 
-**Done when**: Wallet persists and restores correctly across restarts; no old wallet code remains in evo-tool.
+#### Core Types
+
+```rust
+/// Delta of all wallet state changes from a single operation.
+/// Composed of optional sub-changesets — None means no change in that area.
+pub struct WalletChangeSet {
+    /// Core chain state (block headers, sync height)
+    pub chain: Option<ChainChangeSet>,
+    /// Account changes (new accounts, address pool expansion, gap limit updates)
+    pub accounts: Option<AccountChangeSet>,
+    /// UTXO changes (new UTXOs from incoming tx, spent UTXOs from outgoing tx)
+    pub utxos: Option<UtxoChangeSet>,
+    /// Transaction changes (new transactions, status updates: unconfirmed → IS-locked → confirmed → chainlocked)
+    pub transactions: Option<TransactionChangeSet>,
+    /// Identity changes (registered, updated keys, balance changes, DPNS names)
+    pub identities: Option<IdentityChangeSet>,
+    /// DashPay contact changes (requests sent/received, contacts established)
+    pub contacts: Option<ContactChangeSet>,
+    /// Platform address changes (DIP-17 balance/nonce updates from Platform proofs)
+    pub platform_addresses: Option<PlatformAddressChangeSet>,
+    /// Shielded state changes (commitment tree updates, nullifiers, note decryption)
+    pub shielded: Option<ShieldedChangeSet>,
+    /// Asset lock lifecycle changes (created, IS-locked, chainlocked, used)
+    pub asset_locks: Option<AssetLockChangeSet>,
+}
+```
+
+#### The Merge Trait
+
+```rust
+/// Combine two changesets. Used to batch multiple operations before persisting.
+pub trait Merge: Default {
+    fn merge(&mut self, other: Self);
+    fn is_empty(&self) -> bool;
+}
+```
+
+Merge semantics per sub-changeset:
+- **UTXOs**: union of added, union of spent (idempotent — adding same UTXO twice is no-op)
+- **Transactions**: insert or update (later status wins: chainlocked > confirmed > IS-locked > unconfirmed)
+- **Identities**: monotonic revision (keep higher), append new keys
+- **Contacts**: state machine ordering (pending < accepted < blocked)
+- **Chain**: keep higher block height, insert new headers
+- **Accounts**: append new addresses to pools, advance gap limit indices
+- **Platform addresses**: keep higher nonce, update balance (last write wins from Platform proofs)
+
+#### The Persistence Trait
+
+```rust
+/// Storage backend abstraction. Implementors choose their own storage
+/// (SQLite, file, memory, remote). The trait guarantees atomic persistence.
+pub trait WalletPersistence {
+    type Error: std::error::Error;
+
+    /// Load the aggregated state from storage.
+    /// Returns a single ChangeSet representing the full stored state
+    /// (equivalent to merging all previously persisted changesets).
+    fn initialize(&mut self) -> Result<WalletChangeSet, Self::Error>;
+
+    /// Persist a delta atomically. Either all sub-changesets are stored
+    /// or none are. Implementations MUST guarantee atomicity (e.g.,
+    /// SQLite transaction, atomic file write).
+    fn persist(&mut self, changeset: &WalletChangeSet) -> Result<(), Self::Error>;
+}
+```
+
+#### How Operations Produce ChangeSets
+
+Every mutation on PlatformWallet returns a `WalletChangeSet`:
+
+```rust
+impl PlatformWallet {
+    /// Process a new block from SPV.
+    /// Computes changes (read-only), then applies atomically.
+    pub fn process_block(&self, block: &Block, height: u32) -> WalletChangeSet {
+        let mut changeset = WalletChangeSet::default();
+
+        // 1. Update chain state
+        changeset.chain = Some(ChainChangeSet { height, block_hash: block.header.hash() });
+
+        // 2. Check each transaction against all accounts
+        for tx in &block.txdata {
+            let tx_changes = self.check_transaction(tx, height);
+            changeset.merge(tx_changes);
+        }
+
+        // 3. Return delta — caller applies + persists
+        changeset
+    }
+
+    /// Send a contact request (DashPay).
+    /// Returns changes to identities + contacts + accounts.
+    pub async fn send_contact_request(&self, ...) -> Result<WalletChangeSet, Error> {
+        let mut changeset = WalletChangeSet::default();
+
+        // 1. Create contact request document on Platform
+        let request = self.dashpay().submit_request(...).await?;
+
+        // 2. Record sent request
+        changeset.contacts = Some(ContactChangeSet::request_sent(our_id, their_id, request));
+
+        // 3. Register DashPay receiving account
+        let account_changes = self.register_contact_account(our_id, their_id)?;
+        changeset.accounts = Some(account_changes);
+
+        Ok(changeset)
+    }
+}
+```
+
+#### The Staged ChangeSet Pattern
+
+PlatformWallet accumulates changesets in a `stage` field until the caller
+explicitly persists:
+
+```rust
+pub struct PlatformWallet {
+    // ... existing fields ...
+
+    /// Accumulated changesets not yet persisted.
+    stage: RwLock<WalletChangeSet>,
+}
+
+impl PlatformWallet {
+    /// Apply a changeset to in-memory state and stage for persistence.
+    pub fn apply_and_stage(&self, changeset: WalletChangeSet) {
+        // Apply to in-memory structs
+        self.apply(changeset.clone());
+        // Merge into staged changes
+        self.stage.write().merge(changeset);
+    }
+
+    /// Persist all staged changes and clear the stage.
+    pub fn persist(&self, persister: &mut impl WalletPersistence) -> Result<(), Error> {
+        let staged = self.stage.write().take();
+        if let Some(changeset) = staged {
+            persister.persist(&changeset)?;
+        }
+        Ok(())
+    }
+}
+```
+
+#### In-Memory Atomicity
+
+Two approaches (choose one):
+
+**Option A — Single struct behind one RwLock (PR-21):**
+Merge Wallet + ManagedWalletInfo + IdentityManager into one struct. The `apply()`
+method takes `&mut self` — only one writer at a time, all changes atomic by Rust's
+ownership rules. No lock ordering issues.
+
+**Option B — Compute-then-apply (current multi-lock architecture):**
+The changeset is computed without holding any write locks (read-only analysis).
+Then `apply()` acquires all write locks in a fixed order, applies all changes,
+releases all locks. If any lock acquisition fails, no changes are applied.
+
+Option A is simpler and recommended. Option B works as a stepping stone.
+
+#### Storage Atomicity
+
+**SQLite implementation:**
+```rust
+impl WalletPersistence for SqlitePersister {
+    fn persist(&mut self, changeset: &WalletChangeSet) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;  // BEGIN TRANSACTION
+
+        if let Some(chain) = &changeset.chain {
+            persist_chain(&tx, chain)?;
+        }
+        if let Some(utxos) = &changeset.utxos {
+            persist_utxos(&tx, utxos)?;
+        }
+        if let Some(txs) = &changeset.transactions {
+            persist_transactions(&tx, txs)?;
+        }
+        if let Some(ids) = &changeset.identities {
+            persist_identities(&tx, ids)?;
+        }
+        if let Some(contacts) = &changeset.contacts {
+            persist_contacts(&tx, contacts)?;
+        }
+        // ... all sub-changesets ...
+
+        tx.commit()?;  // COMMIT — all or nothing
+        Ok(())
+    }
+}
+```
+
+**File store implementation (for testing/dev):**
+Append-only binary log. Each `persist()` appends one serialized changeset.
+`initialize()` reads all entries, merges via `Merge` trait. Simple, no SQLite
+dependency.
+
+#### Recovery
+
+If the app crashes:
+- **After apply, before persist**: In-memory state is ahead of storage. On restart,
+  `initialize()` loads last persisted state. SPV re-syncs from the stored chain height,
+  re-producing the missing changesets. Platform state is re-fetched.
+- **During persist (SQLite)**: Transaction rolls back. Storage is at the previous state.
+  Same recovery as above.
+- **After persist**: Both in sync. No recovery needed.
+
+The gap between in-memory and storage is always bounded by the time since last `persist()`.
+Calling `persist()` after every block or every user action keeps the gap small.
+
+#### Migration from Current Architecture
+
+1. Define `WalletChangeSet` and sub-changeset types with `Merge`
+2. Define `WalletPersistence` trait
+3. Add `stage: RwLock<WalletChangeSet>` to PlatformWallet
+4. Modify SPV adapter's `process_block()` to return changesets instead of mutating directly
+5. Implement `SqlitePersister` using evo-tool's existing `Database`
+6. Wire `persist()` calls at natural boundaries (after block processing, after user actions)
+7. Implement `initialize()` to load from existing DB tables
+8. Eventually: merge Wallet + ManagedWalletInfo (PR-21) for single-lock atomicity
+
+#### What Stays in evo-tool's DB (app-level, NOT wallet state)
+
+- Encrypted wallet seed (identity, not state)
+- Wallet alias, is_main, uses_password (app preferences)
+- DashPay contact UI metadata (display name, avatar, last seen)
+- Settings, feature flags, proof logs
+- Shielded commitment tree (via ShieldedStore trait — already persistent)
+
+#### What Moves to WalletPersistence
+
+- UTXOs, transactions, balances (currently in wallet_addresses, utxos, wallet_transactions tables)
+- Identity state (registered, keys, DPNS names)
+- Contact request state (sent, received, established)
+- Platform address balances/nonces
+- Asset lock lifecycle state
+- Chain sync progress (height, block hashes)
+
+**Done when**: Every wallet mutation produces a ChangeSet. In-memory apply is atomic
+(single lock). Storage persist is atomic (single DB transaction). Recovery works
+correctly after crash at any point.
 
 ---
 
