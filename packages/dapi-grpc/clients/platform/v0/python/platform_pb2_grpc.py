@@ -89,6 +89,16 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDocumentsResponse.FromString,
                 )
+        self.getDocumentsCount = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDocumentsCount',
+                request_serializer=platform__pb2.GetDocumentsCountRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDocumentsCountResponse.FromString,
+                )
+        self.getDocumentsSplitCount = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDocumentsSplitCount',
+                request_serializer=platform__pb2.GetDocumentsSplitCountRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDocumentsSplitCountResponse.FromString,
+                )
         self.getIdentityByPublicKeyHash = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHash',
                 request_serializer=platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
@@ -289,6 +299,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedAnchorsResponse.FromString,
                 )
+        self.getMostRecentShieldedAnchor = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getMostRecentShieldedAnchor',
+                request_serializer=platform__pb2.GetMostRecentShieldedAnchorRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetMostRecentShieldedAnchorResponse.FromString,
+                )
         self.getShieldedPoolState = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
                 request_serializer=platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
@@ -325,7 +340,8 @@ class PlatformServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def broadcastStateTransition(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """@sdk-ignore: Write-only endpoint, not a query
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -414,6 +430,18 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getDocumentsCount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getDocumentsSplitCount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getIdentityByPublicKeyHash(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -433,7 +461,8 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getConsensusParams(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """@sdk-ignore: Consensus params fetched via Tenderdash RPC
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -659,6 +688,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getMostRecentShieldedAnchor(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getShieldedPoolState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -772,6 +807,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDocuments,
                     request_deserializer=platform__pb2.GetDocumentsRequest.FromString,
                     response_serializer=platform__pb2.GetDocumentsResponse.SerializeToString,
+            ),
+            'getDocumentsCount': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDocumentsCount,
+                    request_deserializer=platform__pb2.GetDocumentsCountRequest.FromString,
+                    response_serializer=platform__pb2.GetDocumentsCountResponse.SerializeToString,
+            ),
+            'getDocumentsSplitCount': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDocumentsSplitCount,
+                    request_deserializer=platform__pb2.GetDocumentsSplitCountRequest.FromString,
+                    response_serializer=platform__pb2.GetDocumentsSplitCountResponse.SerializeToString,
             ),
             'getIdentityByPublicKeyHash': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityByPublicKeyHash,
@@ -972,6 +1017,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getShieldedAnchors,
                     request_deserializer=platform__pb2.GetShieldedAnchorsRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedAnchorsResponse.SerializeToString,
+            ),
+            'getMostRecentShieldedAnchor': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMostRecentShieldedAnchor,
+                    request_deserializer=platform__pb2.GetMostRecentShieldedAnchorRequest.FromString,
+                    response_serializer=platform__pb2.GetMostRecentShieldedAnchorResponse.SerializeToString,
             ),
             'getShieldedPoolState': grpc.unary_unary_rpc_method_handler(
                     servicer.getShieldedPoolState,
@@ -1265,6 +1315,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocuments',
             platform__pb2.GetDocumentsRequest.SerializeToString,
             platform__pb2.GetDocumentsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDocumentsCount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocumentsCount',
+            platform__pb2.GetDocumentsCountRequest.SerializeToString,
+            platform__pb2.GetDocumentsCountResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDocumentsSplitCount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocumentsSplitCount',
+            platform__pb2.GetDocumentsSplitCountRequest.SerializeToString,
+            platform__pb2.GetDocumentsSplitCountResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1945,6 +2029,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedAnchors',
             platform__pb2.GetShieldedAnchorsRequest.SerializeToString,
             platform__pb2.GetShieldedAnchorsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getMostRecentShieldedAnchor(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getMostRecentShieldedAnchor',
+            platform__pb2.GetMostRecentShieldedAnchorRequest.SerializeToString,
+            platform__pb2.GetMostRecentShieldedAnchorResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

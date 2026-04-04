@@ -2434,6 +2434,324 @@ export namespace GetDocumentsResponse {
   }
 }
 
+export class GetDocumentsCountRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDocumentsCountRequest.GetDocumentsCountRequestV0 | undefined;
+  setV0(value?: GetDocumentsCountRequest.GetDocumentsCountRequestV0): void;
+
+  getVersionCase(): GetDocumentsCountRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDocumentsCountRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDocumentsCountRequest): GetDocumentsCountRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDocumentsCountRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDocumentsCountRequest;
+  static deserializeBinaryFromReader(message: GetDocumentsCountRequest, reader: jspb.BinaryReader): GetDocumentsCountRequest;
+}
+
+export namespace GetDocumentsCountRequest {
+  export type AsObject = {
+    v0?: GetDocumentsCountRequest.GetDocumentsCountRequestV0.AsObject,
+  }
+
+  export class GetDocumentsCountRequestV0 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentType(): string;
+    setDocumentType(value: string): void;
+
+    getWhere(): Uint8Array | string;
+    getWhere_asU8(): Uint8Array;
+    getWhere_asB64(): string;
+    setWhere(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsCountRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsCountRequestV0): GetDocumentsCountRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsCountRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsCountRequestV0;
+    static deserializeBinaryFromReader(message: GetDocumentsCountRequestV0, reader: jspb.BinaryReader): GetDocumentsCountRequestV0;
+  }
+
+  export namespace GetDocumentsCountRequestV0 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentType: string,
+      where: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetDocumentsCountResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDocumentsCountResponse.GetDocumentsCountResponseV0 | undefined;
+  setV0(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0): void;
+
+  getVersionCase(): GetDocumentsCountResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDocumentsCountResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDocumentsCountResponse): GetDocumentsCountResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDocumentsCountResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDocumentsCountResponse;
+  static deserializeBinaryFromReader(message: GetDocumentsCountResponse, reader: jspb.BinaryReader): GetDocumentsCountResponse;
+}
+
+export namespace GetDocumentsCountResponse {
+  export type AsObject = {
+    v0?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.AsObject,
+  }
+
+  export class GetDocumentsCountResponseV0 extends jspb.Message {
+    hasCount(): boolean;
+    clearCount(): void;
+    getCount(): number;
+    setCount(value: number): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetDocumentsCountResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsCountResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsCountResponseV0): GetDocumentsCountResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsCountResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsCountResponseV0;
+    static deserializeBinaryFromReader(message: GetDocumentsCountResponseV0, reader: jspb.BinaryReader): GetDocumentsCountResponseV0;
+  }
+
+  export namespace GetDocumentsCountResponseV0 {
+    export type AsObject = {
+      count: number,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      COUNT = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetDocumentsSplitCountRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0 | undefined;
+  setV0(value?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0): void;
+
+  getVersionCase(): GetDocumentsSplitCountRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDocumentsSplitCountRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequest): GetDocumentsSplitCountRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDocumentsSplitCountRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequest;
+  static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequest, reader: jspb.BinaryReader): GetDocumentsSplitCountRequest;
+}
+
+export namespace GetDocumentsSplitCountRequest {
+  export type AsObject = {
+    v0?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.AsObject,
+  }
+
+  export class GetDocumentsSplitCountRequestV0 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentType(): string;
+    setDocumentType(value: string): void;
+
+    getWhere(): Uint8Array | string;
+    getWhere_asU8(): Uint8Array;
+    getWhere_asB64(): string;
+    setWhere(value: Uint8Array | string): void;
+
+    getSplitCountByIndexProperty(): string;
+    setSplitCountByIndexProperty(value: string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsSplitCountRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequestV0): GetDocumentsSplitCountRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsSplitCountRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequestV0;
+    static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequestV0, reader: jspb.BinaryReader): GetDocumentsSplitCountRequestV0;
+  }
+
+  export namespace GetDocumentsSplitCountRequestV0 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentType: string,
+      where: Uint8Array | string,
+      splitCountByIndexProperty: string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetDocumentsSplitCountResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0 | undefined;
+  setV0(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0): void;
+
+  getVersionCase(): GetDocumentsSplitCountResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetDocumentsSplitCountResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponse): GetDocumentsSplitCountResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetDocumentsSplitCountResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponse;
+  static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponse, reader: jspb.BinaryReader): GetDocumentsSplitCountResponse;
+}
+
+export namespace GetDocumentsSplitCountResponse {
+  export type AsObject = {
+    v0?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.AsObject,
+  }
+
+  export class GetDocumentsSplitCountResponseV0 extends jspb.Message {
+    hasSplitCounts(): boolean;
+    clearSplitCounts(): void;
+    getSplitCounts(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts | undefined;
+    setSplitCounts(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetDocumentsSplitCountResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsSplitCountResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponseV0): GetDocumentsSplitCountResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsSplitCountResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponseV0;
+    static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponseV0, reader: jspb.BinaryReader): GetDocumentsSplitCountResponseV0;
+  }
+
+  export namespace GetDocumentsSplitCountResponseV0 {
+    export type AsObject = {
+      splitCounts?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class SplitCountEntry extends jspb.Message {
+      getKey(): Uint8Array | string;
+      getKey_asU8(): Uint8Array;
+      getKey_asB64(): string;
+      setKey(value: Uint8Array | string): void;
+
+      getCount(): number;
+      setCount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SplitCountEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: SplitCountEntry): SplitCountEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SplitCountEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SplitCountEntry;
+      static deserializeBinaryFromReader(message: SplitCountEntry, reader: jspb.BinaryReader): SplitCountEntry;
+    }
+
+    export namespace SplitCountEntry {
+      export type AsObject = {
+        key: Uint8Array | string,
+        count: number,
+      }
+    }
+
+    export class SplitCounts extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>;
+      setEntriesList(value: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>): void;
+      addEntries(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry, index?: number): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SplitCounts.AsObject;
+      static toObject(includeInstance: boolean, msg: SplitCounts): SplitCounts.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SplitCounts, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SplitCounts;
+      static deserializeBinaryFromReader(message: SplitCounts, reader: jspb.BinaryReader): SplitCounts;
+    }
+
+    export namespace SplitCounts {
+      export type AsObject = {
+        entriesList: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.AsObject>,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      SPLIT_COUNTS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentityByPublicKeyHashRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -10150,6 +10468,9 @@ export namespace GetRecentAddressBalanceChangesRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
+    getStartHeightExclusive(): boolean;
+    setStartHeightExclusive(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetRecentAddressBalanceChangesRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetRecentAddressBalanceChangesRequestV0): GetRecentAddressBalanceChangesRequestV0.AsObject;
@@ -10164,6 +10485,7 @@ export namespace GetRecentAddressBalanceChangesRequest {
     export type AsObject = {
       startHeight: string,
       prove: boolean,
+      startHeightExclusive: boolean,
     }
   }
 
@@ -10814,6 +11136,125 @@ export namespace GetShieldedAnchorsResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       ANCHORS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetMostRecentShieldedAnchorRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0 | undefined;
+  setV0(value?: GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0): void;
+
+  getVersionCase(): GetMostRecentShieldedAnchorRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorRequest): GetMostRecentShieldedAnchorRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorRequest;
+  static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorRequest, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorRequest;
+}
+
+export namespace GetMostRecentShieldedAnchorRequest {
+  export type AsObject = {
+    v0?: GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.AsObject,
+  }
+
+  export class GetMostRecentShieldedAnchorRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorRequestV0): GetMostRecentShieldedAnchorRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorRequestV0;
+    static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorRequestV0, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorRequestV0;
+  }
+
+  export namespace GetMostRecentShieldedAnchorRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetMostRecentShieldedAnchorResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0 | undefined;
+  setV0(value?: GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0): void;
+
+  getVersionCase(): GetMostRecentShieldedAnchorResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorResponse): GetMostRecentShieldedAnchorResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorResponse;
+  static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorResponse, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorResponse;
+}
+
+export namespace GetMostRecentShieldedAnchorResponse {
+  export type AsObject = {
+    v0?: GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.AsObject,
+  }
+
+  export class GetMostRecentShieldedAnchorResponseV0 extends jspb.Message {
+    hasAnchor(): boolean;
+    clearAnchor(): void;
+    getAnchor(): Uint8Array | string;
+    getAnchor_asU8(): Uint8Array;
+    getAnchor_asB64(): string;
+    setAnchor(value: Uint8Array | string): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetMostRecentShieldedAnchorResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetMostRecentShieldedAnchorResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetMostRecentShieldedAnchorResponseV0): GetMostRecentShieldedAnchorResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetMostRecentShieldedAnchorResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetMostRecentShieldedAnchorResponseV0;
+    static deserializeBinaryFromReader(message: GetMostRecentShieldedAnchorResponseV0, reader: jspb.BinaryReader): GetMostRecentShieldedAnchorResponseV0;
+  }
+
+  export namespace GetMostRecentShieldedAnchorResponseV0 {
+    export type AsObject = {
+      anchor: Uint8Array | string,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ANCHOR = 1,
       PROOF = 2,
     }
   }

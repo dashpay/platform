@@ -582,6 +582,72 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocumentsCount}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getDocumentsCountCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse} [response] GetDocumentsCountResponse
+                         */
+
+                        /**
+                         * Calls getDocumentsCount.
+                         * @function getDocumentsCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} request GetDocumentsCountRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getDocumentsCountCallback} callback Node-style callback called with the error, if any, and GetDocumentsCountResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getDocumentsCount = function getDocumentsCount(request, callback) {
+                            return this.rpcCall(getDocumentsCount, $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest, $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse, request, callback);
+                        }, "name", { value: "getDocumentsCount" });
+
+                        /**
+                         * Calls getDocumentsCount.
+                         * @function getDocumentsCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} request GetDocumentsCountRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetDocumentsCountResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocumentsSplitCount}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getDocumentsSplitCountCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} [response] GetDocumentsSplitCountResponse
+                         */
+
+                        /**
+                         * Calls getDocumentsSplitCount.
+                         * @function getDocumentsSplitCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest} request GetDocumentsSplitCountRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getDocumentsSplitCountCallback} callback Node-style callback called with the error, if any, and GetDocumentsSplitCountResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getDocumentsSplitCount = function getDocumentsSplitCount(request, callback) {
+                            return this.rpcCall(getDocumentsSplitCount, $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest, $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse, request, callback);
+                        }, "name", { value: "getDocumentsSplitCount" });
+
+                        /**
+                         * Calls getDocumentsSplitCount.
+                         * @function getDocumentsSplitCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest} request GetDocumentsSplitCountRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityByPublicKeyHash}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityByPublicKeyHashCallback
@@ -1898,6 +1964,39 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetShieldedAnchorsRequest} request GetShieldedAnchorsRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedAnchorsResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getMostRecentShieldedAnchor}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getMostRecentShieldedAnchorCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} [response] GetMostRecentShieldedAnchorResponse
+                         */
+
+                        /**
+                         * Calls getMostRecentShieldedAnchor.
+                         * @function getMostRecentShieldedAnchor
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} request GetMostRecentShieldedAnchorRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getMostRecentShieldedAnchorCallback} callback Node-style callback called with the error, if any, and GetMostRecentShieldedAnchorResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getMostRecentShieldedAnchor = function getMostRecentShieldedAnchor(request, callback) {
+                            return this.rpcCall(getMostRecentShieldedAnchor, $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest, $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse, request, callback);
+                        }, "name", { value: "getMostRecentShieldedAnchor" });
+
+                        /**
+                         * Calls getMostRecentShieldedAnchor.
+                         * @function getMostRecentShieldedAnchor
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} request GetMostRecentShieldedAnchorRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse>} Promise
                          * @variation 2
                          */
 
@@ -20606,6 +20705,2407 @@ $root.org = (function() {
                         })();
 
                         return GetDocumentsResponse;
+                    })();
+
+                    v0.GetDocumentsCountRequest = (function() {
+
+                        /**
+                         * Properties of a GetDocumentsCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentsCountRequest
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0|null} [v0] GetDocumentsCountRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentsCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentsCountRequest.
+                         * @implements IGetDocumentsCountRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest=} [properties] Properties to set
+                         */
+                        function GetDocumentsCountRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentsCountRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @instance
+                         */
+                        GetDocumentsCountRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentsCountRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentsCountRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentsCountRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest instance
+                         */
+                        GetDocumentsCountRequest.create = function create(properties) {
+                            return new GetDocumentsCountRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsCountRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} message GetDocumentsCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsCountRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsCountRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} message GetDocumentsCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsCountRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsCountRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsCountRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsCountRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsCountRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentsCountRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentsCountRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentsCountRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
+                         */
+                        GetDocumentsCountRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentsCountRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest} message GetDocumentsCountRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentsCountRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentsCountRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentsCountRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentsCountRequest.GetDocumentsCountRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                             * @interface IGetDocumentsCountRequestV0
+                             * @property {Uint8Array|null} [dataContractId] GetDocumentsCountRequestV0 dataContractId
+                             * @property {string|null} [documentType] GetDocumentsCountRequestV0 documentType
+                             * @property {Uint8Array|null} [where] GetDocumentsCountRequestV0 where
+                             * @property {boolean|null} [prove] GetDocumentsCountRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
+                             * @classdesc Represents a GetDocumentsCountRequestV0.
+                             * @implements IGetDocumentsCountRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0=} [properties] Properties to set
+                             */
+                            function GetDocumentsCountRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsCountRequestV0 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsCountRequestV0.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsCountRequestV0 documentType.
+                             * @member {string} documentType
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsCountRequestV0.prototype.documentType = "";
+
+                            /**
+                             * GetDocumentsCountRequestV0 where.
+                             * @member {Uint8Array} where
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsCountRequestV0.prototype.where = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsCountRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsCountRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetDocumentsCountRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0 instance
+                             */
+                            GetDocumentsCountRequestV0.create = function create(properties) {
+                                return new GetDocumentsCountRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsCountRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0} message GetDocumentsCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsCountRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
+                                if (message.where != null && Object.hasOwnProperty.call(message, "where"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.where);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsCountRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0} message GetDocumentsCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsCountRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsCountRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsCountRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentType = reader.string();
+                                        break;
+                                    case 3:
+                                        message.where = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsCountRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsCountRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsCountRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsCountRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    if (!$util.isString(message.documentType))
+                                        return "documentType: string expected";
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    if (!(message.where && typeof message.where.length === "number" || $util.isString(message.where)))
+                                        return "where: buffer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsCountRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
+                             */
+                            GetDocumentsCountRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentType != null)
+                                    message.documentType = String(object.documentType);
+                                if (object.where != null)
+                                    if (typeof object.where === "string")
+                                        $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
+                                    else if (object.where.length >= 0)
+                                        message.where = object.where;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsCountRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} message GetDocumentsCountRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsCountRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentType = "";
+                                    if (options.bytes === String)
+                                        object.where = "";
+                                    else {
+                                        object.where = [];
+                                        if (options.bytes !== Array)
+                                            object.where = $util.newBuffer(object.where);
+                                    }
+                                    object.prove = false;
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    object.documentType = message.documentType;
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    object.where = options.bytes === String ? $util.base64.encode(message.where, 0, message.where.length) : options.bytes === Array ? Array.prototype.slice.call(message.where) : message.where;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsCountRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsCountRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetDocumentsCountRequestV0;
+                        })();
+
+                        return GetDocumentsCountRequest;
+                    })();
+
+                    v0.GetDocumentsCountResponse = (function() {
+
+                        /**
+                         * Properties of a GetDocumentsCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentsCountResponse
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0|null} [v0] GetDocumentsCountResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentsCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentsCountResponse.
+                         * @implements IGetDocumentsCountResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse=} [properties] Properties to set
+                         */
+                        function GetDocumentsCountResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentsCountResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @instance
+                         */
+                        GetDocumentsCountResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentsCountResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentsCountResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentsCountResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse instance
+                         */
+                        GetDocumentsCountResponse.create = function create(properties) {
+                            return new GetDocumentsCountResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsCountResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse} message GetDocumentsCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsCountResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsCountResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse} message GetDocumentsCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsCountResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsCountResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsCountResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsCountResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsCountResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentsCountResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentsCountResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentsCountResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
+                         */
+                        GetDocumentsCountResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentsCountResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse} message GetDocumentsCountResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentsCountResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentsCountResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentsCountResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentsCountResponse.GetDocumentsCountResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                             * @interface IGetDocumentsCountResponseV0
+                             * @property {number|Long|null} [count] GetDocumentsCountResponseV0 count
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsCountResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsCountResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
+                             * @classdesc Represents a GetDocumentsCountResponseV0.
+                             * @implements IGetDocumentsCountResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0=} [properties] Properties to set
+                             */
+                            function GetDocumentsCountResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsCountResponseV0 count.
+                             * @member {number|Long} count
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsCountResponseV0.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetDocumentsCountResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsCountResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetDocumentsCountResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsCountResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetDocumentsCountResponseV0 result.
+                             * @member {"count"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetDocumentsCountResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["count", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetDocumentsCountResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0 instance
+                             */
+                            GetDocumentsCountResponseV0.create = function create(properties) {
+                                return new GetDocumentsCountResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsCountResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0} message GetDocumentsCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsCountResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.count);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsCountResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0} message GetDocumentsCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsCountResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsCountResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsCountResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.count = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsCountResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsCountResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsCountResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsCountResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.count != null && message.hasOwnProperty("count")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                        return "count: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsCountResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
+                             */
+                            GetDocumentsCountResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0();
+                                if (object.count != null)
+                                    if ($util.Long)
+                                        (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                    else if (typeof object.count === "string")
+                                        message.count = parseInt(object.count, 10);
+                                    else if (typeof object.count === "number")
+                                        message.count = object.count;
+                                    else if (typeof object.count === "object")
+                                        message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsCountResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} message GetDocumentsCountResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsCountResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.count != null && message.hasOwnProperty("count")) {
+                                    if (typeof message.count === "number")
+                                        object.count = options.longs === String ? String(message.count) : message.count;
+                                    else
+                                        object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    if (options.oneofs)
+                                        object.result = "count";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsCountResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsCountResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetDocumentsCountResponseV0;
+                        })();
+
+                        return GetDocumentsCountResponse;
+                    })();
+
+                    v0.GetDocumentsSplitCountRequest = (function() {
+
+                        /**
+                         * Properties of a GetDocumentsSplitCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentsSplitCountRequest
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0|null} [v0] GetDocumentsSplitCountRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentsSplitCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentsSplitCountRequest.
+                         * @implements IGetDocumentsSplitCountRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest=} [properties] Properties to set
+                         */
+                        function GetDocumentsSplitCountRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentsSplitCountRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @instance
+                         */
+                        GetDocumentsSplitCountRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentsSplitCountRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentsSplitCountRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentsSplitCountRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest} GetDocumentsSplitCountRequest instance
+                         */
+                        GetDocumentsSplitCountRequest.create = function create(properties) {
+                            return new GetDocumentsSplitCountRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsSplitCountRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest} message GetDocumentsSplitCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsSplitCountRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsSplitCountRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountRequest} message GetDocumentsSplitCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsSplitCountRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsSplitCountRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest} GetDocumentsSplitCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsSplitCountRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsSplitCountRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest} GetDocumentsSplitCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsSplitCountRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentsSplitCountRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentsSplitCountRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentsSplitCountRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest} GetDocumentsSplitCountRequest
+                         */
+                        GetDocumentsSplitCountRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentsSplitCountRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest} message GetDocumentsSplitCountRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentsSplitCountRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentsSplitCountRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentsSplitCountRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsSplitCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                             * @interface IGetDocumentsSplitCountRequestV0
+                             * @property {Uint8Array|null} [dataContractId] GetDocumentsSplitCountRequestV0 dataContractId
+                             * @property {string|null} [documentType] GetDocumentsSplitCountRequestV0 documentType
+                             * @property {Uint8Array|null} [where] GetDocumentsSplitCountRequestV0 where
+                             * @property {string|null} [splitCountByIndexProperty] GetDocumentsSplitCountRequestV0 splitCountByIndexProperty
+                             * @property {boolean|null} [prove] GetDocumentsSplitCountRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsSplitCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest
+                             * @classdesc Represents a GetDocumentsSplitCountRequestV0.
+                             * @implements IGetDocumentsSplitCountRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0=} [properties] Properties to set
+                             */
+                            function GetDocumentsSplitCountRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsSplitCountRequestV0 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsSplitCountRequestV0 documentType.
+                             * @member {string} documentType
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.documentType = "";
+
+                            /**
+                             * GetDocumentsSplitCountRequestV0 where.
+                             * @member {Uint8Array} where
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.where = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsSplitCountRequestV0 splitCountByIndexProperty.
+                             * @member {string} splitCountByIndexProperty
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.splitCountByIndexProperty = "";
+
+                            /**
+                             * GetDocumentsSplitCountRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetDocumentsSplitCountRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0} GetDocumentsSplitCountRequestV0 instance
+                             */
+                            GetDocumentsSplitCountRequestV0.create = function create(properties) {
+                                return new GetDocumentsSplitCountRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsSplitCountRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0} message GetDocumentsSplitCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsSplitCountRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
+                                if (message.where != null && Object.hasOwnProperty.call(message, "where"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.where);
+                                if (message.splitCountByIndexProperty != null && Object.hasOwnProperty.call(message, "splitCountByIndexProperty"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).string(message.splitCountByIndexProperty);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsSplitCountRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.IGetDocumentsSplitCountRequestV0} message GetDocumentsSplitCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsSplitCountRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsSplitCountRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0} GetDocumentsSplitCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsSplitCountRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentType = reader.string();
+                                        break;
+                                    case 3:
+                                        message.where = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.splitCountByIndexProperty = reader.string();
+                                        break;
+                                    case 5:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsSplitCountRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0} GetDocumentsSplitCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsSplitCountRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsSplitCountRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsSplitCountRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    if (!$util.isString(message.documentType))
+                                        return "documentType: string expected";
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    if (!(message.where && typeof message.where.length === "number" || $util.isString(message.where)))
+                                        return "where: buffer expected";
+                                if (message.splitCountByIndexProperty != null && message.hasOwnProperty("splitCountByIndexProperty"))
+                                    if (!$util.isString(message.splitCountByIndexProperty))
+                                        return "splitCountByIndexProperty: string expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsSplitCountRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0} GetDocumentsSplitCountRequestV0
+                             */
+                            GetDocumentsSplitCountRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentType != null)
+                                    message.documentType = String(object.documentType);
+                                if (object.where != null)
+                                    if (typeof object.where === "string")
+                                        $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
+                                    else if (object.where.length >= 0)
+                                        message.where = object.where;
+                                if (object.splitCountByIndexProperty != null)
+                                    message.splitCountByIndexProperty = String(object.splitCountByIndexProperty);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsSplitCountRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0} message GetDocumentsSplitCountRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsSplitCountRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentType = "";
+                                    if (options.bytes === String)
+                                        object.where = "";
+                                    else {
+                                        object.where = [];
+                                        if (options.bytes !== Array)
+                                            object.where = $util.newBuffer(object.where);
+                                    }
+                                    object.splitCountByIndexProperty = "";
+                                    object.prove = false;
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    object.documentType = message.documentType;
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    object.where = options.bytes === String ? $util.base64.encode(message.where, 0, message.where.length) : options.bytes === Array ? Array.prototype.slice.call(message.where) : message.where;
+                                if (message.splitCountByIndexProperty != null && message.hasOwnProperty("splitCountByIndexProperty"))
+                                    object.splitCountByIndexProperty = message.splitCountByIndexProperty;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsSplitCountRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsSplitCountRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetDocumentsSplitCountRequestV0;
+                        })();
+
+                        return GetDocumentsSplitCountRequest;
+                    })();
+
+                    v0.GetDocumentsSplitCountResponse = (function() {
+
+                        /**
+                         * Properties of a GetDocumentsSplitCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentsSplitCountResponse
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0|null} [v0] GetDocumentsSplitCountResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentsSplitCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentsSplitCountResponse.
+                         * @implements IGetDocumentsSplitCountResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountResponse=} [properties] Properties to set
+                         */
+                        function GetDocumentsSplitCountResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentsSplitCountResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @instance
+                         */
+                        GetDocumentsSplitCountResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentsSplitCountResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentsSplitCountResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentsSplitCountResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} GetDocumentsSplitCountResponse instance
+                         */
+                        GetDocumentsSplitCountResponse.create = function create(properties) {
+                            return new GetDocumentsSplitCountResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsSplitCountResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountResponse} message GetDocumentsSplitCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsSplitCountResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentsSplitCountResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentsSplitCountResponse} message GetDocumentsSplitCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentsSplitCountResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsSplitCountResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} GetDocumentsSplitCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsSplitCountResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentsSplitCountResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} GetDocumentsSplitCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentsSplitCountResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentsSplitCountResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentsSplitCountResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentsSplitCountResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} GetDocumentsSplitCountResponse
+                         */
+                        GetDocumentsSplitCountResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentsSplitCountResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse} message GetDocumentsSplitCountResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentsSplitCountResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentsSplitCountResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentsSplitCountResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsSplitCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                             * @interface IGetDocumentsSplitCountResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts|null} [splitCounts] GetDocumentsSplitCountResponseV0 splitCounts
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsSplitCountResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsSplitCountResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsSplitCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse
+                             * @classdesc Represents a GetDocumentsSplitCountResponseV0.
+                             * @implements IGetDocumentsSplitCountResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0=} [properties] Properties to set
+                             */
+                            function GetDocumentsSplitCountResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsSplitCountResponseV0 splitCounts.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts|null|undefined} splitCounts
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountResponseV0.prototype.splitCounts = null;
+
+                            /**
+                             * GetDocumentsSplitCountResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetDocumentsSplitCountResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @instance
+                             */
+                            GetDocumentsSplitCountResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetDocumentsSplitCountResponseV0 result.
+                             * @member {"splitCounts"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetDocumentsSplitCountResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["splitCounts", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetDocumentsSplitCountResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0} GetDocumentsSplitCountResponseV0 instance
+                             */
+                            GetDocumentsSplitCountResponseV0.create = function create(properties) {
+                                return new GetDocumentsSplitCountResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsSplitCountResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0} message GetDocumentsSplitCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsSplitCountResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.splitCounts != null && Object.hasOwnProperty.call(message, "splitCounts"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.encode(message.splitCounts, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsSplitCountResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.IGetDocumentsSplitCountResponseV0} message GetDocumentsSplitCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsSplitCountResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsSplitCountResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0} GetDocumentsSplitCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsSplitCountResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.splitCounts = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsSplitCountResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0} GetDocumentsSplitCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsSplitCountResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsSplitCountResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsSplitCountResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.splitCounts != null && message.hasOwnProperty("splitCounts")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.verify(message.splitCounts);
+                                        if (error)
+                                            return "splitCounts." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsSplitCountResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0} GetDocumentsSplitCountResponseV0
+                             */
+                            GetDocumentsSplitCountResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0();
+                                if (object.splitCounts != null) {
+                                    if (typeof object.splitCounts !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.splitCounts: object expected");
+                                    message.splitCounts = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.fromObject(object.splitCounts);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsSplitCountResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0} message GetDocumentsSplitCountResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsSplitCountResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.splitCounts != null && message.hasOwnProperty("splitCounts")) {
+                                    object.splitCounts = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.toObject(message.splitCounts, options);
+                                    if (options.oneofs)
+                                        object.result = "splitCounts";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsSplitCountResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsSplitCountResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetDocumentsSplitCountResponseV0.SplitCountEntry = (function() {
+
+                                /**
+                                 * Properties of a SplitCountEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                                 * @interface ISplitCountEntry
+                                 * @property {Uint8Array|null} [key] SplitCountEntry key
+                                 * @property {number|Long|null} [count] SplitCountEntry count
+                                 */
+
+                                /**
+                                 * Constructs a new SplitCountEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                                 * @classdesc Represents a SplitCountEntry.
+                                 * @implements ISplitCountEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry=} [properties] Properties to set
+                                 */
+                                function SplitCountEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * SplitCountEntry key.
+                                 * @member {Uint8Array} key
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @instance
+                                 */
+                                SplitCountEntry.prototype.key = $util.newBuffer([]);
+
+                                /**
+                                 * SplitCountEntry count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @instance
+                                 */
+                                SplitCountEntry.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new SplitCountEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry} SplitCountEntry instance
+                                 */
+                                SplitCountEntry.create = function create(properties) {
+                                    return new SplitCountEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified SplitCountEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry} message SplitCountEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SplitCountEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.count);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified SplitCountEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry} message SplitCountEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SplitCountEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a SplitCountEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry} SplitCountEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SplitCountEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.key = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.count = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a SplitCountEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry} SplitCountEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SplitCountEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a SplitCountEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                SplitCountEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                            return "key: buffer expected";
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a SplitCountEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry} SplitCountEntry
+                                 */
+                                SplitCountEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry();
+                                    if (object.key != null)
+                                        if (typeof object.key === "string")
+                                            $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                        else if (object.key.length >= 0)
+                                            message.key = object.key;
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a SplitCountEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry} message SplitCountEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                SplitCountEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.key = "";
+                                        else {
+                                            object.key = [];
+                                            if (options.bytes !== Array)
+                                                object.key = $util.newBuffer(object.key);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.count = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.count = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this SplitCountEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                SplitCountEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return SplitCountEntry;
+                            })();
+
+                            GetDocumentsSplitCountResponseV0.SplitCounts = (function() {
+
+                                /**
+                                 * Properties of a SplitCounts.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                                 * @interface ISplitCounts
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry>|null} [entries] SplitCounts entries
+                                 */
+
+                                /**
+                                 * Constructs a new SplitCounts.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0
+                                 * @classdesc Represents a SplitCounts.
+                                 * @implements ISplitCounts
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts=} [properties] Properties to set
+                                 */
+                                function SplitCounts(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * SplitCounts entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCountEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @instance
+                                 */
+                                SplitCounts.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new SplitCounts instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts} SplitCounts instance
+                                 */
+                                SplitCounts.create = function create(properties) {
+                                    return new SplitCounts(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified SplitCounts message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts} message SplitCounts message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SplitCounts.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified SplitCounts message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.ISplitCounts} message SplitCounts message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SplitCounts.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a SplitCounts message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts} SplitCounts
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SplitCounts.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a SplitCounts message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts} SplitCounts
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SplitCounts.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a SplitCounts message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                SplitCounts.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a SplitCounts message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts} SplitCounts
+                                 */
+                                SplitCounts.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a SplitCounts message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts} message SplitCounts
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                SplitCounts.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this SplitCounts to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                SplitCounts.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return SplitCounts;
+                            })();
+
+                            return GetDocumentsSplitCountResponseV0;
+                        })();
+
+                        return GetDocumentsSplitCountResponse;
                     })();
 
                     v0.GetIdentityByPublicKeyHashRequest = (function() {
@@ -79559,6 +82059,7 @@ $root.org = (function() {
                              * @interface IGetRecentAddressBalanceChangesRequestV0
                              * @property {number|Long|null} [startHeight] GetRecentAddressBalanceChangesRequestV0 startHeight
                              * @property {boolean|null} [prove] GetRecentAddressBalanceChangesRequestV0 prove
+                             * @property {boolean|null} [startHeightExclusive] GetRecentAddressBalanceChangesRequestV0 startHeightExclusive
                              */
 
                             /**
@@ -79593,6 +82094,14 @@ $root.org = (function() {
                             GetRecentAddressBalanceChangesRequestV0.prototype.prove = false;
 
                             /**
+                             * GetRecentAddressBalanceChangesRequestV0 startHeightExclusive.
+                             * @member {boolean} startHeightExclusive
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.prototype.startHeightExclusive = false;
+
+                            /**
                              * Creates a new GetRecentAddressBalanceChangesRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
@@ -79620,6 +82129,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startHeight);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                if (message.startHeightExclusive != null && Object.hasOwnProperty.call(message, "startHeightExclusive"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.startHeightExclusive);
                                 return writer;
                             };
 
@@ -79659,6 +82170,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 3:
+                                        message.startHeightExclusive = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -79701,6 +82215,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.startHeightExclusive != null && message.hasOwnProperty("startHeightExclusive"))
+                                    if (typeof message.startHeightExclusive !== "boolean")
+                                        return "startHeightExclusive: boolean expected";
                                 return null;
                             };
 
@@ -79727,6 +82244,8 @@ $root.org = (function() {
                                         message.startHeight = new $util.LongBits(object.startHeight.low >>> 0, object.startHeight.high >>> 0).toNumber(true);
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.startHeightExclusive != null)
+                                    message.startHeightExclusive = Boolean(object.startHeightExclusive);
                                 return message;
                             };
 
@@ -79750,6 +82269,7 @@ $root.org = (function() {
                                     } else
                                         object.startHeight = options.longs === String ? "0" : 0;
                                     object.prove = false;
+                                    object.startHeightExclusive = false;
                                 }
                                 if (message.startHeight != null && message.hasOwnProperty("startHeight"))
                                     if (typeof message.startHeight === "number")
@@ -79758,6 +82278,8 @@ $root.org = (function() {
                                         object.startHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startHeight) : options.longs === Number ? new $util.LongBits(message.startHeight.low >>> 0, message.startHeight.high >>> 0).toNumber(true) : message.startHeight;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.startHeightExclusive != null && message.hasOwnProperty("startHeightExclusive"))
+                                    object.startHeightExclusive = message.startHeightExclusive;
                                 return object;
                             };
 
@@ -84892,6 +87414,885 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedAnchorsResponse;
+                    })();
+
+                    v0.GetMostRecentShieldedAnchorRequest = (function() {
+
+                        /**
+                         * Properties of a GetMostRecentShieldedAnchorRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMostRecentShieldedAnchorRequest
+                         * @property {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0|null} [v0] GetMostRecentShieldedAnchorRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetMostRecentShieldedAnchorRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMostRecentShieldedAnchorRequest.
+                         * @implements IGetMostRecentShieldedAnchorRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest=} [properties] Properties to set
+                         */
+                        function GetMostRecentShieldedAnchorRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMostRecentShieldedAnchorRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         */
+                        GetMostRecentShieldedAnchorRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMostRecentShieldedAnchorRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetMostRecentShieldedAnchorRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMostRecentShieldedAnchorRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest instance
+                         */
+                        GetMostRecentShieldedAnchorRequest.create = function create(properties) {
+                            return new GetMostRecentShieldedAnchorRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMostRecentShieldedAnchorRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMostRecentShieldedAnchorRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMostRecentShieldedAnchorRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         */
+                        GetMostRecentShieldedAnchorRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMostRecentShieldedAnchorRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMostRecentShieldedAnchorRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMostRecentShieldedAnchorRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMostRecentShieldedAnchorRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetMostRecentShieldedAnchorRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                             * @interface IGetMostRecentShieldedAnchorRequestV0
+                             * @property {boolean|null} [prove] GetMostRecentShieldedAnchorRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetMostRecentShieldedAnchorRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                             * @classdesc Represents a GetMostRecentShieldedAnchorRequestV0.
+                             * @implements IGetMostRecentShieldedAnchorRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0=} [properties] Properties to set
+                             */
+                            function GetMostRecentShieldedAnchorRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMostRecentShieldedAnchorRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetMostRecentShieldedAnchorRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0 instance
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.create = function create(properties) {
+                                return new GetMostRecentShieldedAnchorRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMostRecentShieldedAnchorRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMostRecentShieldedAnchorRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMostRecentShieldedAnchorRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMostRecentShieldedAnchorRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetMostRecentShieldedAnchorRequestV0;
+                        })();
+
+                        return GetMostRecentShieldedAnchorRequest;
+                    })();
+
+                    v0.GetMostRecentShieldedAnchorResponse = (function() {
+
+                        /**
+                         * Properties of a GetMostRecentShieldedAnchorResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMostRecentShieldedAnchorResponse
+                         * @property {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0|null} [v0] GetMostRecentShieldedAnchorResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetMostRecentShieldedAnchorResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMostRecentShieldedAnchorResponse.
+                         * @implements IGetMostRecentShieldedAnchorResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse=} [properties] Properties to set
+                         */
+                        function GetMostRecentShieldedAnchorResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMostRecentShieldedAnchorResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         */
+                        GetMostRecentShieldedAnchorResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMostRecentShieldedAnchorResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetMostRecentShieldedAnchorResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMostRecentShieldedAnchorResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse instance
+                         */
+                        GetMostRecentShieldedAnchorResponse.create = function create(properties) {
+                            return new GetMostRecentShieldedAnchorResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMostRecentShieldedAnchorResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMostRecentShieldedAnchorResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMostRecentShieldedAnchorResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         */
+                        GetMostRecentShieldedAnchorResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMostRecentShieldedAnchorResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMostRecentShieldedAnchorResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMostRecentShieldedAnchorResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMostRecentShieldedAnchorResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetMostRecentShieldedAnchorResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                             * @interface IGetMostRecentShieldedAnchorResponseV0
+                             * @property {Uint8Array|null} [anchor] GetMostRecentShieldedAnchorResponseV0 anchor
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetMostRecentShieldedAnchorResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetMostRecentShieldedAnchorResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetMostRecentShieldedAnchorResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                             * @classdesc Represents a GetMostRecentShieldedAnchorResponseV0.
+                             * @implements IGetMostRecentShieldedAnchorResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0=} [properties] Properties to set
+                             */
+                            function GetMostRecentShieldedAnchorResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 anchor.
+                             * @member {Uint8Array} anchor
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.anchor = $util.newBuffer([]);
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 result.
+                             * @member {"anchor"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetMostRecentShieldedAnchorResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["anchor", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetMostRecentShieldedAnchorResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0 instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.create = function create(properties) {
+                                return new GetMostRecentShieldedAnchorResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.anchor != null && Object.hasOwnProperty.call(message, "anchor"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.anchor);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.anchor = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMostRecentShieldedAnchorResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.anchor != null && message.hasOwnProperty("anchor")) {
+                                    properties.result = 1;
+                                    if (!(message.anchor && typeof message.anchor.length === "number" || $util.isString(message.anchor)))
+                                        return "anchor: buffer expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMostRecentShieldedAnchorResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0();
+                                if (object.anchor != null)
+                                    if (typeof object.anchor === "string")
+                                        $util.base64.decode(object.anchor, message.anchor = $util.newBuffer($util.base64.length(object.anchor)), 0);
+                                    else if (object.anchor.length >= 0)
+                                        message.anchor = object.anchor;
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMostRecentShieldedAnchorResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.anchor != null && message.hasOwnProperty("anchor")) {
+                                    object.anchor = options.bytes === String ? $util.base64.encode(message.anchor, 0, message.anchor.length) : options.bytes === Array ? Array.prototype.slice.call(message.anchor) : message.anchor;
+                                    if (options.oneofs)
+                                        object.result = "anchor";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMostRecentShieldedAnchorResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetMostRecentShieldedAnchorResponseV0;
+                        })();
+
+                        return GetMostRecentShieldedAnchorResponse;
                     })();
 
                     v0.GetShieldedPoolStateRequest = (function() {

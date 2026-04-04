@@ -72,16 +72,29 @@
 
 #pragma mark broadcastStateTransition(BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse)
 
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)broadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTobroadcastStateTransitionWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTobroadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"broadcastStateTransition"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[BroadcastStateTransitionResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ */
 - (GRPCUnaryProtoCall *)broadcastStateTransitionWithMessage:(BroadcastStateTransitionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"broadcastStateTransition"
                    message:message
@@ -370,6 +383,46 @@
              responseClass:[GetDocumentsResponse class]];
 }
 
+#pragma mark getDocumentsCount(GetDocumentsCountRequest) returns (GetDocumentsCountResponse)
+
+- (void)getDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDocumentsCountWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDocumentsCount"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDocumentsCountResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDocumentsCountWithMessage:(GetDocumentsCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDocumentsCount"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDocumentsCountResponse class]];
+}
+
+#pragma mark getDocumentsSplitCount(GetDocumentsSplitCountRequest) returns (GetDocumentsSplitCountResponse)
+
+- (void)getDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDocumentsSplitCountWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDocumentsSplitCount"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDocumentsSplitCountResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDocumentsSplitCountWithMessage:(GetDocumentsSplitCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDocumentsSplitCount"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDocumentsSplitCountResponse class]];
+}
+
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
 - (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -432,16 +485,29 @@
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetConsensusParamsWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getConsensusParams"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetConsensusParamsResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ */
 - (GRPCUnaryProtoCall *)getConsensusParamsWithMessage:(GetConsensusParamsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getConsensusParams"
                    message:message
@@ -1233,6 +1299,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetShieldedAnchorsResponse class]];
+}
+
+#pragma mark getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse)
+
+- (void)getMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetMostRecentShieldedAnchorWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getMostRecentShieldedAnchor"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetMostRecentShieldedAnchorResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getMostRecentShieldedAnchorWithMessage:(GetMostRecentShieldedAnchorRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getMostRecentShieldedAnchor"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetMostRecentShieldedAnchorResponse class]];
 }
 
 #pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
