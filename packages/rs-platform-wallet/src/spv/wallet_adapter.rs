@@ -17,6 +17,9 @@ use key_wallet_manager::{
 use tokio::sync::{broadcast, RwLock};
 
 use crate::events::{PlatformWalletEvent, TransactionStatus};
+use crate::persistence::changeset::{
+    ChainChangeSet, TransactionChangeSet, TransactionEntry, WalletChangeSet,
+};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -73,9 +76,10 @@ impl WalletInterface for SpvWalletAdapter {
     async fn process_block(&mut self, block: &Block, block_height: u32) -> BlockProcessingResult {
         let wallets = self.wallets.read().await;
 
+        let block_hash = block.header.block_hash();
         let context = TransactionContext::InBlock(BlockInfo::new(
             block_height,
-            block.header.block_hash(),
+            block_hash,
             block.header.time,
         ));
 
@@ -86,6 +90,9 @@ impl WalletInterface for SpvWalletAdapter {
         for wallet in wallets.values() {
             let mut w = wallet.core.wallet.write().await;
             let mut wi = wallet.core.wallet_info_mut().await;
+
+            // Accumulate transaction entries for this wallet's changeset.
+            let mut tx_entries = BTreeMap::new();
 
             for tx in &block.txdata {
                 let result = wi
@@ -100,11 +107,65 @@ impl WalletInterface for SpvWalletAdapter {
                     } else if !existing_txids.contains(&txid) {
                         existing_txids.push(txid);
                     }
+
+                    // Build a TransactionEntry from the check result.
+                    // Use the first new_record if available for richer data,
+                    // otherwise build from the aggregated result fields.
+                    if let Some((_account_idx, record)) = result.new_records.first() {
+                        tx_entries.insert(
+                            txid,
+                            TransactionEntry {
+                                transaction: record.transaction.clone(),
+                                block_height: Some(block_height),
+                                block_hash: Some(block_hash),
+                                timestamp: block.header.time as u64,
+                                net_amount: record.net_amount,
+                                fee: record.fee,
+                                label: record.label.clone(),
+                                is_instant_locked: false,
+                                is_chain_locked: false,
+                            },
+                        );
+                    } else if result.state_modified {
+                        // Existing transaction whose status changed (e.g. confirmed).
+                        tx_entries.insert(
+                            txid,
+                            TransactionEntry {
+                                transaction: tx.clone(),
+                                block_height: Some(block_height),
+                                block_hash: Some(block_hash),
+                                timestamp: block.header.time as u64,
+                                net_amount: result.total_received as i64
+                                    - result.total_sent as i64,
+                                fee: None,
+                                label: None,
+                                is_instant_locked: false,
+                                is_chain_locked: false,
+                            },
+                        );
+                    }
                 }
                 if !result.new_addresses.is_empty() {
                     new_addresses.extend(result.new_addresses);
                 }
             }
+
+            // Build and stage the changeset for this wallet.
+            let changeset = WalletChangeSet {
+                chain: Some(ChainChangeSet {
+                    height: Some(block_height),
+                    block_hash: Some(block_hash),
+                }),
+                transactions: if tx_entries.is_empty() {
+                    None
+                } else {
+                    Some(TransactionChangeSet {
+                        transactions: tx_entries,
+                    })
+                },
+                ..Default::default()
+            };
+            wallet.stage_changeset(changeset);
         }
 
         self.synced_height.store(block_height, Ordering::Relaxed);
@@ -165,9 +226,43 @@ impl WalletInterface for SpvWalletAdapter {
                 };
                 self.track_status_for_wallet(wallet, tx.txid(), status)
                     .await;
-            }
 
-            if result.is_relevant {
+                // Build a TransactionEntry from the check result.
+                let txid = tx.txid();
+                let net_amount = if let Some((_account_idx, record)) = result.new_records.first() {
+                    record.net_amount
+                } else {
+                    result.total_received as i64 - result.total_sent as i64
+                };
+
+                let entry = TransactionEntry {
+                    transaction: tx.clone(),
+                    block_height: None,
+                    block_hash: None,
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                    net_amount,
+                    fee: result.new_records.first().and_then(|(_, r)| r.fee),
+                    label: result
+                        .new_records
+                        .first()
+                        .and_then(|(_, r)| r.label.clone()),
+                    is_instant_locked: is_instant_send,
+                    is_chain_locked: false,
+                };
+
+                let mut tx_entries = BTreeMap::new();
+                tx_entries.insert(txid, entry);
+
+                let changeset = WalletChangeSet {
+                    transactions: Some(TransactionChangeSet {
+                        transactions: tx_entries,
+                    }),
+                    ..Default::default()
+                };
+                wallet.stage_changeset(changeset);
             }
 
             if !result.new_addresses.is_empty() {
@@ -240,6 +335,8 @@ impl WalletInterface for SpvWalletAdapter {
     fn process_instant_send_lock(&mut self, txid: Txid) {
         if let Ok(wallets) = self.wallets.try_read() {
             for wallet in wallets.values() {
+                let mut status_changed = false;
+
                 if let Some(mut wi) = wallet.core.try_wallet_info_mut() {
                     wi.mark_instant_send_utxos(&txid);
                 }
@@ -248,6 +345,51 @@ impl WalletInterface for SpvWalletAdapter {
                     let old = statuses.get(&txid).copied();
                     if old.map_or(true, |old| new_status > old) {
                         statuses.insert(txid, new_status);
+                        status_changed = true;
+                    }
+                }
+
+                // Stage a minimal changeset recording the IS-lock status change.
+                // We don't have the full transaction here, so we only stage if the
+                // wallet already tracks this txid (status actually changed).
+                if status_changed {
+                    if let Some(wi) = wallet.core.try_wallet_info() {
+                        // Try to find the transaction in the wallet's accounts.
+                        let mut tx_entries = BTreeMap::new();
+                        for account in wi.accounts.all_accounts() {
+                            if let Some(record) =
+                                account.transactions.get(&txid)
+                            {
+                                let block_info = record.context.block_info();
+                                tx_entries.insert(
+                                    txid,
+                                    TransactionEntry {
+                                        transaction: record.transaction.clone(),
+                                        block_height: block_info.map(|bi| bi.height()),
+                                        block_hash: block_info.map(|bi| bi.block_hash()),
+                                        timestamp: block_info
+                                            .map(|bi| bi.timestamp() as u64)
+                                            .unwrap_or(0),
+                                        net_amount: record.net_amount,
+                                        fee: record.fee,
+                                        label: record.label.clone(),
+                                        is_instant_locked: true,
+                                        is_chain_locked: false,
+                                    },
+                                );
+                                break;
+                            }
+                        }
+
+                        if !tx_entries.is_empty() {
+                            let changeset = WalletChangeSet {
+                                transactions: Some(TransactionChangeSet {
+                                    transactions: tx_entries,
+                                }),
+                                ..Default::default()
+                            };
+                            wallet.stage_changeset(changeset);
+                        }
                     }
                 }
             }
