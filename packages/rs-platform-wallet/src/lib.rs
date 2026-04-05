@@ -36,5 +36,14 @@ pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 
+// Re-export changeset types for caller-level staging.
+pub use persistence::changeset::{
+    AccountChangeSet, AssetLockChangeSet, AssetLockEntry, ChainChangeSet, ContactChangeSet,
+    ContactRequestEntry, IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet,
+    PlatformAddressEntry, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
+    UtxoChangeSet,
+};
+pub use persistence::Merge;
+
 #[cfg(feature = "manager")]
 pub use key_wallet_manager;

@@ -145,7 +145,7 @@ impl DashPayWallet {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: Option<Vec<u8>>,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<ContactRequest, PlatformWalletError> {
         // 1. Retrieve the sender identity and its HD index from the local manager
         //    via a single managed_identity() call.
         let (sender_identity, identity_index) = {
@@ -324,7 +324,7 @@ impl DashPayWallet {
             let managed = manager
                 .managed_identity_mut(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            managed.add_sent_contact_request(contact_request);
+            managed.add_sent_contact_request(contact_request.clone());
         }
 
         // Register the contact account in ManagedWalletInfo so SPV monitors
@@ -332,7 +332,7 @@ impl DashPayWallet {
         self.register_contact_account(sender_identity_id, recipient_identity_id, account_index)
             .await?;
 
-        Ok(())
+        Ok(contact_request)
     }
 }
 

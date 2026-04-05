@@ -10,7 +10,12 @@ pub mod changeset;
 pub mod merge;
 pub mod traits;
 
-pub use changeset::PlatformWalletChangeSet;
+pub use changeset::{
+    AccountChangeSet, AssetLockChangeSet, AssetLockEntry, ChainChangeSet, ContactChangeSet,
+    ContactRequestEntry, IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet,
+    PlatformAddressEntry, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
+    UtxoChangeSet,
+};
 pub use merge::Merge;
 pub use traits::AsyncWalletPersistence;
 pub use traits::WalletPersistence;
