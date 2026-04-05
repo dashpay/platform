@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashcore::{Address as DashAddress, Block, OutPoint, Transaction, Txid};
+use key_wallet::changeset::{Merge as KwMerge, WalletChangeSet as KwWalletChangeSet};
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{
@@ -17,9 +18,7 @@ use key_wallet_manager::{
 use tokio::sync::{broadcast, RwLock};
 
 use crate::events::{PlatformWalletEvent, TransactionStatus};
-use crate::persistence::changeset::{
-    ChainChangeSet, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
-};
+use crate::persistence::changeset::{ChainChangeSet, PlatformWalletChangeSet};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -91,8 +90,8 @@ impl WalletInterface for SpvWalletAdapter {
             let mut w = wallet.core.wallet.write().await;
             let mut wi = wallet.core.wallet_info_mut().await;
 
-            // Accumulate transaction entries for this wallet's changeset.
-            let mut tx_entries = BTreeMap::new();
+            // Accumulate key-wallet changesets across all transactions in the block.
+            let mut block_changeset = KwWalletChangeSet::default();
 
             for tx in &block.txdata {
                 let result = wi
@@ -107,42 +106,10 @@ impl WalletInterface for SpvWalletAdapter {
                     } else if !existing_txids.contains(&txid) {
                         existing_txids.push(txid);
                     }
-
-                    // Build a TransactionEntry from the check result.
-                    // Use the first new_record if available for richer data,
-                    // otherwise build from the aggregated result fields.
-                    if let Some((_account_idx, record)) = result.new_records.first() {
-                        tx_entries.insert(
-                            txid,
-                            TransactionEntry {
-                                transaction: record.transaction.clone(),
-                                block_height: Some(block_height),
-                                block_hash: Some(block_hash),
-                                timestamp: block.header.time as u64,
-                                net_amount: record.net_amount,
-                                fee: record.fee,
-                                label: record.label.clone(),
-                                is_instant_locked: false,
-                                is_chain_locked: false,
-                            },
-                        );
-                    } else if result.state_modified {
-                        // Existing transaction whose status changed (e.g. confirmed).
-                        tx_entries.insert(
-                            txid,
-                            TransactionEntry {
-                                transaction: tx.clone(),
-                                block_height: Some(block_height),
-                                block_hash: Some(block_hash),
-                                timestamp: block.header.time as u64,
-                                net_amount: result.total_received as i64 - result.total_sent as i64,
-                                fee: None,
-                                label: None,
-                                is_instant_locked: false,
-                                is_chain_locked: false,
-                            },
-                        );
-                    }
+                }
+                if result.is_relevant || result.state_modified {
+                    // key-wallet's changeset has the full delta.
+                    block_changeset.merge(result.changeset);
                 }
                 if !result.new_addresses.is_empty() {
                     new_addresses.extend(result.new_addresses);
@@ -151,17 +118,15 @@ impl WalletInterface for SpvWalletAdapter {
 
             // Build and stage the changeset for this wallet.
             let changeset = PlatformWalletChangeSet {
+                wallet: if block_changeset.is_empty() {
+                    None
+                } else {
+                    Some(block_changeset)
+                },
                 chain: Some(ChainChangeSet {
                     height: Some(block_height),
                     block_hash: Some(block_hash),
                 }),
-                transactions: if tx_entries.is_empty() {
-                    None
-                } else {
-                    Some(TransactionChangeSet {
-                        transactions: tx_entries,
-                    })
-                },
                 ..Default::default()
             };
             wallet.stage_changeset(changeset);
@@ -226,39 +191,13 @@ impl WalletInterface for SpvWalletAdapter {
                 self.track_status_for_wallet(wallet, tx.txid(), status)
                     .await;
 
-                // Build a TransactionEntry from the check result.
-                let txid = tx.txid();
-                let net_amount = if let Some((_account_idx, record)) = result.new_records.first() {
-                    record.net_amount
-                } else {
-                    result.total_received as i64 - result.total_sent as i64
-                };
-
-                let entry = TransactionEntry {
-                    transaction: tx.clone(),
-                    block_height: None,
-                    block_hash: None,
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0),
-                    net_amount,
-                    fee: result.new_records.first().and_then(|(_, r)| r.fee),
-                    label: result
-                        .new_records
-                        .first()
-                        .and_then(|(_, r)| r.label.clone()),
-                    is_instant_locked: is_instant_send,
-                    is_chain_locked: false,
-                };
-
-                let mut tx_entries = BTreeMap::new();
-                tx_entries.insert(txid, entry);
-
+                // key-wallet's changeset has the full delta.
                 let changeset = PlatformWalletChangeSet {
-                    transactions: Some(TransactionChangeSet {
-                        transactions: tx_entries,
-                    }),
+                    wallet: if result.changeset.is_empty() {
+                        None
+                    } else {
+                        Some(result.changeset)
+                    },
                     ..Default::default()
                 };
                 wallet.stage_changeset(changeset);
@@ -353,36 +292,36 @@ impl WalletInterface for SpvWalletAdapter {
                 // wallet already tracks this txid (status actually changed).
                 if status_changed {
                     if let Some(wi) = wallet.core.try_wallet_info() {
-                        // Try to find the transaction in the wallet's accounts.
-                        let mut tx_entries = BTreeMap::new();
+                        // Build a key-wallet changeset from the transaction record.
+                        let mut kw_changeset = KwWalletChangeSet::default();
                         for account in wi.accounts.all_accounts() {
                             if let Some(record) = account.transactions.get(&txid) {
                                 let block_info = record.context.block_info();
-                                tx_entries.insert(
-                                    txid,
-                                    TransactionEntry {
-                                        transaction: record.transaction.clone(),
-                                        block_height: block_info.map(|bi| bi.height()),
-                                        block_hash: block_info.map(|bi| bi.block_hash()),
-                                        timestamp: block_info
-                                            .map(|bi| bi.timestamp() as u64)
-                                            .unwrap_or(0),
-                                        net_amount: record.net_amount,
-                                        fee: record.fee,
-                                        label: record.label.clone(),
-                                        is_instant_locked: true,
-                                        is_chain_locked: false,
-                                    },
+                                let kw_entry = key_wallet::changeset::TransactionEntry {
+                                    transaction: record.transaction.clone(),
+                                    block_height: block_info.map(|bi| bi.height()),
+                                    block_hash: block_info.map(|bi| bi.block_hash()),
+                                    timestamp: block_info
+                                        .map(|bi| bi.timestamp() as u64)
+                                        .unwrap_or(0),
+                                    net_amount: record.net_amount,
+                                    fee: record.fee,
+                                    label: record.label.clone(),
+                                    is_instant_locked: true,
+                                    is_chain_locked: false,
+                                };
+                                let mut records = BTreeMap::new();
+                                records.insert(txid, kw_entry);
+                                kw_changeset.transactions = Some(
+                                    key_wallet::changeset::TransactionChangeSet { records },
                                 );
                                 break;
                             }
                         }
 
-                        if !tx_entries.is_empty() {
+                        if !kw_changeset.is_empty() {
                             let changeset = PlatformWalletChangeSet {
-                                transactions: Some(TransactionChangeSet {
-                                    transactions: tx_entries,
-                                }),
+                                wallet: Some(kw_changeset),
                                 ..Default::default()
                             };
                             wallet.stage_changeset(changeset);
