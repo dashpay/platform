@@ -3874,11 +3874,11 @@ the whole `PlatformWalletChangeSet` atomically.
 
 #### Layer 1: key-wallet `WalletChangeSet` (dashcore crate)
 
-Lives in `rust-dashcore/key-wallet/src/persistence/`. Captures ALL core
+Lives in `rust-dashcore/key-wallet/src/changeset/`. Captures ALL core
 wallet mutations from a single operation:
 
 ```rust
-// key-wallet/src/persistence/changeset.rs
+// key-wallet/src/changeset/changeset.rs
 
 /// Delta of core wallet state from a single operation.
 pub struct WalletChangeSet {
@@ -4201,10 +4201,10 @@ chain height, reproducing the missing changesets.
 
 **Step 1 — key-wallet `WalletChangeSet` (dashcore repo):**
 
-Create `rust-dashcore/key-wallet/src/persistence/` module:
+Create `rust-dashcore/key-wallet/src/changeset/` module:
 
 ```
-key-wallet/src/persistence/
+key-wallet/src/changeset/
 ├── mod.rs
 ├── changeset.rs        // WalletChangeSet + sub-changesets
 ├── merge.rs            // Merge trait
