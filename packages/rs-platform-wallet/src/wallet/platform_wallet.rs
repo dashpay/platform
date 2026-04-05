@@ -10,7 +10,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
-use crate::persistence::{Merge, WalletChangeSet, WalletPersistence};
+use crate::persistence::{Merge, PlatformWalletChangeSet, WalletPersistence};
 
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
@@ -40,7 +40,7 @@ pub struct PlatformWallet {
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
     /// Accumulated changesets not yet persisted.
-    stage: StdRwLock<WalletChangeSet>,
+    stage: StdRwLock<PlatformWalletChangeSet>,
 }
 
 impl PlatformWallet {
@@ -124,7 +124,7 @@ impl PlatformWallet {
             dashpay,
             platform,
             tokens,
-            stage: StdRwLock::new(WalletChangeSet::default()),
+            stage: StdRwLock::new(PlatformWalletChangeSet::default()),
         }
     }
 
@@ -280,7 +280,7 @@ impl PlatformWallet {
 impl PlatformWallet {
     /// Stage a changeset for later persistence.
     /// Merges into any previously staged changes.
-    pub fn stage_changeset(&self, changeset: WalletChangeSet) {
+    pub fn stage_changeset(&self, changeset: PlatformWalletChangeSet) {
         if let Ok(mut stage) = self.stage.write() {
             stage.merge(changeset);
         }
@@ -288,7 +288,7 @@ impl PlatformWallet {
 
     /// Take all staged changes, leaving the stage empty.
     /// Returns `None` if no changes are staged.
-    pub fn take_staged(&self) -> Option<WalletChangeSet> {
+    pub fn take_staged(&self) -> Option<PlatformWalletChangeSet> {
         if let Ok(mut stage) = self.stage.write() {
             stage.take()
         } else {
@@ -306,10 +306,10 @@ impl PlatformWallet {
 
     /// Build an initial changeset representing the full current state.
     /// Used by persistence backends to bootstrap from scratch.
-    pub fn initial_changeset(&self) -> WalletChangeSet {
+    pub fn initial_changeset(&self) -> PlatformWalletChangeSet {
         // For now return default — will be populated when we implement
         // state extraction from ManagedWalletInfo
-        WalletChangeSet::default()
+        PlatformWalletChangeSet::default()
     }
 }
 
@@ -324,7 +324,7 @@ impl Clone for PlatformWallet {
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
             // Cloned instances get a fresh empty stage.
-            stage: StdRwLock::new(WalletChangeSet::default()),
+            stage: StdRwLock::new(PlatformWalletChangeSet::default()),
         }
     }
 }

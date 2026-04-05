@@ -1,6 +1,6 @@
 //! Changeset types for delta-based wallet persistence.
 //!
-//! Every wallet mutation produces a [`WalletChangeSet`] delta that is applied
+//! Every wallet mutation produces a [`PlatformWalletChangeSet`] delta that is applied
 //! to in-memory state and persisted atomically. No full-state snapshots —
 //! only deltas.
 //!
@@ -338,15 +338,22 @@ impl Merge for AssetLockChangeSet {
 }
 
 // ---------------------------------------------------------------------------
-// Top-Level WalletChangeSet
+// Top-Level PlatformWalletChangeSet
 // ---------------------------------------------------------------------------
 
 /// Delta of all wallet state changes from a single operation.
 ///
 /// Composed of optional sub-changesets — `None` means no change in that area.
 /// Use [`Merge::merge`] to combine multiple deltas before persisting.
+///
+/// The `wallet` field wraps the key-wallet's [`key_wallet::changeset::WalletChangeSet`],
+/// which carries core UTXO, transaction, account, and balance deltas produced by
+/// the key-wallet layer. Platform-specific deltas (identities, contacts, etc.)
+/// live alongside it in their own sub-changesets.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct WalletChangeSet {
+pub struct PlatformWalletChangeSet {
+    /// Key-wallet core deltas (UTXOs, transactions, accounts, balances).
+    pub wallet: Option<key_wallet::changeset::WalletChangeSet>,
     /// Core chain state (sync height, block hash).
     pub chain: Option<ChainChangeSet>,
     /// Account derivation state (last revealed indices).
@@ -365,8 +372,9 @@ pub struct WalletChangeSet {
     pub asset_locks: Option<AssetLockChangeSet>,
 }
 
-impl Merge for WalletChangeSet {
+impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
+        self.wallet.merge(other.wallet);
         self.chain.merge(other.chain);
         self.accounts.merge(other.accounts);
         self.transactions.merge(other.transactions);
@@ -378,7 +386,8 @@ impl Merge for WalletChangeSet {
     }
 
     fn is_empty(&self) -> bool {
-        self.chain.is_empty()
+        self.wallet.is_empty()
+            && self.chain.is_empty()
             && self.accounts.is_empty()
             && self.transactions.is_empty()
             && self.utxos.is_empty()
@@ -396,7 +405,7 @@ mod tests {
 
     #[test]
     fn test_empty_changeset() {
-        let cs = WalletChangeSet::default();
+        let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
     }
 
@@ -445,14 +454,14 @@ mod tests {
 
     #[test]
     fn test_wallet_changeset_merge() {
-        let mut a = WalletChangeSet {
+        let mut a = PlatformWalletChangeSet {
             chain: Some(ChainChangeSet {
                 height: Some(100),
                 block_hash: None,
             }),
             ..Default::default()
         };
-        let b = WalletChangeSet {
+        let b = PlatformWalletChangeSet {
             chain: Some(ChainChangeSet {
                 height: Some(200),
                 block_hash: Some(BlockHash::all_zeros()),
@@ -540,13 +549,13 @@ mod tests {
 
     #[test]
     fn test_take_empty_changeset() {
-        let mut cs = WalletChangeSet::default();
+        let mut cs = PlatformWalletChangeSet::default();
         assert!(cs.take().is_none());
     }
 
     #[test]
     fn test_take_non_empty_changeset() {
-        let mut cs = WalletChangeSet {
+        let mut cs = PlatformWalletChangeSet {
             chain: Some(ChainChangeSet {
                 height: Some(100),
                 block_hash: None,

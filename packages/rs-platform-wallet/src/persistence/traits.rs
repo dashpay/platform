@@ -3,7 +3,7 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use crate::persistence::changeset::WalletChangeSet;
+use crate::persistence::changeset::PlatformWalletChangeSet;
 
 /// Synchronous storage backend for wallet state.
 ///
@@ -16,12 +16,12 @@ pub trait WalletPersistence {
 
     /// Load the aggregated state from storage.
     ///
-    /// Returns a single [`WalletChangeSet`] representing the full stored state
+    /// Returns a single [`PlatformWalletChangeSet`] representing the full stored state
     /// (equivalent to merging all previously persisted deltas).
-    fn initialize(&mut self) -> Result<WalletChangeSet, Self::Error>;
+    fn initialize(&mut self) -> Result<PlatformWalletChangeSet, Self::Error>;
 
     /// Persist a delta atomically.
-    fn persist(&mut self, changeset: &WalletChangeSet) -> Result<(), Self::Error>;
+    fn persist(&mut self, changeset: &PlatformWalletChangeSet) -> Result<(), Self::Error>;
 }
 
 /// Async storage backend for wallet state.
@@ -33,8 +33,8 @@ pub trait AsyncWalletPersistence: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     /// Load the aggregated state from storage.
-    async fn initialize(&mut self) -> Result<WalletChangeSet, Self::Error>;
+    async fn initialize(&mut self) -> Result<PlatformWalletChangeSet, Self::Error>;
 
     /// Persist a delta atomically.
-    async fn persist(&mut self, changeset: &WalletChangeSet) -> Result<(), Self::Error>;
+    async fn persist(&mut self, changeset: &PlatformWalletChangeSet) -> Result<(), Self::Error>;
 }

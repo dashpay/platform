@@ -18,7 +18,7 @@ use tokio::sync::{broadcast, RwLock};
 
 use crate::events::{PlatformWalletEvent, TransactionStatus};
 use crate::persistence::changeset::{
-    ChainChangeSet, TransactionChangeSet, TransactionEntry, WalletChangeSet,
+    ChainChangeSet, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
 };
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -150,7 +150,7 @@ impl WalletInterface for SpvWalletAdapter {
             }
 
             // Build and stage the changeset for this wallet.
-            let changeset = WalletChangeSet {
+            let changeset = PlatformWalletChangeSet {
                 chain: Some(ChainChangeSet {
                     height: Some(block_height),
                     block_hash: Some(block_hash),
@@ -255,7 +255,7 @@ impl WalletInterface for SpvWalletAdapter {
                 let mut tx_entries = BTreeMap::new();
                 tx_entries.insert(txid, entry);
 
-                let changeset = WalletChangeSet {
+                let changeset = PlatformWalletChangeSet {
                     transactions: Some(TransactionChangeSet {
                         transactions: tx_entries,
                     }),
@@ -379,7 +379,7 @@ impl WalletInterface for SpvWalletAdapter {
                         }
 
                         if !tx_entries.is_empty() {
-                            let changeset = WalletChangeSet {
+                            let changeset = PlatformWalletChangeSet {
                                 transactions: Some(TransactionChangeSet {
                                     transactions: tx_entries,
                                 }),
