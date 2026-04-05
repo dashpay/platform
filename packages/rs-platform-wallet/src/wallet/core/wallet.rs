@@ -124,9 +124,7 @@ impl CoreWallet {
     ///
     /// Panics if called from an async context (use `wallet_info().await`
     /// instead).
-    pub fn blocking_wallet_info(
-        &self,
-    ) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
+    pub fn blocking_wallet_info(&self) -> tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo> {
         self.wallet_info.blocking_read()
     }
 
@@ -135,9 +133,7 @@ impl CoreWallet {
     /// Returns `None` if a writer currently holds the lock. Useful in
     /// synchronous contexts (e.g. `spawn_blocking`) where awaiting is not
     /// possible.
-    pub fn try_wallet_info(
-        &self,
-    ) -> Option<tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo>> {
+    pub fn try_wallet_info(&self) -> Option<tokio::sync::RwLockReadGuard<'_, ManagedWalletInfo>> {
         self.wallet_info.try_read().ok()
     }
 
@@ -146,10 +142,13 @@ impl CoreWallet {
     /// Returns `None` if the lock is currently held. Useful in synchronous
     /// contexts (e.g. `spawn_blocking`) where awaiting is not possible.
     pub fn try_wallet_info_mut(&self) -> Option<WalletInfoWriteGuard<'_>> {
-        self.wallet_info.try_write().ok().map(|guard| WalletInfoWriteGuard {
-            guard,
-            balance: &self.balance,
-        })
+        self.wallet_info
+            .try_write()
+            .ok()
+            .map(|guard| WalletInfoWriteGuard {
+                guard,
+                balance: &self.balance,
+            })
     }
 
     /// Read access to the underlying `Wallet` (key material).
@@ -221,14 +220,10 @@ impl CoreWallet {
                 standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
             }
             .derivation_path(wallet.network)
-            .map_err(|e| {
-                crate::error::PlatformWalletError::WalletCreation(e.to_string())
-            })?;
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))?;
             wallet
                 .derive_extended_public_key(&path)
-                .map_err(|e| {
-                    crate::error::PlatformWalletError::WalletCreation(e.to_string())
-                })?
+                .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))?
         };
         let mut info = self.wallet_info.blocking_write();
         let account = info
@@ -272,14 +267,10 @@ impl CoreWallet {
                 standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
             }
             .derivation_path(wallet.network)
-            .map_err(|e| {
-                crate::error::PlatformWalletError::WalletCreation(e.to_string())
-            })?;
+            .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))?;
             wallet
                 .derive_extended_public_key(&path)
-                .map_err(|e| {
-                    crate::error::PlatformWalletError::WalletCreation(e.to_string())
-                })?
+                .map_err(|e| crate::error::PlatformWalletError::WalletCreation(e.to_string()))?
         };
         let mut info = self.wallet_info.blocking_write();
         let account = info
@@ -668,12 +659,10 @@ impl CoreWallet {
 
         // 4. Convert the raw key bytes to a PrivateKey.
         let key_bytes = result.keys.into_iter().next().ok_or_else(|| {
-            PlatformWalletError::AssetLockTransaction(
-                "Builder returned no keys".to_string(),
-            )
+            PlatformWalletError::AssetLockTransaction("Builder returned no keys".to_string())
         })?;
-        let one_time_private_key =
-            PrivateKey::from_byte_array(&key_bytes, self.sdk.network).map_err(|e| {
+        let one_time_private_key = PrivateKey::from_byte_array(&key_bytes, self.sdk.network)
+            .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Invalid private key from builder: {}",
                     e
@@ -769,7 +758,11 @@ impl CoreWallet {
         identity_index: u32,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         let (tx, key) = self
-            .build_asset_lock_transaction(amount_duffs, AssetLockFundingType::IdentityRegistration, identity_index)
+            .build_asset_lock_transaction(
+                amount_duffs,
+                AssetLockFundingType::IdentityRegistration,
+                identity_index,
+            )
             .await?;
 
         let proof = self
@@ -795,7 +788,11 @@ impl CoreWallet {
         topup_index: u32,
     ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
         let (tx, key) = self
-            .build_asset_lock_transaction(amount_duffs, AssetLockFundingType::IdentityTopUp, identity_index)
+            .build_asset_lock_transaction(
+                amount_duffs,
+                AssetLockFundingType::IdentityTopUp,
+                identity_index,
+            )
             .await?;
 
         let proof = self

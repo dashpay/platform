@@ -489,14 +489,12 @@ mod tests {
         a.merge(b);
         // Should keep the higher index for account 0.
         assert_eq!(
-            a.last_revealed
-                .get(&(0, DerivationPathReference::BIP44)),
+            a.last_revealed.get(&(0, DerivationPathReference::BIP44)),
             Some(&10)
         );
         // Should have the new entry for account 1.
         assert_eq!(
-            a.last_revealed
-                .get(&(1, DerivationPathReference::BIP44)),
+            a.last_revealed.get(&(1, DerivationPathReference::BIP44)),
             Some(&3)
         );
     }

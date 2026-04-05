@@ -27,6 +27,7 @@ use crate::error::PlatformWalletError;
 
 use std::collections::BTreeMap;
 
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
@@ -41,7 +42,6 @@ use dpp::shielded::builder::{
 };
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use tracing::{info, trace};
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
@@ -85,10 +85,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         let fee_strategy: AddressFundsFeeStrategy =
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        info!(
-            "Shield credits: {} credits, building proof...",
-            amount,
-        );
+        info!("Shield credits: {} credits, building proof...", amount,);
 
         // Build the state transition using the DPP builder
         let state_transition = build_shield_transition(
@@ -196,8 +193,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             let unspent = store
                 .get_unspent_notes()
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            select_notes_with_fee(&unspent, amount, 1, self.sdk.version())?
-                .into_owned()
+            select_notes_with_fee(&unspent, amount, 1, self.sdk.version())?.into_owned()
         };
 
         info!(
@@ -268,8 +264,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             let unspent = store
                 .get_unspent_notes()
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            select_notes_with_fee(&unspent, amount, 2, self.sdk.version())?
-                .into_owned()
+            select_notes_with_fee(&unspent, amount, 2, self.sdk.version())?.into_owned()
         };
 
         info!(
@@ -340,8 +335,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             let unspent = store
                 .get_unspent_notes()
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            select_notes_with_fee(&unspent, amount, 1, self.sdk.version())?
-                .into_owned()
+            select_notes_with_fee(&unspent, amount, 1, self.sdk.version())?.into_owned()
         };
 
         info!(
@@ -379,7 +373,10 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
         self.mark_notes_spent(&selected_notes).await?;
 
-        info!("Shielded withdrawal broadcast succeeded: {} credits", amount);
+        info!(
+            "Shielded withdrawal broadcast succeeded: {} credits",
+            amount
+        );
         Ok(())
     }
 
@@ -432,9 +429,9 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             // (a) Make ShieldedStore return MerklePath directly (couples to orchard), or
             // (b) Add a witness_for_spend() method that returns SpendableNote directly.
             // For now, spending operations require a store that provides valid witnesses.
-            let _witness_bytes = store
-                .witness(note.position)
-                .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?;
+            let _witness_bytes = store.witness(note.position).map_err(|e| {
+                PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string())
+            })?;
 
             // TODO: Convert witness bytes to MerklePath and build SpendableNote.
             // MerklePath doesn't implement serde, so this requires either:

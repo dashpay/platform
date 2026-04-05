@@ -22,7 +22,8 @@ use crate::spv::wallet_adapter::SpvWalletAdapter;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
-type SpvClient = DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
+type SpvClient =
+    DashSpvClient<SpvWalletAdapter, PeerNetworkManager, DiskStorageManager, SpvEventForwarder>;
 
 /// SPV client runtime — owns the `DashSpvClient`, tracks sync height, and
 /// manages asset-lock finality proof waiting.

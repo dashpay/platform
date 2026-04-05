@@ -135,8 +135,7 @@ impl WalletInterface for SpvWalletAdapter {
                                 block_height: Some(block_height),
                                 block_hash: Some(block_hash),
                                 timestamp: block.header.time as u64,
-                                net_amount: result.total_received as i64
-                                    - result.total_sent as i64,
+                                net_amount: result.total_received as i64 - result.total_sent as i64,
                                 fee: None,
                                 label: None,
                                 is_instant_locked: false,
@@ -357,9 +356,7 @@ impl WalletInterface for SpvWalletAdapter {
                         // Try to find the transaction in the wallet's accounts.
                         let mut tx_entries = BTreeMap::new();
                         for account in wi.accounts.all_accounts() {
-                            if let Some(record) =
-                                account.transactions.get(&txid)
-                            {
+                            if let Some(record) = account.transactions.get(&txid) {
                                 let block_info = record.context.block_info();
                                 tx_entries.insert(
                                     txid,
@@ -413,11 +410,7 @@ impl WalletInterface for SpvWalletAdapter {
     }
 
     async fn describe(&self) -> String {
-        let count = self
-            .wallets
-            .try_read()
-            .map(|w| w.len())
-            .unwrap_or(0);
+        let count = self.wallets.try_read().map(|w| w.len()).unwrap_or(0);
         format!("SpvWalletAdapter({} wallets)", count)
     }
 }

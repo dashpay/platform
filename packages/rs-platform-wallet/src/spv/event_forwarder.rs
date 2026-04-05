@@ -32,7 +32,9 @@ impl EventHandler for SpvEventForwarder {
     }
 
     fn on_progress(&self, progress: &dash_spv::sync::SyncProgress) {
-        self.send(PlatformWalletEvent::Spv(SpvEvent::Progress(progress.clone())));
+        self.send(PlatformWalletEvent::Spv(SpvEvent::Progress(
+            progress.clone(),
+        )));
     }
 
     fn on_wallet_event(&self, event: &WalletEvent) {

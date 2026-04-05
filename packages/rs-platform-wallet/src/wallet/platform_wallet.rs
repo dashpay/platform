@@ -114,11 +114,7 @@ impl PlatformWallet {
         let platform =
             PlatformAddressWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
-        let tokens = TokenWallet::new(
-            Arc::clone(&sdk),
-            wallet.clone(),
-            identity_manager.clone(),
-        );
+        let tokens = TokenWallet::new(Arc::clone(&sdk), wallet.clone(), identity_manager.clone());
 
         Self {
             wallet_id,

@@ -15,13 +15,8 @@ fn main() -> Result<(), PlatformWalletError> {
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
     let options = WalletAccountCreationOptions::default();
 
-    let wallet = PlatformWallet::from_mnemonic(
-        sdk.clone(),
-        network,
-        mnemonic,
-        "",
-        options.clone(),
-    )?;
+    let wallet =
+        PlatformWallet::from_mnemonic(sdk.clone(), network, mnemonic, "", options.clone())?;
 
     println!("Created wallet: {:?}", wallet);
 
@@ -41,8 +36,7 @@ fn main() -> Result<(), PlatformWalletError> {
     let _tokens = wallet.tokens();
 
     // You can also create a wallet with a random mnemonic
-    let (random_wallet, generated_mnemonic) =
-        PlatformWallet::random(sdk, network, options)?;
+    let (random_wallet, generated_mnemonic) = PlatformWallet::random(sdk, network, options)?;
 
     println!("Random wallet: {:?}", random_wallet);
     println!("Save this mnemonic: {}", generated_mnemonic);

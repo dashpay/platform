@@ -146,9 +146,7 @@ impl IdentityWallet {
     ///
     /// This allows callers to mutate managed identities (e.g. adding or
     /// updating identities from an external persistence layer).
-    pub async fn identity_manager_mut(
-        &self,
-    ) -> tokio::sync::RwLockWriteGuard<'_, IdentityManager> {
+    pub async fn identity_manager_mut(&self) -> tokio::sync::RwLockWriteGuard<'_, IdentityManager> {
         self.identity_manager.write().await
     }
 

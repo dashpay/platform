@@ -94,9 +94,9 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     /// Reads from the store — does not trigger a sync.
     pub async fn balance(&self) -> Result<u64, PlatformWalletError> {
         let store = self.store.read().await;
-        let notes = store.get_unspent_notes().map_err(|e| {
-            PlatformWalletError::ShieldedStoreError(e.to_string())
-        })?;
+        let notes = store
+            .get_unspent_notes()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         Ok(notes.iter().map(|n| n.value).sum())
     }
 

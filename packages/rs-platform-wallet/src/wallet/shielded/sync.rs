@@ -9,9 +9,7 @@ use super::store::ShieldedStore;
 use super::ShieldedWallet;
 use crate::error::PlatformWalletError;
 
-use dash_sdk::platform::shielded::nullifier_sync::{
-    NullifierSyncCheckpoint, NullifierSyncConfig,
-};
+use dash_sdk::platform::shielded::nullifier_sync::{NullifierSyncCheckpoint, NullifierSyncConfig};
 use dash_sdk::platform::shielded::sync_shielded_notes;
 use tracing::{debug, info, warn};
 
@@ -99,11 +97,9 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 continue; // already appended in a previous sync
             }
 
-            let cmx_bytes: [u8; 32] = raw_note
-                .cmx
-                .as_slice()
-                .try_into()
-                .map_err(|_| PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into()))?;
+            let cmx_bytes: [u8; 32] = raw_note.cmx.as_slice().try_into().map_err(|_| {
+                PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into())
+            })?;
 
             let is_ours = result
                 .decrypted_notes
@@ -137,10 +133,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             let nullifier = dn.note.nullifier(&self.keys.full_viewing_key);
             let value = dn.note.value().inner();
 
-            debug!(
-                "Note[{}]: DECRYPTED, value={} credits",
-                dn.position, value,
-            );
+            debug!("Note[{}]: DECRYPTED, value={} credits", dn.position, value,);
 
             // Serialize the note for storage.
             let note_data = serialize_note(&dn.note);
@@ -215,7 +208,11 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         // Step 2: Call SDK sync_nullifiers
         let result = self
             .sdk
-            .sync_nullifiers(&unspent_nullifiers, None::<NullifierSyncConfig>, last_checkpoint)
+            .sync_nullifiers(
+                &unspent_nullifiers,
+                None::<NullifierSyncConfig>,
+                last_checkpoint,
+            )
             .await
             .map_err(|e| PlatformWalletError::ShieldedNullifierSyncFailed(e.to_string()))?;
 

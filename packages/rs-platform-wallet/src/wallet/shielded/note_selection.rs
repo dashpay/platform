@@ -33,9 +33,7 @@ pub fn select_notes<'a>(
     }
 
     let required = amount.checked_add(fee).ok_or_else(|| {
-        PlatformWalletError::ShieldedBuildError(
-            "amount + fee overflows u64".to_string(),
-        )
+        PlatformWalletError::ShieldedBuildError("amount + fee overflows u64".to_string())
     })?;
 
     let total_available: u64 = unspent_only.iter().map(|n| n.value).sum();

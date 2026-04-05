@@ -220,7 +220,9 @@ impl ShieldedStore for InMemoryShieldedStore {
     fn witness(&self, _position: u64) -> Result<Vec<u8>, Self::Error> {
         // In-memory store does not support real Merkle witness generation.
         // Production implementations use ClientPersistentCommitmentTree.
-        Err(InMemoryStoreError("Merkle witness not supported in in-memory store".into()))
+        Err(InMemoryStoreError(
+            "Merkle witness not supported in in-memory store".into(),
+        ))
     }
 
     fn last_synced_note_index(&self) -> Result<u64, Self::Error> {
