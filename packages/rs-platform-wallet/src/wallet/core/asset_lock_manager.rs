@@ -359,14 +359,13 @@ impl AssetLockManager {
             .wait_for_proof(&txid, &tx, Duration::from_secs(300))
             .await?;
 
-        // 6. Attach proof — mark as InstantSendLocked (IS proofs are the
-        //    common path; ChainLocked will be advanced later if applicable).
-        self.advance_asset_lock_status(
-            &txid,
-            AssetLockStatus::InstantSendLocked,
-            Some(proof.clone()),
-        )
-        .await;
+        // 6. Attach proof — status matches the proof type received.
+        let status = match &proof {
+            dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
+            dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
+        };
+        self.advance_asset_lock_status(&txid, status, Some(proof.clone()))
+            .await;
 
         Ok((proof, key, txid))
     }
