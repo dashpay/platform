@@ -6,6 +6,7 @@ use dashcore::Address;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
+// TODO: Move to evo tool
 /// Per-address info for UI consumption.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreAddressInfo {

@@ -17,7 +17,6 @@ use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
 
-
 /// Write guard for `ManagedWalletInfo` that automatically refreshes
 /// `WalletBalance` when dropped. Ensures the lock-free balance is always
 /// consistent with the wallet info after any mutation.
@@ -338,6 +337,7 @@ impl CoreWallet {
 // ---------------------------------------------------------------------------
 
 impl CoreWallet {
+    // TODO: we already have one in AssetLockManager; also one in SPV. I guess we should utilize one which in SPV everywhere.
     /// Broadcast a signed transaction to the network via DAPI.
     ///
     /// Serializes the transaction using consensus encoding and sends it

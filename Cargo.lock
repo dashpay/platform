@@ -4873,6 +4873,7 @@ dependencies = [
  "static_assertions",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
  "zeroize",
  "zip32",

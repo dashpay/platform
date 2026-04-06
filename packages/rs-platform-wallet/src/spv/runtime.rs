@@ -12,9 +12,13 @@ use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
 
+use dashcore::sml::llmq_type::LLMQType;
+use dashcore::{QuorumHash, Transaction};
+use tokio_util::sync::CancellationToken;
+
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
-use dash_spv::{ClientConfig, DashSpvClient};
+use dash_spv::{ClientConfig, DashSpvClient, Hash};
 
 use key_wallet_manager::WalletInterface;
 
@@ -106,6 +110,101 @@ impl SpvRuntime {
         *client = Some(spv_client);
 
         Ok(())
+    }
+
+    /// Check whether the SPV client has been started (i.e. `start()` was called
+    /// and the client exists).
+    pub fn is_started(&self) -> bool {
+        self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Broadcast a transaction to all connected SPV peers.
+    ///
+    /// After a successful broadcast the transaction is also fed into the local
+    /// wallet adapter so that balances update immediately without waiting for
+    /// SPV to relay it back.
+    pub async fn broadcast_transaction(
+        &self,
+        tx: &Transaction,
+    ) -> Result<(), PlatformWalletError> {
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::SpvNotRunning)?;
+
+        client
+            .broadcast_transaction(tx)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+
+        // Process the transaction locally so the wallet sees it immediately.
+        let mut adapter = self.adapter.write().await;
+        let _ = adapter.process_mempool_transaction(tx, false).await;
+
+        Ok(())
+    }
+
+    /// Look up a quorum public key via the SPV masternode state.
+    ///
+    /// Returns the 48-byte BLS public key for the quorum identified by
+    /// `(quorum_type, quorum_hash)` at the given chain-locked `height`.
+    pub async fn get_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        height: u32,
+    ) -> Result<[u8; 48], PlatformWalletError> {
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::SpvNotRunning)?;
+
+        let llmq_type = LLMQType::from(quorum_type as u8);
+        let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
+
+        let quorum = client
+            .get_quorum_at_height(height, llmq_type, qh)
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+
+        Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
+    }
+
+    /// Run the SPV sync loop.
+    ///
+    /// Creates the client via [`start`](Self::start), then drives
+    /// `client.run(cancel)` until the cancellation token fires.  On exit the
+    /// client is stopped via [`stop`](Self::stop).
+    pub async fn run(
+        &self,
+        config: ClientConfig,
+        cancel_token: CancellationToken,
+    ) -> Result<(), PlatformWalletError> {
+        self.start(config).await?;
+
+        let result = {
+            let client_guard = self.client.read().await;
+            let client = client_guard
+                .as_ref()
+                .ok_or(PlatformWalletError::SpvNotRunning)?;
+
+            let run_cancel = CancellationToken::new();
+            let run_future = client.run(run_cancel.clone());
+            tokio::pin!(run_future);
+
+            tokio::select! {
+                res = &mut run_future => {
+                    res.map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+                }
+                _ = cancel_token.cancelled() => {
+                    run_cancel.cancel();
+                    Ok(())
+                }
+            }
+        };
+
+        self.stop().await?;
+        result
     }
 
     /// Stop SPV sync gracefully.
