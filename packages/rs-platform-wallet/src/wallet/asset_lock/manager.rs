@@ -279,6 +279,7 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
+    // TODO: Use SPV to broadcast
     /// Broadcast a signed transaction to the network via DAPI.
     ///
     /// Serializes the transaction using consensus encoding and sends it

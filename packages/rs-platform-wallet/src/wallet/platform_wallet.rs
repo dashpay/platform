@@ -9,9 +9,9 @@ use key_wallet::wallet::Wallet;
 use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::{broadcast, RwLock};
 
+use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
-use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::core::CoreWallet;
@@ -101,6 +101,11 @@ impl PlatformWallet {
     }
 
     /// Construct a PlatformWallet from an existing key-wallet Wallet and ManagedWalletInfo.
+    ///
+    /// **Warning**: Creates a PlatformWallet with a disconnected event channel.
+    /// Asset lock proof waiting (`wait_for_proof`) will always timeout since no
+    /// SPV events will be received. Use `from_wallet_and_info_with_event_tx`
+    /// for production use with SPV integration.
     pub fn from_wallet_and_info(
         sdk: Arc<dash_sdk::Sdk>,
         wallet: Wallet,
@@ -357,12 +362,15 @@ impl PlatformWallet {
     /// Returns `Ok(())` if no persister is attached (nothing to load).
     pub fn load_persisted_state(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(persister) = &self.persister {
-            let changeset = persister.lock().map_err(|e| {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("persister lock poisoned: {}", e),
-                )) as Box<dyn std::error::Error + Send + Sync>
-            })?.initialize()?;
+            let changeset = persister
+                .lock()
+                .map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("persister lock poisoned: {}", e),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?
+                .initialize()?;
             self.apply(&changeset);
         }
         Ok(())
@@ -383,7 +391,8 @@ impl PlatformWallet {
         }
         // Apply asset lock changeset — restore tracked locks from persisted state.
         if let Some(asset_lock_cs) = &changeset.asset_locks {
-            self.asset_locks.restore_from_changeset_blocking(asset_lock_cs);
+            self.asset_locks
+                .restore_from_changeset_blocking(asset_lock_cs);
         }
         // TODO: apply contacts changeset
         // TODO: apply identities changeset
