@@ -35,7 +35,7 @@ use crate::wallet::core::CoreWallet;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
-use super::funding::{IdentityFundingMethod, TopUpFundingMethod};
+use super::funding::{IdentityFunding, IdentityFundingMethod, TopUpFundingMethod};
 use super::manager::IdentityManager;
 
 /// Default gap limit for identity discovery scanning.
@@ -455,6 +455,132 @@ impl IdentityWallet {
                 None, // settings
             )
             .await
+    }
+
+    /// Register a new identity using an [`IdentityFunding`] variant and an
+    /// externally-provided identity + signer.
+    ///
+    /// This method unifies funding resolution and Platform submission in a
+    /// single call:
+    ///
+    /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
+    ///   [`CoreWallet::create_funded_asset_lock_proof`], then submits the
+    ///   identity registration to Platform.
+    /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
+    ///   directly.
+    /// * **`FromUtxo`** — not yet implemented; returns an error.
+    ///
+    /// Unlike [`register_identity_with_funding`](Self::register_identity_with_funding),
+    /// this method does **not** derive keys or manage the internal
+    /// `IdentityManager`. The caller supplies a fully-constructed `Identity`
+    /// and a `Signer` implementation, making it suitable for callers that
+    /// manage identities externally (e.g. evo-tool's `QualifiedIdentity`).
+    ///
+    /// Returns the confirmed `Identity` from Platform.
+    pub async fn funded_register_identity<S: Signer<IdentityPublicKey>>(
+        &self,
+        core_wallet: &CoreWallet,
+        identity: &Identity,
+        funding: IdentityFunding,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<Identity, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let (asset_lock_proof, asset_lock_private_key) = match funding {
+            IdentityFunding::FromWalletBalance { amount_duffs } => {
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityRegistration,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
+            }
+            IdentityFunding::FromExistingAssetLock {
+                transaction: _,
+                proof,
+                private_key,
+            } => (proof, private_key),
+            IdentityFunding::FromUtxo { .. } => {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "FromUtxo funding is not yet implemented for funded_register_identity"
+                        .to_string(),
+                ));
+            }
+        };
+
+        self.register_identity_with_signer(
+            identity,
+            asset_lock_proof,
+            &asset_lock_private_key,
+            signer,
+        )
+        .await
+        .map_err(PlatformWalletError::Sdk)
+    }
+
+    /// Top up an identity using an [`IdentityFunding`] variant and an
+    /// externally-provided identity.
+    ///
+    /// This method unifies funding resolution and Platform submission in a
+    /// single call:
+    ///
+    /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
+    ///   [`CoreWallet::create_funded_asset_lock_proof`], then submits the
+    ///   top-up to Platform.
+    /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
+    ///   directly.
+    /// * **`FromUtxo`** — not yet implemented; returns an error.
+    ///
+    /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
+    /// this method does **not** look up the identity in the internal
+    /// `IdentityManager`. The caller supplies the `Identity` object directly,
+    /// making it suitable for callers that manage identities externally
+    /// (e.g. evo-tool's `QualifiedIdentity`).
+    ///
+    /// Returns the new credit balance.
+    pub async fn funded_top_up_identity(
+        &self,
+        core_wallet: &CoreWallet,
+        identity: &Identity,
+        funding: IdentityFunding,
+        identity_index: u32,
+    ) -> Result<u64, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let (asset_lock_proof, asset_lock_private_key) = match funding {
+            IdentityFunding::FromWalletBalance { amount_duffs } => {
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityTopUp,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
+            }
+            IdentityFunding::FromExistingAssetLock {
+                transaction: _,
+                proof,
+                private_key,
+            } => (proof, private_key),
+            IdentityFunding::FromUtxo { .. } => {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "FromUtxo funding is not yet implemented for funded_top_up_identity"
+                        .to_string(),
+                ));
+            }
+        };
+
+        self.top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
+            .await
+            .map_err(PlatformWalletError::Sdk)
     }
 }
 
