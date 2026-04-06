@@ -49,9 +49,8 @@ impl Drop for WalletInfoWriteGuard<'_> {
     }
 }
 use dashcore::Txid;
-use dpp::prelude::Identifier;
 
-use super::asset_lock::AssetLockLifecycle;
+use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
 
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
@@ -62,11 +61,11 @@ pub struct CoreWallet {
     /// `try_wallet_info()`, or `try_wallet_info_mut()`. Write access returns
     /// `WalletInfoWriteGuard` which auto-refreshes `WalletBalance` on drop.
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    /// Asset lock lifecycle tracking, keyed by transaction ID.
+    /// Tracked asset locks, keyed by transaction ID.
     ///
-    /// Tracks each asset lock from build through broadcast, finality proof
-    /// arrival, and eventual consumption by registration or top-up.
-    pub(crate) asset_lock_lifecycle: Arc<RwLock<BTreeMap<Txid, AssetLockLifecycle>>>,
+    /// Tracks each asset lock from build through broadcast and finality.
+    /// Removed once consumed by a successful identity operation.
+    pub(crate) tracked_asset_locks: Arc<RwLock<BTreeMap<Txid, TrackedAssetLock>>>,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: WalletBalance,
@@ -83,7 +82,7 @@ impl CoreWallet {
             sdk,
             wallet,
             wallet_info,
-            asset_lock_lifecycle: Arc::new(RwLock::new(BTreeMap::new())),
+            tracked_asset_locks: Arc::new(RwLock::new(BTreeMap::new())),
             balance: WalletBalance::new(),
         }
     }
@@ -352,68 +351,46 @@ impl CoreWallet {
 // ---------------------------------------------------------------------------
 
 impl CoreWallet {
-    /// Insert a new asset lock lifecycle entry.
-    ///
-    /// The `txid` key is used for all subsequent lookups and state transitions.
-    pub async fn track_asset_lock(&self, txid: Txid, lifecycle: AssetLockLifecycle) {
-        let mut map = self.asset_lock_lifecycle.write().await;
-        map.insert(txid, lifecycle);
+    /// Insert a tracked asset lock.
+    pub async fn track_asset_lock(&self, lock: TrackedAssetLock) {
+        let mut map = self.tracked_asset_locks.write().await;
+        map.insert(lock.txid, lock);
     }
 
-    /// Return all asset locks that have not been consumed (status is not Used*).
-    pub async fn unused_asset_locks(&self) -> BTreeMap<Txid, AssetLockLifecycle> {
-        let map = self.asset_lock_lifecycle.read().await;
+    /// Return all asset locks whose proof is `Some` (ready for consumption).
+    pub async fn unused_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
+        let map = self.tracked_asset_locks.read().await;
         map.iter()
-            .filter(|(_, v)| !v.is_used())
+            .filter(|(_, v)| v.proof.is_some())
             .map(|(k, v)| (*k, v.clone()))
             .collect()
     }
 
-    /// Advance an asset lock to `ProofAvailable` when finality arrives.
-    pub async fn advance_asset_lock_proof(
+    /// Remove an asset lock after successful consumption (registration or top-up).
+    pub async fn remove_asset_lock(&self, txid: &Txid) {
+        let mut map = self.tracked_asset_locks.write().await;
+        map.remove(txid);
+    }
+
+    /// Advance the status of a tracked asset lock and optionally attach the proof.
+    pub async fn advance_asset_lock_status(
         &self,
         txid: &Txid,
-        proof: dpp::prelude::AssetLockProof,
+        new_status: AssetLockStatus,
+        proof: Option<dpp::prelude::AssetLockProof>,
     ) {
-        let mut map = self.asset_lock_lifecycle.write().await;
+        let mut map = self.tracked_asset_locks.write().await;
         if let Some(entry) = map.get_mut(txid) {
-            if let AssetLockLifecycle::Broadcast { private_key, .. } = entry {
-                *entry = AssetLockLifecycle::ProofAvailable {
-                    proof,
-                    private_key: *private_key,
-                    txid: *txid,
-                };
+            entry.status = new_status;
+            if proof.is_some() {
+                entry.proof = proof;
             }
         }
     }
 
-    /// Transition an asset lock to a terminal "used" state.
-    pub async fn mark_asset_lock_used(
-        &self,
-        txid: &Txid,
-        identity_id: Identifier,
-        is_registration: bool,
-    ) {
-        let mut map = self.asset_lock_lifecycle.write().await;
-        if map.contains_key(txid) {
-            let new_state = if is_registration {
-                AssetLockLifecycle::UsedForRegistration {
-                    identity_id,
-                    txid: *txid,
-                }
-            } else {
-                AssetLockLifecycle::UsedForTopUp {
-                    identity_id,
-                    txid: *txid,
-                }
-            };
-            map.insert(*txid, new_state);
-        }
-    }
-
-    /// Look up a specific asset lock lifecycle entry.
-    pub async fn get_asset_lock(&self, txid: &Txid) -> Option<AssetLockLifecycle> {
-        let map = self.asset_lock_lifecycle.read().await;
+    /// Look up a specific tracked asset lock.
+    pub async fn get_asset_lock(&self, txid: &Txid) -> Option<TrackedAssetLock> {
+        let map = self.tracked_asset_locks.read().await;
         map.get(txid).cloned()
     }
 }
@@ -766,13 +743,15 @@ impl CoreWallet {
         let txid = tx.txid();
 
         // 2. Track as Built.
-        self.track_asset_lock(
+        self.track_asset_lock(TrackedAssetLock {
             txid,
-            AssetLockLifecycle::Built {
-                tx: tx.clone(),
-                private_key: key,
-            },
-        )
+            transaction: tx.clone(),
+            funding_type,
+            identity_index,
+            amount: amount_duffs,
+            status: AssetLockStatus::Built,
+            proof: None,
+        })
         .await;
 
         // 3. Register for finality BEFORE broadcasting (prevents race).
@@ -785,14 +764,8 @@ impl CoreWallet {
         self.broadcast_transaction(&tx).await?;
 
         // 5. Transition to Broadcast.
-        self.track_asset_lock(
-            txid,
-            AssetLockLifecycle::Broadcast {
-                txid,
-                private_key: key,
-            },
-        )
-        .await;
+        self.advance_asset_lock_status(&txid, AssetLockStatus::Broadcast, None)
+            .await;
 
         // 6. Wait for proof.
         let proof = {
@@ -813,14 +786,12 @@ impl CoreWallet {
             }
         };
 
-        // 7. Transition to ProofAvailable.
-        self.track_asset_lock(
-            txid,
-            AssetLockLifecycle::ProofAvailable {
-                proof: proof.clone(),
-                private_key: key,
-                txid,
-            },
+        // 7. Attach proof — mark as InstantSendLocked (IS proofs are the
+        //    common path; ChainLocked will be advanced later if applicable).
+        self.advance_asset_lock_status(
+            &txid,
+            AssetLockStatus::InstantSendLocked,
+            Some(proof.clone()),
         )
         .await;
 

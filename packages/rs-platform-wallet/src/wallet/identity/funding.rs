@@ -54,7 +54,7 @@ pub enum IdentityFunding {
 /// Funding method for identity registration.
 pub enum IdentityFundingMethod {
     /// Use a pre-existing asset lock proof (e.g. one tracked by
-    /// [`CoreWallet::asset_lock_lifecycle`]).
+    /// [`CoreWallet::tracked_asset_locks`]).
     UseAssetLock {
         /// The asset lock proof (IS or CL).
         proof: AssetLockProof,

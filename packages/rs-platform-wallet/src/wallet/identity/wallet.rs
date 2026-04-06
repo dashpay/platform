@@ -487,9 +487,9 @@ impl IdentityWallet {
     ) -> Result<Identity, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-        let (asset_lock_proof, asset_lock_private_key) = match funding {
+        let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, txid) = core_wallet
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
@@ -498,13 +498,13 @@ impl IdentityWallet {
                         None,
                     )
                     .await?;
-                (proof, key)
+                (proof, key, Some(txid))
             }
             IdentityFunding::FromExistingAssetLock {
                 transaction: _,
                 proof,
                 private_key,
-            } => (proof, private_key),
+            } => (proof, private_key, None),
             IdentityFunding::FromUtxo { .. } => {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "FromUtxo funding is not yet implemented for funded_register_identity"
@@ -513,14 +513,22 @@ impl IdentityWallet {
             }
         };
 
-        self.register_identity_with_signer(
-            identity,
-            asset_lock_proof,
-            &asset_lock_private_key,
-            signer,
-        )
-        .await
-        .map_err(PlatformWalletError::Sdk)
+        let result = self
+            .register_identity_with_signer(
+                identity,
+                asset_lock_proof,
+                &asset_lock_private_key,
+                signer,
+            )
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        // Clean up the tracked asset lock after successful consumption.
+        if let Some(txid) = tracked_txid {
+            core_wallet.remove_asset_lock(&txid).await;
+        }
+
+        Ok(result)
     }
 
     /// Top up an identity using an [`IdentityFunding`] variant and an
@@ -552,9 +560,9 @@ impl IdentityWallet {
     ) -> Result<u64, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-        let (asset_lock_proof, asset_lock_private_key) = match funding {
+        let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, txid) = core_wallet
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
@@ -563,13 +571,13 @@ impl IdentityWallet {
                         None,
                     )
                     .await?;
-                (proof, key)
+                (proof, key, Some(txid))
             }
             IdentityFunding::FromExistingAssetLock {
                 transaction: _,
                 proof,
                 private_key,
-            } => (proof, private_key),
+            } => (proof, private_key, None),
             IdentityFunding::FromUtxo { .. } => {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "FromUtxo funding is not yet implemented for funded_top_up_identity"
@@ -578,9 +586,17 @@ impl IdentityWallet {
             }
         };
 
-        self.top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
+        let new_balance = self
+            .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
             .await
-            .map_err(PlatformWalletError::Sdk)
+            .map_err(PlatformWalletError::Sdk)?;
+
+        // Clean up the tracked asset lock after successful consumption.
+        if let Some(txid) = tracked_txid {
+            core_wallet.remove_asset_lock(&txid).await;
+        }
+
+        Ok(new_balance)
     }
 }
 

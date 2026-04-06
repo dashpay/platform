@@ -1,114 +1,34 @@
-//! Asset lock lifecycle tracking.
+//! Asset lock tracking.
 //!
-//! Tracks asset lock transactions from build through finality (IS/CL)
-//! and records their usage for identity registration or top-up.
+//! Tracks asset lock transactions from build through finality (IS/CL).
+//! Once consumed by a successful identity operation, the lock is removed.
 //!
-//! ## Lifecycle
-//!
-//! An asset lock progresses through these states:
-//!
-//! ```text
-//! Built → Broadcast → ProofAvailable → UsedForRegistration / UsedForTopUp
-//! ```
-//!
-//! Each state carries only the data relevant at that point in the lifecycle.
-//! Transitions are performed via [`CoreWallet::advance_asset_lock`] and
-//! [`CoreWallet::mark_asset_lock_used`].
+//! Private keys are NOT stored here — they are re-derived from
+//! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
 
-use dashcore::{PrivateKey, Transaction, Txid};
-use dpp::prelude::{AssetLockProof, Identifier};
+use dashcore::{Transaction, Txid};
+use dpp::prelude::AssetLockProof;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-/// Multi-step lifecycle for asset lock operations.
-///
-/// Each variant represents a distinct stage of the asset lock flow:
-///
-/// 1. **Built** — transaction constructed but not yet broadcast.
-/// 2. **Broadcast** — transaction sent to the network, awaiting finality.
-/// 3. **ProofAvailable** — IS-lock or chain-lock proof received; ready to use.
-/// 4. **UsedForRegistration** — consumed by an identity registration.
-/// 5. **UsedForTopUp** — consumed by an identity top-up.
-#[derive(Debug, Clone)]
-pub enum AssetLockLifecycle {
-    /// Transaction has been built but not yet broadcast.
-    Built {
-        /// The full asset lock transaction.
-        tx: Transaction,
-        /// The one-time private key whose public key is in the asset lock payload.
-        private_key: PrivateKey,
-    },
-    /// Transaction has been broadcast, awaiting IS-lock or chain-lock.
-    Broadcast {
-        /// Transaction ID.
-        txid: Txid,
-        /// The one-time private key for later proof usage.
-        private_key: PrivateKey,
-    },
-    /// Finality proof (IS-lock or chain-lock) has been received.
-    ProofAvailable {
-        /// The finality proof suitable for identity state transitions.
-        proof: AssetLockProof,
-        /// The one-time private key for signing the state transition.
-        private_key: PrivateKey,
-        /// Transaction ID (retained for tracking / changeset generation).
-        txid: Txid,
-    },
-    /// The asset lock was consumed by an identity registration.
-    UsedForRegistration {
-        /// The identity that was registered with this asset lock.
-        identity_id: Identifier,
-        /// Transaction ID (retained for audit / changeset).
-        txid: Txid,
-    },
-    /// The asset lock was consumed by an identity top-up.
-    UsedForTopUp {
-        /// The identity that was topped up.
-        identity_id: Identifier,
-        /// Transaction ID (retained for audit / changeset).
-        txid: Txid,
-    },
+/// Asset lock status on Core chain. Tracked until consumed, then removed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssetLockStatus {
+    Built,
+    Broadcast,
+    InstantSendLocked,
+    ChainLocked,
 }
 
-impl AssetLockLifecycle {
-    /// Returns `true` if this asset lock has been consumed (used for
-    /// registration or top-up).
-    pub fn is_used(&self) -> bool {
-        matches!(
-            self,
-            AssetLockLifecycle::UsedForRegistration { .. }
-                | AssetLockLifecycle::UsedForTopUp { .. }
-        )
-    }
-
-    /// Returns the transaction ID for this lifecycle entry, if available.
-    ///
-    /// `Built` does not store a txid (the tx hasn't been broadcast yet),
-    /// so this returns `None` for that variant.
-    pub fn txid(&self) -> Option<&Txid> {
-        match self {
-            AssetLockLifecycle::Built { .. } => None,
-            AssetLockLifecycle::Broadcast { txid, .. } => Some(txid),
-            AssetLockLifecycle::ProofAvailable { txid, .. } => Some(txid),
-            AssetLockLifecycle::UsedForRegistration { txid, .. } => Some(txid),
-            AssetLockLifecycle::UsedForTopUp { txid, .. } => Some(txid),
-        }
-    }
-
-    /// Returns the private key if still available (not consumed).
-    pub fn private_key(&self) -> Option<&PrivateKey> {
-        match self {
-            AssetLockLifecycle::Built { private_key, .. } => Some(private_key),
-            AssetLockLifecycle::Broadcast { private_key, .. } => Some(private_key),
-            AssetLockLifecycle::ProofAvailable { private_key, .. } => Some(private_key),
-            AssetLockLifecycle::UsedForRegistration { .. } => None,
-            AssetLockLifecycle::UsedForTopUp { .. } => None,
-        }
-    }
-
-    /// Returns the proof if available.
-    pub fn proof(&self) -> Option<&AssetLockProof> {
-        match self {
-            AssetLockLifecycle::ProofAvailable { proof, .. } => Some(proof),
-            _ => None,
-        }
-    }
+/// A tracked asset lock. Private keys are NOT stored here — they're
+/// re-derived from funding_type + identity_index via key-wallet's Wallet.
+#[derive(Debug, Clone)]
+pub struct TrackedAssetLock {
+    pub txid: Txid,
+    pub transaction: Transaction,
+    pub funding_type: AssetLockFundingType,
+    pub identity_index: u32,
+    pub amount: u64,
+    pub status: AssetLockStatus,
+    /// The proof, available once IS-locked or ChainLocked.
+    pub proof: Option<AssetLockProof>,
 }
