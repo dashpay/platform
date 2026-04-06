@@ -56,6 +56,7 @@ impl SpvRuntime {
         }
     }
 
+    // TODO: Not sure blocking method is good idea here
     /// Current synced height.
     pub fn synced_height(&self) -> u32 {
         self.adapter
@@ -64,6 +65,7 @@ impl SpvRuntime {
             .unwrap_or(0)
     }
 
+    // TODO: it needs to be public? not sure blocking is good.
     /// Signal that the wallet set changed (added/removed).
     /// SPV will rebuild the bloom filter on the next tick.
     pub fn notify_wallets_changed(&self) {
@@ -116,7 +118,6 @@ impl SpvRuntime {
         }
         Ok(())
     }
-
 }
 
 impl std::fmt::Debug for SpvRuntime {

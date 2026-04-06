@@ -9,14 +9,12 @@ use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
-use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
-use key_wallet::dip9::{
-    IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
-};
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use tokio::sync::RwLock;
 use zeroize::Zeroizing;
+
+use crate::wallet::identity::wallet::IdentityWallet;
 
 /// A signer that uses wallet-derived keys to sign identity state transitions.
 pub struct IdentitySigner {
@@ -47,33 +45,10 @@ impl IdentitySigner {
         &self.wallet
     }
 
-    /// Build the identity authentication derivation path for the given key type and key ID.
-    ///
-    /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`
-    fn derivation_path(
-        &self,
-        key_derivation_type: KeyDerivationType,
-        key_id: u32,
-    ) -> Result<DerivationPath, ProtocolError> {
-        let base_path: DerivationPath = match self.network {
-            Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
-            _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
-        }
-        .into();
-
-        let key_type_index: u32 = key_derivation_type.into();
-
-        Ok(base_path.extend([
-            ChildNumber::from_hardened_idx(key_type_index)
-                .map_err(|e| ProtocolError::Generic(format!("Invalid key type index: {}", e)))?,
-            ChildNumber::from_hardened_idx(self.identity_index)
-                .map_err(|e| ProtocolError::Generic(format!("Invalid identity index: {}", e)))?,
-            ChildNumber::from_hardened_idx(key_id)
-                .map_err(|e| ProtocolError::Generic(format!("Invalid key ID: {}", e)))?,
-        ]))
-    }
-
     /// Derive the raw private key bytes for a given identity public key.
+    ///
+    /// Delegates to [`IdentityWallet::derive_identity_key_bytes`] for the
+    /// actual DIP-9 path construction and key derivation.
     ///
     /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
     /// wiped from memory when the value is dropped.
@@ -83,31 +58,14 @@ impl IdentitySigner {
         &self,
         identity_public_key: &IdentityPublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
-        let key_id = identity_public_key.id();
-        let key_derivation_type = match identity_public_key.key_type() {
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BLS12_381 => KeyDerivationType::BLS,
-            // EdDSA uses the ECDSA derivation path; the raw bytes are reinterpreted as Ed25519 seed
-            KeyType::EDDSA_25519_HASH160 => KeyDerivationType::ECDSA,
-            KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::Generic(
-                    "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
-                ));
-            }
-        };
-
-        let path = self.derivation_path(key_derivation_type, key_id)?;
-
-        // Acquire the wallet lock, derive the key, then drop the lock
         let wallet = self.wallet.blocking_read();
-        let secret_key = wallet.derive_private_key(&path).map_err(|e| {
-            ProtocolError::Generic(format!(
-                "Failed to derive private key for identity key {}: {}",
-                key_id, e
-            ))
-        })?;
-
-        Ok(Zeroizing::new(secret_key.secret_bytes()))
+        IdentityWallet::derive_identity_key_bytes(
+            &wallet,
+            self.network,
+            self.identity_index,
+            identity_public_key,
+        )
+        .map_err(|e| ProtocolError::Generic(e.to_string()))
     }
 }
 
@@ -239,7 +197,8 @@ impl ManagedIdentitySigner {
     /// 1. If the key is in `key_storage` with `Clear` data, return those bytes.
     /// 2. If the key is in `key_storage` with `AtWalletDerivationPath`, derive
     ///    from the wallet at that path.
-    /// 3. Otherwise fall back to the standard IdentitySigner derivation.
+    /// 3. Otherwise fall back to the standard DIP-9 identity authentication
+    ///    path derivation via [`IdentityWallet::derive_identity_key_bytes`].
     fn derive_private_key_bytes(
         &self,
         identity_public_key: &IdentityPublicKey,
@@ -265,19 +224,15 @@ impl ManagedIdentitySigner {
             };
         }
 
-        // Fallback: standard IdentitySigner derivation from identity_index + key_id.
-        let fallback = IdentitySigner::new(self.wallet.clone(), self.network, self.identity_index);
-        fallback.derive_private_key_bytes_for(identity_public_key)
-    }
-}
-
-impl IdentitySigner {
-    /// Derive private key bytes — exposed for internal reuse by `ManagedIdentitySigner`.
-    fn derive_private_key_bytes_for(
-        &self,
-        identity_public_key: &IdentityPublicKey,
-    ) -> Result<Zeroizing<[u8; 32]>, ProtocolError> {
-        self.derive_private_key_bytes(identity_public_key)
+        // Fallback: standard DIP-9 derivation from identity_index + key_id.
+        let wallet = self.wallet.blocking_read();
+        IdentityWallet::derive_identity_key_bytes(
+            &wallet,
+            self.network,
+            self.identity_index,
+            identity_public_key,
+        )
+        .map_err(|e| ProtocolError::Generic(e.to_string()))
     }
 }
 

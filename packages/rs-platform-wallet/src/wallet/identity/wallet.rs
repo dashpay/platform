@@ -15,9 +15,15 @@ use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{AssetLockProof, Identifier};
+use key_wallet::bip32::{ChildNumber, DerivationPath, KeyDerivationType};
+use key_wallet::dip9::{
+    IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
+};
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
+use key_wallet::Network;
 use tokio::sync::RwLock;
+use zeroize::Zeroizing;
 
 use dpp::identity::signer::Signer;
 
@@ -122,6 +128,77 @@ impl IdentityWallet {
     /// authentication path.
     pub fn signer_for_identity(&self, identity_index: u32) -> IdentitySigner {
         IdentitySigner::new(self.wallet.clone(), self.sdk.network, identity_index)
+    }
+
+    /// Build the DIP-9 identity authentication derivation path.
+    ///
+    /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`
+    pub fn identity_auth_derivation_path(
+        network: Network,
+        key_derivation_type: KeyDerivationType,
+        identity_index: u32,
+        key_id: u32,
+    ) -> Result<DerivationPath, PlatformWalletError> {
+        let base_path: DerivationPath = match network {
+            Network::Mainnet => IDENTITY_AUTHENTICATION_PATH_MAINNET,
+            _ => IDENTITY_AUTHENTICATION_PATH_TESTNET,
+        }
+        .into();
+
+        let key_type_index: u32 = key_derivation_type.into();
+
+        Ok(base_path.extend([
+            ChildNumber::from_hardened_idx(key_type_index).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("Invalid key type index: {}", e))
+            })?,
+            ChildNumber::from_hardened_idx(identity_index).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("Invalid identity index: {}", e))
+            })?,
+            ChildNumber::from_hardened_idx(key_id).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("Invalid key ID: {}", e))
+            })?,
+        ]))
+    }
+
+    /// Derive the raw private key bytes for an identity authentication key.
+    ///
+    /// Determines the correct [`KeyDerivationType`] from the public key's
+    /// [`KeyType`], builds the DIP-9 derivation path, and derives the
+    /// private key from the wallet.
+    ///
+    /// Returns the bytes wrapped in [`Zeroizing`] so they are automatically
+    /// wiped from memory when the value is dropped.
+    pub fn derive_identity_key_bytes(
+        wallet: &Wallet,
+        network: Network,
+        identity_index: u32,
+        identity_public_key: &IdentityPublicKey,
+    ) -> Result<Zeroizing<[u8; 32]>, PlatformWalletError> {
+        let key_id = identity_public_key.id();
+        let key_derivation_type = match identity_public_key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => KeyDerivationType::ECDSA,
+            KeyType::BLS12_381 => KeyDerivationType::BLS,
+            // EdDSA uses the ECDSA derivation path; the raw bytes are
+            // reinterpreted as an Ed25519 seed.
+            KeyType::EDDSA_25519_HASH160 => KeyDerivationType::ECDSA,
+            KeyType::BIP13_SCRIPT_HASH => {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "BIP13_SCRIPT_HASH keys are not supported for signing".to_string(),
+                ));
+            }
+        };
+
+        let path =
+            Self::identity_auth_derivation_path(network, key_derivation_type, identity_index, key_id)?;
+
+        let secret_key = wallet.derive_private_key(&path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive private key for identity key {}: {}",
+                key_id, e
+            ))
+        })?;
+
+        Ok(Zeroizing::new(secret_key.secret_bytes()))
     }
 
     /// Create a [`ManagedIdentitySigner`] for a managed identity by its ID.
