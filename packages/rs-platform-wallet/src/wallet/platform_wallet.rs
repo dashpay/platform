@@ -9,6 +9,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::{broadcast, RwLock};
 
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use super::persister::WalletPersister;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 
@@ -49,9 +50,9 @@ pub struct PlatformWallet {
     /// events. A standalone wallet creates its own channel; a managed wallet
     /// shares the channel from `PlatformWalletManager`.
     pub(crate) event_tx: broadcast::Sender<PlatformWalletEvent>,
-    /// Shared persistence backend. Set during construction — all wallets
-    /// under the same [`PlatformWalletManager`] share a single persister.
-    persister: Arc<dyn PlatformWalletPersistence>,
+    /// Per-wallet persistence handle — thin wrapper around the shared
+    /// persister that binds this wallet's ID.
+    persister: WalletPersister,
 }
 
 impl PlatformWallet {
@@ -330,7 +331,7 @@ impl PlatformWallet {
             tokens,
             asset_locks,
             event_tx,
-            persister,
+            persister: WalletPersister::new(wallet_id, persister),
         }
     }
 }
@@ -338,12 +339,12 @@ impl PlatformWallet {
 impl PlatformWallet {
     /// Queue a changeset for later persistence.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
-        self.persister.store(self.wallet_id, changeset);
+        self.persister.store(changeset);
     }
 
     /// Flush all queued changesets to the storage backend.
     pub fn flush_persist(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.persister.flush(self.wallet_id)
+        self.persister.flush()
     }
 
     /// Apply a changeset to in-memory wallet state.
@@ -382,7 +383,7 @@ impl Clone for PlatformWallet {
             tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
             event_tx: self.event_tx.clone(),
-            persister: Arc::clone(&self.persister),
+            persister: self.persister.clone(),
         }
     }
 }

@@ -2,6 +2,7 @@ pub mod asset_lock;
 pub mod core;
 pub mod dashpay;
 pub mod identity;
+pub(crate) mod persister;
 pub mod platform_addresses;
 pub mod platform_wallet;
 #[cfg(feature = "shielded")]
