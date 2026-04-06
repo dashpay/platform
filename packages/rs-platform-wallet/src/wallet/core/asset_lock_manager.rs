@@ -70,7 +70,6 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-
     /// Return all asset locks whose proof is `Some` (ready for consumption).
     pub async fn unused_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
         let map = self.tracked.read().await;
@@ -190,7 +189,6 @@ impl AssetLockManager {
     pub fn blocking_remove_asset_lock(&self, txid: &Txid) {
         self.tracked.blocking_write().remove(txid);
     }
-
 
     /// Blocking version of [`recover_asset_lock`](Self::recover_asset_lock).
     pub fn blocking_recover_asset_lock(
@@ -424,17 +422,28 @@ impl AssetLockManager {
     /// ## Flow
     ///
     /// 1. Build the asset lock transaction via the key-wallet builder.
-    /// 2. Track the lifecycle as `Built`, then `Broadcast`.
-    /// 3. Subscribe to SPV events *before* broadcasting (prevents race).
+    /// 2. Track the lifecycle as `Built` (in-memory).
+    /// 3. Broadcast the transaction.
     /// 4. Wait for an InstantLock or ChainLock proof via the event channel.
-    /// 5. Track the lifecycle as `InstantSendLocked`.
+    /// 5. Track the lifecycle as `InstantSendLocked` or `ChainLocked`.
     /// 6. Return `(proof, private_key, txid)`.
+    ///
+    /// ## Persistence
+    ///
+    /// This method tracks the asset lock in memory before broadcasting, so
+    /// the lock is recoverable even if the proof wait is interrupted. However,
+    /// the `AssetLockManager` does not persist state directly — **callers MUST
+    /// persist the wallet state** after this method returns (or after broadcast
+    /// if crash-safety before finality is required). The changeset system
+    /// (`AssetLockChangeSet`) will capture the tracked lock state when the
+    /// persister flushes.
     ///
     /// ## Parameters
     ///
     /// * `amount_duffs` — Amount to lock.
     /// * `funding_type` — Which account to derive the one-time key from.
-    /// * `identity_index` — HD identity index.
+    /// * `identity_index` — HD identity index (for `IdentityTopUp`, this is
+    ///   the registration index identifying which identity is being topped up).
     pub async fn create_funded_asset_lock_proof(
         &self,
         amount_duffs: u64,
@@ -451,16 +460,29 @@ impl AssetLockManager {
         // 2. Track as Built.
         {
             let mut map = self.tracked.write().await;
-            map.insert(txid, TrackedAssetLock {
+            map.insert(
                 txid,
-                transaction: tx.clone(),
-                funding_type,
-                identity_index,
-                amount: amount_duffs,
-                status: AssetLockStatus::Built,
-                proof: None,
-            });
+                TrackedAssetLock {
+                    txid,
+                    transaction: tx.clone(),
+                    funding_type,
+                    identity_index,
+                    amount: amount_duffs,
+                    status: AssetLockStatus::Built,
+                    proof: None,
+                },
+            );
         }
+
+        // NOTE: The tracked lock is now in memory but NOT persisted to storage.
+        // If the app crashes after the broadcast below but before this method
+        // returns, the lock must be recovered from the chain on restart.
+        // Callers that need crash-safety should persist the wallet state here.
+        tracing::debug!(
+            %txid,
+            "Asset lock tracked in memory as Built; broadcasting. \
+             Caller should persist wallet state after this method returns."
+        );
 
         // 3. Broadcast.
         self.broadcast_transaction(&tx).await?;
@@ -586,9 +608,7 @@ impl AssetLockManager {
 
     /// Fetch Platform's current `core_chain_locked_height` by querying the
     /// latest epoch info with metadata.
-    async fn get_platform_core_chain_locked_height(
-        &self,
-    ) -> Result<u32, PlatformWalletError> {
+    async fn get_platform_core_chain_locked_height(&self) -> Result<u32, PlatformWalletError> {
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
         use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 
@@ -693,14 +713,39 @@ impl AssetLockManager {
                         ))) => {
                             use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 
-                            // TODO: How do we know that transaction is actually included in the locked block?
-                            let proof = dpp::prelude::AssetLockProof::Chain(
-                                ChainAssetLockProof {
-                                    core_chain_locked_height: chain_lock.block_height,
-                                    out_point: dashcore::OutPoint::new(*txid, 0),
-                                },
-                            );
-                            return Ok(proof);
+                            // Verify that our asset lock transaction is actually
+                            // confirmed at a height <= the chain-locked height.
+                            // A ChainLock on block N guarantees finality for all
+                            // blocks up to and including N, but we must confirm
+                            // our TX is actually in one of those blocks.
+                            let info = self.wallet_info.read().await;
+                            let record = info
+                                .accounts
+                                .standard_bip44_accounts
+                                .get(&0)
+                                .and_then(|a| a.transactions.get(txid))
+                                .or_else(|| {
+                                    info.accounts
+                                        .all_accounts()
+                                        .iter()
+                                        .find_map(|a| a.transactions.get(txid))
+                                });
+
+                            if let Some(record) = record {
+                                if let Some(tx_height) = record.height() {
+                                    if tx_height <= chain_lock.block_height {
+                                        let proof = dpp::prelude::AssetLockProof::Chain(
+                                            ChainAssetLockProof {
+                                                core_chain_locked_height: tx_height,
+                                                out_point: dashcore::OutPoint::new(*txid, 0),
+                                            },
+                                        );
+                                        return Ok(proof);
+                                    }
+                                }
+                            }
+                            // TX not yet confirmed or not in a chain-locked
+                            // block — keep waiting for more events.
                         }
                         Ok(_) => {}
                         Err(broadcast::error::RecvError::Lagged(_)) => continue,
