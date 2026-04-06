@@ -607,7 +607,7 @@ impl AssetLockManager {
 
         // 5. Wait for proof via SPV events.
         let proof = self
-            .wait_for_proof(account_index, &out_point, Duration::from_secs(300))
+            .wait_for_proof(&out_point, Duration::from_secs(300))
             .await?;
 
         // 5b. If we got an IS-lock proof, check whether the transaction is
@@ -881,7 +881,6 @@ impl AssetLockManager {
     /// `FinalityTimeout` if the timeout elapses first.
     async fn wait_for_proof(
         &self,
-        account_index: u32,
         out_point: &OutPoint,
         timeout: Duration,
     ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
@@ -892,37 +891,42 @@ impl AssetLockManager {
         let deadline = tokio::time::Instant::now() + timeout;
         let mut rx = self.event_tx.subscribe();
 
-        loop {
-            // Check if SPV already synced the proof before we started waiting.
+        // Read account_index and transaction from the tracked lock.
+        // These don't change during the wait.
+        let (account_index, tracked_tx) = {
+            let map = self.tracked.read().await;
+            let lock = map.get(out_point).ok_or_else(|| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Asset lock {} is not tracked",
+                    out_point.txid
+                ))
+            })?;
+            (lock.account_index, lock.transaction.clone())
+        };
+
+        // Check if SPV already synced the proof before we started waiting.
+        {
+            let info = self.wallet_info.read().await;
+            if let Some(record) = info
+                .accounts
+                .standard_bip44_accounts
+                .get(&account_index)
+                .and_then(|a| a.transactions.get(&out_point.txid))
             {
-                let info = self.wallet_info.read().await;
-                if let Some(record) = info
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&account_index)
-                    .and_then(|a| a.transactions.get(&out_point.txid))
-                {
-                    match &record.context {
-                        TransactionContext::InChainLockedBlock(_) => {
-                            if let Some(height) = record.height() {
-                                return Ok(dpp::prelude::AssetLockProof::Chain(
-                                    ChainAssetLockProof {
-                                        core_chain_locked_height: height,
-                                        out_point: *out_point,
-                                    },
-                                ));
-                            }
-                        }
-                        TransactionContext::InstantSend => {
-                            // TX has IS context but we don't have the IS-lock
-                            // data here. Continue waiting for the actual
-                            // InstantLockReceived event which carries the lock.
-                        }
-                        _ => {}
+                if let TransactionContext::InChainLockedBlock(_) = &record.context {
+                    if let Some(height) = record.height() {
+                        return Ok(dpp::prelude::AssetLockProof::Chain(
+                            ChainAssetLockProof {
+                                core_chain_locked_height: height,
+                                out_point: *out_point,
+                            },
+                        ));
                     }
                 }
             }
+        }
 
+        loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
@@ -935,17 +939,10 @@ impl AssetLockManager {
                             dash_spv::sync::SyncEvent::InstantLockReceived { instant_lock, .. },
                         ))) => {
                             if instant_lock.txid == out_point.txid {
-                                let tx = {
-                                    let map = self.tracked.read().await;
-                                    map.get(out_point).map(|l| l.transaction.clone())
-                                    .ok_or_else(|| PlatformWalletError::AssetLockProofWait(
-                                        format!("Asset lock {} is not tracked", out_point.txid),
-                                    ))?
-                                };
                                 let proof = dpp::prelude::AssetLockProof::Instant(
                                     InstantAssetLockProof::new(
                                         instant_lock,
-                                        tx,
+                                        tracked_tx,
                                         out_point.vout,
                                     ),
                                 );
@@ -1038,9 +1035,6 @@ impl AssetLockManager {
             )
         };
 
-        let txid = out_point.txid;
-        let output_index = out_point.vout;
-
         // 2. Resume from the current status.
         let proof = match status {
             AssetLockStatus::Built => {
@@ -1049,7 +1043,7 @@ impl AssetLockManager {
                 self.advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
                 let proof = self
-                    .wait_for_proof(account_index, out_point, timeout)
+                    .wait_for_proof(out_point, timeout)
                     .await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
@@ -1057,7 +1051,7 @@ impl AssetLockManager {
             AssetLockStatus::Broadcast => {
                 // Already broadcast — just wait for proof.
                 let proof = self
-                    .wait_for_proof(account_index, out_point, timeout)
+                    .wait_for_proof(out_point, timeout)
                     .await?;
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
