@@ -127,3 +127,28 @@ pub enum PlatformWalletError {
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 }
+
+/// Check whether an SDK error indicates that an InstantSend lock proof was
+/// rejected by Platform (e.g. the IS lock has expired).
+///
+/// This matches the `InvalidInstantAssetLockProofSignatureError` consensus
+/// error returned by Drive when the instant lock signature cannot be verified
+/// (typically because the quorum that signed it has rotated out).
+pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus_error = match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
+    };
+    matches!(
+        consensus_error,
+        Some(ConsensusError::BasicError(
+            BasicError::InvalidInstantAssetLockProofSignatureError(_),
+        ))
+    )
+}

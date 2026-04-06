@@ -482,6 +482,11 @@ impl AssetLockManager {
             .wait_for_proof(&txid, &tx, Duration::from_secs(300))
             .await?;
 
+        // 5b. If we got an IS-lock proof, check whether the transaction is
+        // old enough that Platform might reject it. If so, upgrade to a
+        // ChainLock proof proactively.
+        let proof = self.validate_or_upgrade_proof(proof, &txid).await?;
+
         // 6. Attach proof — status matches the proof type received.
         let status = match &proof {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
@@ -491,6 +496,150 @@ impl AssetLockManager {
             .await;
 
         Ok((proof, key, txid))
+    }
+
+    /// Validate an IS-lock proof and upgrade it to a ChainLock proof if the
+    /// transaction is old enough that the IS-lock may have expired.
+    ///
+    /// When the asset lock transaction has been chain-locked and has enough
+    /// confirmations (> 8), the InstantSend lock quorum may have rotated,
+    /// causing Platform to reject the IS proof. In that case, if the
+    /// transaction's block height is within Platform's verified range
+    /// (`core_chain_locked_height`), we can safely switch to a ChainLock
+    /// proof.
+    ///
+    /// If the proof is already a ChainLock proof, or the IS proof is still
+    /// fresh, it is returned unchanged.
+    async fn validate_or_upgrade_proof(
+        &self,
+        proof: dpp::prelude::AssetLockProof,
+        txid: &Txid,
+    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        if !matches!(&proof, dpp::prelude::AssetLockProof::Instant(_)) {
+            return Ok(proof);
+        }
+
+        // Fetch transaction info from DAPI to check confirmation depth.
+        let tx_info = self.get_transaction_info(txid).await?;
+
+        if tx_info.is_chain_locked && tx_info.height > 0 && tx_info.confirmations > 8 {
+            // Transaction is old enough that the IS-lock quorum may have
+            // rotated. Check if Platform has verified this Core block.
+            let platform_height = self.get_platform_core_chain_locked_height().await?;
+
+            if tx_info.height <= platform_height {
+                tracing::info!(
+                    "Upgrading IS-lock proof to ChainLock proof for tx {} \
+                     (height={}, confirmations={}, platform_cl_height={})",
+                    txid,
+                    tx_info.height,
+                    tx_info.confirmations,
+                    platform_height,
+                );
+
+                return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: tx_info.height,
+                    out_point: dashcore::OutPoint::new(*txid, 0),
+                }));
+            }
+        }
+
+        Ok(proof)
+    }
+
+    /// Fetch transaction info (height, confirmations, chain-lock status) from
+    /// DAPI's Core gRPC endpoint.
+    async fn get_transaction_info(
+        &self,
+        txid: &Txid,
+    ) -> Result<TransactionInfo, PlatformWalletError> {
+        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
+        use dash_sdk::dapi_grpc::core::v0::GetTransactionRequest;
+
+        let response = self
+            .sdk
+            .execute(
+                GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                RequestSettings::default(),
+            )
+            .await
+            .into_inner()
+            .map_err(|e| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Failed to fetch transaction info for {}: {}",
+                    txid, e
+                ))
+            })?;
+
+        Ok(TransactionInfo {
+            is_chain_locked: response.is_chain_locked,
+            height: response.height,
+            confirmations: response.confirmations,
+        })
+    }
+
+    /// Fetch Platform's current `core_chain_locked_height` by querying the
+    /// latest epoch info with metadata.
+    async fn get_platform_core_chain_locked_height(
+        &self,
+    ) -> Result<u32, PlatformWalletError> {
+        use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+        use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+
+        let (_epoch, metadata) = ExtendedEpochInfo::fetch_current_with_metadata(&self.sdk)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        Ok(metadata.core_chain_locked_height)
+    }
+
+    /// Attempt to upgrade an IS-lock proof to a ChainLock proof after a
+    /// Platform rejection.
+    ///
+    /// This is called from the recovery layer (Layer 2) when
+    /// `put_to_platform` fails with an `InvalidInstantAssetLockProofSignature`
+    /// error. It fetches the transaction info and constructs a ChainLock proof
+    /// if the transaction is chain-locked and Platform has verified the block.
+    pub(crate) async fn upgrade_to_chain_lock_proof(
+        &self,
+        txid: &Txid,
+    ) -> Result<dpp::prelude::AssetLockProof, PlatformWalletError> {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let tx_info = self.get_transaction_info(txid).await?;
+
+        if !tx_info.is_chain_locked || tx_info.height == 0 {
+            return Err(PlatformWalletError::AssetLockNotChainLocked(format!(
+                "Transaction {} is not chain-locked (is_chain_locked={}, height={})",
+                txid, tx_info.is_chain_locked, tx_info.height
+            )));
+        }
+
+        let platform_height = self.get_platform_core_chain_locked_height().await?;
+
+        if tx_info.height > platform_height {
+            return Err(PlatformWalletError::AssetLockExpired(format!(
+                "Transaction {} is at height {} but Platform has only verified up to height {}",
+                txid, tx_info.height, platform_height
+            )));
+        }
+
+        tracing::info!(
+            "Building ChainLock proof for tx {} after IS-lock rejection \
+             (height={}, platform_cl_height={})",
+            txid,
+            tx_info.height,
+            platform_height,
+        );
+
+        Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: tx_info.height,
+            out_point: dashcore::OutPoint::new(*txid, 0),
+        }))
     }
 
     /// Wait for an asset lock proof by subscribing to SPV events.
@@ -566,6 +715,13 @@ impl AssetLockManager {
             }
         }
     }
+}
+
+/// Transaction info returned by DAPI's Core gRPC endpoint.
+struct TransactionInfo {
+    is_chain_locked: bool,
+    height: u32,
+    confirmations: u32,
 }
 
 impl std::fmt::Debug for AssetLockManager {

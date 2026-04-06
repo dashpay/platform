@@ -163,6 +163,18 @@ impl IdentityWallet {
     ) -> Option<tokio::sync::RwLockWriteGuard<'_, IdentityManager>> {
         self.identity_manager.try_write().ok()
     }
+
+    /// Extract the transaction ID from an asset lock proof.
+    ///
+    /// For instant proofs, this is the txid of the embedded transaction.
+    /// For chain proofs, this is the txid from the out_point.
+    /// Returns `None` only if the instant proof has no valid out_point.
+    fn txid_from_proof(proof: &AssetLockProof) -> Option<dashcore::Txid> {
+        match proof {
+            AssetLockProof::Instant(instant) => Some(instant.transaction().txid()),
+            AssetLockProof::Chain(chain) => Some(chain.out_point.txid),
+        }
+    }
 }
 
 impl std::fmt::Debug for IdentityWallet {
@@ -367,7 +379,11 @@ impl IdentityWallet {
 
         let signer = self.signer_for_identity(identity_index);
 
-        let identity = identity
+        // Extract the txid before consuming the proof, in case we need to
+        // build a ChainLock proof for recovery.
+        let txid = Self::txid_from_proof(&asset_lock_proof);
+
+        let identity = match identity
             .put_to_platform_and_wait_for_response(
                 &self.sdk,
                 asset_lock_proof,
@@ -376,15 +392,46 @@ impl IdentityWallet {
                 None,
             )
             .await
-            .map_err(|e| {
-                // TODO: IS->CL fallback — detect expired IS proof errors here
-                // and return AssetLockExpired so the caller can retry with a
-                // ChainLock proof.
-                PlatformWalletError::InvalidIdentityData(format!(
+        {
+            Ok(identity) => identity,
+            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
+                // IS-lock proof was rejected — try to upgrade to ChainLock.
+                if let Some(txid) = txid {
+                    tracing::warn!(
+                        "IS-lock proof rejected for identity registration (tx {}), \
+                         retrying with ChainLock proof",
+                        txid
+                    );
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    identity
+                        .put_to_platform_and_wait_for_response(
+                            &self.sdk,
+                            chain_proof,
+                            &asset_lock_private_key,
+                            &signer,
+                            None,
+                        )
+                        .await
+                        .map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Failed to register identity on Platform (ChainLock retry): {}",
+                                e
+                            ))
+                        })?
+                } else {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register identity on Platform: {}",
+                        e
+                    )));
+                }
+            }
+            Err(e) => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register identity on Platform: {}",
                     e
-                ))
-            })?;
+                )));
+            }
+        };
 
         // Step 4: Add the identity to the local manager (with its HD index).
         let mut manager = self.identity_manager.write().await;
@@ -509,7 +556,11 @@ impl IdentityWallet {
             }
         };
 
-        let result = self
+        // Extract the txid before consuming the proof, in case we need to
+        // build a ChainLock proof for recovery.
+        let txid = Self::txid_from_proof(&asset_lock_proof);
+
+        let result = match self
             .register_identity_with_signer(
                 identity,
                 asset_lock_proof,
@@ -517,7 +568,30 @@ impl IdentityWallet {
                 signer,
             )
             .await
-            .map_err(PlatformWalletError::Sdk)?;
+        {
+            Ok(identity) => identity,
+            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
+                if let Some(txid) = txid {
+                    tracing::warn!(
+                        "IS-lock proof rejected for funded identity registration (tx {}), \
+                         retrying with ChainLock proof",
+                        txid
+                    );
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    self.register_identity_with_signer(
+                        identity,
+                        chain_proof,
+                        &asset_lock_private_key,
+                        signer,
+                    )
+                    .await
+                    .map_err(PlatformWalletError::Sdk)?
+                } else {
+                    return Err(PlatformWalletError::Sdk(e));
+                }
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        };
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(txid) = tracked_txid {
@@ -580,10 +654,32 @@ impl IdentityWallet {
             }
         };
 
-        let new_balance = self
+        // Extract the txid before consuming the proof, in case we need to
+        // build a ChainLock proof for recovery.
+        let txid = Self::txid_from_proof(&asset_lock_proof);
+
+        let new_balance = match self
             .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
             .await
-            .map_err(PlatformWalletError::Sdk)?;
+        {
+            Ok(balance) => balance,
+            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
+                if let Some(txid) = txid {
+                    tracing::warn!(
+                        "IS-lock proof rejected for funded identity top-up (tx {}), \
+                         retrying with ChainLock proof",
+                        txid
+                    );
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    self.top_up_identity_with_signer(identity, chain_proof, &asset_lock_private_key)
+                        .await
+                        .map_err(PlatformWalletError::Sdk)?
+                } else {
+                    return Err(PlatformWalletError::Sdk(e));
+                }
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        };
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(txid) = tracked_txid {
@@ -904,8 +1000,12 @@ impl IdentityWallet {
             }
         };
 
+        // Extract the txid before consuming the proof, in case we need to
+        // build a ChainLock proof for recovery.
+        let txid = Self::txid_from_proof(&asset_lock_proof);
+
         // Step 2: Submit the top-up state transition.
-        let new_balance = identity
+        let new_balance = match identity
             .top_up_identity(
                 &self.sdk,
                 asset_lock_proof,
@@ -914,15 +1014,46 @@ impl IdentityWallet {
                 None, // settings
             )
             .await
-            .map_err(|e| {
-                // TODO: IS->CL fallback — detect expired IS proof errors here
-                // and return AssetLockExpired so the caller can retry with a
-                // ChainLock proof.
-                PlatformWalletError::InvalidIdentityData(format!(
+        {
+            Ok(balance) => balance,
+            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
+                // IS-lock proof was rejected — try to upgrade to ChainLock.
+                if let Some(txid) = txid {
+                    tracing::warn!(
+                        "IS-lock proof rejected for identity top-up (tx {}), \
+                         retrying with ChainLock proof",
+                        txid
+                    );
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    identity
+                        .top_up_identity(
+                            &self.sdk,
+                            chain_proof,
+                            &asset_lock_private_key,
+                            None,
+                            None,
+                        )
+                        .await
+                        .map_err(|e| {
+                            PlatformWalletError::InvalidIdentityData(format!(
+                                "Failed to top up identity (ChainLock retry): {}",
+                                e
+                            ))
+                        })?
+                } else {
+                    return Err(PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to top up identity: {}",
+                        e
+                    )));
+                }
+            }
+            Err(e) => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to top up identity: {}",
                     e
-                ))
-            })?;
+                )));
+            }
+        };
 
         // Update the identity's balance in the local manager.
         {
