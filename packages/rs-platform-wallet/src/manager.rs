@@ -5,6 +5,9 @@ use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
 
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::Network;
+
 use crate::error::PlatformWalletError;
 use crate::events::PlatformWalletEvent;
 use crate::spv::SpvRuntime;
@@ -59,32 +62,32 @@ impl PlatformWalletManager {
         self.event_tx.subscribe()
     }
 
-    /// Get a clone of the event broadcast sender.
+    /// Create a PlatformWallet from raw seed bytes and register it.
     ///
-    /// Pass this to [`PlatformWallet::from_wallet_and_info_with_event_tx`]
-    /// when creating wallets that should share the manager's event channel,
-    /// so their `AssetLockManager` can subscribe to SPV events.
-    pub fn event_tx(&self) -> broadcast::Sender<PlatformWalletEvent> {
-        self.event_tx.clone()
-    }
-
-    /// Add a wallet to the manager. Returns a clone for the caller.
-    pub async fn add_wallet(
+    /// The wallet is created with the manager's shared event channel so
+    /// SPV events (InstantLock / ChainLock) reach the `AssetLockManager`.
+    pub fn create_wallet_from_seed_bytes(
         &self,
-        wallet: PlatformWallet,
-    ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet = Arc::new(wallet);
-        let wallet_id = wallet.wallet_id();
-        let mut wallets = self.wallets.write().await;
-        if wallets.contains_key(&wallet_id) {
-            return Err(PlatformWalletError::WalletAlreadyExists(hex::encode(
-                wallet_id,
-            )));
-        }
-        let cloned = wallet.clone();
-        wallets.insert(wallet_id, wallet);
-        self.spv.notify_wallets_changed();
-        Ok(cloned)
+        network: Network,
+        seed_bytes: [u8; 64],
+        options: WalletAccountCreationOptions,
+    ) -> Result<PlatformWallet, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::wallet::Wallet;
+
+        let wallet = Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from seed bytes: {}",
+                e
+            ))
+        })?;
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(PlatformWallet::new(
+            Arc::clone(&self.sdk),
+            wallet,
+            wallet_info,
+            self.event_tx.clone(),
+        ))
     }
 
     /// Remove a wallet from the manager.

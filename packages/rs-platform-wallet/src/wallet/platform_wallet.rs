@@ -102,24 +102,177 @@ impl PlatformWallet {
 
     /// Construct a PlatformWallet from an existing key-wallet Wallet and ManagedWalletInfo.
     ///
-    /// **Warning**: Creates a PlatformWallet with a disconnected event channel.
-    /// Asset lock proof waiting (`wait_for_proof`) will always timeout since no
-    /// SPV events will be received. Use `from_wallet_and_info_with_event_tx`
-    /// for production use with SPV integration.
-    pub fn from_wallet_and_info(
+    /// The wallet is created with a disconnected event channel. For
+    /// production use with SPV, create wallets via
+    /// [`PlatformWalletManager::create_wallet_from_seed_bytes`] which wires
+    /// the shared event channel automatically.
+    fn new_with_dummy_event(
         sdk: Arc<dash_sdk::Sdk>,
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        Self::from_wallet_and_info_with_event_tx(sdk, wallet, wallet_info, event_tx)
+        Self::new(sdk, wallet, wallet_info, event_tx)
+    }
+
+    /// Create a PlatformWallet from a BIP-39 mnemonic.
+    pub fn from_mnemonic(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: Network,
+        mnemonic: &str,
+        passphrase: &str,
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self, PlatformWalletError> {
+        let mnemonic_obj: Mnemonic = mnemonic.parse().map_err(|e| {
+            PlatformWalletError::WalletCreation(format!("Failed to parse mnemonic: {}", e))
+        })?;
+
+        let wallet = if passphrase.is_empty() {
+            Wallet::from_mnemonic(mnemonic_obj, network, options)
+        } else {
+            Wallet::from_mnemonic_with_passphrase(
+                mnemonic_obj,
+                passphrase.to_string(),
+                network,
+                options,
+            )
+        }
+        .map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from mnemonic: {}",
+                e
+            ))
+        })?;
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+    }
+
+    /// Create a PlatformWallet from an extended private key string.
+    ///
+    /// The network is derived from the extended key itself (xprv encodes the network).
+    pub fn from_extended_key(
+        sdk: Arc<dash_sdk::Sdk>,
+        xprv: &str,
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self, PlatformWalletError> {
+        use key_wallet::bip32::ExtendedPrivKey;
+
+        let extended_key: ExtendedPrivKey = xprv.parse().map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to parse extended private key: {}",
+                e
+            ))
+        })?;
+
+        let wallet = Wallet::from_extended_key(extended_key, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from extended key: {}",
+                e
+            ))
+        })?;
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+    }
+
+    /// Create a watch-only PlatformWallet from an extended public key string.
+    pub fn from_xpub(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: Network,
+        xpub: &str,
+    ) -> Result<Self, PlatformWalletError> {
+        use key_wallet::bip32::ExtendedPubKey;
+        use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
+
+        let xpub_key: ExtendedPubKey = xpub.parse().map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to parse extended public key: {}",
+                e
+            ))
+        })?;
+
+        let root_xpub = RootExtendedPubKey::from_extended_pub_key(&xpub_key);
+        let wallet = Wallet::from_wallet_type(
+            network,
+            key_wallet::wallet::WalletType::WatchOnly(root_xpub),
+        );
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+    }
+
+    /// Create a PlatformWallet from a BIP-39 Seed.
+    pub fn from_seed(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: Network,
+        seed: Seed,
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self, PlatformWalletError> {
+        let wallet = Wallet::from_seed(seed, network, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!("Failed to create wallet from seed: {}", e))
+        })?;
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+    }
+
+    /// Create a PlatformWallet from raw seed bytes (64 bytes).
+    ///
+    /// **Warning**: Creates a PlatformWallet with a disconnected event channel.
+    /// Use [`from_seed_bytes_with_event_tx`](Self::from_seed_bytes_with_event_tx)
+    /// when SPV event delivery is required (e.g. asset lock proof waiting).
+    pub fn from_seed_bytes(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: Network,
+        seed_bytes: [u8; 64],
+        options: WalletAccountCreationOptions,
+    ) -> Result<Self, PlatformWalletError> {
+        let wallet = Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from seed bytes: {}",
+                e
+            ))
+        })?;
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok(Self::new_with_dummy_event(sdk, wallet, wallet_info))
+    }
+
+    /// Create a PlatformWallet with a random mnemonic. Returns the wallet and the mnemonic.
+    pub fn random(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: Network,
+        options: WalletAccountCreationOptions,
+    ) -> Result<(Self, Mnemonic), PlatformWalletError> {
+        let mnemonic =
+            Mnemonic::generate(12, key_wallet::mnemonic::Language::English).map_err(|e| {
+                PlatformWalletError::WalletCreation(format!(
+                    "Failed to generate random mnemonic: {}",
+                    e
+                ))
+            })?;
+
+        let wallet = Wallet::from_mnemonic(mnemonic.clone(), network, options).map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to create wallet from random mnemonic: {}",
+                e
+            ))
+        })?;
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        Ok((
+            Self::new_with_dummy_event(sdk, wallet, wallet_info),
+            mnemonic,
+        ))
     }
 
     /// Construct a PlatformWallet with an externally-owned event channel.
     ///
-    /// Used by `PlatformWalletManager` so that the manager's event channel
-    /// is shared with all wallets (and their `AssetLockManager` instances).
-    pub(crate) fn from_wallet_and_info_with_event_tx(
+    /// Used by [`PlatformWalletManager`] constructors to share the manager's
+    /// event channel with all wallets. Prefer using `PlatformWalletManager`
+    /// constructors (e.g. `create_wallet_from_seed_bytes`) for production use.
+    pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet: Wallet,
         wallet_info: ManagedWalletInfo,
@@ -171,154 +324,6 @@ impl PlatformWallet {
             event_tx,
             persister: None,
         }
-    }
-
-    /// Create a PlatformWallet from a BIP-39 mnemonic.
-    pub fn from_mnemonic(
-        sdk: Arc<dash_sdk::Sdk>,
-        network: Network,
-        mnemonic: &str,
-        passphrase: &str,
-        options: WalletAccountCreationOptions,
-    ) -> Result<Self, PlatformWalletError> {
-        let mnemonic_obj: Mnemonic = mnemonic.parse().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!("Failed to parse mnemonic: {}", e))
-        })?;
-
-        let wallet = if passphrase.is_empty() {
-            Wallet::from_mnemonic(mnemonic_obj, network, options)
-        } else {
-            Wallet::from_mnemonic_with_passphrase(
-                mnemonic_obj,
-                passphrase.to_string(),
-                network,
-                options,
-            )
-        }
-        .map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to create wallet from mnemonic: {}",
-                e
-            ))
-        })?;
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
-    }
-
-    /// Create a PlatformWallet from an extended private key string.
-    ///
-    /// The network is derived from the extended key itself (xprv encodes the network).
-    pub fn from_extended_key(
-        sdk: Arc<dash_sdk::Sdk>,
-        xprv: &str,
-        options: WalletAccountCreationOptions,
-    ) -> Result<Self, PlatformWalletError> {
-        use key_wallet::bip32::ExtendedPrivKey;
-
-        let extended_key: ExtendedPrivKey = xprv.parse().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to parse extended private key: {}",
-                e
-            ))
-        })?;
-
-        let wallet = Wallet::from_extended_key(extended_key, options).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to create wallet from extended key: {}",
-                e
-            ))
-        })?;
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
-    }
-
-    /// Create a watch-only PlatformWallet from an extended public key string.
-    pub fn from_xpub(
-        sdk: Arc<dash_sdk::Sdk>,
-        network: Network,
-        xpub: &str,
-    ) -> Result<Self, PlatformWalletError> {
-        use key_wallet::bip32::ExtendedPubKey;
-        use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
-
-        let xpub_key: ExtendedPubKey = xpub.parse().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to parse extended public key: {}",
-                e
-            ))
-        })?;
-
-        let root_xpub = RootExtendedPubKey::from_extended_pub_key(&xpub_key);
-        let wallet = Wallet::from_wallet_type(
-            network,
-            key_wallet::wallet::WalletType::WatchOnly(root_xpub),
-        );
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
-    }
-
-    /// Create a PlatformWallet from a BIP-39 Seed.
-    pub fn from_seed(
-        sdk: Arc<dash_sdk::Sdk>,
-        network: Network,
-        seed: Seed,
-        options: WalletAccountCreationOptions,
-    ) -> Result<Self, PlatformWalletError> {
-        let wallet = Wallet::from_seed(seed, network, options).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!("Failed to create wallet from seed: {}", e))
-        })?;
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
-    }
-
-    /// Create a PlatformWallet from raw seed bytes (64 bytes).
-    pub fn from_seed_bytes(
-        sdk: Arc<dash_sdk::Sdk>,
-        network: Network,
-        seed_bytes: [u8; 64],
-        options: WalletAccountCreationOptions,
-    ) -> Result<Self, PlatformWalletError> {
-        let wallet = Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to create wallet from seed bytes: {}",
-                e
-            ))
-        })?;
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok(Self::from_wallet_and_info(sdk, wallet, wallet_info))
-    }
-
-    /// Create a PlatformWallet with a random mnemonic. Returns the wallet and the mnemonic.
-    pub fn random(
-        sdk: Arc<dash_sdk::Sdk>,
-        network: Network,
-        options: WalletAccountCreationOptions,
-    ) -> Result<(Self, Mnemonic), PlatformWalletError> {
-        let mnemonic =
-            Mnemonic::generate(12, key_wallet::mnemonic::Language::English).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to generate random mnemonic: {}",
-                    e
-                ))
-            })?;
-
-        let wallet = Wallet::from_mnemonic(mnemonic.clone(), network, options).map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to create wallet from random mnemonic: {}",
-                e
-            ))
-        })?;
-
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
-        Ok((
-            Self::from_wallet_and_info(sdk, wallet, wallet_info),
-            mnemonic,
-        ))
     }
 }
 
