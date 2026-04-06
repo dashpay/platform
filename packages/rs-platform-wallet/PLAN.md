@@ -3841,12 +3841,27 @@ This means:
 #### Proposed API
 
 ```rust
+/// How to fund an identity operation (registration or top-up).
+pub enum IdentityFunding {
+    /// Build asset lock from wallet UTXOs (most common).
+    FromWalletBalance { amount: u64 },
+    /// Use credits from a Platform address (DIP-17).
+    FromPlatformAddress { address: PlatformAddress, amount: Credits },
+    /// Use an existing unused asset lock (recovery from previous attempt).
+    FromExistingAssetLock { asset_lock: Transaction, proof: AssetLockProof, key: PrivateKey },
+    /// Use a specific UTXO (QR-funded flow).
+    FromUtxo { outpoint: OutPoint, tx_out: TxOut, address: Address },
+    /// Use shielded pool funds.
+    FromShielded { amount: u64 },
+}
+
 impl IdentityWallet {
     /// Register identity — complete flow, one call.
-    /// Builds asset lock → broadcasts → waits for SPV proof → submits to Platform.
+    /// Handles all funding sources, asset lock lifecycle, proof waiting,
+    /// and Platform submission. Resumable from any step on failure.
     pub async fn register_identity(
         &self,
-        amount_credits: u64,
+        funding: IdentityFunding,
         keys: IdentityKeys,
         identity_index: u32,
     ) -> Result<Identity, PlatformWalletError>
@@ -3855,11 +3870,55 @@ impl IdentityWallet {
     pub async fn top_up_identity(
         &self,
         identity_id: Identifier,
-        amount_credits: u64,
+        funding: IdentityFunding,
         identity_index: u32,
     ) -> Result<u64, PlatformWalletError>  // new balance
+
+    /// Recover unused asset locks from the wallet.
+    /// Scans for asset lock transactions that were funded but never used.
+    pub async fn recover_unused_asset_locks(&self) -> Vec<UnusedAssetLock>
+
+    /// Get all tracked asset locks and their status.
+    pub fn asset_lock_status(&self, txid: &Txid) -> Option<AssetLockLifecycle>
+}
+
+/// Multi-step lifecycle for asset lock operations.
+/// Tracked for resume-on-failure.
+pub enum AssetLockLifecycle {
+    /// Transaction built but not broadcast.
+    Built { tx: Transaction, private_key: PrivateKey },
+    /// Broadcast, waiting for InstantSend lock or ChainLock.
+    Broadcast { txid: Txid },
+    /// IS-locked, proof available.
+    InstantLocked { proof: AssetLockProof, private_key: PrivateKey },
+    /// ChainLocked, proof available.
+    ChainLocked { proof: AssetLockProof, private_key: PrivateKey },
+    /// Used for identity registration.
+    UsedForRegistration { identity_id: Identifier },
+    /// Used for identity top-up.
+    UsedForTopUp { identity_id: Identifier },
 }
 ```
+
+#### Key design decisions
+
+**1. Multiple funding sources**: `IdentityFunding` enum mirrors evo-tool's
+`RegisterIdentityFundingMethod` but lives in platform-wallet. All funding
+paths are handled internally — apps never orchestrate asset locks.
+
+**2. Unused asset lock recovery**: Platform-wallet tracks created asset locks
+and their lifecycle state. If the app crashes after building but before
+using, the lock is recoverable. `recover_unused_asset_locks()` scans
+for funded-but-unused locks.
+
+**3. Resumable multi-step process**: `AssetLockLifecycle` tracks the state
+machine: Built → Broadcast → IS-locked/ChainLocked → Used. On failure,
+the operation can resume from the last successful step. This state is
+persisted via the changeset system (AssetLockChangeSet).
+
+**4. SPV finality (not DAPI streaming)**: Proof detection uses SPV's
+`wait_for_finality()` which listens for InstantSend and ChainLock events
+natively. No DAPI subscription streams.
 
 #### Implementation steps
 
@@ -3886,27 +3945,36 @@ Single method, no caller-side orchestration.
 - `top_up_identity()` calls `core.create_funded_asset_lock_proof()` then `top_up_identity_with_signer()`
 - Handle proof type conversion (InstantLock expiry → ChainLock fallback) internally
 
-**Step 4 — Remove dead code from platform-wallet:**
-- Delete `create_registration_asset_lock_proof()` / `create_topup_asset_lock_proof()` (thin wrappers)
-- Delete `broadcast_and_wait_for_asset_lock_proof()` (DAPI streaming approach)
-- Delete `TrackedAssetLock`, `AssetLockStatus`, `tracked_asset_locks` field (never properly used)
-- Delete `asset_lock.rs` module if empty
+**Step 4 — Replace `TrackedAssetLock` with `AssetLockLifecycle`:**
+- Replace `TrackedAssetLock` / `AssetLockStatus` with `AssetLockLifecycle` enum (full state machine)
+- Replace `tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>` with proper lifecycle tracking
+- Persist lifecycle state via `AssetLockChangeSet` (already in changeset system)
+- Status transitions: Built → Broadcast → InstantLocked → ChainLocked → Used
 
-**Step 5 — Simplify evo-tool:**
-- `register_identity.rs` FundWithWallet path: replace 40 lines of asset lock orchestration with `platform_wallet.identity().register_identity()`
-- `top_up_identity.rs` FundWithWallet path: same
-- Remove `broadcast_and_commit_asset_lock()` (moves to platform-wallet)
-- Remove `transactions_waiting_for_finality` map from AppContext
-- Remove `wait_for_asset_lock_proof()` polling
-- Remove `spv_setup_finality_listener()` / `handle_spv_finality_event()` / `received_asset_lock_finality()` for asset locks
-- Keep SPV finality listener for non-asset-lock transaction status (if needed)
-- `create_asset_lock.rs`: either delete or simplify to call `core.create_funded_asset_lock_proof()`
+**Step 5 — Implement `IdentityFunding` paths in IdentityWallet:**
+- `FromWalletBalance`: build asset lock → broadcast → SPV proof → register
+- `FromPlatformAddress`: transfer credits from platform address → register
+- `FromExistingAssetLock`: use pre-built lock (recovery) → register
+- `FromUtxo`: build asset lock from specific UTXO → broadcast → SPV proof → register
+- `FromShielded`: shield-to-asset-lock → broadcast → SPV proof → register
+- Each path shares the same post-proof logic (identity state transition)
 
-**Step 6 — Handle `unused_asset_locks` in evo-tool:**
-- `Wallet.unused_asset_locks` tracks asset locks created but not yet used (user created for later)
-- This is app-level state — stays in evo-tool
-- Platform-wallet doesn't need to know about "unused" locks — it just builds and uses them
-- Could move to a separate `AssetLockStore` in evo-tool for clarity
+**Step 6 — Implement unused asset lock recovery:**
+- `recover_unused_asset_locks()` scans Core chain for asset lock transactions not yet used
+- Move evo-tool's `recover_asset_locks.rs` logic into platform-wallet
+- Track recovered locks in the lifecycle system (enter at InstantLocked/ChainLocked)
+
+**Step 7 — Remove dead code from platform-wallet:**
+- Delete `create_registration_asset_lock_proof()` / `create_topup_asset_lock_proof()` (replaced by one-call methods)
+- Delete `broadcast_and_wait_for_asset_lock_proof()` (DAPI streaming replaced by SPV)
+
+**Step 8 — Simplify evo-tool:**
+- `register_identity.rs`: replace entire `FundWithWallet` / `FundWithUtxo` / `FundWithPlatformAddresses` branches with single `platform_wallet.identity().register_identity(funding, keys, index)`
+- `top_up_identity.rs`: same
+- `create_asset_lock.rs`: delete or simplify
+- Remove `broadcast_and_commit_asset_lock()`, `transactions_waiting_for_finality`, `wait_for_asset_lock_proof()`, `spv_setup_finality_listener()` for asset locks
+- Remove `Wallet.unused_asset_locks` field (moved to platform-wallet)
+- Remove `recover_asset_locks.rs` (moved to platform-wallet)
 
 ---
 
