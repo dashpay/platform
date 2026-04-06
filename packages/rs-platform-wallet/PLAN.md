@@ -4143,16 +4143,129 @@ If the app crashes:
 The gap between in-memory and storage is always bounded by the time since last `persist()`.
 Calling `persist()` after every block or every user action keeps the gap small.
 
+#### Compute-Then-Apply Architecture
+
+Every mutation follows the same three-phase pattern internally:
+
+```
+Public method (caller-facing):
+  1. COMPUTE  — read-only analysis, builds WalletChangeSet
+  2. APPLY    — single &mut self, applies all changes atomically
+  3. STAGE    — accumulates changeset for persistence
+```
+
+**Two layers of methods:**
+
+**Internal** (`compute_*`) — read-only, return changeset, don't mutate:
+```rust
+fn compute_record_transaction(&self, tx, context) -> WalletChangeSet { ... }
+fn compute_mark_address_used(&self, address) -> AccountChangeSet { ... }
+fn compute_maintain_gap_limit(&self, xpub) -> AccountChangeSet { ... }
+fn compute_update_balance(&self) -> BalanceChangeSet { ... }
+```
+
+**Public** (existing names) — aggregate + apply + stage, return just the result:
+```rust
+pub fn check_core_transaction(&mut self, tx, context) -> TransactionCheckResult {
+    // 1. Compute all changes (read-only)
+    let mut changeset = self.compute_record_transaction(tx, context);
+    changeset.merge(self.compute_mark_address_used(&addresses));
+    changeset.merge(self.compute_maintain_gap_limit(&xpub));
+    changeset.merge(self.compute_update_balance());
+
+    // 2. Apply atomically (single &mut self)
+    self.apply(&changeset);
+
+    // 3. Stage for persistence (internal, caller never sees changeset)
+    self.stage(changeset);
+
+    result
+}
+```
+
+**Callers never deal with changesets.** They call the public method, state is
+consistent, persistence is staged. They call `persist()` when ready.
+
+**`apply()` method** on ManagedWalletInfo:
+```rust
+impl ManagedWalletInfo {
+    pub fn apply(&mut self, changeset: &WalletChangeSet) {
+        if let Some(utxos) = &changeset.utxos {
+            for (outpoint, entry) in &utxos.added { self.add_utxo(outpoint, entry); }
+            for outpoint in &utxos.spent { self.remove_utxo(outpoint); }
+        }
+        if let Some(txs) = &changeset.transactions {
+            for (txid, record) in &txs.records { self.insert_transaction(txid, record); }
+        }
+        if let Some(accounts) = &changeset.accounts {
+            for (idx, revealed) in &accounts.last_revealed { self.advance_pool(idx, revealed); }
+            for (idx, addr) in &accounts.addresses_used { self.mark_used(idx, addr); }
+        }
+        if let Some(balance) = &changeset.balance {
+            self.apply_balance_delta(balance);
+        }
+    }
+}
+```
+
+Same pattern for `PlatformWallet`:
+```rust
+impl PlatformWallet {
+    pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
+        if let Some(wallet_cs) = &changeset.wallet {
+            self.core().blocking_wallet_info_mut().apply(wallet_cs);
+        }
+        if let Some(contacts) = &changeset.contacts {
+            self.apply_contacts(contacts);
+        }
+        if let Some(identities) = &changeset.identities {
+            self.apply_identities(identities);
+        }
+    }
+}
+```
+
+`initialize()` uses `apply()` — same code path as runtime:
+```rust
+let changeset = persister.initialize()?;
+platform_wallet.apply(&changeset);
+```
+
+**Consistency guarantees:**
+- Compute phase fails → no state change, no staging, consistent
+- Apply panics → Rust poisons the lock, no partial state visible
+- Between apply and persist → in-memory ahead of storage, re-sync fixes
+- Between compute and apply → nothing changed yet, safe
+
+#### Implementation Steps (compute-then-apply refactor)
+
+**Step 9 — Add `apply()` to ManagedWalletInfo (dashcore):**
+Implement `apply(&mut self, changeset: &WalletChangeSet)` that applies
+each sub-changeset to the wallet state. Used by both runtime mutations
+and `initialize()` startup loading.
+
+**Step 10 — Split mutation methods into compute + apply (dashcore):**
+For each mutation method in `ManagedCoreAccount`:
+- Extract the read-only analysis into `compute_*` (returns changeset)
+- The existing method becomes: compute + apply + return result
+- `check_core_transaction` aggregates all compute_* results, applies once
+
+**Step 11 — Add `apply()` to PlatformWallet (platform-wallet):**
+Delegates to `ManagedWalletInfo::apply()` for wallet sub-changeset,
+plus handles identity/contact/platform address sub-changesets.
+
+**Step 12 — Wire `initialize()` through `apply()` (evo-tool):**
+On startup, `SqlitePersister::initialize()` loads changeset,
+`PlatformWallet::apply()` reconstructs state. No more scattered
+DB loading in `get_wallets()`.
+
 #### Migration Strategy
 
 The implementation touches 3 repos in order:
 
-1. **dashcore** (key-wallet): Steps 1-2. Add `WalletChangeSet` types, `Merge`
-   trait, refactor mutation methods to return deltas.
-2. **platform** (platform-wallet): Steps 3-5. Rename to `PlatformWalletChangeSet`,
-   wire SPV adapter, update contact/identity operations.
-3. **evo-tool**: Steps 6-8. Update `SqliteWalletPersister`, remove old writes,
-   implement `initialize()`.
+1. **dashcore** (key-wallet): Steps 1-2 done, Steps 9-10 next.
+2. **platform** (platform-wallet): Steps 3-5 done, Step 11 next.
+3. **evo-tool**: Steps 6-8 done, Step 12 next.
 
 Each step compiles independently. No intermediate fallback code.
 
