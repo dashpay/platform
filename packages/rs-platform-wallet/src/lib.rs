@@ -3,18 +3,14 @@
 pub mod changeset;
 pub mod error;
 pub mod events;
-#[cfg(feature = "manager")]
 pub mod manager;
-#[cfg(feature = "manager")]
 pub(crate) mod spv;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
 pub use events::PlatformWalletEvent;
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-#[cfg(feature = "manager")]
 pub use manager::PlatformWalletManager;
-#[cfg(feature = "manager")]
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -48,5 +44,4 @@ pub use changeset::{
     UtxoChangeSet,
 };
 
-#[cfg(feature = "manager")]
 pub use key_wallet_manager;

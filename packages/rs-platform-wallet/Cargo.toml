@@ -14,8 +14,8 @@ platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
-key-wallet-manager = { workspace = true, optional = true }
-dash-spv = { workspace = true, optional = true }
+key-wallet-manager = { workspace = true }
+dash-spv = { workspace = true }
 
 # Core dependencies
 dashcore = { workspace = true }
@@ -29,7 +29,7 @@ indexmap = "2.0"
 
 # Async runtime
 tokio = { version = "1", features = ["sync"] }
-tokio-util = { version = "0.7.12", optional = true }
+tokio-util = { version = "0.7.12" }
 
 # Logging
 tracing = "0.1"
@@ -50,8 +50,7 @@ static_assertions = "1.1"
 
 
 [features]
-default = ["bls", "eddsa", "manager"]
+default = ["bls", "eddsa"]
 bls = ["key-wallet/bls"]
 eddsa = ["key-wallet/eddsa"]
-manager = ["key-wallet-manager", "dash-spv", "tokio-util"]
 shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]

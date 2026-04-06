@@ -7,7 +7,6 @@
 //! `AssetLockManager` directly — it subscribes to the shared event channel.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tokio::sync::{broadcast, RwLock};
@@ -42,6 +41,8 @@ type SpvClient =
 /// only drives SPV sync and forwards events.
 pub struct SpvRuntime {
     event_tx: broadcast::Sender<PlatformWalletEvent>,
+    /// Shared sync state — atomics accessible without holding the adapter lock.
+    sync_state: Arc<super::sync_state::SpvSyncState>,
     adapter: Arc<RwLock<SpvWalletAdapter>>,
     client: RwLock<Option<SpvClient>>,
 }
@@ -52,30 +53,29 @@ impl SpvRuntime {
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
     ) -> Self {
-        let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(wallets)));
+        let sync_state = Arc::new(super::sync_state::SpvSyncState::new());
+        let adapter = Arc::new(RwLock::new(SpvWalletAdapter::new(
+            wallets,
+            Arc::clone(&sync_state),
+        )));
         Self {
             event_tx,
+            sync_state,
             adapter,
             client: RwLock::new(None),
         }
     }
 
-    // TODO: Not sure blocking method is good idea here
-    /// Current synced height.
+    /// Current synced height. Always returns the correct value even during
+    /// block processing (atomics are outside the adapter's RwLock).
     pub fn synced_height(&self) -> u32 {
-        self.adapter
-            .try_read()
-            .map(|a| a.synced_height())
-            .unwrap_or(0)
+        self.sync_state.synced_height()
     }
 
-    // TODO: it needs to be public? not sure blocking is good.
     /// Signal that the wallet set changed (added/removed).
     /// SPV will rebuild the bloom filter on the next tick.
     pub fn notify_wallets_changed(&self) {
-        if let Ok(adapter) = self.adapter.try_read() {
-            adapter.monitor_revision.fetch_add(1, Ordering::Relaxed);
-        }
+        self.sync_state.bump_monitor_revision();
     }
 
     /// Start SPV sync.

@@ -4,7 +4,6 @@
 //! and mempool transactions against ALL managed wallets, not just one.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -30,18 +29,17 @@ use crate::wallet::PlatformWallet;
 /// regardless of which wallet was added first.
 pub(crate) struct SpvWalletAdapter {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    synced_height: AtomicU32,
-    filter_committed_height: AtomicU32,
-    pub(crate) monitor_revision: AtomicU64,
+    sync_state: Arc<super::sync_state::SpvSyncState>,
 }
 
 impl SpvWalletAdapter {
-    pub(crate) fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+    pub(crate) fn new(
+        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+        sync_state: Arc<super::sync_state::SpvSyncState>,
+    ) -> Self {
         Self {
             wallets,
-            synced_height: AtomicU32::new(0),
-            filter_committed_height: AtomicU32::new(0),
-            monitor_revision: AtomicU64::new(0),
+            sync_state,
         }
     }
 }
@@ -108,10 +106,10 @@ impl WalletInterface for SpvWalletAdapter {
             wallet.queue_persist(changeset);
         }
 
-        self.synced_height.store(block_height, Ordering::Relaxed);
+        self.sync_state.update_synced_height(block_height);
 
         if !new_addresses.is_empty() {
-            self.monitor_revision.fetch_add(1, Ordering::Relaxed);
+            self.sync_state.bump_monitor_revision();
         }
 
         // Transaction status is tracked natively in key-wallet's TransactionRecord.context
@@ -167,7 +165,7 @@ impl WalletInterface for SpvWalletAdapter {
             }
 
             if !result.new_addresses.is_empty() {
-                self.monitor_revision.fetch_add(1, Ordering::Relaxed);
+                self.sync_state.bump_monitor_revision();
                 combined.new_addresses.extend(result.new_addresses);
             }
         }
@@ -213,24 +211,23 @@ impl WalletInterface for SpvWalletAdapter {
     }
 
     fn synced_height(&self) -> u32 {
-        self.synced_height.load(Ordering::Relaxed)
+        self.sync_state.synced_height()
     }
 
     fn update_synced_height(&mut self, height: u32) {
-        self.synced_height.store(height, Ordering::Relaxed);
+        self.sync_state.update_synced_height(height);
     }
 
     fn filter_committed_height(&self) -> u32 {
-        self.filter_committed_height.load(Ordering::Relaxed)
+        self.sync_state.filter_committed_height()
     }
 
     fn update_filter_committed_height(&mut self, height: u32) {
-        self.filter_committed_height
-            .store(height, Ordering::Relaxed);
+        self.sync_state.update_filter_committed_height(height);
     }
 
     fn monitor_revision(&self) -> u64 {
-        self.monitor_revision.load(Ordering::Relaxed)
+        self.sync_state.monitor_revision()
     }
 
     fn process_instant_send_lock(&mut self, txid: Txid) {
