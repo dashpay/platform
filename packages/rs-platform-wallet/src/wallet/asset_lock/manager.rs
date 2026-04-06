@@ -49,7 +49,7 @@ pub struct AssetLockManager {
     /// Removed once consumed by a successful identity operation.
     tracked: Arc<RwLock<BTreeMap<OutPoint, TrackedAssetLock>>>,
     /// Transaction broadcaster — DAPI or SPV depending on configuration.
-    broadcaster: Arc<dyn super::broadcaster::TransactionBroadcaster>,
+    broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
 }
 
 impl AssetLockManager {
@@ -59,7 +59,7 @@ impl AssetLockManager {
         wallet: Arc<RwLock<Wallet>>,
         wallet_info: Arc<RwLock<ManagedWalletInfo>>,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
-        broadcaster: Arc<dyn super::broadcaster::TransactionBroadcaster>,
+        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         Self {
             sdk,
@@ -282,18 +282,6 @@ impl AssetLockManager {
 // Transaction broadcasting (asset-lock-specific)
 // ---------------------------------------------------------------------------
 
-impl AssetLockManager {
-    /// Broadcast a signed transaction to the network.
-    ///
-    /// Delegates to the [`TransactionBroadcaster`] injected at construction —
-    /// either DAPI (gRPC) or SPV (P2P peers) depending on configuration.
-    pub async fn broadcast_transaction(
-        &self,
-        transaction: &Transaction,
-    ) -> Result<dashcore::Txid, PlatformWalletError> {
-        self.broadcaster.broadcast(transaction).await
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Asset lock transaction building
@@ -582,7 +570,7 @@ impl AssetLockManager {
         );
 
         // 3. Broadcast.
-        self.broadcast_transaction(&tx).await?;
+        self.broadcaster.broadcast(&tx).await?;
 
         // 4. Transition to Broadcast.
         self.advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
@@ -1021,7 +1009,7 @@ impl AssetLockManager {
         let proof = match status {
             AssetLockStatus::Built => {
                 // Re-broadcast and wait for proof.
-                self.broadcast_transaction(&tx).await?;
+                self.broadcaster.broadcast(&tx).await?;
                 self.advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
                     .await?;
                 let proof = self.wait_for_proof(out_point, timeout).await?;

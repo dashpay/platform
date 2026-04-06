@@ -1,5 +1,6 @@
 //! Platform wallet with identity management
 
+pub mod broadcaster;
 pub mod changeset;
 pub mod error;
 pub mod events;

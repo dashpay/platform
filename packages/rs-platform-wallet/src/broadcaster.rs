@@ -1,12 +1,11 @@
 //! Transaction broadcasting abstraction.
 //!
-//! `AssetLockManager` uses a [`TransactionBroadcaster`] to send asset lock
-//! transactions to the network. Two implementations are provided:
+//! Two implementations are provided:
 //!
 //! - [`DapiBroadcaster`] — broadcasts via Platform's DAPI gRPC (default for
 //!   standalone wallets without SPV).
-//! - SPV broadcast — via [`SpvRuntime::broadcast_transaction`] (used when
-//!   the wallet is managed by [`PlatformWalletManager`] with SPV enabled).
+//! - [`SpvBroadcaster`] — broadcasts via SPV P2P peers (used when the wallet
+//!   is managed by [`PlatformWalletManager`] with SPV enabled).
 
 use std::sync::Arc;
 
@@ -14,6 +13,7 @@ use async_trait::async_trait;
 use dashcore::{Transaction, Txid};
 
 use crate::error::PlatformWalletError;
+use crate::spv::SpvRuntime;
 
 /// Broadcasts a signed transaction to the Dash network.
 ///
@@ -60,6 +60,27 @@ impl TransactionBroadcaster for DapiBroadcaster {
                 PlatformWalletError::TransactionBroadcast(format!("DAPI broadcast failed: {}", e))
             })?;
 
+        Ok(transaction.txid())
+    }
+}
+
+/// Broadcasts transactions via SPV P2P peers.
+///
+/// Used when the wallet is managed by [`PlatformWalletManager`] with SPV.
+pub struct SpvBroadcaster {
+    spv: Arc<SpvRuntime>,
+}
+
+impl SpvBroadcaster {
+    pub fn new(spv: Arc<SpvRuntime>) -> Self {
+        Self { spv }
+    }
+}
+
+#[async_trait]
+impl TransactionBroadcaster for SpvBroadcaster {
+    async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
+        self.spv.broadcast_transaction(transaction).await?;
         Ok(transaction.txid())
     }
 }
