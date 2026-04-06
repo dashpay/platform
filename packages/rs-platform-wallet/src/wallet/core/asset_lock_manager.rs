@@ -71,7 +71,7 @@ impl AssetLockManager {
 
 impl AssetLockManager {
     /// Remove an asset lock after successful consumption (registration or top-up).
-    pub async fn remove_asset_lock(&self, txid: &Txid) {
+    pub(crate) async fn remove_asset_lock(&self, txid: &Txid) {
         let mut map = self.tracked.write().await;
         map.remove(txid);
     }
