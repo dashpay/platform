@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 use crate::error::PlatformWalletError;
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
+use super::core::asset_lock_manager::AssetLockManager;
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
 use super::identity::{IdentityManager, IdentityWallet};
@@ -39,6 +40,9 @@ pub struct PlatformWallet {
     pub(crate) dashpay: DashPayWallet,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
+    /// Shared asset lock manager — builds, broadcasts, tracks, and provides
+    /// proofs for asset lock transactions. Shared across sub-wallets.
+    pub(crate) asset_locks: Arc<AssetLockManager>,
     /// Optional persistence backend.  Set via [`set_persister`](Self::set_persister).
     persister: Option<Arc<Mutex<Box<dyn PlatformWalletPersistence>>>>,
 }
@@ -74,6 +78,11 @@ impl PlatformWallet {
         &self.tokens
     }
 
+    /// Access the shared asset lock manager.
+    pub fn asset_locks(&self) -> &AssetLockManager {
+        &self.asset_locks
+    }
+
     /// Get the wallet ID.
     pub fn wallet_id(&self) -> WalletId {
         self.wallet_id
@@ -97,11 +106,18 @@ impl PlatformWallet {
 
         let core = CoreWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            wallet.clone(),
+            wallet_info.clone(),
+        ));
+
         let identity = IdentityWallet {
             sdk: Arc::clone(&sdk),
             wallet: wallet.clone(),
             wallet_info: wallet_info.clone(),
             identity_manager: identity_manager.clone(),
+            asset_locks: Arc::clone(&asset_locks),
         };
 
         let dashpay = DashPayWallet {
@@ -124,6 +140,7 @@ impl PlatformWallet {
             dashpay,
             platform,
             tokens,
+            asset_locks,
             persister: None,
         }
     }
@@ -357,6 +374,7 @@ impl Clone for PlatformWallet {
             dashpay: self.dashpay.clone(),
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
+            asset_locks: self.asset_locks.clone(),
             // Cloned instances do not inherit the persister.
             persister: None,
         }

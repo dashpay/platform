@@ -31,7 +31,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::core::CoreWallet;
+use crate::wallet::core::asset_lock_manager::AssetLockManager;
 use crate::wallet::platform_addresses::PlatformAddressWallet;
 use crate::wallet::signer::{IdentitySigner, ManagedIdentitySigner};
 
@@ -106,6 +106,10 @@ pub struct IdentityWallet {
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     pub(crate) identity_manager: Arc<RwLock<IdentityManager>>,
+    /// Shared asset lock manager for building, broadcasting, and tracking
+    /// asset lock transactions. Used by funding methods that build asset
+    /// locks from wallet UTXOs.
+    pub(crate) asset_locks: Arc<AssetLockManager>,
 }
 
 impl IdentityWallet {
@@ -179,7 +183,6 @@ impl IdentityWallet {
     ///
     /// # Arguments
     ///
-    /// * `core_wallet` - The core wallet used to build the asset lock transaction.
     /// * `amount_duffs` - Amount of Dash (in duffs) to lock for the identity's
     ///   initial credit balance.
     /// * `identity_index` - BIP-9 identity index (hardened) in the key tree.
@@ -187,13 +190,11 @@ impl IdentityWallet {
     ///   identity (must be >= 1).
     pub async fn register_identity(
         &self,
-        core_wallet: &CoreWallet,
         amount_duffs: u64,
         identity_index: u32,
         key_count: u32,
     ) -> Result<Identity, PlatformWalletError> {
         self.register_identity_with_funding(
-            core_wallet,
             IdentityFundingMethod::FundWithWallet { amount_duffs },
             identity_index,
             key_count,
@@ -231,7 +232,6 @@ impl IdentityWallet {
     /// provided for this purpose.
     pub async fn register_identity_with_funding(
         &self,
-        core_wallet: &CoreWallet,
         funding: IdentityFundingMethod,
         identity_index: u32,
         key_count: u32,
@@ -247,7 +247,8 @@ impl IdentityWallet {
             IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             IdentityFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, _txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
@@ -263,12 +264,13 @@ impl IdentityWallet {
                 txout,
                 address: _,
             } => {
-                // TODO: Add a CoreWallet method that builds an asset lock from
+                // TODO: Add an AssetLockManager method that builds an asset lock from
                 // a specific UTXO instead of selecting from the full UTXO set.
                 // For now, fall back to FundWithWallet using the UTXO's value.
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, _txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
@@ -464,7 +466,7 @@ impl IdentityWallet {
     /// single call:
     ///
     /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
-    ///   [`CoreWallet::create_funded_asset_lock_proof`], then submits the
+    ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
     ///   identity registration to Platform.
     /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
     ///   directly.
@@ -479,7 +481,6 @@ impl IdentityWallet {
     /// Returns the confirmed `Identity` from Platform.
     pub async fn funded_register_identity<S: Signer<IdentityPublicKey>>(
         &self,
-        core_wallet: &CoreWallet,
         identity: &Identity,
         funding: IdentityFunding,
         identity_index: u32,
@@ -489,7 +490,8 @@ impl IdentityWallet {
 
         let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, txid) = core_wallet
+                let (proof, key, txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityRegistration,
@@ -525,7 +527,7 @@ impl IdentityWallet {
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(txid) = tracked_txid {
-            core_wallet.remove_asset_lock(&txid).await;
+            self.asset_locks.remove_asset_lock(&txid).await;
         }
 
         Ok(result)
@@ -538,7 +540,7 @@ impl IdentityWallet {
     /// single call:
     ///
     /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
-    ///   [`CoreWallet::create_funded_asset_lock_proof`], then submits the
+    ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
     ///   top-up to Platform.
     /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
     ///   directly.
@@ -553,7 +555,6 @@ impl IdentityWallet {
     /// Returns the new credit balance.
     pub async fn funded_top_up_identity(
         &self,
-        core_wallet: &CoreWallet,
         identity: &Identity,
         funding: IdentityFunding,
         identity_index: u32,
@@ -562,7 +563,8 @@ impl IdentityWallet {
 
         let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, txid) = core_wallet
+                let (proof, key, txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
@@ -593,7 +595,7 @@ impl IdentityWallet {
 
         // Clean up the tracked asset lock after successful consumption.
         if let Some(txid) = tracked_txid {
-            core_wallet.remove_asset_lock(&txid).await;
+            self.asset_locks.remove_asset_lock(&txid).await;
         }
 
         Ok(new_balance)
@@ -822,20 +824,17 @@ impl IdentityWallet {
     ///
     /// # Arguments
     ///
-    /// * `core_wallet` - The core wallet used to fund the top-up.
     /// * `identity_id` - The identifier of the identity to top up.
     /// * `topup_index` - An incrementing index distinguishing successive
     ///   top-ups for the same identity.
     /// * `amount_duffs` - Amount of Dash (in duffs) to add.
     pub async fn top_up_identity(
         &self,
-        core_wallet: &CoreWallet,
         identity_id: &Identifier,
         topup_index: u32,
         amount_duffs: u64,
     ) -> Result<(), PlatformWalletError> {
         self.top_up_identity_with_funding(
-            core_wallet,
             identity_id,
             TopUpFundingMethod::FundWithWallet { amount_duffs },
             topup_index,
@@ -859,7 +858,6 @@ impl IdentityWallet {
     /// for details on the IS -> CL fallback strategy.
     pub async fn top_up_identity_with_funding(
         &self,
-        core_wallet: &CoreWallet,
         identity_id: &Identifier,
         funding: TopUpFundingMethod,
         topup_index: u32,
@@ -882,7 +880,8 @@ impl IdentityWallet {
             TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             TopUpFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, _txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
@@ -898,12 +897,13 @@ impl IdentityWallet {
                 txout,
                 address: _,
             } => {
-                // TODO: Add a CoreWallet method that builds an asset lock from
+                // TODO: Add an AssetLockManager method that builds an asset lock from
                 // a specific UTXO instead of selecting from the full UTXO set.
                 // For now, fall back to FundWithWallet using the UTXO's value.
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                let (proof, key, _txid) = core_wallet
+                let (proof, key, _txid) = self
+                    .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
                         AssetLockFundingType::IdentityTopUp,
