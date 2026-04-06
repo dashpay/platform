@@ -31,7 +31,7 @@ pub struct PlatformWalletManager {
     sdk: Arc<dash_sdk::Sdk>,
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_tx: broadcast::Sender<PlatformWalletEvent>,
-    spv: SpvRuntime,
+    spv: Arc<SpvRuntime>,
     persister: Arc<dyn PlatformWalletPersistence>,
 }
 
@@ -40,7 +40,7 @@ impl PlatformWalletManager {
     pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<dyn PlatformWalletPersistence>) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let wallets = Arc::new(RwLock::new(BTreeMap::new()));
-        let spv = SpvRuntime::new(Arc::clone(&wallets), event_tx.clone());
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallets), event_tx.clone()));
         Self {
             sdk,
             wallets,
@@ -58,6 +58,14 @@ impl PlatformWalletManager {
     /// Access the SPV runtime for sync control.
     pub fn spv(&self) -> &SpvRuntime {
         &self.spv
+    }
+
+    /// Broadcast a transaction via SPV P2P peers.
+    pub async fn broadcast_transaction(
+        &self,
+        tx: &dashcore::Transaction,
+    ) -> Result<(), PlatformWalletError> {
+        self.spv.broadcast_transaction(tx).await
     }
 
     /// Subscribe to platform wallet events.
@@ -91,12 +99,14 @@ impl PlatformWalletManager {
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
         let wallet_id = wallet_info.wallet_id;
 
+        let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(&self.spv)));
         let platform_wallet = PlatformWallet::new(
             Arc::clone(&self.sdk),
             wallet,
             wallet_info,
             self.event_tx.clone(),
             Arc::clone(&self.persister),
+            broadcaster,
         );
 
         // Load persisted state and apply it to the in-memory wallet.

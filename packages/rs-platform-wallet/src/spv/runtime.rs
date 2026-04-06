@@ -123,7 +123,7 @@ impl SpvRuntime {
     /// The transaction will be relayed back to us through SPV's bloom filter
     /// matching, at which point the wallet adapter processes it and updates
     /// balances automatically.
-    pub async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), PlatformWalletError> {
+    pub(crate) async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()

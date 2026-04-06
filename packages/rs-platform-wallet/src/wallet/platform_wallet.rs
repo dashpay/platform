@@ -114,7 +114,8 @@ impl PlatformWallet {
         persister: Arc<dyn PlatformWalletPersistence>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        Self::new(sdk, wallet, wallet_info, event_tx, persister)
+        let broadcaster = Arc::new(crate::broadcaster::DapiBroadcaster::new(Arc::clone(&sdk)));
+        Self::new(sdk, wallet, wallet_info, event_tx, persister, broadcaster)
     }
 
     /// Create a PlatformWallet from a BIP-39 mnemonic.
@@ -286,6 +287,7 @@ impl PlatformWallet {
         wallet_info: ManagedWalletInfo,
         event_tx: broadcast::Sender<PlatformWalletEvent>,
         persister: Arc<dyn PlatformWalletPersistence>,
+        broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
     ) -> Self {
         let wallet_id = wallet_info.wallet_id;
         let wallet = Arc::new(RwLock::new(wallet));
@@ -294,9 +296,6 @@ impl PlatformWallet {
 
         let core = CoreWallet::new(Arc::clone(&sdk), wallet.clone(), wallet_info.clone());
 
-        let broadcaster = Arc::new(
-            crate::broadcaster::DapiBroadcaster::new(Arc::clone(&sdk)),
-        );
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             wallet.clone(),

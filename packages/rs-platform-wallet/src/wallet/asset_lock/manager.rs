@@ -48,7 +48,16 @@ pub struct AssetLockManager {
     /// credit outputs (DIP-0027), each consumable separately.
     /// Removed once consumed by a successful identity operation.
     tracked: Arc<RwLock<BTreeMap<OutPoint, TrackedAssetLock>>>,
-    /// Transaction broadcaster — DAPI or SPV depending on configuration.
+    /// Transaction broadcaster — pluggable so the same `AssetLockManager`
+    /// works with different broadcast backends:
+    ///
+    /// - [`DapiBroadcaster`](crate::broadcaster::DapiBroadcaster) — gRPC via
+    ///   Platform DAPI (default for standalone wallets without SPV).
+    /// - [`SpvBroadcaster`](crate::broadcaster::SpvBroadcaster) — P2P via SPV
+    ///   peers (used when managed by `PlatformWalletManager` with SPV enabled).
+    ///
+    /// Injected at construction by `PlatformWallet::new()`. The caller
+    /// (typically `PlatformWalletManager`) decides which implementation to use.
     broadcaster: Arc<dyn crate::broadcaster::TransactionBroadcaster>,
 }
 
