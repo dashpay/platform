@@ -4143,48 +4143,144 @@ If the app crashes:
 The gap between in-memory and storage is always bounded by the time since last `persist()`.
 Calling `persist()` after every block or every user action keeps the gap small.
 
+#### Layered Responsibilities
+
+```
+key-wallet (dashcore):
+  - WalletChangeSet types + Merge trait
+  - compute_*() methods — read-only, return changeset
+  - apply() — mutate state from changeset
+  - NO persister, NO stage, NO persistence awareness
+
+platform-wallet:
+  - PlatformWalletChangeSet (wraps key-wallet + platform deltas)
+  - Optional persister field (configurable)
+  - Calls key-wallet compute_*() → gets WalletChangeSet
+  - Wraps in PlatformWalletChangeSet → queues on persister
+  - Persister owns the pending buffer + flush strategy
+  - apply() delegates to ManagedWalletInfo + IdentityManager
+```
+
+key-wallet stays pure — compute + apply. If used standalone
+(without platform-wallet), no persistence overhead.
+
+#### Persister Architecture
+
+The persister lives on PlatformWallet. It owns the pending buffer
+and decides when to flush. The wallet queues and forgets:
+
+```rust
+pub struct PlatformWallet {
+    // ... wallet fields ...
+    persister: Option<Arc<Mutex<dyn PlatformWalletPersistence>>>,
+}
+
+impl PlatformWallet {
+    // Queue changeset — persister decides when to flush
+    fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
+        if let Some(persister) = &self.persister {
+            persister.lock().queue(changeset);
+        }
+        // No persister = no-op, no accumulation, no memory growth
+    }
+
+    fn set_persister(&mut self, persister: impl PlatformWalletPersistence) {
+        self.persister = Some(Arc::new(Mutex::new(persister)));
+    }
+}
+```
+
+The persister owns flush strategy:
+```rust
+pub trait PlatformWalletPersistence {
+    type Error: std::error::Error;
+
+    /// Queue a changeset. Persister merges into pending buffer.
+    /// May flush immediately or defer based on strategy.
+    fn queue(&mut self, changeset: PlatformWalletChangeSet);
+
+    /// Force flush all pending changes to storage.
+    fn flush(&mut self) -> Result<(), Self::Error>;
+
+    /// Load all persisted state as one changeset (for startup).
+    fn initialize(&mut self) -> Result<PlatformWalletChangeSet, Self::Error>;
+}
+
+pub struct SqliteWalletPersister {
+    db: Arc<Database>,
+    seed_hash: [u8; 32],
+    network: String,
+    pending: PlatformWalletChangeSet,  // accumulates here
+    strategy: FlushStrategy,
+}
+
+pub enum FlushStrategy {
+    /// Flush after every queue() call
+    Immediate,
+    /// Flush every N queued changesets
+    EveryN(usize),
+    /// Never auto-flush — caller must call flush() explicitly
+    Manual,
+}
+
+impl PlatformWalletPersistence for SqliteWalletPersister {
+    fn queue(&mut self, changeset: PlatformWalletChangeSet) {
+        self.pending.merge(changeset);
+        match self.strategy {
+            FlushStrategy::Immediate => { let _ = self.flush(); }
+            FlushStrategy::EveryN(n) => { self.count += 1; if self.count >= n { let _ = self.flush(); } }
+            FlushStrategy::Manual => {} // caller decides
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), Self::Error> {
+        if let Some(changeset) = self.pending.take() {
+            // Single SQLite transaction — all or nothing
+            let tx = self.conn.transaction()?;
+            self.persist_changeset(&tx, &changeset)?;
+            tx.commit()?;
+        }
+        Ok(())
+    }
+}
+```
+
+**No persister = no memory growth.** The `queue_persist()` call is a
+no-op when persister is None. No stage field accumulating forever.
+
 #### Compute-Then-Apply Architecture
 
-Every mutation follows the same three-phase pattern internally:
-
-```
-Public method (caller-facing):
-  1. COMPUTE  — read-only analysis, builds WalletChangeSet
-  2. APPLY    — single &mut self, applies all changes atomically
-  3. STAGE    — accumulates changeset for persistence
-```
-
-**Two layers of methods:**
+Every mutation follows the same pattern:
 
 **Internal** (`compute_*`) — read-only, return changeset, don't mutate:
 ```rust
+// key-wallet: pure computation
 fn compute_record_transaction(&self, tx, context) -> WalletChangeSet { ... }
 fn compute_mark_address_used(&self, address) -> AccountChangeSet { ... }
 fn compute_maintain_gap_limit(&self, xpub) -> AccountChangeSet { ... }
 fn compute_update_balance(&self) -> BalanceChangeSet { ... }
 ```
 
-**Public** (existing names) — aggregate + apply + stage, return just the result:
+**Public** (existing names) — aggregate + apply, return result.
+key-wallet returns changeset to caller for persistence:
 ```rust
-pub fn check_core_transaction(&mut self, tx, context) -> TransactionCheckResult {
+// key-wallet public method
+pub fn check_core_transaction(&mut self, tx, ctx) -> (TransactionCheckResult, WalletChangeSet) {
     // 1. Compute all changes (read-only)
-    let mut changeset = self.compute_record_transaction(tx, context);
-    changeset.merge(self.compute_mark_address_used(&addresses));
-    changeset.merge(self.compute_maintain_gap_limit(&xpub));
-    changeset.merge(self.compute_update_balance());
+    let changeset = self.compute_transaction_changeset(tx, ctx);
 
     // 2. Apply atomically (single &mut self)
     self.apply(&changeset);
 
-    // 3. Stage for persistence (internal, caller never sees changeset)
-    self.stage(changeset);
-
-    result
+    // 3. Return changeset to caller (for persistence)
+    (result, changeset)
 }
-```
 
-**Callers never deal with changesets.** They call the public method, state is
-consistent, persistence is staged. They call `persist()` when ready.
+// platform-wallet SPV adapter wraps + queues
+let (result, kw_changeset) = wallet_info.check_core_transaction(tx, ctx);
+let platform_cs = PlatformWalletChangeSet { wallet: Some(kw_changeset), .. };
+platform_wallet.queue_persist(platform_cs);  // persister handles the rest
+```
 
 **`apply()` method** on ManagedWalletInfo:
 ```rust
@@ -4208,19 +4304,16 @@ impl ManagedWalletInfo {
 }
 ```
 
-Same pattern for `PlatformWallet`:
+Same for PlatformWallet — delegates to sub-stores:
 ```rust
 impl PlatformWallet {
     pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
         if let Some(wallet_cs) = &changeset.wallet {
             self.core().blocking_wallet_info_mut().apply(wallet_cs);
         }
-        if let Some(contacts) = &changeset.contacts {
-            self.apply_contacts(contacts);
-        }
-        if let Some(identities) = &changeset.identities {
-            self.apply_identities(identities);
-        }
+        if let Some(contacts) = &changeset.contacts { /* IdentityManager */ }
+        if let Some(identities) = &changeset.identities { /* IdentityManager */ }
+        if let Some(platform_addrs) = &changeset.platform_addresses { /* metadata */ }
     }
 }
 ```
@@ -4232,102 +4325,56 @@ platform_wallet.apply(&changeset);
 ```
 
 **Consistency guarantees:**
-- Compute phase fails → no state change, no staging, consistent
+- Compute phase fails → no state change, consistent
 - Apply panics → Rust poisons the lock, no partial state visible
-- Between apply and persist → in-memory ahead of storage, re-sync fixes
-- Between compute and apply → nothing changed yet, safe
+- Between apply and queue_persist → in-memory ahead of storage, re-sync fixes
+- No persister → no accumulation, no memory growth
 
 #### Implementation Steps (compute-then-apply refactor)
 
 **Step 9 — Add `apply()` to ManagedWalletInfo (dashcore):**
 
 Implement `apply(&mut self, changeset: &WalletChangeSet)` that applies
-each sub-changeset to the wallet state:
-- `UtxoChangeSet` → add/remove UTXOs in account UTXO maps
-- `TransactionChangeSet` → insert/update TransactionRecords in accounts
-- `AccountChangeSet` → advance address pool indices, mark addresses used
-- `BalanceChangeSet` → apply balance delta
-- `ChainChangeSet` → update synced height
-
-Used by both runtime mutations AND `initialize()` startup loading —
-same code path guarantees consistency.
+each sub-changeset to the wallet state. Used by both runtime mutations
+and `initialize()` startup loading — same code path guarantees consistency.
 
 **Step 10 — Split mutation methods into compute + apply (dashcore):**
 
-For each mutation method in `ManagedCoreAccount` and `WalletTransactionChecker`:
-
-```
-Current (mutate-and-return):
-  record_transaction(&mut self, tx) -> (TransactionRecord, WalletChangeSet)
-    // interleaved: analyze tx, mutate UTXOs, mutate transactions, return both
-
-Split into:
-  compute_record_transaction(&self, tx) -> WalletChangeSet
-    // read-only: analyze tx, build changeset, don't mutate
-
-  record_transaction(&mut self, tx) -> TransactionCheckResult
-    // public API: compute + apply + return result (changeset is internal)
-```
+For each mutation method in `ManagedCoreAccount` and `WalletTransactionChecker`,
+extract read-only analysis into `compute_*` (returns changeset). The existing
+public method becomes: compute + apply + return (result, changeset).
 
 Methods to split:
-- `record_transaction` → `compute_record_transaction` (read-only) + apply
-- `confirm_transaction` → `compute_confirm_transaction` (read-only) + apply
-- `mark_utxos_instant_send` → `compute_instant_send_lock` (read-only) + apply
-- `mark_address_used` → `compute_mark_address_used` (read-only) + apply
-- `maintain_gap_limit` → `compute_gap_limit_expansion` (read-only) + apply
-- `update_balance` → `compute_balance_update` (read-only) + apply
+- `record_transaction` → `compute_record_transaction` + apply
+- `confirm_transaction` → `compute_confirm_transaction` + apply
+- `mark_utxos_instant_send` → `compute_instant_send_lock` + apply
+- `mark_address_used` → `compute_mark_address_used` + apply
+- `maintain_gap_limit` → `compute_gap_limit_expansion` + apply
+- `update_balance` → `compute_balance_update` + apply
 
-`check_core_transaction` becomes:
-```rust
-pub fn check_core_transaction(&mut self, tx, context) -> TransactionCheckResult {
-    // 1. Compute all changes (read-only)
-    let changeset = self.compute_transaction_changeset(tx, context);
+`check_core_transaction` aggregates all compute_* results, applies once,
+returns (result, changeset) to caller.
 
-    // 2. Apply atomically (single &mut self)
-    self.apply(&changeset);
+**Step 11 — Persister on PlatformWallet (platform-wallet):**
 
-    // 3. Changeset is returned to caller for staging
-    // (key-wallet doesn't stage — PlatformWallet does)
-    result_with_changeset
-}
-```
+- Remove `stage: StdRwLock<PlatformWalletChangeSet>` field
+- Add `persister: Option<Arc<Mutex<dyn PlatformWalletPersistence>>>`
+- Add `queue_persist()` method — no-op without persister
+- Add `set_persister()` method
+- Update `PlatformWalletPersistence` trait: `queue()` + `flush()` + `initialize()`
+- Add `FlushStrategy` enum (Immediate, EveryN, Manual)
+- Add `apply()` on PlatformWallet delegating to ManagedWalletInfo + IdentityManager
 
-Note: key-wallet public methods still return the changeset to the caller
-(PlatformWallet/SPV adapter) for staging. key-wallet has no `stage` field —
-staging is a platform-wallet concern. The return signature becomes:
-```rust
-pub fn check_core_transaction(&mut self, tx, ctx) -> (TransactionCheckResult, WalletChangeSet)
-```
-Caller (SPV adapter) wraps in `PlatformWalletChangeSet` and stages on
-`PlatformWallet`. key-wallet stays pure — no persistence awareness.
+**Step 12 — Update SqliteWalletPersister (evo-tool):**
 
-**Step 11 — Add `apply()` to PlatformWallet (platform-wallet):**
+- Implement new `PlatformWalletPersistence` trait (queue + flush + initialize)
+- Add `pending: PlatformWalletChangeSet` buffer
+- Add `strategy: FlushStrategy` field
+- Move existing `persist()` logic into `flush()`
+- Wire: user actions use `FlushStrategy::Immediate`,
+  SPV sync uses `FlushStrategy::Manual` with periodic flush timer
 
-```rust
-impl PlatformWallet {
-    pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
-        if let Some(wallet_cs) = &changeset.wallet {
-            let mut info = self.core().blocking_wallet_info_mut();
-            info.apply(wallet_cs);
-        }
-        if let Some(contacts) = &changeset.contacts {
-            // apply to IdentityManager: add sent/incoming requests,
-            // establish contacts
-        }
-        if let Some(identities) = &changeset.identities {
-            // apply to IdentityManager: insert/update identities,
-            // update keys, DPNS names
-        }
-        if let Some(platform_addrs) = &changeset.platform_addresses {
-            // apply to PlatformAddressWallet or wallet metadata
-        }
-    }
-}
-```
-
-Used by `initialize()` to reconstruct state from persisted changesets.
-
-**Step 12 — Wire `initialize()` through `apply()` (evo-tool):**
+**Step 13 — Wire initialize() through apply() (evo-tool):**
 
 On startup:
 ```rust
@@ -4335,41 +4382,8 @@ let changeset = persister.initialize()?;
 platform_wallet.apply(&changeset);
 ```
 
-Replace scattered DB loading in `get_wallets()` — the full state is
-reconstructed through one `apply()` call with one changeset.
-
-**Step 13 — Smart persistence strategy (evo-tool):**
-
-Replace per-operation `persist_platform_wallet()` calls with a
-hybrid flush strategy:
-
-```rust
-// User actions: persist immediately (durability expected)
-send_payment()        → stage + persist()
-register_identity()   → stage + persist()
-send_contact_request() → stage + persist()
-
-// SPV sync: batch, persist periodically
-process_block()       → stage only (NO persist)
-every 10 blocks OR every 10 seconds:
-                      → persist()
-
-// App lifecycle:
-on_shutdown()         → persist()  // flush everything
-```
-
-Implementation:
-- Remove `persist_platform_wallet()` calls from `reconcile_spv_wallets()`
-- Add a periodic flush task (e.g., `spawn_interval(Duration::from_secs(10))`)
-  that calls `persist()` on all wallets with non-empty stages
-- Keep `persist_platform_wallet()` after user-initiated operations
-- Add `persist()` to graceful shutdown sequence
-
-Benefits:
-- 10x fewer DB writes during initial SPV sync
-- User actions still durable immediately
-- Crash recovery gap bounded by flush interval (SPV re-syncs trivially)
-- Stage accumulates via `Merge` — no data loss between flushes
+Replace scattered DB loading. Remove `persist_platform_wallet()` helper.
+Persister is set on PlatformWallet at creation time.
 
 #### Migration Strategy
 
