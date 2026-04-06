@@ -1,4 +1,4 @@
-//! Delta-based persistence for the platform wallet.
+//! Delta-based changesets for the platform wallet.
 //!
 //! This module provides:
 //!

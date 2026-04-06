@@ -3,7 +3,7 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use crate::persistence::changeset::PlatformWalletChangeSet;
+use crate::changeset::changeset::PlatformWalletChangeSet;
 
 /// Storage backend for platform wallet state.
 ///

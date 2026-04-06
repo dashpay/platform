@@ -4,7 +4,7 @@ pub mod error;
 pub mod events;
 #[cfg(feature = "manager")]
 pub mod manager;
-pub mod persistence;
+pub mod changeset;
 #[cfg(feature = "manager")]
 pub(crate) mod spv;
 pub mod wallet;
@@ -37,13 +37,13 @@ pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 
 // Re-export changeset types for caller-level staging.
-pub use persistence::changeset::{
+pub use changeset::{
     AccountChangeSet, AssetLockChangeSet, AssetLockEntry, ChainChangeSet, ContactChangeSet,
     ContactRequestEntry, IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet,
     PlatformAddressEntry, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
     UtxoChangeSet,
 };
-pub use persistence::Merge;
+pub use changeset::Merge;
 
 #[cfg(feature = "manager")]
 pub use key_wallet_manager;

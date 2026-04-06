@@ -10,7 +10,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
-use crate::persistence::{PlatformWalletChangeSet, PlatformWalletPersistence};
+use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;

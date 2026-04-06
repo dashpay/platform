@@ -18,7 +18,7 @@ use key_wallet_manager::{
 use tokio::sync::{broadcast, RwLock};
 
 use crate::events::{PlatformWalletEvent, TransactionStatus};
-use crate::persistence::changeset::{ChainChangeSet, PlatformWalletChangeSet};
+use crate::changeset::{ChainChangeSet, PlatformWalletChangeSet};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 

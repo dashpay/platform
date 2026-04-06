@@ -19,7 +19,7 @@ use dpp::prelude::{CoreBlockHeight, Identifier};
 use key_wallet::dip9::DerivationPathReference;
 use key_wallet::PlatformP2PKHAddress;
 
-use crate::persistence::merge::Merge;
+use crate::changeset::merge::Merge;
 use crate::wallet::dashpay::ContactRequest;
 use crate::wallet::identity::managed_identity::BlockTime;
 
