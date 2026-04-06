@@ -34,6 +34,7 @@ pub struct PlatformAddressWallet {
     pub(crate) wallet: Arc<RwLock<Wallet>>,
     pub(crate) wallet_info: Arc<RwLock<ManagedWalletInfo>>,
     /// Cached platform address balances from the last sync.
+    /// TODO: Make them lock free as we did for core balances in the core wallet, by using a single atomic pointer to an immutable map that gets swapped out on updates. Does it make sense? How we use it in evo tool?
     balances: Arc<RwLock<BTreeMap<PlatformAddress, Credits>>>,
 }
 

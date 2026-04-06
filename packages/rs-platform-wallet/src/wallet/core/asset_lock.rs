@@ -6,7 +6,7 @@
 //! Private keys are NOT stored here — they are re-derived from
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
 
-use dashcore::{Transaction, Txid};
+use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -23,7 +23,8 @@ pub enum AssetLockStatus {
 /// re-derived from funding_type + identity_index via key-wallet's Wallet.
 #[derive(Debug, Clone)]
 pub struct TrackedAssetLock {
-    pub txid: Txid,
+    /// The outpoint identifying this credit output (txid + vout).
+    pub out_point: OutPoint,
     pub transaction: Transaction,
     /// BIP44 account index that funded this asset lock (UTXO source).
     pub account_index: u32,

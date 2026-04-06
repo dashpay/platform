@@ -12,7 +12,7 @@
 //!   enums consumed by `register_identity_with_funding` and
 //!   `top_up_identity_with_funding`. Retained for backwards compatibility.
 
-use dashcore::{Address, OutPoint, PrivateKey, Transaction, TxOut};
+use dashcore::{Address, OutPoint, PrivateKey, TxOut};
 use dpp::prelude::AssetLockProof;
 
 // ─── Unified funding enum ────────────────────────────────────────────────────
@@ -29,14 +29,14 @@ pub enum IdentityFunding {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
     },
-    /// Use an existing, already-proved asset lock.
+    /// Resume from a tracked asset lock identified by its outpoint (txid + output index).
+    ///
+    /// The asset lock must already be tracked by the [`AssetLockManager`].
+    /// The manager will resume from whatever stage the lock is at (built,
+    /// broadcast, IS-locked, or chain-locked) and re-derive the private key.
     FromExistingAssetLock {
-        /// The full asset lock transaction.
-        transaction: Transaction,
-        /// The finality proof (IS or CL).
-        proof: AssetLockProof,
-        /// The one-time private key from the asset lock payload.
-        private_key: PrivateKey,
+        /// The outpoint identifying the tracked asset lock (txid + output index).
+        out_point: OutPoint,
     },
     /// Build an asset lock from a specific UTXO (e.g. QR-funded flow).
     FromUtxo {

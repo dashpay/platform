@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
@@ -164,15 +165,17 @@ impl IdentityWallet {
         self.identity_manager.try_write().ok()
     }
 
-    /// Extract the transaction ID from an asset lock proof.
+    /// Extract the outpoint from an asset lock proof.
     ///
-    /// For instant proofs, this is the txid of the embedded transaction.
-    /// For chain proofs, this is the txid from the out_point.
-    /// Returns `None` only if the instant proof has no valid out_point.
-    fn txid_from_proof(proof: &AssetLockProof) -> Option<dashcore::Txid> {
+    /// For instant proofs, this is the txid of the embedded transaction
+    /// combined with the output index from the proof.
+    /// For chain proofs, this is the out_point directly.
+    fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
         match proof {
-            AssetLockProof::Instant(instant) => Some(instant.transaction().txid()),
-            AssetLockProof::Chain(chain) => Some(chain.out_point.txid),
+            AssetLockProof::Instant(instant) => {
+                Some(dashcore::OutPoint::new(instant.transaction().txid(), instant.output_index()))
+            }
+            AssetLockProof::Chain(chain) => Some(chain.out_point),
         }
     }
 }
@@ -259,7 +262,7 @@ impl IdentityWallet {
             IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             IdentityFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _txid) = self
+                let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -280,7 +283,7 @@ impl IdentityWallet {
                 // For now, fall back to FundWithWallet using the UTXO's value.
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                let (proof, key, _txid) = self
+                let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -381,9 +384,9 @@ impl IdentityWallet {
 
         let signer = self.signer_for_identity(identity_index);
 
-        // Extract the txid before consuming the proof, in case we need to
+        // Extract the outpoint before consuming the proof, in case we need to
         // build a ChainLock proof for recovery.
-        let txid = Self::txid_from_proof(&asset_lock_proof);
+        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         let identity = match identity
             .put_to_platform_and_wait_for_response(
@@ -398,13 +401,13 @@ impl IdentityWallet {
             Ok(identity) => identity,
             Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
                 // IS-lock proof was rejected — try to upgrade to ChainLock.
-                if let Some(txid) = txid {
+                if let Some(out_point) = proof_out_point {
                     tracing::warn!(
                         "IS-lock proof rejected for identity registration (tx {}), \
                          retrying with ChainLock proof",
-                        txid
+                        out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
                     identity
                         .put_to_platform_and_wait_for_response(
                             &self.sdk,
@@ -513,8 +516,9 @@ impl IdentityWallet {
     /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
     ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
     ///   identity registration to Platform.
-    /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
-    ///   directly.
+    /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
+    ///   re-deriving the proof and private key from whatever stage the lock
+    ///   is at.
     /// * **`FromUtxo`** — not yet implemented; returns an error.
     ///
     /// Unlike [`register_identity_with_funding`](Self::register_identity_with_funding),
@@ -533,9 +537,9 @@ impl IdentityWallet {
     ) -> Result<Identity, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-        let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
+        let (asset_lock_proof, asset_lock_private_key, tracked_out_point) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, txid) = self
+                let (proof, key, out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -544,13 +548,15 @@ impl IdentityWallet {
                         identity_index,
                     )
                     .await?;
-                (proof, key, Some(txid))
+                (proof, key, Some(out_point))
             }
-            IdentityFunding::FromExistingAssetLock {
-                transaction: _,
-                proof,
-                private_key,
-            } => (proof, private_key, None),
+            IdentityFunding::FromExistingAssetLock { out_point } => {
+                let (proof, key) = self
+                    .asset_locks
+                    .resume_asset_lock(&out_point, Duration::from_secs(300))
+                    .await?;
+                (proof, key, Some(out_point))
+            }
             IdentityFunding::FromUtxo { .. } => {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "FromUtxo funding is not yet implemented for funded_register_identity"
@@ -559,9 +565,9 @@ impl IdentityWallet {
             }
         };
 
-        // Extract the txid before consuming the proof, in case we need to
+        // Extract the outpoint before consuming the proof, in case we need to
         // build a ChainLock proof for recovery.
-        let txid = Self::txid_from_proof(&asset_lock_proof);
+        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         let result = match self
             .register_identity_with_signer(
@@ -574,13 +580,13 @@ impl IdentityWallet {
         {
             Ok(identity) => identity,
             Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                if let Some(txid) = txid {
+                if let Some(out_point) = proof_out_point {
                     tracing::warn!(
                         "IS-lock proof rejected for funded identity registration (tx {}), \
                          retrying with ChainLock proof",
-                        txid
+                        out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
                     self.register_identity_with_signer(
                         identity,
                         chain_proof,
@@ -597,8 +603,8 @@ impl IdentityWallet {
         };
 
         // Clean up the tracked asset lock after successful consumption.
-        if let Some(txid) = tracked_txid {
-            self.asset_locks.remove_asset_lock(&txid).await;
+        if let Some(out_point) = tracked_out_point {
+            self.asset_locks.remove_asset_lock(&out_point).await;
         }
 
         Ok(result)
@@ -613,8 +619,9 @@ impl IdentityWallet {
     /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
     ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
     ///   top-up to Platform.
-    /// * **`FromExistingAssetLock`** — uses the supplied proof and private key
-    ///   directly.
+    /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
+    ///   re-deriving the proof and private key from whatever stage the lock
+    ///   is at.
     /// * **`FromUtxo`** — not yet implemented; returns an error.
     ///
     /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
@@ -632,9 +639,9 @@ impl IdentityWallet {
     ) -> Result<u64, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-        let (asset_lock_proof, asset_lock_private_key, tracked_txid) = match funding {
+        let (asset_lock_proof, asset_lock_private_key, tracked_out_point) = match funding {
             IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, txid) = self
+                let (proof, key, out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -643,13 +650,15 @@ impl IdentityWallet {
                         identity_index,
                     )
                     .await?;
-                (proof, key, Some(txid))
+                (proof, key, Some(out_point))
             }
-            IdentityFunding::FromExistingAssetLock {
-                transaction: _,
-                proof,
-                private_key,
-            } => (proof, private_key, None),
+            IdentityFunding::FromExistingAssetLock { out_point } => {
+                let (proof, key) = self
+                    .asset_locks
+                    .resume_asset_lock(&out_point, Duration::from_secs(300))
+                    .await?;
+                (proof, key, Some(out_point))
+            }
             IdentityFunding::FromUtxo { .. } => {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "FromUtxo funding is not yet implemented for funded_top_up_identity"
@@ -658,9 +667,9 @@ impl IdentityWallet {
             }
         };
 
-        // Extract the txid before consuming the proof, in case we need to
+        // Extract the outpoint before consuming the proof, in case we need to
         // build a ChainLock proof for recovery.
-        let txid = Self::txid_from_proof(&asset_lock_proof);
+        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         let new_balance = match self
             .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key)
@@ -668,13 +677,13 @@ impl IdentityWallet {
         {
             Ok(balance) => balance,
             Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                if let Some(txid) = txid {
+                if let Some(out_point) = proof_out_point {
                     tracing::warn!(
                         "IS-lock proof rejected for funded identity top-up (tx {}), \
                          retrying with ChainLock proof",
-                        txid
+                        out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
                     self.top_up_identity_with_signer(identity, chain_proof, &asset_lock_private_key)
                         .await
                         .map_err(PlatformWalletError::Sdk)?
@@ -686,8 +695,8 @@ impl IdentityWallet {
         };
 
         // Clean up the tracked asset lock after successful consumption.
-        if let Some(txid) = tracked_txid {
-            self.asset_locks.remove_asset_lock(&txid).await;
+        if let Some(out_point) = tracked_out_point {
+            self.asset_locks.remove_asset_lock(&out_point).await;
         }
 
         Ok(new_balance)
@@ -972,7 +981,7 @@ impl IdentityWallet {
             TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             TopUpFundingMethod::FundWithWallet { amount_duffs } => {
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _txid) = self
+                let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -993,7 +1002,7 @@ impl IdentityWallet {
                 // For now, fall back to FundWithWallet using the UTXO's value.
                 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                let (proof, key, _txid) = self
+                let (proof, key, _out_point) = self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
@@ -1006,9 +1015,9 @@ impl IdentityWallet {
             }
         };
 
-        // Extract the txid before consuming the proof, in case we need to
+        // Extract the outpoint before consuming the proof, in case we need to
         // build a ChainLock proof for recovery.
-        let txid = Self::txid_from_proof(&asset_lock_proof);
+        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         // Step 2: Submit the top-up state transition.
         let new_balance = match identity
@@ -1024,13 +1033,13 @@ impl IdentityWallet {
             Ok(balance) => balance,
             Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
                 // IS-lock proof was rejected — try to upgrade to ChainLock.
-                if let Some(txid) = txid {
+                if let Some(out_point) = proof_out_point {
                     tracing::warn!(
                         "IS-lock proof rejected for identity top-up (tx {}), \
                          retrying with ChainLock proof",
-                        txid
+                        out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&txid).await?;
+                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
                     identity
                         .top_up_identity(
                             &self.sdk,
