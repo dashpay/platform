@@ -125,6 +125,27 @@ impl AssetLockManager {
 }
 
 // ---------------------------------------------------------------------------
+// Public read accessors
+// ---------------------------------------------------------------------------
+
+impl AssetLockManager {
+    /// List all tracked asset locks (blocking version for UI / synchronous contexts).
+    ///
+    /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
+    /// within a tokio async context.
+    pub fn list_tracked_locks_blocking(&self) -> Vec<TrackedAssetLock> {
+        let map = self.tracked.blocking_read();
+        map.values().cloned().collect()
+    }
+
+    /// List all tracked asset locks (async version).
+    pub async fn list_tracked_locks(&self) -> Vec<TrackedAssetLock> {
+        let map = self.tracked.read().await;
+        map.values().cloned().collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Asset lock tracking
 // ---------------------------------------------------------------------------
 
