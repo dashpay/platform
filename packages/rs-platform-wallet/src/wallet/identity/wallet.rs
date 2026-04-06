@@ -246,9 +246,17 @@ impl IdentityWallet {
         let (asset_lock_proof, asset_lock_private_key) = match funding {
             IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             IdentityFundingMethod::FundWithWallet { amount_duffs } => {
-                core_wallet
-                    .create_registration_asset_lock_proof(amount_duffs, identity_index)
-                    .await?
+                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityRegistration,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
             }
             IdentityFundingMethod::FundWithUtxo {
                 outpoint: _,
@@ -258,10 +266,18 @@ impl IdentityWallet {
                 // TODO: Add a CoreWallet method that builds an asset lock from
                 // a specific UTXO instead of selecting from the full UTXO set.
                 // For now, fall back to FundWithWallet using the UTXO's value.
+                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                core_wallet
-                    .create_registration_asset_lock_proof(amount_duffs, identity_index)
-                    .await?
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityRegistration,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
             }
         };
 
@@ -723,9 +739,17 @@ impl IdentityWallet {
         let (asset_lock_proof, asset_lock_private_key) = match funding {
             TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
             TopUpFundingMethod::FundWithWallet { amount_duffs } => {
-                core_wallet
-                    .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
-                    .await?
+                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityTopUp,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
             }
             TopUpFundingMethod::FundWithUtxo {
                 outpoint: _,
@@ -735,10 +759,18 @@ impl IdentityWallet {
                 // TODO: Add a CoreWallet method that builds an asset lock from
                 // a specific UTXO instead of selecting from the full UTXO set.
                 // For now, fall back to FundWithWallet using the UTXO's value.
+                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
                 let amount_duffs = txout.value;
-                core_wallet
-                    .create_topup_asset_lock_proof(amount_duffs, identity_index, topup_index)
-                    .await?
+                let (proof, key, _txid) = core_wallet
+                    .create_funded_asset_lock_proof(
+                        amount_duffs,
+                        AssetLockFundingType::IdentityTopUp,
+                        identity_index,
+                        #[cfg(feature = "manager")]
+                        None,
+                    )
+                    .await?;
+                (proof, key)
             }
         };
 

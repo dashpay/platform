@@ -17,7 +17,7 @@ pub use manager::PlatformWalletManager;
 #[cfg(feature = "manager")]
 pub use spv::SpvRuntime;
 pub use wallet::core::WalletBalance;
-pub use wallet::core::{AssetLockStatus, CoreAddressInfo, CoreWallet, TrackedAssetLock};
+pub use wallet::core::{AssetLockLifecycle, CoreAddressInfo, CoreWallet};
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
 pub use wallet::dashpay::{
@@ -30,8 +30,8 @@ pub use wallet::identity::IdentityManager;
 pub use wallet::identity::ManagedIdentity;
 pub use wallet::identity::WatchedIdentity;
 pub use wallet::identity::{
-    DpnsNameInfo, IdentityFundingMethod, IdentityStatus, KeyStorage, PrivateKeyData,
-    TopUpFundingMethod,
+    DpnsNameInfo, IdentityFunding, IdentityFundingMethod, IdentityStatus, KeyStorage,
+    PrivateKeyData, TopUpFundingMethod,
 };
 pub use wallet::ManagedIdentitySigner;
 pub use wallet::PlatformWallet;

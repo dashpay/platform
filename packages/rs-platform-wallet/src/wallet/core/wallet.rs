@@ -49,8 +49,9 @@ impl Drop for WalletInfoWriteGuard<'_> {
     }
 }
 use dashcore::Txid;
+use dpp::prelude::Identifier;
 
-use super::asset_lock::{AssetLockStatus, TrackedAssetLock};
+use super::asset_lock::AssetLockLifecycle;
 
 /// Core wallet providing UTXO, balance, and address functionality.
 #[derive(Clone)]
@@ -61,9 +62,11 @@ pub struct CoreWallet {
     /// `try_wallet_info()`, or `try_wallet_info_mut()`. Write access returns
     /// `WalletInfoWriteGuard` which auto-refreshes `WalletBalance` on drop.
     wallet_info: Arc<RwLock<ManagedWalletInfo>>,
-    /// Per-transaction finality status tracking.
-    /// Tracked asset lock transactions and their lifecycle status.
-    pub(crate) tracked_asset_locks: Arc<RwLock<Vec<TrackedAssetLock>>>,
+    /// Asset lock lifecycle tracking, keyed by transaction ID.
+    ///
+    /// Tracks each asset lock from build through broadcast, finality proof
+    /// arrival, and eventual consumption by registration or top-up.
+    pub(crate) asset_lock_lifecycle: Arc<RwLock<BTreeMap<Txid, AssetLockLifecycle>>>,
     /// Lock-free balance — updated from `ManagedWalletInfo` on every
     /// SPV block/mempool processing and RPC refresh. Read without any lock.
     pub(crate) balance: WalletBalance,
@@ -80,7 +83,7 @@ impl CoreWallet {
             sdk,
             wallet,
             wallet_info,
-            tracked_asset_locks: Arc::new(RwLock::new(Vec::new())),
+            asset_lock_lifecycle: Arc::new(RwLock::new(BTreeMap::new())),
             balance: WalletBalance::new(),
         }
     }
@@ -349,36 +352,69 @@ impl CoreWallet {
 // ---------------------------------------------------------------------------
 
 impl CoreWallet {
-    /// Track a new asset lock transaction.
-    pub async fn track_asset_lock(&self, lock: TrackedAssetLock) {
-        let mut locks = self.tracked_asset_locks.write().await;
-        locks.push(lock);
+    /// Insert a new asset lock lifecycle entry.
+    ///
+    /// The `txid` key is used for all subsequent lookups and state transitions.
+    pub async fn track_asset_lock(&self, txid: Txid, lifecycle: AssetLockLifecycle) {
+        let mut map = self.asset_lock_lifecycle.write().await;
+        map.insert(txid, lifecycle);
     }
 
     /// Return all asset locks that have not been consumed (status is not Used*).
-    pub async fn unused_asset_locks(&self) -> Vec<TrackedAssetLock> {
-        let locks = self.tracked_asset_locks.read().await;
-        locks
-            .iter()
-            .filter(|l| !l.status.is_used())
-            .cloned()
+    pub async fn unused_asset_locks(&self) -> BTreeMap<Txid, AssetLockLifecycle> {
+        let map = self.asset_lock_lifecycle.read().await;
+        map.iter()
+            .filter(|(_, v)| !v.is_used())
+            .map(|(k, v)| (*k, v.clone()))
             .collect()
     }
 
-    /// Mark an asset lock as used for registration or top-up.
-    pub async fn mark_asset_lock_used(&self, txid: &Txid, usage: AssetLockStatus) {
-        let mut locks = self.tracked_asset_locks.write().await;
-        if let Some(lock) = locks.iter_mut().find(|l| &l.txid == txid) {
-            lock.status = usage;
+    /// Advance an asset lock to `ProofAvailable` when finality arrives.
+    pub async fn advance_asset_lock_proof(
+        &self,
+        txid: &Txid,
+        proof: dpp::prelude::AssetLockProof,
+    ) {
+        let mut map = self.asset_lock_lifecycle.write().await;
+        if let Some(entry) = map.get_mut(txid) {
+            if let AssetLockLifecycle::Broadcast { private_key, .. } = entry {
+                *entry = AssetLockLifecycle::ProofAvailable {
+                    proof,
+                    private_key: *private_key,
+                    txid: *txid,
+                };
+            }
         }
     }
 
-    /// Update the proof on a tracked asset lock (e.g. when IS or CL arrives).
-    pub async fn update_asset_lock_proof(&self, txid: &Txid, proof: dpp::prelude::AssetLockProof) {
-        let mut locks = self.tracked_asset_locks.write().await;
-        if let Some(lock) = locks.iter_mut().find(|l| &l.txid == txid) {
-            lock.proof = Some(proof);
+    /// Transition an asset lock to a terminal "used" state.
+    pub async fn mark_asset_lock_used(
+        &self,
+        txid: &Txid,
+        identity_id: Identifier,
+        is_registration: bool,
+    ) {
+        let mut map = self.asset_lock_lifecycle.write().await;
+        if map.contains_key(txid) {
+            let new_state = if is_registration {
+                AssetLockLifecycle::UsedForRegistration {
+                    identity_id,
+                    txid: *txid,
+                }
+            } else {
+                AssetLockLifecycle::UsedForTopUp {
+                    identity_id,
+                    txid: *txid,
+                }
+            };
+            map.insert(*txid, new_state);
         }
+    }
+
+    /// Look up a specific asset lock lifecycle entry.
+    pub async fn get_asset_lock(&self, txid: &Txid) -> Option<AssetLockLifecycle> {
+        let map = self.asset_lock_lifecycle.read().await;
+        map.get(txid).cloned()
     }
 }
 
@@ -692,76 +728,110 @@ impl CoreWallet {
             })
     }
 
-    /// Build and broadcast an asset lock transaction for identity registration.
-    /// Build, broadcast, and wait for an asset lock proof for identity registration.
+    /// Build, broadcast, and wait for an asset lock proof.
     ///
-    /// This is a convenience method that combines:
-    /// 1. Building and broadcasting the registration asset lock transaction.
-    /// 2. Subscribing to the transaction stream via DAPI.
-    /// 3. Waiting for an instant-send lock or chain-lock proof.
+    /// This is the **unified** entry point for obtaining a funded asset lock
+    /// proof, replacing the earlier `create_registration_asset_lock_proof` and
+    /// `create_topup_asset_lock_proof` methods.
     ///
-    /// Returns the asset lock proof and the one-time private key whose
-    /// corresponding public key is embedded in the asset lock payload.
-    pub async fn create_registration_asset_lock_proof(
+    /// ## Flow
+    ///
+    /// 1. Build the asset lock transaction via the key-wallet builder.
+    /// 2. Track the lifecycle as `Built`, then `Broadcast`.
+    /// 3. If an `SpvRuntime` is provided, register for finality *before*
+    ///    broadcasting, then wait for the SPV proof. Otherwise fall back to
+    ///    the DAPI instant-send lock stream.
+    /// 4. Track the lifecycle as `ProofAvailable`.
+    /// 5. Return `(proof, private_key, txid)`.
+    ///
+    /// ## Parameters
+    ///
+    /// * `amount_duffs` — Amount to lock.
+    /// * `funding_type` — Which account to derive the one-time key from.
+    /// * `identity_index` — HD identity index.
+    /// * `spv_runtime` — Optional SPV runtime for IS/CL finality via SPV.
+    ///   When `None`, falls back to the DAPI transaction stream.
+    pub async fn create_funded_asset_lock_proof(
         &self,
         amount_duffs: u64,
+        funding_type: AssetLockFundingType,
         identity_index: u32,
-    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
+        #[cfg(feature = "manager")] spv_runtime: Option<&crate::spv::SpvRuntime>,
+    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey, Txid), PlatformWalletError> {
+        // 1. Build the asset lock transaction.
         let (tx, key) = self
-            .build_asset_lock_transaction(
-                amount_duffs,
-                AssetLockFundingType::IdentityRegistration,
-                identity_index,
-            )
+            .build_asset_lock_transaction(amount_duffs, funding_type, identity_index)
             .await?;
 
-        let proof = self
-            .broadcast_and_wait_for_asset_lock_proof(&tx, &key)
-            .await?;
+        let txid = tx.txid();
 
-        Ok((proof, key))
+        // 2. Track as Built.
+        self.track_asset_lock(
+            txid,
+            AssetLockLifecycle::Built {
+                tx: tx.clone(),
+                private_key: key,
+            },
+        )
+        .await;
+
+        // 3. Register for finality BEFORE broadcasting (prevents race).
+        #[cfg(feature = "manager")]
+        if let Some(spv) = spv_runtime {
+            spv.register_for_finality(txid).await;
+        }
+
+        // 4. Broadcast.
+        self.broadcast_transaction(&tx).await?;
+
+        // 5. Transition to Broadcast.
+        self.track_asset_lock(
+            txid,
+            AssetLockLifecycle::Broadcast {
+                txid,
+                private_key: key,
+            },
+        )
+        .await;
+
+        // 6. Wait for proof.
+        let proof = {
+            #[cfg(feature = "manager")]
+            {
+                if let Some(spv) = spv_runtime {
+                    // SPV path — wait via SpvRuntime finality tracking.
+                    spv.wait_for_finality(&txid, std::time::Duration::from_secs(300))
+                        .await?
+                } else {
+                    // DAPI fallback — stream-based waiting.
+                    self.wait_for_proof_via_dapi(&tx, &key).await?
+                }
+            }
+            #[cfg(not(feature = "manager"))]
+            {
+                self.wait_for_proof_via_dapi(&tx, &key).await?
+            }
+        };
+
+        // 7. Transition to ProofAvailable.
+        self.track_asset_lock(
+            txid,
+            AssetLockLifecycle::ProofAvailable {
+                proof: proof.clone(),
+                private_key: key,
+                txid,
+            },
+        )
+        .await;
+
+        Ok((proof, key, txid))
     }
 
-    /// Build, broadcast, and wait for an asset lock proof for identity top-up.
+    /// DAPI-based fallback for waiting on an asset lock proof.
     ///
-    /// This is a convenience method that combines:
-    /// 1. Building and broadcasting the top-up asset lock transaction.
-    /// 2. Subscribing to the transaction stream via DAPI.
-    /// 3. Waiting for an instant-send lock or chain-lock proof.
-    ///
-    /// Returns the asset lock proof and the one-time private key whose
-    /// corresponding public key is embedded in the asset lock payload.
-    pub async fn create_topup_asset_lock_proof(
-        &self,
-        amount_duffs: u64,
-        identity_index: u32,
-        topup_index: u32,
-    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
-        let (tx, key) = self
-            .build_asset_lock_transaction(
-                amount_duffs,
-                AssetLockFundingType::IdentityTopUp,
-                identity_index,
-            )
-            .await?;
-
-        let proof = self
-            .broadcast_and_wait_for_asset_lock_proof(&tx, &key)
-            .await?;
-
-        Ok((proof, key))
-    }
-
-    /// Broadcast an asset lock transaction and wait for its proof.
-    ///
-    /// Performs the following steps:
-    /// 1. Fetches the current best block hash via `GetBlockchainStatusRequest`.
-    /// 2. Derives the one-time key's P2PKH address for the bloom filter.
-    /// 3. Opens a transaction stream subscription (before broadcasting, to
-    ///    avoid missing the instant-send lock).
-    /// 4. Broadcasts the transaction via DAPI.
-    /// 5. Waits for an instant-send lock or chain-lock proof on the stream.
-    async fn broadcast_and_wait_for_asset_lock_proof(
+    /// Used when SPV is not available. Opens a DAPI instant-send lock stream
+    /// and waits for the proof with a 5-minute timeout.
+    async fn wait_for_proof_via_dapi(
         &self,
         transaction: &Transaction,
         one_time_private_key: &PrivateKey,
@@ -811,10 +881,7 @@ impl CoreWallet {
                 ))
             })?;
 
-        // 4. Broadcast the transaction.
-        self.broadcast_transaction(transaction).await?;
-
-        // 5. Wait for the asset lock proof with a 5-minute timeout.
+        // 4. Wait for the asset lock proof with a 5-minute timeout.
         let proof = self
             .sdk
             .wait_for_asset_lock_proof_for_transaction(
