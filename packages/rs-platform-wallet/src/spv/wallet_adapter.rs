@@ -275,9 +275,14 @@ impl WalletInterface for SpvWalletAdapter {
             for wallet in wallets.values() {
                 let mut status_changed = false;
 
-                if let Some(mut wi) = wallet.core.try_wallet_info_mut() {
-                    wi.mark_instant_send_utxos(&txid);
-                }
+                // Capture the UTXO IS-lock changeset from mark_instant_send_utxos.
+                let utxo_cs = if let Some(mut wi) = wallet.core.try_wallet_info_mut() {
+                    let (_changed, utxo_cs) = wi.mark_instant_send_utxos(&txid);
+                    utxo_cs
+                } else {
+                    key_wallet::changeset::UtxoChangeSet::default()
+                };
+
                 if let Ok(mut statuses) = wallet.core.transaction_statuses.try_write() {
                     let new_status = TransactionStatus::InstantSendLocked;
                     let old = statuses.get(&txid).copied();
@@ -287,7 +292,8 @@ impl WalletInterface for SpvWalletAdapter {
                     }
                 }
 
-                // Stage a minimal changeset recording the IS-lock status change.
+                // Stage a minimal changeset recording the IS-lock status change
+                // and the UTXO IS-lock deltas.
                 // We don't have the full transaction here, so we only stage if the
                 // wallet already tracks this txid (status actually changed).
                 if status_changed {
@@ -312,11 +318,15 @@ impl WalletInterface for SpvWalletAdapter {
                                 };
                                 let mut records = BTreeMap::new();
                                 records.insert(txid, kw_entry);
-                                kw_changeset.transactions = Some(
-                                    key_wallet::changeset::TransactionChangeSet { records },
-                                );
+                                kw_changeset.transactions =
+                                    Some(key_wallet::changeset::TransactionChangeSet { records });
                                 break;
                             }
+                        }
+
+                        // Include UTXO IS-lock deltas in the changeset.
+                        if !utxo_cs.is_empty() {
+                            kw_changeset.utxos.merge(Some(utxo_cs));
                         }
 
                         if !kw_changeset.is_empty() {
