@@ -4240,24 +4240,136 @@ platform_wallet.apply(&changeset);
 #### Implementation Steps (compute-then-apply refactor)
 
 **Step 9 — Add `apply()` to ManagedWalletInfo (dashcore):**
+
 Implement `apply(&mut self, changeset: &WalletChangeSet)` that applies
-each sub-changeset to the wallet state. Used by both runtime mutations
-and `initialize()` startup loading.
+each sub-changeset to the wallet state:
+- `UtxoChangeSet` → add/remove UTXOs in account UTXO maps
+- `TransactionChangeSet` → insert/update TransactionRecords in accounts
+- `AccountChangeSet` → advance address pool indices, mark addresses used
+- `BalanceChangeSet` → apply balance delta
+- `ChainChangeSet` → update synced height
+
+Used by both runtime mutations AND `initialize()` startup loading —
+same code path guarantees consistency.
 
 **Step 10 — Split mutation methods into compute + apply (dashcore):**
-For each mutation method in `ManagedCoreAccount`:
-- Extract the read-only analysis into `compute_*` (returns changeset)
-- The existing method becomes: compute + apply + return result
-- `check_core_transaction` aggregates all compute_* results, applies once
+
+For each mutation method in `ManagedCoreAccount` and `WalletTransactionChecker`:
+
+```
+Current (mutate-and-return):
+  record_transaction(&mut self, tx) -> (TransactionRecord, WalletChangeSet)
+    // interleaved: analyze tx, mutate UTXOs, mutate transactions, return both
+
+Split into:
+  compute_record_transaction(&self, tx) -> WalletChangeSet
+    // read-only: analyze tx, build changeset, don't mutate
+
+  record_transaction(&mut self, tx) -> TransactionCheckResult
+    // public API: compute + apply + return result (changeset is internal)
+```
+
+Methods to split:
+- `record_transaction` → `compute_record_transaction` (read-only) + apply
+- `confirm_transaction` → `compute_confirm_transaction` (read-only) + apply
+- `mark_utxos_instant_send` → `compute_instant_send_lock` (read-only) + apply
+- `mark_address_used` → `compute_mark_address_used` (read-only) + apply
+- `maintain_gap_limit` → `compute_gap_limit_expansion` (read-only) + apply
+- `update_balance` → `compute_balance_update` (read-only) + apply
+
+`check_core_transaction` becomes:
+```rust
+pub fn check_core_transaction(&mut self, tx, context) -> TransactionCheckResult {
+    // 1. Compute all changes (read-only)
+    let changeset = self.compute_transaction_changeset(tx, context);
+
+    // 2. Apply atomically (single &mut self)
+    self.apply(&changeset);
+
+    // 3. Changeset is returned to caller for staging
+    // (key-wallet doesn't stage — PlatformWallet does)
+    result_with_changeset
+}
+```
+
+Note: key-wallet public methods still return the changeset to the caller
+(PlatformWallet/SPV adapter) for staging. key-wallet has no `stage` field —
+staging is a platform-wallet concern. The return signature becomes:
+```rust
+pub fn check_core_transaction(&mut self, tx, ctx) -> (TransactionCheckResult, WalletChangeSet)
+```
+Caller (SPV adapter) wraps in `PlatformWalletChangeSet` and stages on
+`PlatformWallet`. key-wallet stays pure — no persistence awareness.
 
 **Step 11 — Add `apply()` to PlatformWallet (platform-wallet):**
-Delegates to `ManagedWalletInfo::apply()` for wallet sub-changeset,
-plus handles identity/contact/platform address sub-changesets.
+
+```rust
+impl PlatformWallet {
+    pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
+        if let Some(wallet_cs) = &changeset.wallet {
+            let mut info = self.core().blocking_wallet_info_mut();
+            info.apply(wallet_cs);
+        }
+        if let Some(contacts) = &changeset.contacts {
+            // apply to IdentityManager: add sent/incoming requests,
+            // establish contacts
+        }
+        if let Some(identities) = &changeset.identities {
+            // apply to IdentityManager: insert/update identities,
+            // update keys, DPNS names
+        }
+        if let Some(platform_addrs) = &changeset.platform_addresses {
+            // apply to PlatformAddressWallet or wallet metadata
+        }
+    }
+}
+```
+
+Used by `initialize()` to reconstruct state from persisted changesets.
 
 **Step 12 — Wire `initialize()` through `apply()` (evo-tool):**
-On startup, `SqlitePersister::initialize()` loads changeset,
-`PlatformWallet::apply()` reconstructs state. No more scattered
-DB loading in `get_wallets()`.
+
+On startup:
+```rust
+let changeset = persister.initialize()?;
+platform_wallet.apply(&changeset);
+```
+
+Replace scattered DB loading in `get_wallets()` — the full state is
+reconstructed through one `apply()` call with one changeset.
+
+**Step 13 — Smart persistence strategy (evo-tool):**
+
+Replace per-operation `persist_platform_wallet()` calls with a
+hybrid flush strategy:
+
+```rust
+// User actions: persist immediately (durability expected)
+send_payment()        → stage + persist()
+register_identity()   → stage + persist()
+send_contact_request() → stage + persist()
+
+// SPV sync: batch, persist periodically
+process_block()       → stage only (NO persist)
+every 10 blocks OR every 10 seconds:
+                      → persist()
+
+// App lifecycle:
+on_shutdown()         → persist()  // flush everything
+```
+
+Implementation:
+- Remove `persist_platform_wallet()` calls from `reconcile_spv_wallets()`
+- Add a periodic flush task (e.g., `spawn_interval(Duration::from_secs(10))`)
+  that calls `persist()` on all wallets with non-empty stages
+- Keep `persist_platform_wallet()` after user-initiated operations
+- Add `persist()` to graceful shutdown sequence
+
+Benefits:
+- 10x fewer DB writes during initial SPV sync
+- User actions still durable immediately
+- Crash recovery gap bounded by flush interval (SPV re-syncs trivially)
+- Stage accumulates via `Merge` — no data loss between flushes
 
 #### Migration Strategy
 
@@ -4265,7 +4377,7 @@ The implementation touches 3 repos in order:
 
 1. **dashcore** (key-wallet): Steps 1-2 done, Steps 9-10 next.
 2. **platform** (platform-wallet): Steps 3-5 done, Step 11 next.
-3. **evo-tool**: Steps 6-8 done, Step 12 next.
+3. **evo-tool**: Steps 6-8 done, Steps 12-13 next.
 
 Each step compiles independently. No intermediate fallback code.
 
