@@ -129,7 +129,7 @@ impl WalletInterface for SpvWalletAdapter {
                 }),
                 ..Default::default()
             };
-            wallet.stage_changeset(changeset);
+            wallet.queue_persist(changeset);
         }
 
         self.synced_height.store(block_height, Ordering::Relaxed);
@@ -200,7 +200,7 @@ impl WalletInterface for SpvWalletAdapter {
                     },
                     ..Default::default()
                 };
-                wallet.stage_changeset(changeset);
+                wallet.queue_persist(changeset);
             }
 
             if !result.new_addresses.is_empty() {
@@ -334,7 +334,7 @@ impl WalletInterface for SpvWalletAdapter {
                                 wallet: Some(kw_changeset),
                                 ..Default::default()
                             };
-                            wallet.stage_changeset(changeset);
+                            wallet.queue_persist(changeset);
                         }
                     }
                 }

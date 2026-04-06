@@ -4,7 +4,7 @@
 //!
 //! - [`Merge`] — a trait for composing changeset deltas.
 //! - [`PlatformWalletChangeSet`] — the top-level delta type encompassing all wallet state.
-//! - [`WalletPersistence`] / [`AsyncWalletPersistence`] — storage backend traits.
+//! - [`PlatformWalletPersistence`] — storage backend trait.
 
 pub mod changeset;
 pub mod merge;
@@ -17,5 +17,4 @@ pub use changeset::{
     UtxoChangeSet,
 };
 pub use merge::Merge;
-pub use traits::AsyncWalletPersistence;
-pub use traits::WalletPersistence;
+pub use traits::PlatformWalletPersistence;

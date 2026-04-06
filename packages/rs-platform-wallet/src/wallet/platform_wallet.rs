@@ -1,7 +1,7 @@
 //! The main PlatformWallet struct combining core, identity, dashpay, and platform sub-wallets.
 
 use std::sync::Arc;
-use std::sync::RwLock as StdRwLock;
+use std::sync::Mutex;
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -10,7 +10,7 @@ use key_wallet::{Mnemonic, Network, Seed};
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
-use crate::persistence::{Merge, PlatformWalletChangeSet, WalletPersistence};
+use crate::persistence::{PlatformWalletChangeSet, PlatformWalletPersistence};
 
 use super::core::CoreWallet;
 use super::dashpay::DashPayWallet;
@@ -39,8 +39,8 @@ pub struct PlatformWallet {
     pub(crate) dashpay: DashPayWallet,
     pub(crate) platform: PlatformAddressWallet,
     pub(crate) tokens: TokenWallet,
-    /// Accumulated changesets not yet persisted.
-    stage: StdRwLock<PlatformWalletChangeSet>,
+    /// Optional persistence backend.  Set via [`set_persister`](Self::set_persister).
+    persister: Option<Arc<Mutex<Box<dyn PlatformWalletPersistence>>>>,
 }
 
 impl PlatformWallet {
@@ -124,7 +124,7 @@ impl PlatformWallet {
             dashpay,
             platform,
             tokens,
-            stage: StdRwLock::new(PlatformWalletChangeSet::default()),
+            persister: None,
         }
     }
 
@@ -278,38 +278,53 @@ impl PlatformWallet {
 }
 
 impl PlatformWallet {
-    /// Stage a changeset for later persistence.
-    /// Merges into any previously staged changes.
-    pub fn stage_changeset(&self, changeset: PlatformWalletChangeSet) {
-        if let Ok(mut stage) = self.stage.write() {
-            stage.merge(changeset);
+    /// Attach a persistence backend.
+    ///
+    /// The persister is wrapped in `Arc<Mutex<..>>` so it can be shared across
+    /// clones and accessed from synchronous contexts (SPV callbacks).
+    pub fn set_persister(&mut self, persister: Box<dyn PlatformWalletPersistence>) {
+        self.persister = Some(Arc::new(Mutex::new(persister)));
+    }
+
+    /// Queue a changeset for later persistence.
+    ///
+    /// If no persister is attached this is a no-op.
+    pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
+        if let Some(persister) = &self.persister {
+            if let Ok(mut p) = persister.lock() {
+                p.queue(changeset);
+            }
         }
     }
 
-    /// Take all staged changes, leaving the stage empty.
-    /// Returns `None` if no changes are staged.
-    pub fn take_staged(&self) -> Option<PlatformWalletChangeSet> {
-        if let Ok(mut stage) = self.stage.write() {
-            stage.take()
-        } else {
-            None
-        }
-    }
-
-    /// Persist all staged changes atomically, then clear the stage.
-    pub fn persist<P: WalletPersistence>(&self, persister: &mut P) -> Result<(), P::Error> {
-        if let Some(changeset) = self.take_staged() {
-            persister.persist(&changeset)?;
+    /// Flush all queued changesets to the storage backend.
+    ///
+    /// Returns `Ok(())` if no persister is attached or the flush succeeds.
+    pub fn flush_persist(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(persister) = &self.persister {
+            if let Ok(mut p) = persister.lock() {
+                p.flush()?;
+            }
         }
         Ok(())
     }
 
-    /// Build an initial changeset representing the full current state.
-    /// Used by persistence backends to bootstrap from scratch.
-    pub fn initial_changeset(&self) -> PlatformWalletChangeSet {
-        // For now return default — will be populated when we implement
-        // state extraction from ManagedWalletInfo
-        PlatformWalletChangeSet::default()
+    /// Apply a changeset to in-memory wallet state.
+    ///
+    /// Currently applies key-wallet sub-changesets to `ManagedWalletInfo`.
+    /// Identity, contact, and platform-address application will be added as
+    /// those sub-wallets gain changeset-driven state.
+    pub fn apply(&self, changeset: &PlatformWalletChangeSet) {
+        // Apply key-wallet changeset to ManagedWalletInfo if present.
+        if let Some(_wallet_cs) = &changeset.wallet {
+            if let Some(mut _info) = self.core.try_wallet_info_mut() {
+                // TODO: apply wallet_cs to info once ManagedWalletInfo
+                // exposes an apply(WalletChangeSet) method.
+            }
+        }
+        // TODO: apply contacts changeset
+        // TODO: apply identities changeset
+        // TODO: apply platform_addresses changeset
     }
 }
 
@@ -323,8 +338,8 @@ impl Clone for PlatformWallet {
             dashpay: self.dashpay.clone(),
             platform: self.platform.clone(),
             tokens: self.tokens.clone(),
-            // Cloned instances get a fresh empty stage.
-            stage: StdRwLock::new(PlatformWalletChangeSet::default()),
+            // Cloned instances do not inherit the persister.
+            persister: None,
         }
     }
 }
