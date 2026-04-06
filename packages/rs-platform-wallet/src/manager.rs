@@ -100,7 +100,7 @@ impl PlatformWalletManager {
         );
 
         // Load persisted state and apply it to the in-memory wallet.
-        let changeset = self.persister.initialize(wallet_id).map_err(|e| {
+        let changeset = self.persister.load(wallet_id).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to load persisted wallet state: {}",
                 e

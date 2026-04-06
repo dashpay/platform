@@ -10,8 +10,8 @@ use crate::wallet::platform_wallet::WalletId;
 ///
 /// Changesets flow through a two-phase pipeline:
 ///
-/// 1. **`queue`** — buffer a delta for later writing (cheap, no I/O).
-/// 2. **`flush`** — write all queued deltas atomically.
+/// 1. **`store`** — buffer a delta for later writing (cheap, no I/O).
+/// 2. **`flush`** — write all buffered deltas atomically.
 ///
 /// This decouples the hot path (SPV block processing, mempool updates) from
 /// disk I/O, letting callers batch many small deltas before committing.
@@ -25,17 +25,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// Implementations should merge into an internal per-wallet accumulator so
     /// that a single [`flush`](Self::flush) writes the combined delta.
-    fn queue(&self, wallet_id: WalletId, changeset: PlatformWalletChangeSet);
+    fn store(&self, wallet_id: WalletId, changeset: PlatformWalletChangeSet);
 
-    /// Write all queued changesets atomically for the given wallet, then clear
-    /// that wallet's queue.
+    /// Write all buffered changesets atomically for the given wallet, then
+    /// clear that wallet's buffer.
     fn flush(&self, wallet_id: WalletId) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-    /// Load the aggregated state from storage for the given wallet.
+    /// Load the full wallet state from storage.
     ///
     /// Returns a single [`PlatformWalletChangeSet`] representing the full
     /// stored state (equivalent to merging all previously persisted deltas).
-    fn initialize(
+    fn load(
         &self,
         wallet_id: WalletId,
     ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>>;

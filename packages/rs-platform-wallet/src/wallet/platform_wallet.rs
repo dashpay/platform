@@ -338,7 +338,7 @@ impl PlatformWallet {
 impl PlatformWallet {
     /// Queue a changeset for later persistence.
     pub fn queue_persist(&self, changeset: PlatformWalletChangeSet) {
-        self.persister.queue(self.wallet_id, changeset);
+        self.persister.store(self.wallet_id, changeset);
     }
 
     /// Flush all queued changesets to the storage backend.
