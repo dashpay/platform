@@ -542,6 +542,9 @@ impl AssetLockManager {
     }
 
     /// Get transaction info from key-wallet's ManagedWalletInfo (local, no DAPI call).
+    ///
+    /// Asset lock transactions spend from the standard BIP44 account, so the
+    /// transaction record lives there. Falls back to scanning all accounts.
     async fn get_transaction_info(
         &self,
         txid: &Txid,
@@ -551,23 +554,34 @@ impl AssetLockManager {
         let info = self.wallet_info.read().await;
         let synced_height = info.metadata.synced_height;
 
-        for account in info.accounts.all_accounts() {
-            if let Some(record) = account.transactions.get(txid) {
-                return Ok(TransactionInfo {
-                    is_chain_locked: matches!(
-                        record.context,
-                        TransactionContext::InChainLockedBlock(_)
-                    ),
-                    height: record.height().unwrap_or(0),
-                    confirmations: record.confirmations(synced_height),
-                });
-            }
-        }
+        // Check standard BIP44 account 0 first (most likely location).
+        let record = info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .and_then(|a| a.transactions.get(txid))
+            .or_else(|| {
+                // Fallback: scan all accounts.
+                info.accounts
+                    .all_accounts()
+                    .iter()
+                    .find_map(|a| a.transactions.get(txid))
+            });
 
-        Err(PlatformWalletError::AssetLockProofWait(format!(
-            "Transaction {} not found in wallet",
-            txid
-        )))
+        match record {
+            Some(record) => Ok(TransactionInfo {
+                is_chain_locked: matches!(
+                    record.context,
+                    TransactionContext::InChainLockedBlock(_)
+                ),
+                height: record.height().unwrap_or(0),
+                confirmations: record.confirmations(synced_height),
+            }),
+            None => Err(PlatformWalletError::AssetLockProofWait(format!(
+                "Transaction {} not found in wallet",
+                txid
+            ))),
+        }
     }
 
     /// Fetch Platform's current `core_chain_locked_height` by querying the
