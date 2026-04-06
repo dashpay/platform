@@ -36,9 +36,7 @@ pub(crate) struct SpvWalletAdapter {
 }
 
 impl SpvWalletAdapter {
-    pub(crate) fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
-    ) -> Self {
+    pub(crate) fn new(wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
         Self {
             wallets,
             synced_height: AtomicU32::new(0),

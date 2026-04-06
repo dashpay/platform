@@ -1,4 +1,16 @@
-//! Forwards SPV events from `DashSpvClient` to the unified `PlatformWalletEvent` channel.
+//! Forwards SPV events from `DashSpvClient` to the unified `PlatformWalletEvent`
+//! broadcast channel.
+//!
+//! This forwarder exists because platform-wallet needs SPV events internally
+//! (e.g. `AssetLockManager::wait_for_proof` subscribes for InstantLock/ChainLock
+//! events). A broadcast channel allows multiple consumers to subscribe:
+//!
+//! - **AssetLockManager** — listens for finality proofs during asset lock lifecycle
+//! - **Application** (e.g. evo-tool) — subscribes via `PlatformWalletManager::subscribe_events()`
+//!   for status display, connection health, and wallet reconciliation
+//!
+//! Accepting a custom `EventHandler` from the app instead would prevent
+//! platform-wallet's own components from receiving events.
 
 use dash_spv::EventHandler;
 use key_wallet_manager::WalletEvent;

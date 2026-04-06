@@ -28,5 +28,7 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// Returns a single [`PlatformWalletChangeSet`] representing the full
     /// stored state (equivalent to merging all previously persisted deltas).
-    fn initialize(&mut self) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>>;
+    fn initialize(
+        &mut self,
+    ) -> Result<PlatformWalletChangeSet, Box<dyn std::error::Error + Send + Sync>>;
 }

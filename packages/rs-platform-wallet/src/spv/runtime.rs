@@ -123,10 +123,7 @@ impl SpvRuntime {
     /// After a successful broadcast the transaction is also fed into the local
     /// wallet adapter so that balances update immediately without waiting for
     /// SPV to relay it back.
-    pub async fn broadcast_transaction(
-        &self,
-        tx: &Transaction,
-    ) -> Result<(), PlatformWalletError> {
+    pub async fn broadcast_transaction(&self, tx: &Transaction) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()
@@ -136,10 +133,6 @@ impl SpvRuntime {
             .broadcast_transaction(tx)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-
-        // Process the transaction locally so the wallet sees it immediately.
-        let mut adapter = self.adapter.write().await;
-        let _ = adapter.process_mempool_transaction(tx, false).await;
 
         Ok(())
     }

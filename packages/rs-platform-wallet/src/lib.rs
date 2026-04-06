@@ -1,10 +1,10 @@
 //! Platform wallet with identity management
 
+pub mod changeset;
 pub mod error;
 pub mod events;
 #[cfg(feature = "manager")]
 pub mod manager;
-pub mod changeset;
 #[cfg(feature = "manager")]
 pub(crate) mod spv;
 pub mod wallet;
@@ -16,16 +16,16 @@ pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFu
 pub use manager::PlatformWalletManager;
 #[cfg(feature = "manager")]
 pub use spv::SpvRuntime;
-pub use wallet::core::WalletBalance;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+pub use wallet::core::WalletBalance;
 pub use wallet::core::{CoreAddressInfo, CoreWallet};
 pub use wallet::dashpay::ContactRequest;
 pub use wallet::dashpay::EstablishedContact;
 pub use wallet::dashpay::{
-    calculate_account_reference, derive_auto_accept_private_key,
-    derive_contact_payment_address, derive_contact_payment_addresses,
-    derive_contact_xpub, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
+    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
+    derive_contact_payment_addresses, derive_contact_xpub, ContactXpubData,
+    DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::identity::managed_identity::BlockTime;
 pub use wallet::identity::IdentityManager;
@@ -40,13 +40,13 @@ pub use wallet::PlatformWallet;
 pub use wallet::TokenWallet;
 
 // Re-export changeset types for caller-level staging.
+pub use changeset::Merge;
 pub use changeset::{
     AccountChangeSet, AssetLockChangeSet, AssetLockEntry, ChainChangeSet, ContactChangeSet,
     ContactRequestEntry, IdentityChangeSet, IdentityEntry, PlatformAddressChangeSet,
     PlatformAddressEntry, PlatformWalletChangeSet, TransactionChangeSet, TransactionEntry,
     UtxoChangeSet,
 };
-pub use changeset::Merge;
 
 #[cfg(feature = "manager")]
 pub use key_wallet_manager;

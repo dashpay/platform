@@ -188,8 +188,12 @@ impl IdentityWallet {
             }
         };
 
-        let path =
-            Self::identity_auth_derivation_path(network, key_derivation_type, identity_index, key_id)?;
+        let path = Self::identity_auth_derivation_path(
+            network,
+            key_derivation_type,
+            identity_index,
+            key_id,
+        )?;
 
         let secret_key = wallet.derive_private_key(&path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
@@ -250,9 +254,10 @@ impl IdentityWallet {
     /// For chain proofs, this is the out_point directly.
     fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
         match proof {
-            AssetLockProof::Instant(instant) => {
-                Some(dashcore::OutPoint::new(instant.transaction().txid(), instant.output_index()))
-            }
+            AssetLockProof::Instant(instant) => Some(dashcore::OutPoint::new(
+                instant.transaction().txid(),
+                instant.output_index(),
+            )),
             AssetLockProof::Chain(chain) => Some(chain.out_point),
         }
     }
@@ -464,7 +469,10 @@ impl IdentityWallet {
                          retrying with ChainLock proof",
                         out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
+                        .await?;
                     identity
                         .put_to_platform_and_wait_for_response(
                             &self.sdk,
@@ -640,7 +648,10 @@ impl IdentityWallet {
                          retrying with ChainLock proof",
                         out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
+                        .await?;
                     self.register_identity_with_signer(
                         identity,
                         chain_proof,
@@ -721,7 +732,12 @@ impl IdentityWallet {
         let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
 
         let new_balance = match self
-            .top_up_identity_with_signer(identity, asset_lock_proof, &asset_lock_private_key, settings)
+            .top_up_identity_with_signer(
+                identity,
+                asset_lock_proof,
+                &asset_lock_private_key,
+                settings,
+            )
             .await
         {
             Ok(balance) => balance,
@@ -732,10 +748,18 @@ impl IdentityWallet {
                          retrying with ChainLock proof",
                         out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
-                    self.top_up_identity_with_signer(identity, chain_proof, &asset_lock_private_key, settings)
-                        .await
-                        .map_err(PlatformWalletError::Sdk)?
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
+                        .await?;
+                    self.top_up_identity_with_signer(
+                        identity,
+                        chain_proof,
+                        &asset_lock_private_key,
+                        settings,
+                    )
+                    .await
+                    .map_err(PlatformWalletError::Sdk)?
                 } else {
                     return Err(PlatformWalletError::Sdk(e));
                 }
@@ -1068,7 +1092,10 @@ impl IdentityWallet {
                          retrying with ChainLock proof",
                         out_point.txid
                     );
-                    let chain_proof = self.asset_locks.upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180)).await?;
+                    let chain_proof = self
+                        .asset_locks
+                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
+                        .await?;
                     identity
                         .top_up_identity(
                             &self.sdk,
@@ -1493,12 +1520,7 @@ impl IdentityWallet {
         };
 
         let (_address_infos, new_balance) = identity
-            .top_up_from_addresses(
-                &self.sdk,
-                inputs,
-                platform_address_wallet,
-                settings,
-            )
+            .top_up_from_addresses(&self.sdk, inputs, platform_address_wallet, settings)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
