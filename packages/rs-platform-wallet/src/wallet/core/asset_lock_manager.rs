@@ -70,11 +70,6 @@ impl AssetLockManager {
 // ---------------------------------------------------------------------------
 
 impl AssetLockManager {
-    /// Insert a tracked asset lock (internal — callers use create_funded_asset_lock_proof or recover_asset_lock).
-    async fn track_asset_lock(&self, lock: TrackedAssetLock) {
-        let mut map = self.tracked.write().await;
-        map.insert(lock.txid, lock);
-    }
 
     /// Return all asset locks whose proof is `Some` (ready for consumption).
     pub async fn unused_asset_locks(&self) -> BTreeMap<Txid, TrackedAssetLock> {
@@ -196,11 +191,6 @@ impl AssetLockManager {
         self.tracked.blocking_write().remove(txid);
     }
 
-    /// Blocking version of [`track_asset_lock`](Self::track_asset_lock).
-    fn blocking_track_asset_lock(&self, lock: TrackedAssetLock) {
-        let mut map = self.tracked.blocking_write();
-        map.insert(lock.txid, lock);
-    }
 
     /// Blocking version of [`recover_asset_lock`](Self::recover_asset_lock).
     pub fn blocking_recover_asset_lock(
@@ -459,16 +449,18 @@ impl AssetLockManager {
         let txid = tx.txid();
 
         // 2. Track as Built.
-        self.track_asset_lock(TrackedAssetLock {
-            txid,
-            transaction: tx.clone(),
-            funding_type,
-            identity_index,
-            amount: amount_duffs,
-            status: AssetLockStatus::Built,
-            proof: None,
-        })
-        .await;
+        {
+            let mut map = self.tracked.write().await;
+            map.insert(txid, TrackedAssetLock {
+                txid,
+                transaction: tx.clone(),
+                funding_type,
+                identity_index,
+                amount: amount_duffs,
+                status: AssetLockStatus::Built,
+                proof: None,
+            });
+        }
 
         // 3. Broadcast.
         self.broadcast_transaction(&tx).await?;
