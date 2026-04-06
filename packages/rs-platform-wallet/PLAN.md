@@ -45,7 +45,7 @@ date: 2026-03-13
 22. **PR-22** ✅: ChangeSet-based persistence — compute-then-apply, persister on wallet, FlushStrategy
 23. **PR-23**: Merge `Wallet` + `ManagedWalletInfo` in `key-wallet` (dashcore) — single `Arc<RwLock<Wallet>>`
 24. **PR-24**: Comprehensive test suite + FFI update + final cleanup
-26. **PR-26**: Audit lock ordering for deadlocks — `wallet`, `wallet_info`, and `tracked` are all behind `Arc<RwLock<...>>`. Verify consistent lock acquisition order across AssetLockManager, CoreWallet, IdentityWallet, SpvWalletAdapter. Fix any inconsistencies found.
+26. **PR-26**: Fix lock ordering deadlock — `wallet`, `wallet_info`, and `tracked` are all behind `Arc<RwLock<...>>`. **Confirmed deadlock risk** between `build_asset_lock_transaction` (wallet read → wallet_info write) and `SpvWalletAdapter::process_block` (wallet write → wallet_info write). Fix: adopt consistent global order (always `wallet` before `wallet_info`), fix `SpvWalletAdapter` lines 78-79 and 155-156 to match. Also: `resolve_status_from_wallet_info` acquires `wallet_info.blocking_read()` while inside `tracked.blocking_write()` — nested lock. Full audit of all lock sites in asset_lock_manager.rs, wallet.rs, wallet_adapter.rs needed.
 
 ---
 
